@@ -40,6 +40,56 @@
   #last-updated { font-size: 0.78rem; opacity: 0.7; text-align: right; }
   .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
 
+  /* Tabs */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    background: var(--card);
+    border-radius: 12px;
+    padding: 6px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.2s;
+  }
+  .tab-btn.active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+  }
+  .tab-btn:not(.active):hover { background: #f1f5f9; color: var(--text); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Combined summary bar */
+  .combined-bar {
+    background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 16px 24px;
+    margin-bottom: 24px;
+    display: flex;
+    gap: 32px;
+    align-items: center;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 12px rgba(37,99,235,0.2);
+  }
+  .combined-bar .cb-item { text-align: center; }
+  .combined-bar .cb-label { font-size: 0.75rem; opacity: 0.75; margin-bottom: 2px; }
+  .combined-bar .cb-val { font-size: 1.4rem; font-weight: 700; }
+  .combined-bar .cb-sub { font-size: 0.72rem; opacity: 0.7; }
+
   /* Progress */
   .progress-section {
     background: var(--card);
@@ -68,11 +118,7 @@
     background: linear-gradient(90deg, #2563eb, #7c3aed);
     transition: width 0.6s ease;
   }
-  .progress-sub {
-    margin-top: 8px;
-    font-size: 0.82rem;
-    color: var(--muted);
-  }
+  .progress-sub { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
 
   /* Stats row */
   .stats-row {
@@ -159,26 +205,17 @@
     background: #eff6ff;
     color: var(--primary);
   }
-  .bar-inline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .bar-inline-fill {
-    height: 6px;
-    border-radius: 999px;
-    background: var(--primary);
-    min-width: 2px;
-  }
+  .bar-inline { display: flex; align-items: center; gap: 8px; }
+  .bar-inline-fill { height: 6px; border-radius: 999px; background: var(--primary); min-width: 2px; }
 
   /* Loading / error */
-  #loading, #error-msg {
+  .loading-block, .error-block {
     text-align: center;
     padding: 60px 20px;
     color: var(--muted);
     font-size: 1rem;
   }
-  #error-msg { color: var(--red); }
+  .error-block { color: var(--red); }
   .spinner {
     width: 36px; height: 36px;
     border: 3px solid #e2e8f0;
@@ -197,144 +234,60 @@
 <header>
   <div>
     <h1>🏗️ 노동OK Q&A 분석 대시보드</h1>
-    <p>nodong.kr/qna 최근 10,000개 질문 유형 분석 — 계산기 설계 근거 데이터</p>
+    <p>nodong.kr/qna 질문 유형 분석 — 계산기 설계 근거 데이터</p>
   </div>
   <div id="last-updated">로딩 중...</div>
 </header>
 
 <div class="container">
-  <div id="loading">
-    <div class="spinner"></div>
-    분석 데이터를 불러오는 중입니다...
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab(0)">📈 최근 10,000건 (p.1~500)</button>
+    <button class="tab-btn" onclick="switchTab(1)">📉 이전 10,000건 (p.501~1000)</button>
+    <button class="tab-btn" onclick="switchTab(2)">🔀 비교 분석</button>
   </div>
-  <div id="error-msg" style="display:none"></div>
-  <div id="dashboard" style="display:none">
 
-    <!-- Progress -->
-    <div class="progress-section">
-      <div class="progress-header">
-        <span>🔄 분석 진행률</span>
-        <span class="progress-pct" id="pct">0%</span>
-      </div>
-      <div class="progress-bar-bg">
-        <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
-      </div>
-      <div class="progress-sub" id="progress-sub"></div>
-    </div>
+  <!-- Tab 0: Recent 10k -->
+  <div class="tab-panel active" id="panel-0">
+    <div class="loading-block" id="loading-0"><div class="spinner"></div>분석 데이터를 불러오는 중...</div>
+    <div class="error-block" id="error-0" style="display:none"></div>
+    <div id="dash-0" style="display:none"></div>
+  </div>
 
-    <!-- Stat cards -->
-    <div class="stats-row">
-      <div class="stat-card">
-        <div class="stat-label">분석 완료</div>
-        <div class="stat-value" id="stat-total">0</div>
-        <div class="stat-sub" id="stat-total-sub">/ 9,954개</div>
-      </div>
-      <div class="stat-card green">
-        <div class="stat-label">계산 필요 질문</div>
-        <div class="stat-value" id="stat-calc">0</div>
-        <div class="stat-sub" id="stat-calc-pct">0%</div>
-      </div>
-      <div class="stat-card orange">
-        <div class="stat-label">질문 유형 수</div>
-        <div class="stat-value" id="stat-types">0</div>
-        <div class="stat-sub">종류</div>
-      </div>
-      <div class="stat-card purple">
-        <div class="stat-label">계산기 유형 수</div>
-        <div class="stat-value" id="stat-calc-types">0</div>
-        <div class="stat-sub">종류</div>
-      </div>
-      <div class="stat-card red">
-        <div class="stat-label">분석 실패</div>
-        <div class="stat-value" id="stat-fail">0</div>
-        <div class="stat-sub">재실행 시 재분석</div>
-      </div>
-    </div>
+  <!-- Tab 1: Previous 10k -->
+  <div class="tab-panel" id="panel-1">
+    <div class="loading-block" id="loading-1"><div class="spinner"></div>분석 데이터를 불러오는 중...</div>
+    <div class="error-block" id="error-1" style="display:none"></div>
+    <div id="dash-1" style="display:none"></div>
+  </div>
 
-    <!-- Charts row 1 -->
-    <div class="charts-grid">
-      <div class="chart-card">
-        <h3>📊 질문 유형 분포</h3>
-        <canvas id="chart-qtype"></canvas>
-      </div>
-      <div class="chart-card">
-        <h3>🧮 계산기 유형 분포</h3>
-        <canvas id="chart-calc"></canvas>
-      </div>
-    </div>
+  <!-- Tab 2: Comparison -->
+  <div class="tab-panel" id="panel-2">
+    <div class="loading-block" id="loading-2"><div class="spinner"></div>비교 데이터를 준비 중...</div>
+    <div class="error-block" id="error-2" style="display:none"></div>
+    <div id="dash-2" style="display:none"></div>
+  </div>
 
-    <!-- Tables -->
-    <div class="two-col">
-      <!-- Question type table -->
-      <div class="table-section">
-        <h3>📋 질문 유형별 현황</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>질문 유형</th>
-              <th>건수</th>
-              <th>비율</th>
-              <th>계산필요</th>
-            </tr>
-          </thead>
-          <tbody id="table-qtype"></tbody>
-        </table>
-      </div>
-
-      <!-- Calculator type table -->
-      <div class="table-section">
-        <h3>🔢 계산기 유형별 현황</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>계산기 유형</th>
-              <th>건수</th>
-              <th>비율</th>
-            </tr>
-          </thead>
-          <tbody id="table-calc"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Top sub-types -->
-    <div class="table-section">
-      <h3>🔍 세부 유형 TOP 20</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>세부 유형</th>
-            <th>상위 유형</th>
-            <th>건수</th>
-            <th>비율</th>
-          </tr>
-        </thead>
-        <tbody id="table-subtype"></tbody>
-      </table>
-    </div>
-
-    <!-- Missing info -->
-    <div class="table-section">
-      <h3>❓ 자주 누락되는 정보 (계산에 필요하지만 없는 정보)</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>누락 정보</th>
-            <th>빈도</th>
-            <th>비율</th>
-          </tr>
-        </thead>
-        <tbody id="table-missing"></tbody>
-      </table>
-    </div>
-
-  </div><!-- /dashboard -->
-</div><!-- /container -->
+</div>
 
 <script>
-const TOTAL_FILES = 9954;
-const JSONL_URL = 'https://raw.githubusercontent.com/DrunkenZealnut/laborconsult/main/analysis_qna.jsonl';
+const DATASETS = [
+  {
+    name: '최근 10,000건',
+    label: 'pages 1~500',
+    totalFiles: 9954,
+    jsonlUrl: 'https://raw.githubusercontent.com/DrunkenZealnut/laborconsult/main/analysis_qna.jsonl',
+    color: '#2563eb',
+  },
+  {
+    name: '이전 10,000건',
+    label: 'pages 501~1000',
+    totalFiles: 10000,
+    jsonlUrl: 'https://raw.githubusercontent.com/DrunkenZealnut/laborconsult/main/analysis_qna_2.jsonl',
+    color: '#7c3aed',
+  },
+];
 
 const COLORS = [
   '#2563eb','#7c3aed','#10b981','#f59e0b','#ef4444',
@@ -342,218 +295,369 @@ const COLORS = [
   '#14b8a6','#eab308','#8b5cf6','#3b82f6','#22c55e'
 ];
 
+let loadedData = [null, null];
+let chartInstances = {};
+let currentTab = 0;
+
 function fmt(n) { return n.toLocaleString('ko-KR'); }
 function pct(n, total) { return total ? ((n/total)*100).toFixed(1)+'%' : '0%'; }
 
-async function loadData() {
-  try {
-    const resp = await fetch(JSONL_URL + '?t=' + Date.now());
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const text = await resp.text();
-    const lines = text.trim().split('\n').filter(l => l.trim());
-    const records = lines.map(l => { try { return JSON.parse(l); } catch(e) { return null; } }).filter(Boolean);
-    return records;
-  } catch(e) {
-    throw e;
-  }
+function switchTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+  document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+  currentTab = idx;
+  if (idx === 2 && loadedData[0] && loadedData[1]) buildComparison();
 }
 
-function buildCharts(records) {
-  const total = records.length;
-  const failed = records.filter(r => r.question_type === '분석실패').length;
-  const calcNeeded = records.filter(r => r.requires_calculation === true).length;
+async function fetchData(url) {
+  const resp = await fetch(url + '?t=' + Date.now());
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const text = await resp.text();
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  return lines.map(l => { try { return JSON.parse(l); } catch(e) { return null; } }).filter(Boolean);
+}
 
-  // question_type counts
-  const qtypeCounts = {};
-  const qtypeCalc = {};
+function analyzeRecords(records) {
+  const qtypeCounts = {}, qtypeCalc = {}, calcCounts = {}, subtypeCounts = {}, subtypeParent = {}, missingCounts = {};
+  let failed = 0, calcNeeded = 0;
   records.forEach(r => {
+    if (r.question_type === '분석실패') failed++;
+    if (r.requires_calculation === true) calcNeeded++;
     const t = r.question_type || '미분류';
     qtypeCounts[t] = (qtypeCounts[t] || 0) + 1;
     if (r.requires_calculation) qtypeCalc[t] = (qtypeCalc[t] || 0) + 1;
-  });
-
-  // calculation_type counts (exclude 해당없음)
-  const calcCounts = {};
-  records.forEach(r => {
-    const t = r.calculation_type || '해당없음';
-    if (t !== '해당없음' && t !== '') {
-      calcCounts[t] = (calcCounts[t] || 0) + 1;
-    }
-  });
-
-  // sub_type counts
-  const subtypeCounts = {};
-  const subtypeParent = {};
-  records.forEach(r => {
+    const ct = r.calculation_type || '해당없음';
+    if (ct !== '해당없음' && ct !== '') calcCounts[ct] = (calcCounts[ct] || 0) + 1;
     const st = r.sub_type || '';
-    const qt = r.question_type || '';
-    if (st && st.length > 1) {
-      subtypeCounts[st] = (subtypeCounts[st] || 0) + 1;
-      subtypeParent[st] = qt;
-    }
+    if (st && st.length > 1) { subtypeCounts[st] = (subtypeCounts[st] || 0) + 1; subtypeParent[st] = t; }
+    if (Array.isArray(r.missing_info)) r.missing_info.forEach(m => { if (m && m.length > 1) missingCounts[m] = (missingCounts[m] || 0) + 1; });
   });
+  return { total: records.length, failed, calcNeeded, qtypeCounts, qtypeCalc, calcCounts, subtypeCounts, subtypeParent, missingCounts };
+}
 
-  // missing_info
-  const missingCounts = {};
-  records.forEach(r => {
-    if (Array.isArray(r.missing_info)) {
-      r.missing_info.forEach(m => {
-        if (m && m.length > 1) missingCounts[m] = (missingCounts[m] || 0) + 1;
-      });
-    }
-  });
+function buildDashboard(panelIdx, records, ds) {
+  const containerId = 'dash-' + panelIdx;
+  const container = document.getElementById(containerId);
+  const stats = analyzeRecords(records);
+  const pctVal = ((stats.total / ds.totalFiles) * 100).toFixed(1);
+  const qtypeSorted = Object.entries(stats.qtypeCounts).sort((a,b) => b[1]-a[1]);
+  const calcSorted = Object.entries(stats.calcCounts).sort((a,b) => b[1]-a[1]);
+  const subtypeSorted = Object.entries(stats.subtypeCounts).sort((a,b) => b[1]-a[1]).slice(0,20);
+  const missingSorted = Object.entries(stats.missingCounts).sort((a,b) => b[1]-a[1]).slice(0,15);
 
-  // Progress
-  const pctVal = ((total / TOTAL_FILES) * 100).toFixed(1);
-  document.getElementById('pct').textContent = pctVal + '%';
-  document.getElementById('progress-fill').style.width = pctVal + '%';
-  document.getElementById('progress-sub').textContent =
-    `분석 완료: ${fmt(total)}개 / 전체: ${fmt(TOTAL_FILES)}개 | 실패: ${failed}개`;
+  const pfx = 'p' + panelIdx;
+  container.innerHTML = `
+    <!-- Progress -->
+    <div class="progress-section">
+      <div class="progress-header">
+        <span>🔄 분석 진행률 (${ds.name} · ${ds.label})</span>
+        <span class="progress-pct">${pctVal}%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:${pctVal}%;background:linear-gradient(90deg,${ds.color},${ds.color}99)"></div>
+      </div>
+      <div class="progress-sub">분석 완료: ${fmt(stats.total)}개 / 전체: ${fmt(ds.totalFiles)}개 | 실패: ${stats.failed}개</div>
+    </div>
 
-  // Stat cards
-  document.getElementById('stat-total').textContent = fmt(total);
-  document.getElementById('stat-total-sub').textContent = `/ ${fmt(TOTAL_FILES)}개`;
-  document.getElementById('stat-calc').textContent = fmt(calcNeeded);
-  document.getElementById('stat-calc-pct').textContent = pct(calcNeeded, total);
-  document.getElementById('stat-types').textContent = Object.keys(qtypeCounts).length;
-  document.getElementById('stat-calc-types').textContent = Object.keys(calcCounts).length;
-  document.getElementById('stat-fail').textContent = fmt(failed);
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card" style="border-left-color:${ds.color}">
+        <div class="stat-label">분석 완료</div>
+        <div class="stat-value">${fmt(stats.total)}</div>
+        <div class="stat-sub">/ ${fmt(ds.totalFiles)}개</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">계산 필요 질문</div>
+        <div class="stat-value">${fmt(stats.calcNeeded)}</div>
+        <div class="stat-sub">${pct(stats.calcNeeded, stats.total)}</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-label">질문 유형 수</div>
+        <div class="stat-value">${Object.keys(stats.qtypeCounts).length}</div>
+        <div class="stat-sub">종류</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-label">계산기 유형 수</div>
+        <div class="stat-value">${Object.keys(stats.calcCounts).length}</div>
+        <div class="stat-sub">종류</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">분석 실패</div>
+        <div class="stat-value">${fmt(stats.failed)}</div>
+        <div class="stat-sub">재실행 시 재분석</div>
+      </div>
+    </div>
 
-  // Sort qtype
-  const qtypeSorted = Object.entries(qtypeCounts).sort((a,b) => b[1]-a[1]);
-  const calcSorted = Object.entries(calcCounts).sort((a,b) => b[1]-a[1]);
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>📊 질문 유형 분포</h3>
+        <canvas id="${pfx}-qtype"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>🧮 계산기 유형 분포</h3>
+        <canvas id="${pfx}-calc"></canvas>
+      </div>
+    </div>
 
-  // Chart: question type (horizontal bar)
-  const ctx1 = document.getElementById('chart-qtype').getContext('2d');
-  new Chart(ctx1, {
+    <!-- Tables -->
+    <div class="two-col">
+      <div class="table-section">
+        <h3>📋 질문 유형별 현황</h3>
+        <table>
+          <thead><tr><th>질문 유형</th><th>건수</th><th>비율</th><th>계산필요</th></tr></thead>
+          <tbody id="${pfx}-tbl-qtype"></tbody>
+        </table>
+      </div>
+      <div class="table-section">
+        <h3>🔢 계산기 유형별 현황</h3>
+        <table>
+          <thead><tr><th>계산기 유형</th><th>건수</th><th>비율</th></tr></thead>
+          <tbody id="${pfx}-tbl-calc"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="table-section">
+      <h3>🔍 세부 유형 TOP 20</h3>
+      <table>
+        <thead><tr><th>#</th><th>세부 유형</th><th>상위 유형</th><th>건수</th><th>비율</th></tr></thead>
+        <tbody id="${pfx}-tbl-sub"></tbody>
+      </table>
+    </div>
+
+    <div class="table-section">
+      <h3>❓ 자주 누락되는 정보</h3>
+      <table>
+        <thead><tr><th>누락 정보</th><th>빈도</th><th>비율</th></tr></thead>
+        <tbody id="${pfx}-tbl-miss"></tbody>
+      </table>
+    </div>
+  `;
+
+  // Charts
+  if (chartInstances[pfx + '-qtype']) chartInstances[pfx + '-qtype'].destroy();
+  if (chartInstances[pfx + '-calc']) chartInstances[pfx + '-calc'].destroy();
+
+  chartInstances[pfx + '-qtype'] = new Chart(document.getElementById(pfx + '-qtype').getContext('2d'), {
     type: 'bar',
     data: {
       labels: qtypeSorted.slice(0,12).map(([k]) => k),
-      datasets: [{
-        label: '건수',
-        data: qtypeSorted.slice(0,12).map(([,v]) => v),
-        backgroundColor: COLORS,
-        borderRadius: 4,
-      }]
+      datasets: [{ label: '건수', data: qtypeSorted.slice(0,12).map(([,v]) => v), backgroundColor: COLORS, borderRadius: 4 }]
+    },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } }, responsive: true }
+  });
+
+  chartInstances[pfx + '-calc'] = new Chart(document.getElementById(pfx + '-calc').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: calcSorted.map(([k]) => k),
+      datasets: [{ data: calcSorted.map(([,v]) => v), backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: { plugins: { legend: { position: 'right', labels: { font: { size: 12 }, padding: 10 } } }, responsive: true }
+  });
+
+  // Fill tables
+  const qtBody = document.getElementById(pfx + '-tbl-qtype');
+  qtypeSorted.forEach(([type, cnt]) => {
+    const barW = Math.round((cnt / qtypeSorted[0][1]) * 120);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${type}</td><td><strong>${fmt(cnt)}</strong></td>
+      <td><div class="bar-inline"><div class="bar-inline-fill" style="width:${barW}px"></div>
+      <span style="font-size:0.8rem;color:#64748b">${pct(cnt, stats.total)}</span></div></td>
+      <td><span class="badge">${fmt(stats.qtypeCalc[type]||0)}</span></td>`;
+    qtBody.appendChild(tr);
+  });
+
+  const calcBody = document.getElementById(pfx + '-tbl-calc');
+  calcSorted.forEach(([type, cnt]) => {
+    const barW = Math.round((cnt / calcSorted[0][1]) * 120);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${type}</td><td><strong>${fmt(cnt)}</strong></td>
+      <td><div class="bar-inline"><div class="bar-inline-fill" style="width:${barW}px;background:#7c3aed"></div>
+      <span style="font-size:0.8rem;color:#64748b">${pct(cnt, stats.total)}</span></div></td>`;
+    calcBody.appendChild(tr);
+  });
+
+  const stBody = document.getElementById(pfx + '-tbl-sub');
+  subtypeSorted.forEach(([st, cnt], i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="color:#94a3b8;font-size:0.8rem">${i+1}</td><td>${st}</td>
+      <td><span class="badge">${stats.subtypeParent[st]||''}</span></td>
+      <td><strong>${fmt(cnt)}</strong></td>
+      <td style="color:#64748b;font-size:0.8rem">${pct(cnt, stats.total)}</td>`;
+    stBody.appendChild(tr);
+  });
+
+  const missBody = document.getElementById(pfx + '-tbl-miss');
+  missingSorted.forEach(([info, cnt]) => {
+    const barW = Math.round((cnt / missingSorted[0][1]) * 160);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${info}</td><td><strong>${fmt(cnt)}</strong></td>
+      <td><div class="bar-inline"><div class="bar-inline-fill" style="width:${barW}px;background:#f59e0b"></div>
+      <span style="font-size:0.8rem;color:#64748b">${pct(cnt, stats.total)}</span></div></td>`;
+    missBody.appendChild(tr);
+  });
+}
+
+function buildComparison() {
+  const container = document.getElementById('dash-2');
+  const d0 = analyzeRecords(loadedData[0]);
+  const d1 = analyzeRecords(loadedData[1]);
+  const ds0 = DATASETS[0], ds1 = DATASETS[1];
+
+  // All question types from both
+  const allTypes = new Set([...Object.keys(d0.qtypeCounts), ...Object.keys(d1.qtypeCounts)]);
+  const typesSorted = [...allTypes].sort((a, b) => {
+    return ((d0.qtypeCounts[b]||0) + (d1.qtypeCounts[b]||0)) - ((d0.qtypeCounts[a]||0) + (d1.qtypeCounts[a]||0));
+  });
+
+  container.innerHTML = `
+    <!-- Summary -->
+    <div class="combined-bar">
+      <div class="cb-item">
+        <div class="cb-label">총 분석 건수</div>
+        <div class="cb-val">${fmt(d0.total + d1.total)}</div>
+        <div class="cb-sub">두 데이터셋 합산</div>
+      </div>
+      <div class="cb-item">
+        <div class="cb-label">계산 필요 (합산)</div>
+        <div class="cb-val">${fmt(d0.calcNeeded + d1.calcNeeded)}</div>
+        <div class="cb-sub">${pct(d0.calcNeeded + d1.calcNeeded, d0.total + d1.total)}</div>
+      </div>
+      <div class="cb-item">
+        <div class="cb-label">${ds0.name} 진행률</div>
+        <div class="cb-val">${((d0.total/ds0.totalFiles)*100).toFixed(1)}%</div>
+        <div class="cb-sub">${fmt(d0.total)} / ${fmt(ds0.totalFiles)}</div>
+      </div>
+      <div class="cb-item">
+        <div class="cb-label">${ds1.name} 진행률</div>
+        <div class="cb-val">${((d1.total/ds1.totalFiles)*100).toFixed(1)}%</div>
+        <div class="cb-sub">${fmt(d1.total)} / ${fmt(ds1.totalFiles)}</div>
+      </div>
+    </div>
+
+    <!-- Comparison chart -->
+    <div class="chart-card" style="margin-bottom:24px">
+      <h3>📊 질문 유형 비교 (최근 10k vs 이전 10k)</h3>
+      <canvas id="cmp-chart" style="max-height:400px"></canvas>
+    </div>
+
+    <!-- Comparison table -->
+    <div class="table-section">
+      <h3>📋 질문 유형별 비교표</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>질문 유형</th>
+            <th>최근 10k (p.1~500)</th>
+            <th>비율</th>
+            <th>이전 10k (p.501~1000)</th>
+            <th>비율</th>
+            <th>변화</th>
+          </tr>
+        </thead>
+        <tbody id="cmp-tbl"></tbody>
+      </table>
+    </div>
+
+    <!-- Calc type comparison -->
+    <div class="chart-card" style="margin-bottom:24px">
+      <h3>🧮 계산기 유형 비교</h3>
+      <canvas id="cmp-calc-chart" style="max-height:400px"></canvas>
+    </div>
+  `;
+
+  // Grouped bar chart for question types
+  const topTypes = typesSorted.slice(0, 12);
+  if (chartInstances['cmp']) chartInstances['cmp'].destroy();
+  chartInstances['cmp'] = new Chart(document.getElementById('cmp-chart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: topTypes,
+      datasets: [
+        { label: ds0.name, data: topTypes.map(t => d0.qtypeCounts[t]||0), backgroundColor: ds0.color + 'cc', borderRadius: 3 },
+        { label: ds1.name, data: topTypes.map(t => d1.qtypeCounts[t]||0), backgroundColor: ds1.color + 'cc', borderRadius: 3 },
+      ]
     },
     options: {
       indexAxis: 'y',
-      plugins: { legend: { display: false } },
+      plugins: { legend: { position: 'top' } },
       scales: { x: { grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } },
       responsive: true,
     }
   });
 
-  // Chart: calculation type (doughnut)
-  const ctx2 = document.getElementById('chart-calc').getContext('2d');
-  new Chart(ctx2, {
-    type: 'doughnut',
+  // Calc type comparison
+  const allCalcTypes = new Set([...Object.keys(d0.calcCounts), ...Object.keys(d1.calcCounts)]);
+  const calcTypesSorted = [...allCalcTypes].sort((a,b) => ((d0.calcCounts[b]||0)+(d1.calcCounts[b]||0)) - ((d0.calcCounts[a]||0)+(d1.calcCounts[a]||0)));
+  if (chartInstances['cmp-calc']) chartInstances['cmp-calc'].destroy();
+  chartInstances['cmp-calc'] = new Chart(document.getElementById('cmp-calc-chart').getContext('2d'), {
+    type: 'bar',
     data: {
-      labels: calcSorted.map(([k]) => k),
-      datasets: [{
-        data: calcSorted.map(([,v]) => v),
-        backgroundColor: COLORS,
-        borderWidth: 2,
-        borderColor: '#fff',
-      }]
+      labels: calcTypesSorted,
+      datasets: [
+        { label: ds0.name, data: calcTypesSorted.map(t => d0.calcCounts[t]||0), backgroundColor: ds0.color + 'cc', borderRadius: 3 },
+        { label: ds1.name, data: calcTypesSorted.map(t => d1.calcCounts[t]||0), backgroundColor: ds1.color + 'cc', borderRadius: 3 },
+      ]
     },
     options: {
-      plugins: {
-        legend: { position: 'right', labels: { font: { size: 12 }, padding: 10 } }
-      },
+      indexAxis: 'y',
+      plugins: { legend: { position: 'top' } },
+      scales: { x: { grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } },
       responsive: true,
     }
   });
 
-  // Table: question types
-  const qtBody = document.getElementById('table-qtype');
-  qtypeSorted.forEach(([type, cnt]) => {
+  // Comparison table
+  const tbl = document.getElementById('cmp-tbl');
+  typesSorted.forEach(type => {
+    const c0 = d0.qtypeCounts[type] || 0;
+    const c1 = d1.qtypeCounts[type] || 0;
+    const p0 = d0.total ? ((c0/d0.total)*100).toFixed(1) : '0.0';
+    const p1 = d1.total ? ((c1/d1.total)*100).toFixed(1) : '0.0';
+    const diff = parseFloat(p0) - parseFloat(p1);
+    const diffStr = diff > 0.1 ? `▲ +${diff.toFixed(1)}pp` : diff < -0.1 ? `▼ ${diff.toFixed(1)}pp` : '≈ 유사';
+    const diffColor = diff > 0.1 ? '#10b981' : diff < -0.1 ? '#ef4444' : '#94a3b8';
     const tr = document.createElement('tr');
-    const barW = Math.round((cnt / qtypeSorted[0][1]) * 120);
-    tr.innerHTML = `
-      <td>${type}</td>
-      <td><strong>${fmt(cnt)}</strong></td>
-      <td>
-        <div class="bar-inline">
-          <div class="bar-inline-fill" style="width:${barW}px"></div>
-          <span style="font-size:0.8rem;color:#64748b">${pct(cnt, total)}</span>
-        </div>
-      </td>
-      <td><span class="badge">${fmt(qtypeCalc[type]||0)}</span></td>
-    `;
-    qtBody.appendChild(tr);
+    tr.innerHTML = `<td>${type}</td>
+      <td><strong>${fmt(c0)}</strong></td><td style="color:#64748b">${p0}%</td>
+      <td><strong>${fmt(c1)}</strong></td><td style="color:#64748b">${p1}%</td>
+      <td style="color:${diffColor};font-weight:600;font-size:0.82rem">${diffStr}</td>`;
+    tbl.appendChild(tr);
   });
 
-  // Table: calculation types
-  const calcBody = document.getElementById('table-calc');
-  calcSorted.forEach(([type, cnt]) => {
-    const tr = document.createElement('tr');
-    const barW = Math.round((cnt / calcSorted[0][1]) * 120);
-    tr.innerHTML = `
-      <td>${type}</td>
-      <td><strong>${fmt(cnt)}</strong></td>
-      <td>
-        <div class="bar-inline">
-          <div class="bar-inline-fill" style="width:${barW}px" style="background:#7c3aed"></div>
-          <span style="font-size:0.8rem;color:#64748b">${pct(cnt, total)}</span>
-        </div>
-      </td>
-    `;
-    calcBody.appendChild(tr);
-  });
-
-  // Table: sub-types top 20
-  const subtypeSorted = Object.entries(subtypeCounts).sort((a,b) => b[1]-a[1]).slice(0, 20);
-  const stBody = document.getElementById('table-subtype');
-  subtypeSorted.forEach(([st, cnt], i) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="color:#94a3b8;font-size:0.8rem">${i+1}</td>
-      <td>${st}</td>
-      <td><span class="badge">${subtypeParent[st]||''}</span></td>
-      <td><strong>${fmt(cnt)}</strong></td>
-      <td style="color:#64748b;font-size:0.8rem">${pct(cnt, total)}</td>
-    `;
-    stBody.appendChild(tr);
-  });
-
-  // Table: missing info top 15
-  const missingSorted = Object.entries(missingCounts).sort((a,b) => b[1]-a[1]).slice(0, 15);
-  const missBody = document.getElementById('table-missing');
-  missingSorted.forEach(([info, cnt]) => {
-    const barW = Math.round((cnt / missingSorted[0][1]) * 160);
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${info}</td>
-      <td><strong>${fmt(cnt)}</strong></td>
-      <td>
-        <div class="bar-inline">
-          <div class="bar-inline-fill" style="width:${barW}px;background:#f59e0b"></div>
-          <span style="font-size:0.8rem;color:#64748b">${pct(cnt, total)}</span>
-        </div>
-      </td>
-    `;
-    missBody.appendChild(tr);
-  });
-
-  // Last updated
-  document.getElementById('last-updated').textContent =
-    '마지막 갱신: ' + new Date().toLocaleString('ko-KR');
+  document.getElementById('loading-2').style.display = 'none';
+  container.style.display = 'block';
 }
 
-(async () => {
+async function loadPanel(panelIdx) {
+  const ds = DATASETS[panelIdx];
+  const loadingEl = document.getElementById('loading-' + panelIdx);
+  const errorEl = document.getElementById('error-' + panelIdx);
+  const dashEl = document.getElementById('dash-' + panelIdx);
   try {
-    const records = await loadData();
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
-    buildCharts(records);
+    const records = await fetchData(ds.jsonlUrl);
+    loadedData[panelIdx] = records;
+    loadingEl.style.display = 'none';
+    dashEl.style.display = 'block';
+    buildDashboard(panelIdx, records, ds);
+    document.getElementById('last-updated').textContent =
+      '마지막 갱신: ' + new Date().toLocaleString('ko-KR');
   } catch(e) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('error-msg').style.display = 'block';
-    document.getElementById('error-msg').textContent =
-      '데이터 로드 실패: ' + e.message + '\n(GitHub Raw URL 접근 오류 또는 CORS 문제일 수 있습니다)';
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    if (panelIdx === 1 && e.message.includes('404')) {
+      errorEl.textContent = '이전 10,000건 분석 데이터 준비 중... (크롤링 완료 후 분석 시작 예정)';
+      errorEl.style.color = '#f59e0b';
+    } else {
+      errorEl.textContent = '데이터 로드 실패: ' + e.message;
+    }
   }
-})();
+}
+
+// Load both datasets in parallel
+Promise.all([loadPanel(0), loadPanel(1)]);
 </script>
 </body>
 </html>

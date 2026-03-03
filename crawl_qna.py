@@ -8,6 +8,7 @@ nodong.kr Q&A 게시판 크롤러
 - 답변, 프로필 메타, 태그, 카테고리 포함 추출
 """
 
+import argparse
 import requests
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
@@ -18,8 +19,9 @@ import random
 
 BASE_URL = "https://www.nodong.kr"
 LIST_URL = "https://www.nodong.kr/qna"
-OUTPUT_DIR = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_qna"
-MAX_PAGES = 500
+DEFAULT_OUTPUT_DIR = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_qna"
+DEFAULT_START_PAGE = 1
+DEFAULT_MAX_PAGES = 500
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -343,10 +345,22 @@ def build_markdown(post_meta: dict, data: dict) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="노동OK Q&A 크롤러")
+    parser.add_argument('--start-page', type=int, default=DEFAULT_START_PAGE, help=f"시작 페이지 (기본: {DEFAULT_START_PAGE})")
+    parser.add_argument('--end-page', type=int, default=DEFAULT_MAX_PAGES, help=f"끝 페이지 (기본: {DEFAULT_MAX_PAGES})")
+    parser.add_argument('--output-dir', type=str, default=DEFAULT_OUTPUT_DIR, help=f"출력 디렉터리 (기본: {DEFAULT_OUTPUT_DIR})")
+    args = parser.parse_args()
+
+    OUTPUT_DIR = args.output_dir
+    START_PAGE = args.start_page
+    END_PAGE = args.end_page
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    total_pages = END_PAGE - START_PAGE + 1
     print("=== 노동OK Q&A 크롤러 시작 ===\n")
-    print(f"목표: 최대 {MAX_PAGES}페이지 × 20개 = 최대 10,000개\n")
+    print(f"목표: {START_PAGE}~{END_PAGE}페이지 ({total_pages}페이지 × 20개 = 최대 {total_pages * 20}개)\n")
+    print(f"출력 디렉터리: {OUTPUT_DIR}\n")
 
     # 이미 저장된 파일 확인 (재개 기능)
     saved_ids = get_saved_ids(OUTPUT_DIR)
@@ -357,8 +371,8 @@ def main():
     all_posts = []
     seen_ids = set()
 
-    for page in range(1, MAX_PAGES + 1):
-        print(f"[페이지 {page}/{MAX_PAGES}] 목록 수집...", end=' ', flush=True)
+    for page in range(START_PAGE, END_PAGE + 1):
+        print(f"[페이지 {page}/{END_PAGE}] 목록 수집...", end=' ', flush=True)
         posts = get_post_links_from_page(page)
 
         new_posts = []

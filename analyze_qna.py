@@ -22,8 +22,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-INPUT_DIR    = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_qna"
-OUTPUT_JSONL = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/analysis_qna.jsonl"
+DEFAULT_INPUT_DIR    = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_qna"
+DEFAULT_OUTPUT_JSONL = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/analysis_qna.jsonl"
 MODEL        = "claude-haiku-4-5-20251001"
 BATCH_SIZE   = 5
 MAX_CONTENT_CHARS = 2000  # 질문 본문 최대 길이 (토큰 절감)
@@ -231,7 +231,12 @@ def main():
     parser = argparse.ArgumentParser(description="Q&A 질문 분석기")
     parser.add_argument('--limit', type=int, default=0, help="분석할 최대 파일 수 (0=전체)")
     parser.add_argument('--dry-run', action='store_true', help="API 호출 없이 파일 목록만 출력")
+    parser.add_argument('--input-dir', type=str, default=DEFAULT_INPUT_DIR, help=f"입력 디렉터리 (기본: {DEFAULT_INPUT_DIR})")
+    parser.add_argument('--output-jsonl', type=str, default=DEFAULT_OUTPUT_JSONL, help=f"출력 JSONL 파일 (기본: {DEFAULT_OUTPUT_JSONL})")
     args = parser.parse_args()
+
+    INPUT_DIR = args.input_dir
+    OUTPUT_JSONL = args.output_jsonl
 
     # API 키 확인
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -245,6 +250,8 @@ def main():
         return
 
     print(f"=== 노동OK Q&A 분석기 시작 ===\n")
+    print(f"입력 디렉터리: {INPUT_DIR}")
+    print(f"출력 파일: {OUTPUT_JSONL}")
     print(f"전체 파일: {len(all_files)}개")
 
     # 이미 분석된 항목 건너뜀
