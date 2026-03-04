@@ -430,19 +430,26 @@ const CALC_MAP = {
   '임금차별 보상금 계산': '기타',
 };
 
-// 복합 슬래시 타입(A/B/C)에서 첫 번째 항목 추출
-function primaryCalcType(raw) {
-  if (!raw || raw === '해당없음') return null;
-  const normalized = CALC_MAP[raw];
-  if (normalized) return normalized;
-  // 슬래시/쉼표 구분 복합 타입 → 첫 번째 항목
-  const first = raw.split(/[\/,]/)[0].trim();
-  return CALC_MAP[first] || first;
+// 구분자(/ , 및 · +)로 복합 항목 분리 → 각 항목 정규화, 중복 제거
+function splitAndNormalizeCalc(raw) {
+  if (!raw || raw === '해당없음' || raw === '') return [];
+  // 전체 문자열이 맵에 있으면 그대로 단일 반환
+  if (CALC_MAP[raw]) return [CALC_MAP[raw]];
+  // 구분자로 분리
+  const parts = raw.split(/[\/,·+]|및|\s+및\s+/).map(s => s.trim()).filter(Boolean);
+  if (parts.length <= 1) return [CALC_MAP[raw] || raw];
+  // 각 파트 정규화, 중복 제거
+  return [...new Set(parts.map(p => CALC_MAP[p] || p).filter(p => p && p !== '해당없음'))];
 }
 
-function normalizeQtype(raw) {
-  if (!raw) return '미분류';
-  return QTYPE_MAP[raw] || raw;
+function splitAndNormalizeQtype(raw) {
+  if (!raw || raw === '분석실패') return [raw || '미분류'];
+  // 전체 문자열이 맵에 있으면 단일 반환
+  if (QTYPE_MAP[raw]) return [QTYPE_MAP[raw]];
+  // 구분자로 분리
+  const parts = raw.split(/[\/,·]|및|\s+및\s+/).map(s => s.trim()).filter(Boolean);
+  if (parts.length <= 1) return [raw];
+  return [...new Set(parts.map(p => QTYPE_MAP[p] || p))];
 }
 // ── 정규화 맵 끝 ────────────────────────────────────────────────────────────
 
@@ -452,13 +459,22 @@ function analyzeRecords(records) {
   records.forEach(r => {
     if (r.question_type === '분석실패') failed++;
     if (r.requires_calculation === true) calcNeeded++;
-    const t = normalizeQtype(r.question_type || '미분류');
-    qtypeCounts[t] = (qtypeCounts[t] || 0) + 1;
-    if (r.requires_calculation) qtypeCalc[t] = (qtypeCalc[t] || 0) + 1;
-    const ct = primaryCalcType(r.calculation_type);
-    if (ct && ct !== '해당없음') calcCounts[ct] = (calcCounts[ct] || 0) + 1;
+
+    // 질문 유형: 복합이면 분리 카운팅
+    const qtypes = splitAndNormalizeQtype(r.question_type || '미분류');
+    qtypes.forEach(t => {
+      qtypeCounts[t] = (qtypeCounts[t] || 0) + 1;
+      if (r.requires_calculation) qtypeCalc[t] = (qtypeCalc[t] || 0) + 1;
+    });
+
+    // 계산기 유형: 복합이면 분리 카운팅
+    const cts = splitAndNormalizeCalc(r.calculation_type);
+    cts.forEach(ct => { calcCounts[ct] = (calcCounts[ct] || 0) + 1; });
+
+    // 세부 유형은 첫 번째 질문유형 기준으로 연결
+    const primaryQtype = qtypes[0] || '미분류';
     const st = r.sub_type || '';
-    if (st && st.length > 1) { subtypeCounts[st] = (subtypeCounts[st] || 0) + 1; subtypeParent[st] = t; }
+    if (st && st.length > 1) { subtypeCounts[st] = (subtypeCounts[st] || 0) + 1; subtypeParent[st] = primaryQtype; }
     if (Array.isArray(r.missing_info)) r.missing_info.forEach(m => { if (m && m.length > 1) missingCounts[m] = (missingCounts[m] || 0) + 1; });
   });
   return { total: records.length, failed, calcNeeded, qtypeCounts, qtypeCalc, calcCounts, subtypeCounts, subtypeParent, missingCounts };
