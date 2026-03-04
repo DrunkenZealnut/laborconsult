@@ -243,13 +243,14 @@
 
   <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab-btn active" onclick="switchTab(0)">📈 최근 10,000건 (p.1~500)</button>
+    <button class="tab-btn" onclick="switchTab(0)">📈 최근 10,000건 (p.1~500)</button>
     <button class="tab-btn" onclick="switchTab(1)">📉 이전 10,000건 (p.501~1000)</button>
     <button class="tab-btn" onclick="switchTab(2)">🔀 비교 분석</button>
+    <button class="tab-btn active" onclick="switchTab(3)">🗂️ 전체 20,000건</button>
   </div>
 
   <!-- Tab 0: Recent 10k -->
-  <div class="tab-panel active" id="panel-0">
+  <div class="tab-panel" id="panel-0">
     <div class="loading-block" id="loading-0"><div class="spinner"></div>분석 데이터를 불러오는 중...</div>
     <div class="error-block" id="error-0" style="display:none"></div>
     <div id="dash-0" style="display:none"></div>
@@ -267,6 +268,13 @@
     <div class="loading-block" id="loading-2"><div class="spinner"></div>비교 데이터를 준비 중...</div>
     <div class="error-block" id="error-2" style="display:none"></div>
     <div id="dash-2" style="display:none"></div>
+  </div>
+
+  <!-- Tab 3: All 20k combined -->
+  <div class="tab-panel active" id="panel-3">
+    <div class="loading-block" id="loading-3"><div class="spinner"></div>통합 데이터를 불러오는 중...</div>
+    <div class="error-block" id="error-3" style="display:none"></div>
+    <div id="dash-3" style="display:none"></div>
   </div>
 
 </div>
@@ -287,6 +295,13 @@ const DATASETS = [
     jsonlUrl: 'https://raw.githubusercontent.com/DrunkenZealnut/laborconsult/main/analysis_qna_2.jsonl',
     color: '#7c3aed',
   },
+  {
+    name: '전체 20,000건',
+    label: '통합 데이터셋',
+    totalFiles: 19954,
+    jsonlUrl: 'https://raw.githubusercontent.com/DrunkenZealnut/laborconsult/main/analysis_qna_all.jsonl',
+    color: '#059669',
+  },
 ];
 
 const COLORS = [
@@ -295,9 +310,9 @@ const COLORS = [
   '#14b8a6','#eab308','#8b5cf6','#3b82f6','#22c55e'
 ];
 
-let loadedData = [null, null];
+let loadedData = [null, null, null, null];
 let chartInstances = {};
-let currentTab = 0;
+let currentTab = 3;
 
 function fmt(n) { return n.toLocaleString('ko-KR'); }
 function pct(n, total) { return total ? ((n/total)*100).toFixed(1)+'%' : '0%'; }
@@ -307,6 +322,7 @@ function switchTab(idx) {
   document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
   currentTab = idx;
   if (idx === 2 && loadedData[0] && loadedData[1]) buildComparison();
+  if (idx === 3 && !loadedData[3]) loadPanel(3);
 }
 
 async function fetchData(url) {
@@ -647,8 +663,11 @@ async function loadPanel(panelIdx) {
   } catch(e) {
     loadingEl.style.display = 'none';
     errorEl.style.display = 'block';
-    if (panelIdx === 1 && e.message.includes('404')) {
+    if (panelIdx === 1 && (e.message.includes('404') || e.message.includes('HTTP 4'))) {
       errorEl.textContent = '이전 10,000건 분석 데이터 준비 중... (크롤링 완료 후 분석 시작 예정)';
+      errorEl.style.color = '#f59e0b';
+    } else if (panelIdx === 3 && (e.message.includes('404') || e.message.includes('HTTP 4'))) {
+      errorEl.innerHTML = '⏳ 전체 20,000건 통합 파일 준비 중...<br><small style="color:#94a3b8">두 데이터셋 분석이 모두 완료되면 자동으로 생성됩니다.</small>';
       errorEl.style.color = '#f59e0b';
     } else {
       errorEl.textContent = '데이터 로드 실패: ' + e.message;
@@ -656,8 +675,8 @@ async function loadPanel(panelIdx) {
   }
 }
 
-// Load both datasets in parallel
-Promise.all([loadPanel(0), loadPanel(1)]);
+// Load all datasets in parallel (tab 3 = combined, loads first as default active tab)
+Promise.all([loadPanel(0), loadPanel(1), loadPanel(3)]);
 </script>
 </body>
 </html>
