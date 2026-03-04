@@ -451,6 +451,34 @@ function splitAndNormalizeQtype(raw) {
   if (parts.length <= 1) return [raw];
   return [...new Set(parts.map(p => QTYPE_MAP[p] || p))];
 }
+// ── 기타 → 세부 카테고리 키워드 재분류 ──────────────────────────────────────
+// sub_type + final_question 텍스트를 보고 '기타'를 더 세밀하게 분류
+function reclassifyGita(r) {
+  const text = [r.sub_type || '', r.final_question || ''].join(' ');
+  // 노동조합·단체협약
+  if (/노동조합|단체협약|노사협의|복수노조|유니온샵|조합원|교섭위원|파업|쟁의|노조/.test(text)) return '노동조합·단체협약';
+  // 손해배상·법적분쟁 (퇴직금/임금 관련 제외)
+  if (/손해배상|위약금|비밀유지|소송|고발|구제신청|가처분|판결|형사|민사|손해|배상책임|위약/.test(text)) return '손해배상·분쟁';
+  // 취업규칙·인사제도
+  if (/취업규칙|징계|전보|전직|전근|승진|호봉|경력인정|배치전환|인사제도|사규|직무정지|보직|경력환산|차별처우|균등처우|사내벌금|교육비환수|시용|수습/.test(text)) return '취업규칙·인사';
+  // 비정규직·파견·도급
+  if (/파견|도급|외주|비정규직|기간제|무기계약직|고용승계|포괄승계|용역|계약직\s*차별|위장도급|불법파견|감시단속|특수고용/.test(text)) return '비정규직·파견';
+  // 근로시간·근무형태 (소정근로, 주52시간, 교대 등)
+  if (/소정근로시간|주\s*52시간|휴게시간|교대근무|상시근로자|근로시간\s*산정|최대근로|탄력근로|선택근로|재량근로|포괄임금제|근로시간면제/.test(text)) return '근로시간·근무형태';
+  // 4대보험·사회보험
+  if (/4대보험|건강보험|국민연금|고용보험료|산재보험료|두루누리|사회보험료|원천징수|연말정산|세금/.test(text)) return '4대보험·사회보험';
+  // 휴직·휴가 (육아 아닌 것)
+  if (/병가|경조휴가|경조사|보건휴가|가족돌봄휴가|보상휴가|생리휴가|공민권|휴직|대체휴일|공휴일\s*유급|공휴일\s*근무/.test(text)) return '휴직·휴가';
+  // 육아·출산 (기타에 묻힌 것 구출)
+  if (/육아|출산|임신|모성|육아기\s*근로|육아휴직|출산전후|배우자\s*출산/.test(text)) return '육아휴직·출산';
+  // 퇴직연금 (기타에 묻힌 것)
+  if (/퇴직연금|dc형|db형|irp|중간정산|확정기여|확정급여/.test(text)) return '퇴직금';
+  // 산재 (기타에 묻힌 것)
+  if (/산재|산업재해|업무상\s*재해|안전사고|보건관리|직업병|요양급여/.test(text)) return '산재';
+  // 임금체불 (기타에 묻힌 것)
+  if (/임금체불|임금\s*미지급|급여\s*미지급|체불|지연이자/.test(text)) return '임금';
+  return '기타';
+}
 // ── 정규화 맵 끝 ────────────────────────────────────────────────────────────
 
 function analyzeRecords(records) {
@@ -460,8 +488,9 @@ function analyzeRecords(records) {
     if (r.question_type === '분석실패') failed++;
     if (r.requires_calculation === true) calcNeeded++;
 
-    // 질문 유형: 복합이면 분리 카운팅
-    const qtypes = splitAndNormalizeQtype(r.question_type || '미분류');
+    // 질문 유형: 복합이면 분리 카운팅, 기타는 키워드로 재분류
+    let qtypes = splitAndNormalizeQtype(r.question_type || '미분류');
+    qtypes = qtypes.map(t => t === '기타' ? reclassifyGita(r) : t);
     qtypes.forEach(t => {
       qtypeCounts[t] = (qtypeCounts[t] || 0) + 1;
       if (r.requires_calculation) qtypeCalc[t] = (qtypeCalc[t] || 0) + 1;
