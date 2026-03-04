@@ -647,8 +647,12 @@ function buildComparison() {
   container.style.display = 'block';
 }
 
+// panel 0→DATASETS[0], panel 1→DATASETS[1], panel 2→비교(없음), panel 3→DATASETS[2]
+const PANEL_DS_MAP = [0, 1, null, 2];
+
 async function loadPanel(panelIdx) {
-  const ds = DATASETS[panelIdx];
+  const dsIdx = PANEL_DS_MAP[panelIdx];
+  const ds = DATASETS[dsIdx];
   const loadingEl = document.getElementById('loading-' + panelIdx);
   const errorEl = document.getElementById('error-' + panelIdx);
   const dashEl = document.getElementById('dash-' + panelIdx);
