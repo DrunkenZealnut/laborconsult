@@ -16,5 +16,8 @@ venv/
 # macOS
 .DS_Store
 
+# Vercel
+.vercel/
+
 # 임시
 *.tmp
