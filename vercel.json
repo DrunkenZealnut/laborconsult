@@ -1,21 +1,29 @@
 {
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 60
-    }
-  },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/admin", "destination": "/admin.html" }
-  ],
-  "headers": [
+  "builds": [
     {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache" },
-        { "key": "X-Accel-Buffering", "value": "no" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
-      ]
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.py",
+      "headers": {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
+    },
+    {
+      "src": "/admin",
+      "dest": "/public/admin.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
     }
   ]
 }
