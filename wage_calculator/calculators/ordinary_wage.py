@@ -21,6 +21,7 @@ class OrdinaryWageResult:
     daily_ordinary_wage: float           # 1일 통상임금 (원/일)
     monthly_ordinary_wage: float         # 월 통상임금 총액 (원)
     monthly_base_hours: float            # 적용된 월 기준시간
+    base_hours_detail: str               # 월 기준시간 산출 근거
     included_items: list                 # 통상임금 포함 항목 목록
     excluded_items: list                 # 통상임금 제외 항목 목록
     formula: str                         # 계산식 설명
@@ -36,7 +37,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     3. 고정수당(fixed_allowances) 중 통상임금 포함분 합산
     4. 월 통상임금 / 기준시간 = 통상시급
     """
-    base_hours = _get_base_hours(inp)
+    base_hours, base_hours_detail = _get_base_hours(inp)
     included_items = []
     excluded_items = []
 
@@ -126,6 +127,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         daily_ordinary_wage=round(daily_ordinary, 0),
         monthly_ordinary_wage=round(monthly_ordinary, 0),
         monthly_base_hours=base_hours,
+        base_hours_detail=base_hours_detail,
         included_items=included_items,
         excluded_items=excluded_items,
         formula=formula,
@@ -165,7 +167,7 @@ def _resolve_is_ordinary(allowance: dict) -> tuple[bool, str]:
     return (explicit if explicit is not None else True), ""
 
 
-def _get_base_hours(inp: WageInput) -> float:
+def _get_base_hours(inp: WageInput) -> tuple[float, str]:
     """
     월 기준시간 결정 (주휴시간 포함)
 
@@ -176,14 +178,19 @@ def _get_base_hours(inp: WageInput) -> float:
     4. 스케줄 기반 자동 계산: (주 소정근로 + 주휴시간) × WEEKS_PER_MONTH
        - 주휴시간 = min(주 소정근로 / 5, 8) (대법원 2022다291153)
        - 주 15시간 미만이면 주휴 0
+
+    Returns:
+        (월 기준시간, 계산 근거 문자열)
     """
     # 1) 명시적 월 소정근로시간
     if inp.schedule.monthly_scheduled_hours is not None:
-        return inp.schedule.monthly_scheduled_hours
+        h = inp.schedule.monthly_scheduled_hours
+        return h, f"월 소정근로시간(직접 입력): {h}h"
 
     # 2) 교대근무: shift_monthly_hours 직접 지정
     if inp.schedule.shift_monthly_hours is not None:
-        return inp.schedule.shift_monthly_hours
+        h = inp.schedule.shift_monthly_hours
+        return h, f"교대근무 월 소정근로시간(직접 입력): {h}h"
 
     # 3) 교대근무 유형에서 조회
     shift_key_map = {
@@ -194,13 +201,24 @@ def _get_base_hours(inp: WageInput) -> float:
     }
     if inp.work_type in shift_key_map:
         key = shift_key_map[inp.work_type]
-        return SHIFT_MONTHLY_HOURS.get(key, MONTHLY_STANDARD_HOURS)
+        h = SHIFT_MONTHLY_HOURS.get(key, MONTHLY_STANDARD_HOURS)
+        return h, f"{key} 월 소정근로시간: {h}h"
 
     # 4) 일반: 스케줄 기반 자동 계산
-    weekly_work_hours = inp.schedule.daily_work_hours * inp.schedule.weekly_work_days
+    s = inp.schedule
+    weekly_work_hours = s.daily_work_hours * s.weekly_work_days
     if weekly_work_hours >= WEEKLY_HOLIDAY_MIN_HOURS:
         weekly_holiday_hours = min(weekly_work_hours / 5, 8.0)
+        holiday_detail = f"min({weekly_work_hours}h÷5, 8h) = {weekly_holiday_hours:.1f}h"
     else:
         weekly_holiday_hours = 0.0
-    monthly_hours = (weekly_work_hours + weekly_holiday_hours) * WEEKS_PER_MONTH
-    return round(monthly_hours, 1)
+        holiday_detail = f"0h (주 {weekly_work_hours}h < {WEEKLY_HOLIDAY_MIN_HOURS}h)"
+    total_weekly = weekly_work_hours + weekly_holiday_hours
+    monthly_hours = round(total_weekly * WEEKS_PER_MONTH, 1)
+
+    detail = (
+        f"주 소정근로: {s.daily_work_hours}h×{s.weekly_work_days:.0f}일 = {weekly_work_hours}h, "
+        f"주휴시간: {holiday_detail}, "
+        f"월 환산: ({weekly_work_hours}h+{weekly_holiday_hours:.1f}h)×{WEEKS_PER_MONTH:.3f} = {monthly_hours}h"
+    )
+    return monthly_hours, detail

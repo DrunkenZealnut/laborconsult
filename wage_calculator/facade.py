@@ -377,12 +377,14 @@ class WageCalculator:
         ow = calc_ordinary_wage(inp)
 
         result = WageResult(ordinary_hourly=ow.hourly_ordinary_wage)
+        result.formulas.append(f"[기준시간] {ow.base_hours_detail}")
         result.formulas.append(f"[통상임금] {ow.formula}")
         result.breakdown["통상임금"] = {
             "통상시급": f"{ow.hourly_ordinary_wage:,.0f}원",
             "1일 통상임금": f"{ow.daily_ordinary_wage:,.0f}원",
             "월 통상임금": f"{ow.monthly_ordinary_wage:,.0f}원",
             "기준시간": f"{ow.monthly_base_hours}h",
+            "기준시간 산출": ow.base_hours_detail,
         }
 
         monthly_total = ow.monthly_ordinary_wage
