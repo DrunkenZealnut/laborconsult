@@ -4,18 +4,17 @@
       "maxDuration": 60
     }
   },
-  "builds": [
-    { "src": "api/index.py", "use": "@vercel/python" }
-  ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" }
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/admin", "destination": "/admin.html" }
   ],
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache" },
-        { "key": "X-Accel-Buffering", "value": "no" }
+        { "key": "X-Accel-Buffering", "value": "no" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
     }
   ]
