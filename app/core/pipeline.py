@@ -448,56 +448,60 @@ def _run_calculator(params: dict) -> str | None:
 # 각 항목: (대체 가능 필드 집합, 사용자에게 보여줄 한국어 설명)
 # 필드 집합 중 하나라도 extracted_info에 있으면 충족된 것으로 판정
 
+# use_minimum_wage=true이면 임금 정보 충족으로 판정 (시스템이 법정 최저임금 자동 적용)
+_WAGE_FIELDS = {"wage_amount", "monthly_wage", "annual_wage", "hourly_wage", "daily_wage", "use_minimum_wage"}
+_WAGE_FIELDS_NO_HOURLY = {"wage_amount", "monthly_wage", "annual_wage", "use_minimum_wage"}
+
 _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     "overtime": [
-        ({"wage_amount", "monthly_wage", "annual_wage", "hourly_wage", "daily_wage"}, "임금 (시급/월급/연봉)"),
+        (_WAGE_FIELDS, "임금 (시급/월급/연봉)"),
         ({"daily_work_hours"}, "1일 소정근로시간"),
         ({"weekly_overtime_hours"}, "주당 연장근로시간"),
     ],
     "minimum_wage": [
-        ({"wage_amount", "monthly_wage", "annual_wage", "hourly_wage", "daily_wage"}, "현재 받는 임금 (시급/월급/연봉)"),
+        (_WAGE_FIELDS, "현재 받는 임금 (시급/월급/연봉)"),
         ({"daily_work_hours"}, "1일 소정근로시간"),
     ],
     "weekly_holiday": [
-        ({"wage_amount", "monthly_wage", "annual_wage", "hourly_wage", "daily_wage"}, "임금 (시급/월급/연봉)"),
+        (_WAGE_FIELDS, "임금 (시급/월급/연봉)"),
         ({"weekly_work_days"}, "주당 근무일수"),
         ({"daily_work_hours"}, "1일 소정근로시간"),
     ],
     "severance": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "임금 (월급 또는 연봉)"),
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
         ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
     ],
     "annual_leave": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "임금 (월급 또는 연봉)"),
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
         ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
     ],
     "dismissal": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "임금 (월급 또는 연봉)"),
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
         ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
     ],
     "unemployment": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "퇴직 전 월 평균 임금"),
+        (_WAGE_FIELDS_NO_HOURLY, "퇴직 전 월 평균 임금"),
     ],
     "insurance": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "임금 (월급 또는 연봉)"),
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
     ],
     "parental_leave": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "임금 (월급 또는 연봉)"),
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
         ({"parental_leave_months"}, "육아휴직 예정 개월수"),
     ],
     "maternity_leave": [
-        ({"wage_amount", "monthly_wage", "annual_wage"}, "임금 (월급 또는 연봉)"),
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
     ],
     "wage_arrears": [
         ({"arrear_amount"}, "체불 임금액"),
         ({"arrear_due_date"}, "체불 발생일 (원래 급여일)"),
     ],
     "compensatory_leave": [
-        ({"wage_amount", "monthly_wage", "annual_wage", "hourly_wage"}, "임금 (시급/월급)"),
+        (_WAGE_FIELDS, "임금 (시급/월급)"),
         ({"weekly_overtime_hours"}, "주당 연장근로시간"),
     ],
     "flexible_work": [
-        ({"wage_amount", "monthly_wage", "annual_wage", "hourly_wage"}, "임금 (시급/월급)"),
+        (_WAGE_FIELDS, "임금 (시급/월급)"),
     ],
     "comprehensive": [
         ({"monthly_wage"}, "포괄임금제 월급 총액"),
