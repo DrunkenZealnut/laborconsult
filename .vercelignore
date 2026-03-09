@@ -1,0 +1,25 @@
+output/
+output_qna/
+output_qna_2/
+output_2025/
+output_imgum/
+output_*/
+*.jsonl
+*.tmp
+.bkit/
+.claude/
+docs/
+chatbot.py
+crawl_*.py
+analyze_qna*.py
+summarize_analysis*.py
+generate_metadata*.py
+pinecone_upload*.py
+merge_analysis*.py
+compare_calculator.py
+wage_calculator_cli.py
+metadata.json
+metadata_imgum.json
+comparison_results.json
+**/* 2.*
+**/*\ 2.*

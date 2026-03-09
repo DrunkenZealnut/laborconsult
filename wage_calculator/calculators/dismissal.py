@@ -29,7 +29,8 @@ class DismissalResult(BaseCalculatorResult):
 def calc_dismissal(inp: WageInput, ow: OrdinaryWageResult) -> DismissalResult:
     """해고예고수당 계산"""
     hourly = ow.hourly_ordinary_wage
-    daily_pay = hourly * 8    # 1일 통상임금 (8시간)
+    daily_hours = inp.schedule.daily_work_hours
+    daily_pay = hourly * daily_hours  # 1일 통상임금 (소정근로시간)
     warnings = []
     formulas = []
     legal = ["근로기준법 제26조 (해고의 예고)"]
@@ -39,6 +40,27 @@ def calc_dismissal(inp: WageInput, ow: OrdinaryWageResult) -> DismissalResult:
     # 면제 사유 확인
     is_exempt = False
     exempt_reason = ""
+
+    # 계속근로기간 3개월 미만 (근기법 제26조 단서 2호)
+    if inp.tenure_months is not None and inp.tenure_months < 3:
+        warnings.append(f"계속근로기간 {inp.tenure_months}개월 (<3개월): 해고예고 의무 면제")
+        legal.append("근로기준법 제26조 단서 2호 (3개월 미만)")
+        is_exempt = True
+        exempt_reason = f"계속근로기간 {inp.tenure_months}개월 미만 — 면제"
+
+    # 계절적 사업 4개월 이내 (근기법 제26조 단서 3호)
+    if inp.is_seasonal_worker:
+        warnings.append("계절적 사업 4개월 이내 근로자: 해고예고 의무 면제")
+        legal.append("근로기준법 제26조 단서 3호 (계절적 사업)")
+        is_exempt = True
+        exempt_reason = "계절적 사업 4개월 이내 — 면제"
+
+    # 천재지변·근로자 귀책사유 (근기법 제26조 단서 4호)
+    if inp.is_force_majeure:
+        warnings.append("천재지변 또는 근로자 귀책사유: 해고예고 의무 면제")
+        legal.append("근로기준법 제26조 단서 4호 (천재지변·귀책사유)")
+        is_exempt = True
+        exempt_reason = "천재지변/근로자 귀책 — 면제"
 
     if inp.work_type == WorkType.DAILY_WORKER:
         warnings.append("일용직 근로자: 계속 근로 1개월 미만 시 해고예고 의무 면제")
@@ -85,7 +107,7 @@ def calc_dismissal(inp: WageInput, ow: OrdinaryWageResult) -> DismissalResult:
         formulas.append(f"예고일수 {notice_given}일 ≥ 30일 → 해고예고수당 없음")
 
     breakdown = {
-        "1일 통상임금": f"{daily_pay:,.0f}원 ({hourly:,.0f}원 × 8h)",
+        "1일 통상임금": f"{daily_pay:,.0f}원 ({hourly:,.0f}원 × {daily_hours}h)",
         "필요 예고일수": f"{DISMISSAL_NOTICE_DAYS}일",
         "실제 예고일수": f"{notice_given}일",
         "수당 지급일수": f"{payable_days}일",

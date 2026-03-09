@@ -74,6 +74,22 @@ def _hints_ordinary_wage(inp: WageInput) -> list[LegalHint]:
                 priority=1,
             ))
 
+        # 성과조건인데 guaranteed_amount 키가 있는 경우 → 최소보장성과 전환 안내
+        if condition == "성과조건" and "guaranteed_amount" in a:
+            ga = a["guaranteed_amount"]
+            hints.append(LegalHint(
+                category="통상임금",
+                condition=f"'{name}': 성과조건이나 최소보장분 {ga:,.0f}원 존재",
+                hint=(
+                    f"'{name}'에 최소지급보장분이 설정되어 있습니다. "
+                    f"최소지급분이 보장되는 성과급은 통상임금에 해당할 수 있습니다 "
+                    f"(대법원 2023다302838). condition을 '최소보장성과'로 변경하면 "
+                    f"보장분만 통상임금에 산입됩니다."
+                ),
+                basis=ORDINARY_WAGE_2024_RULING,
+                priority=1,
+            ))
+
         # 성과조건부인데 통상임금으로 입력된 경우
         if condition == "성과조건" and is_ordinary is True:
             hints.append(LegalHint(
@@ -243,6 +259,9 @@ def format_hints(hints: list[LegalHint]) -> str:
 
     lines.append(
         "\n⚠️ 위 내용은 참고용이며 법적 판단이 아닙니다. "
-        "정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요."
+        "정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요. "
+        "부당해고·차별시정 구제신청은 관할 지방노동위원회에, "
+        "실업급여·직업훈련은 관할 고용센터에, "
+        "산재보험·체당금은 관할 근로복지공단(1588-0075)에 접수합니다."
     )
     return "\n".join(lines)

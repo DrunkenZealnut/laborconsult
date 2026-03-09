@@ -21,13 +21,13 @@
 """
 
 from dataclasses import dataclass
+from datetime import date as _date, timedelta
 
 from ..base import BaseCalculatorResult
-from ..utils import WEEKS_PER_MONTH
-from datetime import date as _date, timedelta
-from ..models import WageInput
-from .ordinary_wage import OrdinaryWageResult
 from ..constants import WEEKLY_HOLIDAY_MIN_HOURS, WEEKLY_FULL_HOURS
+from ..models import WageInput, WageType
+from ..utils import WEEKS_PER_MONTH
+from .ordinary_wage import OrdinaryWageResult
 
 _DAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -110,11 +110,21 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
 
     breakdown = {
         "통상시급": f"{hourly:,.1f}원",
+        "주 소정근로일": f"{s.weekly_work_days:.0f}일",
         "주 소정근로시간": f"{weekly_scheduled}h",
         "주휴 인정 시간": f"{holiday_hours}h",
         "주 주휴수당": f"{weekly_pay:,.0f}원",
         "월 주휴수당": f"{monthly_pay:,.0f}원",
     }
+
+    # 시급제/월급제 안내
+    if inp.wage_type == WageType.HOURLY:
+        warnings.append(
+            "시급제: 제시된 시급에 주휴수당이 포함되어 있는지 확인 필요 "
+            "(포함 시급 = 기본시급 × (1 + 주휴시간/주소정근로시간))"
+        )
+    elif inp.wage_type == WageType.MONTHLY:
+        breakdown["월급 주휴 포함 여부"] = "월급에 주휴수당 포함 (별도 지급 불필요)"
 
     # ── 퇴직 마지막 주 주휴수당 발생 여부 (고용부 2021.8.4. 행정해석 변경) ──
     # end_date = 퇴직일 (= 마지막 근무일 다음날)이 입력된 경우에만 판단

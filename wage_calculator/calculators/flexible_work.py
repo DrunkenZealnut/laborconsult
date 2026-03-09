@@ -16,13 +16,13 @@
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 from ..base import BaseCalculatorResult
-from ..utils import WEEKS_PER_MONTH
-from typing import Optional
-from ..models import WageInput, BusinessSize
-from .ordinary_wage import OrdinaryWageResult
 from ..constants import OVERTIME_RATE
+from ..models import WageInput, BusinessSize
+from ..utils import WEEKS_PER_MONTH
+from .ordinary_wage import OrdinaryWageResult
 
 # ── 탄력적 근로시간제 단위기간별 최대 근로한도 ────────────────────────────────
 FLEXIBLE_WORK_LIMITS = {

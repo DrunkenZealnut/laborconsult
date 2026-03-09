@@ -1,20 +1,28 @@
 """FastAPI 앱 — Vercel 서버리스 함수 진입점"""
 
+import base64
 import json
 import os
 import sys
+import time
+from collections import Counter
+from datetime import date, timedelta
 
 # 프로젝트 루트를 import 경로에 추가 (wage_calculator, app 패키지 접근)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+import jwt
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from app.config import AppConfig
-from app.models.schemas import ChatRequest
+from app.models.schemas import ChatRequest, ChatWithFilesRequest
 from app.models.session import get_or_create_session
 from app.core.pipeline import process_question
+from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
 
 app = FastAPI(title="AI 노동상담 챗봇")
 
@@ -24,6 +32,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "입력 데이터가 올바르지 않습니다. 메시지를 확인해주세요."},
+    )
 
 # 앱 설정 (콜드 스타트 시 1회 초기화)
 _config: AppConfig | None = None
@@ -71,16 +87,18 @@ def chat(req: ChatRequest):
 
 @app.get("/api/chat/stream")
 def chat_stream(message: str, session_id: str | None = None):
-    """SSE 스트리밍 응답"""
+    """SSE 스트리밍 응답 (텍스트 전용, 하위 호환)"""
     config = get_config()
     session = get_or_create_session(session_id)
 
     def event_generator():
-        # 세션 ID 전송
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
-
-        for event in process_question(message, session, config):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        try:
+            for event in process_question(message, session, config):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception:
+            error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            yield f"data: {json.dumps({'type': 'error', 'text': error_msg}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -93,8 +111,265 @@ def chat_stream(message: str, session_id: str | None = None):
     )
 
 
-# 정적 파일 서빙 (로컬 개발용 — Vercel에서는 public/ 자동 서빙)
+@app.post("/api/chat/stream")
+def chat_stream_with_files(req: ChatWithFilesRequest):
+    """SSE 스트리밍 응답 — 파일 첨부 지원"""
+    config = get_config()
+    session = get_or_create_session(req.session_id)
+
+    # 첨부파일 파싱
+    parsed_attachments = []
+    validation_error = None
+
+    if req.attachments:
+        if len(req.attachments) > MAX_ATTACHMENTS:
+            validation_error = f"파일은 최대 {MAX_ATTACHMENTS}개까지 첨부할 수 있습니다."
+        else:
+            for att in req.attachments:
+                try:
+                    data = base64.b64decode(att.data)
+                    parsed = parse_attachment(data, att.content_type, att.filename)
+                    parsed_attachments.append(parsed)
+                except FileValidationError as e:
+                    validation_error = str(e)
+                    break
+                except Exception:
+                    validation_error = f"파일 처리 중 오류가 발생했습니다. ({att.filename})"
+                    break
+
+    def event_generator():
+        yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
+
+        if validation_error:
+            yield f"data: {json.dumps({'type': 'error', 'text': validation_error}, ensure_ascii=False)}\n\n"
+            return
+
+        try:
+            for event in process_question(req.message, session, config,
+                                           attachments=parsed_attachments):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception:
+            error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            yield f"data: {json.dumps({'type': 'error', 'text': error_msg}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── 관리자 API ────────────────────────────────────────────────────────────────
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+JWT_SECRET = os.environ.get("ADMIN_JWT_SECRET", ADMIN_PASSWORD)
+JWT_EXPIRY = 86400  # 24시간
+
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+
+def require_admin(authorization: str = Header(None)):
+    """JWT Bearer 토큰 검증"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "인증이 필요합니다")
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            raise HTTPException(403, "관리자 권한이 필요합니다")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(401, "토큰이 만료되었습니다")
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "유효하지 않은 토큰입니다")
+    return payload
+
+
+def _get_supabase():
+    """Supabase 클라이언트 반환, 없으면 503"""
+    config = get_config()
+    if config.supabase is None:
+        raise HTTPException(503, "Supabase가 설정되지 않았습니다")
+    return config.supabase
+
+
+@app.post("/api/admin/login")
+def admin_login(body: AdminLoginRequest):
+    if not ADMIN_PASSWORD:
+        raise HTTPException(503, "관리자 기능이 설정되지 않았습니다")
+    if body.password != ADMIN_PASSWORD:
+        raise HTTPException(401, "비밀번호가 올바르지 않습니다")
+    token = jwt.encode(
+        {"exp": int(time.time()) + JWT_EXPIRY, "role": "admin"},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    return {"token": token, "expires_in": JWT_EXPIRY}
+
+
+@app.get("/api/admin/stats")
+def admin_stats(_admin=Depends(require_admin)):
+    sb = _get_supabase()
+
+    # 총 대화 수
+    total_result = sb.table("qa_conversations").select("id", count="exact").execute()
+    total_conversations = total_result.count or 0
+
+    # 오늘 대화 수
+    today_str = date.today().isoformat()
+    today_result = (
+        sb.table("qa_conversations")
+        .select("id", count="exact")
+        .gte("created_at", today_str)
+        .execute()
+    )
+    today_conversations = today_result.count or 0
+
+    # 총 세션 수
+    sessions_result = sb.table("qa_sessions").select("id", count="exact").execute()
+    total_sessions = sessions_result.count or 0
+
+    # 최근 30일 일별 집계
+    since = (date.today() - timedelta(days=30)).isoformat()
+    recent = (
+        sb.table("qa_conversations")
+        .select("created_at")
+        .gte("created_at", since)
+        .execute()
+    )
+    day_counter: Counter = Counter()
+    for row in recent.data or []:
+        day = row["created_at"][:10]
+        day_counter[day] += 1
+    daily_counts = sorted(
+        [{"date": d, "count": c} for d, c in day_counter.items()],
+        key=lambda x: x["date"],
+    )
+
+    # 카테고리별 집계
+    cats_result = sb.table("qa_conversations").select("category").execute()
+    cat_counter: Counter = Counter()
+    for row in cats_result.data or []:
+        cat_counter[row["category"]] += 1
+    category_counts = sorted(
+        [{"category": c, "count": n} for c, n in cat_counter.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
+    return {
+        "total_conversations": total_conversations,
+        "today_conversations": today_conversations,
+        "total_sessions": total_sessions,
+        "daily_counts": daily_counts,
+        "category_counts": category_counts,
+    }
+
+
+@app.get("/api/admin/conversations")
+def admin_conversations(
+    page: int = 1,
+    per_page: int = 20,
+    search: str = "",
+    category: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    _admin=Depends(require_admin),
+):
+    sb = _get_supabase()
+    per_page = min(per_page, 100)
+    offset = (page - 1) * per_page
+
+    query = sb.table("qa_conversations").select(
+        "id, category, question_text, answer_text, calculation_types, created_at",
+        count="exact",
+    )
+
+    if search:
+        query = query.or_(
+            f"question_text.ilike.%{search}%,answer_text.ilike.%{search}%"
+        )
+    if category:
+        query = query.eq("category", category)
+    if date_from:
+        query = query.gte("created_at", date_from)
+    if date_to:
+        query = query.lte("created_at", date_to + "T23:59:59Z")
+
+    result = (
+        query.order("created_at", desc=True)
+        .range(offset, offset + per_page - 1)
+        .execute()
+    )
+
+    conversations = []
+    for row in result.data or []:
+        answer = row.get("answer_text") or ""
+        conversations.append(
+            {
+                "id": row["id"],
+                "category": row.get("category", ""),
+                "question_text": row.get("question_text", ""),
+                "answer_preview": answer[:100] + ("..." if len(answer) > 100 else ""),
+                "calculation_types": row.get("calculation_types", []),
+                "created_at": row.get("created_at", ""),
+            }
+        )
+
+    total = result.count or 0
+    return {
+        "conversations": conversations,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": max(1, (total + per_page - 1) // per_page),
+    }
+
+
+@app.get("/api/admin/conversations/{conv_id}")
+def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
+    sb = _get_supabase()
+
+    result = (
+        sb.table("qa_conversations")
+        .select("*")
+        .eq("id", conv_id)
+        .maybe_single()
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(404, "대화를 찾을 수 없습니다")
+
+    attachments = (
+        sb.table("qa_attachments")
+        .select("filename, content_type, public_url, file_size")
+        .eq("conversation_id", conv_id)
+        .execute()
+    )
+
+    return {**result.data, "attachments": attachments.data or []}
+
+
+# ── 정적 파일 서빙 ────────────────────────────────────────────────────────────
+
 @app.get("/")
 def serve_index():
     html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "index.html")
     return FileResponse(html_path, media_type="text/html")
+
+
+@app.get("/admin")
+def serve_admin():
+    html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "admin.html")
+    return FileResponse(html_path, media_type="text/html")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("api.index:app", host="0.0.0.0", port=5555, reload=True)

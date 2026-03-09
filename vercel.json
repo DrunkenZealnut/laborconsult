@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    }
+  },
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" }
   ],
@@ -9,7 +14,8 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache" }
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "X-Accel-Buffering", "value": "no" }
       ]
     }
   ]

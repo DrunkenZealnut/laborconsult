@@ -10,13 +10,15 @@
 
 from dataclasses import dataclass
 from ..models import WageInput, WageType, WorkType
-from ..constants import MONTHLY_STANDARD_HOURS, SHIFT_MONTHLY_HOURS
+from ..constants import MONTHLY_STANDARD_HOURS, SHIFT_MONTHLY_HOURS, WEEKLY_HOLIDAY_MIN_HOURS
+from ..utils import WEEKS_PER_MONTH
 
 
 @dataclass
 class OrdinaryWageResult:
     """통상임금 계산 결과"""
     hourly_ordinary_wage: float          # 통상시급 (원/시간)
+    daily_ordinary_wage: float           # 1일 통상임금 (원/일)
     monthly_ordinary_wage: float         # 월 통상임금 총액 (원)
     monthly_base_hours: float            # 적용된 월 기준시간
     included_items: list                 # 통상임금 포함 항목 목록
@@ -84,11 +86,19 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     allowance_total = 0.0
     for a in inp.fixed_allowances:
         name = a.get("name", "수당")
+        condition = a.get("condition", "없음")
         amount = float(a.get("amount", 0))
         is_annual = a.get("annual", False)  # 연간 금액이면 /12
         is_ordinary, note = _resolve_is_ordinary(a)
 
-        monthly_amount = amount / 12 if is_annual else amount
+        # 최소보장 성과급: guaranteed_amount가 있으면 그 금액만 산입
+        if condition == "최소보장성과" and is_ordinary:
+            guaranteed = float(a.get("guaranteed_amount", amount))
+            effective_amount = min(max(0, guaranteed), amount)  # 0 ≤ 보장분 ≤ 총액
+        else:
+            effective_amount = amount
+
+        monthly_amount = effective_amount / 12 if is_annual else effective_amount
 
         if is_ordinary:
             allowance_total += monthly_amount
@@ -108,9 +118,12 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         formula += f" + 통상임금 포함 수당 {allowance_total:,.0f}원 = {monthly_ordinary:,.0f}원"
 
     hourly_ordinary = monthly_ordinary / base_hours
+    daily_work_hours = inp.schedule.daily_work_hours or 8.0
+    daily_ordinary = hourly_ordinary * daily_work_hours
 
     return OrdinaryWageResult(
         hourly_ordinary_wage=round(hourly_ordinary, 2),
+        daily_ordinary_wage=round(daily_ordinary, 0),
         monthly_ordinary_wage=round(monthly_ordinary, 0),
         monthly_base_hours=base_hours,
         included_items=included_items,
@@ -136,6 +149,12 @@ def _resolve_is_ordinary(allowance: dict) -> tuple[bool, str]:
             return False, "성과조건부로 통상임금 제외 처리 (명시 설정 무시)"
         return False, ""
 
+    # 최소보장 성과급: 보장분만 통상임금 포함 (대법원 2023다302838)
+    if condition == "최소보장성과":
+        if explicit is False:
+            return False, "명시적 제외 설정"
+        return True, "최소보장분 통상임금 포함 (대법원 2023다302838)"
+
     # 재직조건·근무일수 조건: 2023다302838 판결로 통상임금 인정
     if condition in ["재직조건", "근무일수"]:
         if explicit is False:
@@ -147,12 +166,26 @@ def _resolve_is_ordinary(allowance: dict) -> tuple[bool, str]:
 
 
 def _get_base_hours(inp: WageInput) -> float:
-    """교대근무 유형에 따른 월 기준시간 결정"""
-    # 교대근무: shift_monthly_hours 직접 지정 우선
+    """
+    월 기준시간 결정 (주휴시간 포함)
+
+    우선순위:
+    1. monthly_scheduled_hours 명시값
+    2. shift_monthly_hours (교대근무 직접 지정)
+    3. 교대근무 유형별 조회
+    4. 스케줄 기반 자동 계산: (주 소정근로 + 주휴시간) × WEEKS_PER_MONTH
+       - 주휴시간 = min(주 소정근로 / 5, 8) (대법원 2022다291153)
+       - 주 15시간 미만이면 주휴 0
+    """
+    # 1) 명시적 월 소정근로시간
+    if inp.schedule.monthly_scheduled_hours is not None:
+        return inp.schedule.monthly_scheduled_hours
+
+    # 2) 교대근무: shift_monthly_hours 직접 지정
     if inp.schedule.shift_monthly_hours is not None:
         return inp.schedule.shift_monthly_hours
 
-    # 교대근무 유형에서 조회
+    # 3) 교대근무 유형에서 조회
     shift_key_map = {
         WorkType.SHIFT_4_2: "4조2교대",
         WorkType.SHIFT_3_2: "3조2교대",
@@ -163,5 +196,11 @@ def _get_base_hours(inp: WageInput) -> float:
         key = shift_key_map[inp.work_type]
         return SHIFT_MONTHLY_HOURS.get(key, MONTHLY_STANDARD_HOURS)
 
-    # 일반: 스케줄에 설정된 값 또는 기본 209h
-    return inp.schedule.monthly_scheduled_hours or MONTHLY_STANDARD_HOURS
+    # 4) 일반: 스케줄 기반 자동 계산
+    weekly_work_hours = inp.schedule.daily_work_hours * inp.schedule.weekly_work_days
+    if weekly_work_hours >= WEEKLY_HOLIDAY_MIN_HOURS:
+        weekly_holiday_hours = min(weekly_work_hours / 5, 8.0)
+    else:
+        weekly_holiday_hours = 0.0
+    monthly_hours = (weekly_work_hours + weekly_holiday_hours) * WEEKS_PER_MONTH
+    return round(monthly_hours, 1)

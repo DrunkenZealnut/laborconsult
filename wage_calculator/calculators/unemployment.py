@@ -9,7 +9,7 @@
 
 ■ 구직급여 일액 (고용보험법 제46조)
   기준 일액 = 이직 전 평균임금 × 60%
-  상한액    = 66,000원/일 (2019년 이후 고정)
+  상한액    = 연도별 변동 (고용보험법 시행령 제68조)
   하한액    = 최저임금 × 80% × 소정근로시간(8h)
   → 기준 일액이 상·하한 범위를 벗어나면 상한 또는 하한 적용
 
@@ -22,17 +22,15 @@
 """
 
 from dataclasses import dataclass
-
-from ..base import BaseCalculatorResult
 from datetime import date
 
+from ..base import BaseCalculatorResult
+from ..constants import MINIMUM_HOURLY_WAGE, UNEMPLOYMENT_BENEFIT_UPPER
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
-from ..constants import MINIMUM_HOURLY_WAGE
 
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
-BENEFIT_UPPER_LIMIT  = 66_000   # 구직급여 상한 (2019년 이후, 원/일)
 BENEFIT_RATE         = 0.60     # 평균임금 대비 지급률
 LOWER_LIMIT_RATE     = 0.80     # 최저임금 × 80%
 LOWER_LIMIT_HOURS    = 8        # 하한 산정 기준 소정근로시간
@@ -148,21 +146,34 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
             return _ineligible(reason, warnings, legal)
 
     # ── 3. 평균임금 일액 산정 ─────────────────────────────────────────────────
+    # 상여금/연차수당 3개월 비례분 가산 (nodong.kr 기준)
+    bonus_3m = (inp.annual_bonus_total / 12) * 3 if inp.annual_bonus_total else 0
+    leave_pay_3m = (inp.unused_annual_leave_pay / 12) * 3 if inp.unused_annual_leave_pay else 0
+    extra_3m = bonus_3m + leave_pay_3m
+
     if inp.last_3m_wages and inp.last_3m_days:
-        total_3m  = sum(inp.last_3m_wages)
+        base_3m   = sum(inp.last_3m_wages)
+        total_3m  = base_3m + extra_3m
         avg_daily = total_3m / inp.last_3m_days
         formulas.append(
-            f"평균임금 일액: {total_3m:,.0f}원 ÷ {inp.last_3m_days}일 = {avg_daily:,.1f}원"
+            f"평균임금 일액: ({base_3m:,.0f}원"
+            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
+            + f") ÷ {inp.last_3m_days}일 = {avg_daily:,.1f}원"
         )
     elif inp.monthly_wage:
-        avg_daily = inp.monthly_wage * 3 / 92
+        base_3m   = inp.monthly_wage * 3
+        total_3m  = base_3m + extra_3m
+        avg_daily = total_3m / 92
         formulas.append(
-            f"평균임금 일액(추정): {inp.monthly_wage:,.0f}원 × 3개월 ÷ 92일 = {avg_daily:,.1f}원"
+            f"평균임금 일액(추정): ({inp.monthly_wage:,.0f}원 × 3"
+            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
+            + f") ÷ 92일 = {avg_daily:,.1f}원"
         )
-        warnings.append(
-            "평균임금은 이직 전 3개월 실지급 임금으로 산정합니다. "
-            "상여금·성과금 등 변동 급여가 있으면 급여명세서로 재확인하세요."
-        )
+        if not extra_3m:
+            warnings.append(
+                "평균임금은 이직 전 3개월 실지급 임금으로 산정합니다. "
+                "상여금·성과금 등 변동 급여가 있으면 급여명세서로 재확인하세요."
+            )
     else:
         avg_daily = ow.hourly_ordinary_wage * 8
         formulas.append(
@@ -173,7 +184,9 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
     # ── 4. 구직급여 일액 산정 ─────────────────────────────────────────────────
     base_daily = avg_daily * BENEFIT_RATE
 
-    upper = float(BENEFIT_UPPER_LIMIT)
+    upper = float(UNEMPLOYMENT_BENEFIT_UPPER.get(
+        year, UNEMPLOYMENT_BENEFIT_UPPER[max(UNEMPLOYMENT_BENEFIT_UPPER)]
+    ))
 
     # 하한액: 최저임금 × 80% × 8h
     min_wage = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[max(MINIMUM_HOURLY_WAGE)])

@@ -13,12 +13,11 @@
 
 import calendar
 from dataclasses import dataclass
-
-from ..base import BaseCalculatorResult
-from ..utils import parse_date
 from datetime import date
 
+from ..base import BaseCalculatorResult
 from ..models import WageInput
+from ..utils import parse_date
 from .ordinary_wage import OrdinaryWageResult
 
 

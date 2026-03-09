@@ -11,10 +11,9 @@
 """
 
 from dataclasses import dataclass
-
-from ..base import BaseCalculatorResult
 from datetime import date as date_cls
 
+from ..base import BaseCalculatorResult
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
 

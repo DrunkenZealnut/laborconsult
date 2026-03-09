@@ -27,13 +27,14 @@
 """
 
 from dataclasses import dataclass
+from datetime import date
 
 from ..base import BaseCalculatorResult
-from ..utils import parse_date
-from datetime import date
+from ..constants import SEVERANCE_MIN_SERVICE_DAYS
 from ..models import WageInput, WorkType, BusinessSize
+from ..utils import parse_date
+from .average_wage import calc_average_wage
 from .ordinary_wage import OrdinaryWageResult
-from ..constants import SEVERANCE_MIN_SERVICE_DAYS, AVG_WAGE_PERIOD_DAYS
 
 
 @dataclass
@@ -106,14 +107,15 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
 
     # ── 평균임금 산정 (3가지 비교) ───────────────────────────────────────────
 
-    # A. 3개월 평균임금
-    avg_daily_3m = _calc_avg_daily_3m(inp, ow)
+    # A. 3개월 평균임금 — average_wage 모듈 재사용
+    avg_result = calc_average_wage(inp, ow)
+    avg_daily_3m = avg_result.avg_daily_3m
 
     # B. 1년 평균임금 (대법원 2023다302579)
     avg_daily_1y = _calc_avg_daily_1y(inp, ow)
 
     # C. 통상임금 환산 일급 (근로기준법 시행령 제2조)
-    avg_daily_ordinary = ow.hourly_ordinary_wage * 8
+    avg_daily_ordinary = avg_result.avg_daily_ordinary
 
     # ── 유리한 기준 선택 ─────────────────────────────────────────────────────
     candidates = {"3개월": avg_daily_3m, "통상임금": avg_daily_ordinary}
@@ -166,6 +168,33 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
         "퇴직금":             f"{severance_pay:,.0f}원",
     }
 
+    # 상여금/연차수당 가산 내역
+    if inp.annual_bonus_total > 0:
+        bonus_add = inp.annual_bonus_total * 3 / 12
+        breakdown["상여금 가산"] = (
+            f"{bonus_add:,.0f}원 (연 {inp.annual_bonus_total:,.0f}원 x 3/12)"
+        )
+        formulas.append(
+            f"상여금 가산: {inp.annual_bonus_total:,.0f}원 x 3/12 = {bonus_add:,.0f}원"
+        )
+    if inp.unused_annual_leave_pay > 0:
+        leave_add = inp.unused_annual_leave_pay * 3 / 12
+        breakdown["연차수당 가산"] = (
+            f"{leave_add:,.0f}원 (연차수당 {inp.unused_annual_leave_pay:,.0f}원 x 3/12)"
+        )
+        formulas.append(
+            f"연차수당 가산: {inp.unused_annual_leave_pay:,.0f}원 x 3/12 = {leave_add:,.0f}원"
+        )
+
+    # IRP 의무 안내 (2022.4.14 이후)
+    if end >= date(2022, 4, 14):
+        warnings.append(
+            "2022.4.14 이후 퇴직 시 퇴직금은 IRP(개인형퇴직연금) 계좌로 "
+            "세전 금액 전액 지급해야 합니다 (근로자퇴직급여보장법 제9조). "
+            "퇴직소득세는 IRP 계좌에서 인출 시 원천징수됩니다."
+        )
+        legal.append("근로자퇴직급여보장법 제9조 (개인형퇴직연금제도의 설정 등)")
+
     # 5인 미만 안내
     if inp.business_size == BusinessSize.UNDER_5:
         warnings.append(
@@ -189,22 +218,6 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
         warnings=warnings,
         legal_basis=legal,
     )
-
-
-def _calc_avg_daily_3m(inp: WageInput, ow: OrdinaryWageResult) -> float:
-    """퇴직 전 3개월 평균임금 계산"""
-    period_days = inp.last_3m_days or AVG_WAGE_PERIOD_DAYS  # 기본 92일
-
-    if inp.last_3m_wages:
-        total = sum(inp.last_3m_wages)
-    elif inp.monthly_wage:
-        # 월급 × 3개월 추정
-        total = inp.monthly_wage * 3
-    else:
-        # 통상임금 기반 추정
-        total = ow.monthly_ordinary_wage * 3
-
-    return total / period_days
 
 
 def _calc_avg_daily_1y(inp: WageInput, ow: OrdinaryWageResult) -> float:

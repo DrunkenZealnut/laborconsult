@@ -12,10 +12,10 @@
 """
 
 from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Optional
 
 from ..base import BaseCalculatorResult
-from typing import Optional
-from datetime import date, datetime
 
 
 @dataclass

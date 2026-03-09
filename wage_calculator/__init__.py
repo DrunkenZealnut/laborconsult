@@ -34,6 +34,8 @@ from .models import (
 from .result import WageResult, format_result, format_result_json
 from .legal_hints import LegalHint, generate_legal_hints, format_hints
 from .calculators.business_size import BusinessSizeResult
+from .calculators.eitc import EitcResult
+from .calculators.average_wage import AverageWageResult
 
 __all__ = [
     "WageCalculator",
@@ -49,6 +51,8 @@ __all__ = [
     "WorkerEntry",
     "BusinessSizeInput",
     "BusinessSizeResult",
+    "EitcResult",
+    "AverageWageResult",
     "WageResult",
     "format_result",
     "format_result_json",

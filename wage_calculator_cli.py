@@ -656,6 +656,944 @@ TEST_CASES = [
         ),
         "targets": ["business_size"],
     },
+    # ── 근로장려금(EITC) 테스트 케이스 ─────────────────────────────────────────
+    {
+        "id": 37,
+        "desc": "EITC — 단독 점증구간 (소득 300만, 재산 1억)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=250_000,  # 참고용
+            reference_year=2025,
+            household_type="단독",
+            annual_total_income=3_000_000,
+            total_assets=100_000_000,
+        ),
+        "targets": ["eitc"],
+    },
+    {
+        "id": 38,
+        "desc": "EITC — 단독 평탄구간 (소득 600만, 재산 1억)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=500_000,
+            reference_year=2025,
+            household_type="단독",
+            annual_total_income=6_000_000,
+            total_assets=100_000_000,
+        ),
+        "targets": ["eitc"],
+    },
+    {
+        "id": 39,
+        "desc": "EITC — 단독 소득초과 (소득 2,300만)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=1_916_667,
+            reference_year=2025,
+            household_type="단독",
+            annual_total_income=23_000_000,
+            total_assets=100_000_000,
+        ),
+        "targets": ["eitc"],
+    },
+    {
+        "id": 40,
+        "desc": "EITC — 홑벌이 재산감액 (소득 1,000만, 재산 2억)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=833_333,
+            reference_year=2025,
+            household_type="홑벌이",
+            annual_total_income=10_000_000,
+            total_assets=200_000_000,
+            num_children_under_18=1,
+        ),
+        "targets": ["eitc"],
+    },
+    {
+        "id": 41,
+        "desc": "EITC — 맞벌이 점감구간 (소득 2,500만, 재산 1.5억)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_083_333,
+            reference_year=2025,
+            household_type="맞벌이",
+            annual_total_income=25_000_000,
+            total_assets=150_000_000,
+        ),
+        "targets": ["eitc"],
+    },
+    {
+        "id": 42,
+        "desc": "EITC — 재산 초과 (홑벌이, 소득 500만, 재산 2.5억)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=416_667,
+            reference_year=2025,
+            household_type="홑벌이",
+            annual_total_income=5_000_000,
+            total_assets=250_000_000,
+        ),
+        "targets": ["eitc"],
+    },
+    {
+        "id": 43,
+        "desc": "EITC — 자녀장려금 포함 (홑벌이, 소득 1,200만, 자녀 2명)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=1_000_000,
+            reference_year=2025,
+            household_type="홑벌이",
+            annual_total_income=12_000_000,
+            total_assets=100_000_000,
+            num_children_under_18=2,
+        ),
+        "targets": ["eitc"],
+    },
+    # ── 퇴직소득세 / 퇴직연금 테스트 케이스 ──────────────────────────────────────
+    {
+        "id": 44,
+        "desc": "퇴직소득세 — 10년 근속, 퇴직금 3000만원 (IRP 없음)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            start_date="2015-01-02",
+            end_date="2025-01-01",
+        ),
+        "targets": ["severance", "retirement_tax"],
+    },
+    {
+        "id": 45,
+        "desc": "퇴직소득세 — 5년 근속, 퇴직금 직접입력 + IRP 전액이체",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            reference_year=2025,
+            start_date="2020-03-01",
+            end_date="2025-02-28",
+            retirement_pay_amount=15_000_000,
+            irp_transfer_amount=15_000_000,
+        ),
+        "targets": ["retirement_tax"],
+    },
+    {
+        "id": 46,
+        "desc": "퇴직소득세 — 20년 근속, 상여금+연차수당 가산",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=4_000_000,
+            reference_year=2025,
+            start_date="2005-01-03",
+            end_date="2025-01-02",
+            annual_bonus_total=4_800_000,
+            unused_annual_leave_pay=1_200_000,
+        ),
+        "targets": ["severance", "retirement_tax"],
+    },
+    {
+        "id": 47,
+        "desc": "퇴직연금 DB형 — 퇴직금 결과 연동 (10년 근속)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            start_date="2015-01-02",
+            end_date="2025-01-01",
+            pension_type="DB",
+        ),
+        "targets": ["severance", "retirement_pension"],
+    },
+    {
+        "id": 48,
+        "desc": "퇴직연금 DC형 — 5년, 운용수익률 3%",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            start_date="2020-01-02",
+            end_date="2025-01-01",
+            pension_type="DC",
+            dc_return_rate=0.03,
+        ),
+        "targets": ["retirement_pension"],
+    },
+    {
+        "id": 49,
+        "desc": "퇴직연금 DC형 — 연도별 임금이력 + 수익률 5%",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=4_000_000,
+            reference_year=2025,
+            pension_type="DC",
+            annual_wage_history=[36_000_000, 38_000_000, 40_000_000, 42_000_000],
+            dc_return_rate=0.05,
+        ),
+        "targets": ["retirement_pension"],
+    },
+    {
+        "id": 50,
+        "desc": "퇴직금+퇴직소득세+퇴직연금 통합 (3년 근속, DB형)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_500_000,
+            reference_year=2025,
+            start_date="2022-01-03",
+            end_date="2025-01-02",
+            pension_type="DB",
+            irp_transfer_amount=5_000_000,
+        ),
+        "targets": ["severance", "retirement_tax", "retirement_pension"],
+    },
+    {
+        "id": 51,
+        "desc": "퇴직소득세 — 1년 미만 근속 (퇴직금 미발생, 직접입력 500만원)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            reference_year=2025,
+            start_date="2024-06-01",
+            end_date="2025-01-01",
+            retirement_pay_amount=5_000_000,
+        ),
+        "targets": ["retirement_tax"],
+    },
+    # ── 4대보험 절사·상한·자녀공제·산재구성요소 테스트 케이스 ──────────────────────
+    {
+        "id": 52,
+        "desc": "4대보험 절사 규칙 — 월 3,000,000원, 비과세 200,000원",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            monthly_non_taxable=200_000,
+            tax_dependents=1,
+        ),
+        "targets": ["insurance"],
+    },
+    {
+        "id": 53,
+        "desc": "4대보험 국민연금 상한 — 월 6,170,000원",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=6_170_000,
+            reference_year=2025,
+            tax_dependents=3,
+        ),
+        "targets": ["insurance"],
+    },
+    {
+        "id": 54,
+        "desc": "4대보험 건강보험 상한 — 월 100,000,000원",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=100_000_000,
+            reference_year=2025,
+            tax_dependents=4,
+        ),
+        "targets": ["insurance"],
+    },
+    {
+        "id": 55,
+        "desc": "자녀세액공제 — 월 4,000,000원, 자녀 2명",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=4_000_000,
+            reference_year=2025,
+            tax_dependents=4,
+            num_children_8_to_20=2,
+        ),
+        "targets": ["insurance"],
+    },
+    {
+        "id": 56,
+        "desc": "사업주 4대보험 — 산재보험 구성요소 (업종 1.5%)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_500_000,
+            reference_year=2025,
+            industry_accident_rate=0.015,
+            company_size_category="150_999",
+        ),
+        "targets": ["employer_insurance"],
+    },
+    # ── 통상임금 리뷰 테스트 케이스 (nodong.kr 참조) ─────────────────────────
+    {
+        "id": 57,
+        "desc": "최소보장 성과급 — 보장분만 통상임금 산입",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            reference_year=2025,
+            fixed_allowances=[
+                {
+                    "name": "성과급",
+                    "amount": 3_600_000,
+                    "annual": True,
+                    "condition": "최소보장성과",
+                    "guaranteed_amount": 1_200_000,
+                },
+            ],
+        ),
+        "targets": ["minimum_wage"],
+        # 기대: 월 통상임금 = 2,500,000 + (1,200,000/12) = 2,600,000
+        #       통상시급 = 2,600,000 / 209 ≈ 12,440원
+    },
+    {
+        "id": 58,
+        "desc": "1일 통상임금 출력 검증 — 시급 근로자",
+        "input": WageInput(
+            wage_type=WageType.HOURLY,
+            hourly_wage=10_030,
+            reference_year=2025,
+        ),
+        "targets": ["minimum_wage"],
+        # 기대: hourly=10,030, daily=80,240, monthly=2,096,270
+    },
+    {
+        "id": 59,
+        "desc": "일반 성과조건 제외 유지 — 보장분 없는 성과급",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            fixed_allowances=[
+                {
+                    "name": "인센티브",
+                    "amount": 5_000_000,
+                    "annual": True,
+                    "condition": "성과조건",
+                },
+            ],
+        ),
+        "targets": ["minimum_wage"],
+        # 기대: 월 통상임금 = 3,000,000 (인센티브 제외)
+        #       통상시급 = 3,000,000 / 209 ≈ 14,354원
+    },
+
+    # ────────────────────────────────────────────────────────────────────────────
+    # #60~#64: 평균임금 독립 계산기 (average_wage)
+    # ────────────────────────────────────────────────────────────────────────────
+
+    {
+        "id": 60,
+        "desc": "평균임금 기본 산정 — 3개월 임금 float list",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            last_3m_wages=[3_000_000, 3_000_000, 3_000_000],
+            last_3m_days=92,
+        ),
+        "targets": ["average_wage"],
+        # 기대: 3개월 총액 9,000,000 / 92일 = 97,826원/일
+        #       통상임금 환산일급 = (3,000,000/209) × 8 = 114,832원/일
+        #       → 통상임금이 더 높으므로 used_basis="통상임금"
+    },
+    {
+        "id": 61,
+        "desc": "평균임금 > 통상임금 — 3개월 기준 적용",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            reference_year=2025,
+            last_3m_wages=[4_000_000, 4_000_000, 4_000_000],
+            last_3m_days=92,
+        ),
+        "targets": ["average_wage"],
+        # 기대: 3개월 총액 12,000,000 / 92일 = 130,435원/일
+        #       통상임금 환산일급 = (2,500,000/209) × 8 = 95,694원/일
+        #       → 평균임금이 더 높으므로 used_basis="3개월"
+    },
+    {
+        "id": 62,
+        "desc": "평균임금 상여금+연차수당 가산",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2025,
+            last_3m_wages=[3_000_000, 3_000_000, 3_000_000],
+            last_3m_days=92,
+            annual_bonus_total=2_400_000,
+            unused_annual_leave_pay=600_000,
+        ),
+        "targets": ["average_wage"],
+        # 기대: 임금총액 9,000,000
+        #       상여금 가산: 2,400,000 × 3/12 = 600,000
+        #       연차 가산: 600,000 × 3/12 = 150,000
+        #       총액: 9,750,000 / 92일 = 105,978원/일
+    },
+    {
+        "id": 63,
+        "desc": "평균임금 산정기간 자동 계산 — end_date 기반 3개월 역산",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            last_3m_wages=[3_000_000, 3_000_000, 3_000_000],
+            end_date="2026-03-08",
+        ),
+        "targets": ["average_wage"],
+        # 기대: 2026-03-08에서 3개월 역산 → 2025-12-08
+        #       일수 = (2026-03-08) - (2025-12-08) = 90일
+        #       3개월 총액 9,000,000 / 90일 = 100,000원/일
+    },
+    {
+        "id": 64,
+        "desc": "평균임금 dict 형태 월별 입력 — 기본급 + 기타수당",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            reference_year=2025,
+            last_3m_wages=[
+                {"base": 2_500_000, "allowance": 500_000},
+                {"base": 2_500_000, "allowance": 500_000},
+                {"base": 2_500_000, "allowance": 500_000},
+            ],
+            last_3m_days=92,
+        ),
+        "targets": ["average_wage"],
+        # 기대: 월별 합산 3,000,000 × 3 = 9,000,000
+        #       총액 9,000,000 / 92일 = 97,826원/일
+    },
+
+    # ── 포괄임금제 보완 테스트 ────────────────────────────────────────────────
+    {
+        "id": 65,
+        "desc": "포괄임금 정액역산 — 월 300만, 연장10h, 야간4h (breakdown 없음)",
+        "input": WageInput(
+            wage_type=WageType.COMPREHENSIVE,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2026,
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+                weekly_night_hours=4,
+            ),
+        ),
+        "targets": ["comprehensive", "minimum_wage"],
+        # 기본시간: (40+8) × 4.345 ≈ 208.6h
+        # 연장계수: 10 × 1.5 × 4.345 ≈ 65.2h
+        # 야간계수: 4 × 0.5 × 4.345 ≈ 8.7h
+        # 총계수 ≈ 282.5h
+        # 역산시급: 3,000,000 / 282.5 ≈ 10,619원 > 10,320원 → 최저임금 충족
+    },
+    {
+        "id": 66,
+        "desc": "포괄임금 5인 미만 역산 — 월 250만, 연장10h (가산수당 미적용)",
+        "input": WageInput(
+            wage_type=WageType.COMPREHENSIVE,
+            monthly_wage=2_500_000,
+            business_size=BusinessSize.UNDER_5,
+            reference_year=2026,
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+            ),
+        ),
+        "targets": ["comprehensive"],
+        # 5인 미만: 연장 × 1.0 (가산 없음), 야간 × 0.0
+        # 기본시간: 208.6h, 연장계수: 10 × 1.0 × 4.345 ≈ 43.5h
+        # 총계수 ≈ 252.0h
+        # 역산시급: 2,500,000 / 252.0 ≈ 9,921원
+    },
+    {
+        "id": 67,
+        "desc": "포괄임금 breakdown + 수당 부족 — 연장수당 포함액 < 적정액",
+        "input": WageInput(
+            wage_type=WageType.COMPREHENSIVE,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2026,
+            comprehensive_breakdown={
+                "base": 2_000_000,
+                "overtime_pay": 300_000,
+                "night_pay": 200_000,
+            },
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=20,
+                weekly_night_hours=8,
+            ),
+        ),
+        "targets": ["comprehensive"],
+        # 총액: 2,000,000 + 300,000 + 200,000 = 2,500,000
+        # 총계수 = 209 + 20×1.5×4.345 + 8×0.5×4.345 ≈ 209 + 130.4 + 17.4 = 356.7h
+        # 역산시급 ≈ 7,009원
+        # 연장 적정액: 7,009 × 20 × 1.5 × 4.345 ≈ 913,470원 > 포함 300,000원 → 부족
+    },
+    {
+        "id": 68,
+        "desc": "포괄임금 유효성 실패 — 교대제 근로자",
+        "input": WageInput(
+            wage_type=WageType.COMPREHENSIVE,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            work_type=WorkType.SHIFT_3_2,
+            reference_year=2026,
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+            ),
+        ),
+        "targets": ["comprehensive"],
+        # is_valid_comprehensive = False (교대제 적용 불가)
+    },
+    {
+        "id": 69,
+        "desc": "포괄임금 연간 상여금 월환산 — 연 240만 → 월 +20만",
+        "input": WageInput(
+            wage_type=WageType.COMPREHENSIVE,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2026,
+            comprehensive_breakdown={
+                "base": 2_200_000,
+                "overtime_pay": 600_000,
+                "annual_bonus": 2_400_000,
+            },
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+            ),
+        ),
+        "targets": ["comprehensive"],
+        # 총액: 2,200,000 + 600,000 + (2,400,000/12) = 3,000,000
+        # 총계수: 209 + 10×1.5×4.345 ≈ 209 + 65.2 = 274.2h
+        # 역산시급: 3,000,000 / 274.2 ≈ 10,941원
+    },
+    {
+        "id": 70,
+        "desc": "포괄임금 휴일근로 8h 초과분 역산 — 휴일 8h + 초과 4h",
+        "input": WageInput(
+            wage_type=WageType.COMPREHENSIVE,
+            monthly_wage=4_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2026,
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+                weekly_holiday_hours=8,
+                weekly_holiday_overtime_hours=4,
+            ),
+        ),
+        "targets": ["comprehensive"],
+        # 기본시간: 208.6h
+        # 연장계수: 10 × 1.5 × 4.345 = 65.2h
+        # 휴일계수: 8 × 1.5 × 4.345 = 52.1h
+        # 휴일OT계수: 4 × 2.0 × 4.345 = 34.8h
+        # 총계수 ≈ 360.7h
+        # 역산시급: 4,000,000 / 360.7 ≈ 11,089원
+    },
+
+    # ── 산재보상금 테스트 (#71~#78) ────────────────────────────────────
+    {
+        "id": 71,
+        "desc": "산재 휴업급여 기본 — 평균임금 10만원/일, 30일",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            sick_leave_days=30,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금 추정: 3,000,000/30 = 100,000원/일
+        # 휴업급여: 100,000 × 0.70 = 70,000원/일
+        # 총액: 70,000 × 30 = 2,100,000원
+    },
+    {
+        "id": 72,
+        "desc": "산재 휴업급여 최저보상기준 — 저임금 근로자",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=1_500_000,
+            reference_year=2026,
+            sick_leave_days=30,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금 추정: 1,500,000/30 = 50,000원/일
+        # 70%: 50,000 × 0.70 = 35,000원 ≤ 최저보상기준 82,560 × 80% = 66,048
+        # → 90% 적용: 50,000 × 0.90 = 45,000원 (≤ 66,048이므로 45,000 적용)
+        # 총액: 45,000 × 30 = 1,350,000원
+    },
+    {
+        "id": 73,
+        "desc": "산재 상병보상연금 제1급 — 329일",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            severe_illness_grade=1,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금: 100,000원/일
+        # 상병보상연금: 100,000 × 329 = 32,900,000원/년
+    },
+    {
+        "id": 74,
+        "desc": "산재 장해급여 연금 제4급 — 224일",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            disability_grade=4,
+            disability_pension=True,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금: 100,000원/일
+        # 장해급여(연금): 100,000 × 224 = 22,400,000원/년
+    },
+    {
+        "id": 75,
+        "desc": "산재 장해급여 일시금 제10급 — 297일",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            disability_grade=10,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금: 100,000원/일
+        # 장해급여(일시금): 100,000 × 297 = 29,700,000원
+    },
+    {
+        "id": 76,
+        "desc": "산재 유족보상연금 — 유족 3명, 62%",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            is_deceased=True,
+            num_survivors=3,
+            survivor_pension=True,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금: 100,000원/일
+        # 유족보상연금: 100,000 × 365 × 62% = 22,630,000원/년
+        # 장례비: 100,000 × 120 = 12,000,000 (최저 13,943,000 적용)
+    },
+    {
+        "id": 77,
+        "desc": "산재 유족보상일시금 + 장례비",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            reference_year=2026,
+            is_deceased=True,
+            num_survivors=1,
+            survivor_pension=False,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금: 100,000원/일
+        # 유족일시금: 100,000 × 1,300 = 130,000,000원
+        # 장례비: 100,000 × 120 = 12,000,000 (최저 13,943,000 적용)
+    },
+    {
+        "id": 78,
+        "desc": "산재 사망 종합 — 월급 500만, 유족 2명 연금 + 장례비",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=5_000_000,
+            reference_year=2026,
+            is_deceased=True,
+            num_survivors=2,
+            survivor_pension=True,
+        ),
+        "targets": ["industrial_accident"],
+        # 평균임금: 5,000,000/30 ≈ 166,667원/일
+        # 유족연금: 166,667 × 365 × 57% = 34,675,015원/년
+        # 장례비: 166,667 × 120 = 20,000,040 → 최고 19,279,760 적용
+    },
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 연차수당 계산기 기능보완 테스트 (#79~#85)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # ── G1: 2년차 연차 차감 (제60조③) ────────────────────────────────────
+    {
+        "id": 79,
+        "desc": "연차 2년차 차감 — 1년 미만 5일 사용 → 15-5=10일 (제60조③)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2024-01-01",
+            end_date="2025-06-01",
+            first_year_leave_used=5.0,
+            annual_leave_used=0,
+        ),
+        "targets": ["annual_leave"],
+        # 재직: 517일 (1.4년), 2년차(extra_years=0)
+        # 기본 15일 - 차감 5일 = 10일 부여
+        # 통상시급: 3,000,000/209 ≈ 14,354원
+        # 수당: 14,354 × 8 × 10 = 1,148,320원
+    },
+    {
+        "id": 80,
+        "desc": "연차 2년차 미차감 — 1년 미만 미사용 시 15일 전체 부여",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2024-01-01",
+            end_date="2025-06-01",
+            first_year_leave_used=0.0,
+            annual_leave_used=0,
+        ),
+        "targets": ["annual_leave"],
+        # 2년차, 차감 0일 → 15일 전체 부여
+    },
+
+    # ── G4: 단시간근로자 비례 ─────────────────────────────────────────────
+    {
+        "id": 81,
+        "desc": "연차 단시간근로자 — 주 20시간(일4h×5일), 3년 근속 비례",
+        "input": WageInput(
+            wage_type=WageType.HOURLY,
+            hourly_wage=10_030,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2022-01-01",
+            end_date="2025-01-01",
+            schedule=WorkSchedule(daily_work_hours=4, weekly_work_days=5),
+        ),
+        "targets": ["annual_leave"],
+        # 통상 3년 → 15일
+        # 비례: 15 × (20/40) × (8/4) = 15 × 0.5 × 2.0 = 15.0일
+    },
+    {
+        "id": 82,
+        "desc": "연차 단시간 주 12시간 — 15시간 미만 연차 미발생",
+        "input": WageInput(
+            wage_type=WageType.HOURLY,
+            hourly_wage=10_030,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2023-01-01",
+            end_date="2025-01-01",
+            schedule=WorkSchedule(daily_work_hours=4, weekly_work_days=3),
+        ),
+        "targets": ["annual_leave"],
+        # 주 12시간 < 15시간 → 연차 미발생
+    },
+
+    # ── G2: 회계기준일(1.1) 기준 ──────────────────────────────────────────
+    {
+        "id": 83,
+        "desc": "연차 회계기준일 — 7월 입사 첫해 비례 부여",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2025-07-01",
+            end_date="2025-12-31",
+            use_fiscal_year=True,
+        ),
+        "targets": ["annual_leave"],
+        # 잔여 6개월 (12-7+1=6, 7~12월)
+        # → ceil(15 × 6/12) = ceil(7.5) = 8일
+    },
+    {
+        "id": 84,
+        "desc": "연차 회계기준일 — 3년 근속 15일",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_500_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2022-03-15",
+            end_date="2025-06-01",
+            use_fiscal_year=True,
+            annual_leave_used=5,
+        ),
+        "targets": ["annual_leave"],
+        # years_since_hire = 2025-2022 = 3 → extra=(3-1)//2=1 → 15+1=16일
+        # 사용 5일 → 미사용 11일
+    },
+
+    # ── G5: 퇴직 시 비교 정산 ─────────────────────────────────────────────
+    {
+        "id": 85,
+        "desc": "연차 퇴직 시 회계기준일 vs 입사일 비교 정산",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2024-07-01",
+            end_date="2025-06-30",
+            use_fiscal_year=True,
+            annual_leave_used=0,
+        ),
+        "targets": ["annual_leave"],
+        # 회계기준일: 2025년, years_since=1 → 15일
+        # 입사일 기준: 365일 = 1.0년, extra_years=0 → 15일
+        # 동일하므로 gap=0 (비교 정산 불필요)
+    },
+    # ── 휴업수당 테스트 (3건) ─────────────────────────────────────────────────
+    {
+        "id": 86,
+        "desc": "휴업수당 — 전일 휴업 30일 (사용자 귀책, 월급 300만원)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            shutdown_days=30,
+            is_employer_fault=True,
+        ),
+        "targets": ["shutdown_allowance"],
+        # 평균임금 = 3,000,000 × 3 / 92 ≈ 97,826원/일
+        # 70% ≈ 68,478원
+        # 통상임금 = 3,000,000 / 209 × 8 ≈ 114,833원
+        # 68,478 < 114,833 → 평균임금 70% 적용
+        # 총액 ≈ 68,478 × 30 = 2,054,348원
+    },
+    {
+        "id": 87,
+        "desc": "휴업수당 — 부분 휴업 (1일 8h 중 4h 미근로, 20일)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            shutdown_days=20,
+            shutdown_hours_per_day=4.0,
+            is_employer_fault=True,
+        ),
+        "targets": ["shutdown_allowance"],
+        # 부분 휴업: 4h/8h = 50% 적용
+    },
+    {
+        "id": 88,
+        "desc": "휴업수당 — 불가항력 (천재지변, 미발생)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            shutdown_days=10,
+            is_employer_fault=False,
+        ),
+        "targets": ["shutdown_allowance"],
+        # 불가항력 → 0원
+    },
+    # ── 해고예고수당 보완 테스트 (2건) ────────────────────────────────────────
+    {
+        "id": 89,
+        "desc": "해고예고수당 — 파트타임 6h 근무자 (daily_pay 수정 검증)",
+        "input": WageInput(
+            wage_type=WageType.HOURLY,
+            hourly_wage=10030,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            notice_days_given=0,
+            schedule=WorkSchedule(
+                daily_work_hours=6,
+                weekly_work_days=5,
+            ),
+        ),
+        "targets": ["dismissal"],
+        # daily_pay = 10,030 × 6h = 60,180원
+        # 해고예고수당 = 60,180 × 30 = 1,805,400원
+    },
+    {
+        "id": 90,
+        "desc": "해고예고수당 — 3개월 미만 근속 면제",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            notice_days_given=0,
+            tenure_months=2,
+        ),
+        "targets": ["dismissal"],
+        # 면제 (is_exempt=True, dismissal_pay=0)
+    },
+    # ── 주휴수당 안내 보강 테스트 (2건) ───────────────────────────────────────
+    {
+        "id": 91,
+        "desc": "주휴수당 — 시급제 주휴 포함 여부 warning 확인",
+        "input": WageInput(
+            wage_type=WageType.HOURLY,
+            hourly_wage=10030,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+            ),
+        ),
+        "targets": ["weekly_holiday"],
+        # warnings에 "시급제" 포함
+    },
+    {
+        "id": 92,
+        "desc": "주휴수당 — 월급제 주휴 포함 안내 breakdown 확인",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+        ),
+        "targets": ["weekly_holiday"],
+        # breakdown에 "월급 주휴 포함 여부" 존재
+        # breakdown에 "주 소정근로일" 존재
+    },
+    # ── 실업급여 리뷰 신규 테스트 ─────────────────────────────────────────────
+    {
+        "id": 93,
+        "desc": "실업급여 — 2026년 상한액 68,100원 적용 (10년 52세 월500만)",
+        # 평균임금 일액: 5,000,000×3÷92 ≈ 163,043원 → 60% = 97,826원
+        # 상한액(2026): 68,100원 → 상한 적용
+        # 소정급여일수: 120개월 × 50세이상 → 270일
+        # 총 구직급여: 68,100 × 270 = 18,387,000원
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=5_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2026,
+            insurance_months=120,
+            age=52,
+            is_involuntary_quit=True,
+        ),
+        "targets": ["unemployment"],
+    },
+    {
+        "id": 94,
+        "desc": "실업급여 — 상여금 600만 + 연차수당 포함 평균임금 (5년 40세 월250만)",
+        # base_3m: 2,500,000×3 = 7,500,000원
+        # 상여금 3개월분: 6,000,000÷12×3 = 1,500,000원
+        # 연차수당 3개월분: 600,000÷12×3 = 150,000원
+        # total_3m: 9,150,000원
+        # 평균임금 일액: 9,150,000÷92 ≈ 99,457원 → 60% = 59,674원
+        # 하한액(2025): 10,030×0.8×8 = 64,192원 → 하한 적용
+        # 소정급여일수: 60개월 × 50세미만 → 210일
+        # 총 구직급여: 64,192 × 210 = 13,480,320원
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_500_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            insurance_months=60,
+            age=40,
+            is_involuntary_quit=True,
+            annual_bonus_total=6_000_000,
+            unused_annual_leave_pay=600_000,
+        ),
+        "targets": ["unemployment"],
+    },
 ]
 
 

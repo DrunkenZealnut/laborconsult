@@ -16,12 +16,11 @@
 
 import calendar
 from dataclasses import dataclass, field
-
-from ..base import BaseCalculatorResult
 from datetime import date, timedelta
 
-from ..models import BusinessSize, WorkerType, WorkerEntry, BusinessSizeInput
+from ..base import BaseCalculatorResult
 from ..constants import DEFAULT_NON_OPERATING_WEEKDAYS
+from ..models import BusinessSize, WorkerType, WorkerEntry, BusinessSizeInput
 
 
 @dataclass

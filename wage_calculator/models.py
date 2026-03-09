@@ -3,6 +3,7 @@
 """
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Optional
 from enum import Enum
 
@@ -43,6 +44,7 @@ class AllowanceCondition(Enum):
     ATTENDANCE  = "근무일수"  # 소정근로일수 이내 조건 — 통상임금 인정 (2023다302838)
     EMPLOYMENT  = "재직조건"  # 재직자만 지급 — 통상임금 인정 (2023다302838)
     PERFORMANCE = "성과조건"  # 성과·목표 달성 조건 — 통상임금 제외
+    GUARANTEED_PERFORMANCE = "최소보장성과"  # 최소지급분 보장 성과급 — 보장분만 통상임금 포함
 
 
 class BusinessSize(Enum):
@@ -74,7 +76,7 @@ class WorkSchedule:
     # 소정근로
     daily_work_hours: float = 8.0           # 1일 소정근로시간
     weekly_work_days: float = 5.0           # 주 소정근로일수
-    monthly_scheduled_hours: float = 209.0  # 월 소정근로시간 (기본 209h)
+    monthly_scheduled_hours: Optional[float] = None  # 월 소정근로시간 (None이면 자동 계산)
 
     # 연장/야간/휴일 근로 (주 평균 또는 해당 월 기준)
     weekly_overtime_hours: float = 0.0           # 주 연장근로시간
@@ -106,7 +108,7 @@ class WageInput:
     # ── 사업장/근무 정보 ─────────────────────────────────────────────────────
     business_size: BusinessSize = BusinessSize.OVER_5
     work_type: WorkType = WorkType.REGULAR
-    reference_year: int = 2025             # 기준 연도 (최저임금 등)
+    reference_year: int = field(default_factory=lambda: date.today().year)  # 기준 연도 (최저임금 등)
 
     # ── 근무 스케줄 ──────────────────────────────────────────────────────────
     schedule: WorkSchedule = field(default_factory=WorkSchedule)
@@ -145,10 +147,14 @@ class WageInput:
     use_fiscal_year: bool = False          # 회계연도(1/1) 기준 여부
     leave_use_promotion: bool = False      # 사용촉진제도 실시 여부 (근기법 제61조)
                                            # True면 미사용 연차수당 지급 의무 면제 가능
+    first_year_leave_used: float = 0.0    # 1년 미만 기간 중 사용한 연차 (제60조③ 2년차 차감용)
 
     # ── 해고예고 계산용 ──────────────────────────────────────────────────────
     notice_days_given: int = 0             # 실제 해고예고일수
     dismissal_date: Optional[str] = None   # 해고 통보일
+    tenure_months: Optional[int] = None    # 계속근로기간 (개월, None=미입력)
+    is_seasonal_worker: bool = False       # 계절적 사업 4개월 이내 근로자
+    is_force_majeure: bool = False         # 천재지변·근로자 귀책사유 해당
 
     # ── 주휴수당 계산용 ──────────────────────────────────────────────────────
     weekly_attendance_days: Optional[int] = None  # 주 실출근일수 (None이면 개근 가정)
@@ -167,6 +173,7 @@ class WageInput:
     # ── 4대보험·소득세 계산용 ─────────────────────────────────────────────────
     is_freelancer: bool = False            # 3.3% 사업소득 계약 여부 (True면 4대보험 미가입)
     tax_dependents: int = 1               # 부양가족 수 (본인 포함, 근로소득세 공제용)
+    num_children_8_to_20: int = 0         # 8~20세 자녀 수 (자녀세액공제용, 소득세법 제59조의2)
     monthly_non_taxable: float = 200_000  # 월 비과세 소득 (식대 등, 기본 20만원)
 
     # ── 실업급여 계산용 ───────────────────────────────────────────────────────
@@ -185,6 +192,14 @@ class WageInput:
     is_priority_support_company: bool = True    # 우선지원대상기업(중소기업) 여부
     is_multiple_birth: bool = False             # 다태아 여부 (True면 120일)
 
+    # ── 근로장려금(EITC) 계산용 ─────────────────────────────────────────────
+    household_type: str = ""              # "단독" / "홑벌이" / "맞벌이" (빈 문자열이면 자동 판정)
+    annual_total_income: float = 0.0      # 연간 총소득 (원). 0이면 monthly_wage × 12로 추정
+    spouse_income: float = 0.0            # 배우자 연간 총급여 (원). 가구유형 자동 판정용
+    total_assets: float = 0.0             # 가구원 재산 합계 (원)
+    num_children_under_18: int = 0        # 18세 미만 부양자녀 수
+    has_elderly_parent: bool = False      # 70세 이상 직계존속 동거 여부
+
     # ── 임금체불 지연이자 계산용 ──────────────────────────────────────────────
     arrear_amount: float = 0.0                  # 미지급 임금 원금 (원)
     arrear_due_date: str = ""                   # 원래 지급예정일 "YYYY-MM-DD"
@@ -195,9 +210,40 @@ class WageInput:
     flexible_work_unit: str = ""               # "2주", "3개월", "6개월"
     weekly_hours_list: Optional[list] = None   # 단위기간 내 주별 실근로시간 리스트
 
+    # ── 휴업수당 계산용 (근기법 제46조) ──────────────────────────────────────────
+    shutdown_days: int = 0                         # 총 휴업일수
+    shutdown_hours_per_day: Optional[float] = None # 부분 휴업: 1일 미근로 시간 (None=전일 휴업)
+    is_employer_fault: bool = True                 # 사용자 귀책사유 (False=불가항력→미발생)
+    shutdown_start_date: Optional[str] = None      # 휴업 시작일 (평균임금 산정 기준)
+
+    # ── 산재보상금 계산용 ─────────────────────────────────────────────────────
+    accident_date: Optional[str] = None          # 산재 발생일 "YYYY-MM-DD"
+    disability_grade: int = 0                    # 장해등급 (1~14, 0=해당없음)
+    disability_pension: bool = True              # 장해급여 연금 선택 (True=연금, False=일시금)
+    severe_illness_grade: int = 0                # 중증요양상태 등급 (1~3, 0=해당없음)
+    num_survivors: int = 0                       # 유족수 (1~4+, 0=해당없음)
+    survivor_pension: bool = True                # 유족급여 연금 선택 (True=연금, False=일시금)
+    sick_leave_days: int = 0                     # 요양(휴업) 일수
+    is_deceased: bool = False                    # 사망 여부
+
     # ── 사업주 4대보험 계산용 ─────────────────────────────────────────────────
     company_size_category: str = "under_150"   # "under_150", "150_999", "over_1000"
     industry_accident_rate: float = 0.007      # 산재보험 업종별 요율 (기본 평균 0.7%)
+
+    # ── 퇴직소득세 계산용 ──────────────────────────────────────────────────
+    retirement_pay_amount: float = 0.0         # 퇴직급여 총액 (0이면 severance에서 자동)
+    irp_transfer_amount: float = 0.0           # IRP 이체금액 (과세이연)
+    retirement_exclude_months: int = 0         # 근속기간 제외월수
+    retirement_add_months: int = 0             # 근속기간 가산월수
+
+    # ── 퇴직연금 계산용 ──────────────────────────────────────────────────────
+    pension_type: str = ""                     # "DB" / "DC" / "" (미입력)
+    annual_wage_history: Optional[list] = None # DC: 연도별 연간임금총액 리스트
+    dc_return_rate: float = 0.0               # DC: 연간 운용수익률 (0.0 = 0%)
+
+    # ── 퇴직금 평균임금 가산용 ───────────────────────────────────────────────
+    annual_bonus_total: float = 0.0            # 연간 상여금 총액
+    unused_annual_leave_pay: float = 0.0       # 최종 미사용 연차수당
 
     # ── 상시근로자 수 산정용 (선택) ──────────────────────────────────────────
     business_size_input: Optional["BusinessSizeInput"] = None  # 제공 시 business_size 자동 산정

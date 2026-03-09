@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 노동상담 관리자</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --danger: #ef4444; --success: #16a34a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* Header */
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  .nav-links { display: flex; gap: 8px; align-items: center; }
+  .nav-links button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; color: var(--text); }
+  .nav-links button:hover { border-color: var(--primary); color: var(--primary); }
+  .nav-links button.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .nav-links .logout { color: var(--danger); border-color: var(--danger); }
+  .nav-links .logout:hover { background: var(--danger); color: white; }
+
+  /* Login */
+  #login-view { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 52px); }
+  .login-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 360px; text-align: center; }
+  .login-card h2 { font-size: 20px; margin-bottom: 20px; }
+  .login-card input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; margin-bottom: 12px; outline: none; }
+  .login-card input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+  .login-card button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  .login-card button:hover { opacity: 0.9; }
+  .login-error { color: var(--danger); font-size: 13px; margin-bottom: 8px; min-height: 20px; }
+
+  /* Dashboard */
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+  .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  .stat-card .label { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; }
+  .charts { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  .chart-card h3 { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+  @media (max-width: 768px) { .charts { grid-template-columns: 1fr; } }
+
+  /* Conversations */
+  .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filters input, .filters select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; }
+  .filters input:focus, .filters select:focus { border-color: var(--primary); }
+  .filters input[type="text"] { flex: 1; min-width: 200px; }
+  .conv-list { display: flex; flex-direction: column; gap: 8px; }
+  .conv-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color 0.15s; }
+  .conv-item:hover { border-color: var(--primary); }
+  .conv-item .conv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .conv-item .conv-cat { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #e0e7ff; color: #3730a3; }
+  .conv-item .conv-date { font-size: 12px; color: var(--muted); }
+  .conv-item .conv-question { font-size: 14px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
+  .pagination button { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); cursor: pointer; font-size: 13px; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination span { font-size: 13px; color: var(--muted); }
+  .empty-state { text-align: center; padding: 40px; color: var(--muted); }
+
+  /* Detail Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: var(--card); border-radius: 12px; width: 100%; max-width: 720px; max-height: 85vh; overflow-y: auto; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); border-radius: 12px 12px 0 0; z-index: 1; }
+  .modal-header h2 { font-size: 16px; }
+  .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted); padding: 4px 8px; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 20px; }
+  .detail-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .detail-meta span { font-size: 12px; color: var(--muted); background: var(--bg); padding: 4px 10px; border-radius: 6px; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 { font-size: 13px; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .detail-question { background: var(--primary); color: white; padding: 12px 16px; border-radius: 10px; font-size: 14px; line-height: 1.6; }
+  .detail-answer { background: var(--bg); border: 1px solid var(--border); padding: 14px 16px; border-radius: 10px; font-size: 14px; line-height: 1.7; }
+  .detail-answer h2 { font-size: 16px; margin: 14px 0 6px; }
+  .detail-answer h3 { font-size: 15px; margin: 10px 0 4px; }
+  .detail-answer p { margin: 6px 0; }
+  .detail-answer ul, .detail-answer ol { margin: 6px 0 6px 20px; }
+  .detail-answer table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  .detail-answer th, .detail-answer td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .detail-answer th { background: var(--bg); font-weight: 600; }
+  .detail-answer code { background: var(--card); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+  .detail-answer pre { background: var(--card); padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+  .detail-answer strong { font-weight: 600; }
+  .detail-answer blockquote { border-left: 3px solid var(--primary); padding-left: 10px; color: var(--muted); margin: 6px 0; }
+  .attachment-list { display: flex; flex-direction: column; gap: 6px; }
+  .attachment-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg); border-radius: 6px; font-size: 13px; }
+  .attachment-item a { color: var(--primary); text-decoration: none; }
+  .attachment-item a:hover { text-decoration: underline; }
+  .attachment-item .file-size { color: var(--muted); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AI 노동상담 관리자</h1>
+  <div class="nav-links hidden" id="nav">
+    <button id="nav-dashboard" class="active" onclick="showView('dashboard')">대시보드</button>
+    <button id="nav-conversations" onclick="showView('conversations')">대화목록</button>
+    <button class="logout" onclick="logout()">로그아웃</button>
+  </div>
+</header>
+
+<!-- Login View -->
+<div id="login-view">
+  <div class="login-card">
+    <h2>관리자 로그인</h2>
+    <div class="login-error" id="login-error"></div>
+    <input type="password" id="login-pw" placeholder="비밀번호" autocomplete="current-password">
+    <button onclick="doLogin()">로그인</button>
+  </div>
+</div>
+
+<!-- Dashboard View -->
+<div id="dashboard-view" class="container hidden">
+  <div class="stat-cards" id="stat-cards"></div>
+  <div class="charts">
+    <div class="chart-card">
+      <h3>일별 상담 추이 (최근 30일)</h3>
+      <canvas id="daily-chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>카테고리 분포</h3>
+      <canvas id="category-chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Conversations View -->
+<div id="conversations-view" class="container hidden">
+  <div class="filters">
+    <input type="text" id="filter-search" placeholder="키워드 검색..." onkeydown="if(event.key==='Enter')loadConversations(1)">
+    <select id="filter-category" onchange="loadConversations(1)">
+      <option value="">전체 카테고리</option>
+    </select>
+    <input type="date" id="filter-from" onchange="loadConversations(1)">
+    <input type="date" id="filter-to" onchange="loadConversations(1)">
+    <button onclick="loadConversations(1)" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;">검색</button>
+  </div>
+  <div class="conv-list" id="conv-list"></div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detail-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>대화 상세</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const _API_BASE = location.hostname.includes('github.io')
+  ? 'https://laborconsult.vercel.app'
+  : '';
+const API = _API_BASE + '/api/admin';
+let token = localStorage.getItem('admin_token');
+let dailyChart = null;
+let categoryChart = null;
+let currentPage = 1;
+let categories = [];
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+if (token) {
+  showApp();
+} else {
+  document.getElementById('login-pw').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+}
+
+async function doLogin() {
+  const pw = document.getElementById('login-pw').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  try {
+    const resp = await fetch(API + '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      errEl.textContent = err.detail || '로그인 실패';
+      return;
+    }
+    const data = await resp.json();
+    token = data.token;
+    localStorage.setItem('admin_token', token);
+    showApp();
+  } catch (e) {
+    errEl.textContent = '서버에 연결할 수 없습니다';
+  }
+}
+
+function logout() {
+  token = null;
+  localStorage.removeItem('admin_token');
+  location.reload();
+}
+
+function showApp() {
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('nav').classList.remove('hidden');
+  showView('dashboard');
+}
+
+// ── Fetch Helper ──────────────────────────────────────────────────────────────
+
+async function adminFetch(url) {
+  const resp = await fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + token },
+  });
+  if (resp.status === 401) {
+    logout();
+    return null;
+  }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert(err.detail || '오류가 발생했습니다');
+    return null;
+  }
+  return resp.json();
+}
+
+// ── Views ─────────────────────────────────────────────────────────────────────
+
+function showView(view) {
+  document.getElementById('dashboard-view').classList.toggle('hidden', view !== 'dashboard');
+  document.getElementById('conversations-view').classList.toggle('hidden', view !== 'conversations');
+  document.getElementById('nav-dashboard').classList.toggle('active', view === 'dashboard');
+  document.getElementById('nav-conversations').classList.toggle('active', view === 'conversations');
+
+  if (view === 'dashboard') loadStats();
+  if (view === 'conversations') loadConversations(1);
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+  const data = await adminFetch(API + '/stats');
+  if (!data) return;
+
+  const avg = data.daily_counts.length > 0
+    ? Math.round(data.daily_counts.reduce((s, d) => s + d.count, 0) / data.daily_counts.length)
+    : 0;
+
+  document.getElementById('stat-cards').innerHTML = [
+    { label: '총 상담', value: data.total_conversations.toLocaleString() },
+    { label: '오늘 상담', value: data.today_conversations.toLocaleString() },
+    { label: '총 세션', value: data.total_sessions.toLocaleString() },
+    { label: '일 평균', value: avg.toLocaleString() },
+  ].map(s => `<div class="stat-card"><div class="label">${s.label}</div><div class="value">${s.value}</div></div>`).join('');
+
+  // 카테고리 목록 저장 (필터용)
+  categories = data.category_counts.map(c => c.category);
+  const sel = document.getElementById('filter-category');
+  sel.innerHTML = '<option value="">전체 카테고리</option>' +
+    categories.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  // 일별 차트
+  const dailyCtx = document.getElementById('daily-chart').getContext('2d');
+  if (dailyChart) dailyChart.destroy();
+  dailyChart = new Chart(dailyCtx, {
+    type: 'bar',
+    data: {
+      labels: data.daily_counts.map(d => d.date.slice(5)),
+      datasets: [{
+        label: '상담 건수',
+        data: data.daily_counts.map(d => d.count),
+        backgroundColor: 'rgba(37,99,235,0.6)',
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+    },
+  });
+
+  // 카테고리 차트
+  const catCtx = document.getElementById('category-chart').getContext('2d');
+  if (categoryChart) categoryChart.destroy();
+  const colors = ['#2563eb','#7c3aed','#db2777','#ea580c','#16a34a','#0891b2','#4f46e5','#be123c','#65a30d','#0284c7','#9333ea','#c2410c'];
+  categoryChart = new Chart(catCtx, {
+    type: 'doughnut',
+    data: {
+      labels: data.category_counts.map(c => c.category),
+      datasets: [{
+        data: data.category_counts.map(c => c.count),
+        backgroundColor: data.category_counts.map((_, i) => colors[i % colors.length]),
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+      },
+    },
+  });
+}
+
+// ── Conversations ─────────────────────────────────────────────────────────────
+
+async function loadConversations(page) {
+  currentPage = page;
+  const search = document.getElementById('filter-search').value;
+  const category = document.getElementById('filter-category').value;
+  const dateFrom = document.getElementById('filter-from').value;
+  const dateTo = document.getElementById('filter-to').value;
+
+  const params = new URLSearchParams({ page, per_page: 20 });
+  if (search) params.set('search', search);
+  if (category) params.set('category', category);
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+
+  const data = await adminFetch(API + '/conversations?' + params);
+  if (!data) return;
+
+  const list = document.getElementById('conv-list');
+  if (data.conversations.length === 0) {
+    list.innerHTML = '<div class="empty-state">검색 결과가 없습니다</div>';
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = data.conversations.map(c => {
+    const dt = new Date(c.created_at);
+    const dateStr = dt.toLocaleDateString('ko-KR') + ' ' + dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="conv-item" onclick="openDetail('${c.id}')">
+      <div class="conv-header">
+        <span class="conv-cat">${c.category}</span>
+        <span class="conv-date">${dateStr}</span>
+      </div>
+      <div class="conv-question">${escapeHtml(c.question_text)}</div>
+    </div>`;
+  }).join('');
+
+  const pag = document.getElementById('pagination');
+  pag.innerHTML = `
+    <button onclick="loadConversations(${page - 1})" ${page <= 1 ? 'disabled' : ''}>이전</button>
+    <span>${page} / ${data.pages} 페이지 (${data.total}건)</span>
+    <button onclick="loadConversations(${page + 1})" ${page >= data.pages ? 'disabled' : ''}>다음</button>
+  `;
+}
+
+// ── Detail Modal ──────────────────────────────────────────────────────────────
+
+async function openDetail(id) {
+  const data = await adminFetch(API + '/conversations/' + id);
+  if (!data) return;
+
+  const dt = new Date(data.created_at);
+  const dateStr = dt.toLocaleDateString('ko-KR') + ' ' + dt.toLocaleTimeString('ko-KR');
+
+  let html = `
+    <div class="detail-meta">
+      <span>${data.category}</span>
+      <span>${dateStr}</span>
+      ${(data.calculation_types || []).map(t => `<span>${t}</span>`).join('')}
+      <span>세션: ${(data.session_id || '').slice(0, 8)}...</span>
+    </div>
+    <div class="detail-section">
+      <h4>질문</h4>
+      <div class="detail-question">${escapeHtml(data.question_text).replace(/\n/g, '<br>')}</div>
+    </div>
+    <div class="detail-section">
+      <h4>답변</h4>
+      <div class="detail-answer">${md(data.answer_text || '')}</div>
+    </div>
+  `;
+
+  if (data.attachments && data.attachments.length > 0) {
+    html += `<div class="detail-section"><h4>첨부파일</h4><div class="attachment-list">`;
+    for (const att of data.attachments) {
+      const size = att.file_size > 1024*1024
+        ? (att.file_size / 1024 / 1024).toFixed(1) + 'MB'
+        : (att.file_size / 1024).toFixed(0) + 'KB';
+      html += `<div class="attachment-item">
+        <a href="${att.public_url}" target="_blank">${escapeHtml(att.filename)}</a>
+        <span class="file-size">(${size})</span>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('detail-modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.remove('active');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ── Markdown Renderer ─────────────────────────────────────────────────────────
+
+function escapeHtml(text) {
+  return (text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function md(text) {
+  if (!text) return '';
+  const blocks = [];
+  function stash(html) { blocks.push(html); return '\x00B' + (blocks.length - 1) + '\x00'; }
+
+  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+    stash('<pre><code>' + escapeHtml(code) + '</code></pre>')
+  );
+
+  text = text.replace(/((?:^\|.+\|[ \t]*$\n?)+)/gm, block => {
+    const rows = block.trim().split('\n');
+    let html = '<table>';
+    let headerDone = false;
+    for (const row of rows) {
+      if (/^\|[\s:|-]+\|$/.test(row.trim())) { headerDone = true; continue; }
+      const cells = row.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const tag = !headerDone ? 'th' : 'td';
+      html += '<tr>' + cells.map(c => '<' + tag + '>' + c + '</' + tag + '>').join('') + '</tr>';
+      if (!headerDone) headerDone = true;
+    }
+    html += '</table>';
+    return stash(html);
+  });
+
+  text = text.replace(/((?:^[ \t]*[-*] .+$\n?)+)/gm, block => {
+    const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*[-*] /, '') + '</li>');
+    return stash('<ul>' + items.join('') + '</ul>');
+  });
+  text = text.replace(/((?:^[ \t]*\d+\. .+$\n?)+)/gm, block => {
+    const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*\d+\. /, '') + '</li>');
+    return stash('<ol>' + items.join('') + '</ol>');
+  });
+
+  let html = text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/^---$/gm, '<hr>');
+
+  html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
+  html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
+  html = '<p>' + html + '</p>';
+  html = html.replace(/<p>\s*<\/p>/g, '');
+  return html;
+}
+</script>
+</body>
+</html>

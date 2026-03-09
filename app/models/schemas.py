@@ -1,4 +1,4 @@
-"""Pydantic 요청/응답 스키마"""
+"""요청/응답 스키마"""
 
 from pydantic import BaseModel
 
@@ -8,13 +8,22 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
-class ChatResponse(BaseModel):
+class Attachment(BaseModel):
+    """Base64 인코딩된 첨부파일"""
+    filename: str
+    content_type: str
+    data: str   # base64 encoded
+
+
+class ChatWithFilesRequest(BaseModel):
+    """파일 첨부 가능한 채팅 요청"""
     message: str
-    session_id: str
-    calc_result: dict | None = None
+    session_id: str | None = None
+    attachments: list[Attachment] = []
 
 
 class AnalysisResult(BaseModel):
+    """의도 분석 결과 — analyze_intent()가 반환"""
     requires_calculation: bool = False
     calculation_types: list[str] = []
     extracted_info: dict = {}
