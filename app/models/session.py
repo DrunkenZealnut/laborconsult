@@ -56,7 +56,7 @@ class Session:
         _FIELD_TO_DESC = {
             "wage_amount": "임금", "monthly_wage": "임금", "annual_wage": "임금",
             "hourly_wage": "임금", "daily_wage": "임금", "use_minimum_wage": "임금",
-            "daily_work_hours": "소정근로시간",
+            "daily_work_hours": "소정근로시간", "weekly_total_hours": "소정근로시간",
             "weekly_work_days": "근무일수",
             "business_size": "근로자 규모",
             "start_date": "입사일", "service_period_text": "근무기간",

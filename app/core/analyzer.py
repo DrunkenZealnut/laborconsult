@@ -49,6 +49,7 @@ NUMERIC_RANGES: dict[str, tuple[float, float]] = {
     "monthly_wage":           (1, 100_000_000),
     "annual_wage":            (1, 1_200_000_000),
     "daily_work_hours":       (1, 24),
+    "weekly_total_hours":     (1, 168),
     "weekly_work_days":       (1, 7),
     "weekly_overtime_hours":  (0, 52),
     "weekly_night_hours":     (0, 56),
@@ -64,6 +65,7 @@ _FIELD_LABELS: dict[str, str] = {
     "monthly_wage": "월급",
     "annual_wage": "연봉",
     "daily_work_hours": "1일 소정근로시간",
+    "weekly_total_hours": "주당 소정근로시간",
     "weekly_work_days": "주당 근무일수",
     "weekly_overtime_hours": "주당 연장근로시간",
     "weekly_night_hours": "주당 야간근로시간",
@@ -133,7 +135,7 @@ def analyze_intent(
             # extracted_info 구성: 계산기 입력용 필드만 분리
             info_keys = {
                 "wage_type", "wage_amount", "business_size",
-                "weekly_work_days", "daily_work_hours",
+                "weekly_work_days", "daily_work_hours", "weekly_total_hours",
                 "weekly_overtime_hours", "weekly_night_hours", "weekly_holiday_hours",
                 "start_date", "end_date", "service_period_text",
                 "fixed_allowances", "monthly_wage", "annual_wage",

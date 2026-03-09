@@ -34,7 +34,8 @@ ANALYZE_TOOL = {
                 "enum": ["5인미만", "5인이상", "30인이상", "300인이상"],
             },
             "weekly_work_days": {"type": "integer", "description": "주당 근무일수"},
-            "daily_work_hours": {"type": "number", "description": "1일 소정근로시간"},
+            "daily_work_hours": {"type": "number", "description": "1일 소정근로시간 (하루 단위). 주당 총시간이 주어진 경우 여기에 넣지 말고 weekly_total_hours를 사용하세요."},
+            "weekly_total_hours": {"type": "number", "description": "주 소정근로시간 합계. '주 17시간' 등 주당 총근로시간으로 제시된 경우 사용. daily_work_hours와 동시에 설정하지 마세요."},
             "weekly_overtime_hours": {"type": "number", "description": "주당 연장근로시간"},
             "weekly_night_hours": {"type": "number", "description": "주당 야간근로시간 (22~06시)"},
             "weekly_holiday_hours": {"type": "number", "description": "주당 휴일근로시간 (8h이내)"},
@@ -103,6 +104,11 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
    - "월급 250만원" → wage_amount=2500000 (명시적 → OK)
    - "주 3일 근무" → weekly_work_days=3 (명시적 → OK)
    - 사용자가 말하지 않은 숫자를 가정하거나 계산하지 마세요.
+   ⚠️ **근로시간 필드 사용 규칙** (매우 중요):
+   - "하루 3.4시간", "1일 8시간" → daily_work_hours=3.4 또는 8 (하루 단위 → daily_work_hours)
+   - "주 17시간", "일주일에 20시간" → weekly_total_hours=17 또는 20 (주 단위 → weekly_total_hours)
+   - daily_work_hours와 weekly_total_hours를 동시에 설정하지 마세요.
+   - 절대 주당 총시간을 daily_work_hours에 넣지 마세요! (예: "주 17시간" → daily_work_hours=17 ❌)
 6. "5인 미만", "소규모" → business_size="5인미만"
 7. 금액에 "만원" 단위 주의: "250만원" → 2500000
 8. **최저임금 처리** (매우 중요):

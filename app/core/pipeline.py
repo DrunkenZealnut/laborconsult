@@ -387,6 +387,10 @@ def _run_calculator(params: dict) -> str | None:
     weekly_total = params.get("weekly_total_hours")
     if weekly_total and weekly_days:
         daily_hours = weekly_total / weekly_days
+    elif weekly_total:
+        # 주당 총시간만 있고 근무일수 없음 → 기본 5일로 나누어 일일시간 산출
+        weekly_days = 5.0
+        daily_hours = weekly_total / weekly_days
     else:
         daily_hours = params.get("daily_work_hours")
 
@@ -455,17 +459,17 @@ _WAGE_FIELDS_NO_HOURLY = {"wage_amount", "monthly_wage", "annual_wage", "use_min
 _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     "overtime": [
         (_WAGE_FIELDS, "임금 (시급/월급/연봉)"),
-        ({"daily_work_hours"}, "1일 소정근로시간"),
+        ({"daily_work_hours", "weekly_total_hours"}, "1일 소정근로시간 또는 주 소정근로시간"),
         ({"weekly_overtime_hours"}, "주당 연장근로시간"),
     ],
     "minimum_wage": [
         (_WAGE_FIELDS, "현재 받는 임금 (시급/월급/연봉)"),
-        ({"daily_work_hours"}, "1일 소정근로시간"),
+        ({"daily_work_hours", "weekly_total_hours"}, "1일 소정근로시간 또는 주 소정근로시간"),
     ],
     "weekly_holiday": [
         (_WAGE_FIELDS, "임금 (시급/월급/연봉)"),
         ({"weekly_work_days"}, "주당 근무일수"),
-        ({"daily_work_hours"}, "1일 소정근로시간"),
+        ({"daily_work_hours", "weekly_total_hours"}, "1일 소정근로시간 또는 주 소정근로시간"),
     ],
     "severance": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
@@ -505,7 +509,7 @@ _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     ],
     "comprehensive": [
         ({"monthly_wage"}, "포괄임금제 월급 총액"),
-        ({"daily_work_hours"}, "1일 소정근로시간"),
+        ({"daily_work_hours", "weekly_total_hours"}, "1일 소정근로시간 또는 주 소정근로시간"),
         ({"weekly_overtime_hours"}, "월 고정 연장근로시간"),
     ],
     "eitc": [
@@ -564,11 +568,12 @@ def _compute_missing_info(calc_types: list[str], extracted_info: dict) -> list[s
 def _analysis_to_extract_params(analysis) -> dict:
     """AnalysisResult.extracted_info를 기존 _extract_params 반환 형식으로 변환"""
     info = analysis.extracted_info
-    # daily_work_hours × weekly_work_days → weekly_total_hours
-    weekly_total = None
+    # weekly_total_hours 우선: LLM이 직접 주당 총시간을 제공한 경우 사용
+    # daily_work_hours × weekly_work_days는 weekly_total_hours가 없을 때만 계산
+    weekly_total = info.get("weekly_total_hours")
     daily = info.get("daily_work_hours")
     days = info.get("weekly_work_days")
-    if daily and days:
+    if not weekly_total and daily and days:
         weekly_total = daily * days
 
     REVERSE_CALC_MAP = {
@@ -591,6 +596,7 @@ def _analysis_to_extract_params(analysis) -> dict:
         "wage_type": info.get("wage_type"),
         "wage_amount": info.get("wage_amount") or info.get("monthly_wage") or info.get("annual_wage"),
         "weekly_work_days": info.get("weekly_work_days"),
+        "daily_work_hours": info.get("daily_work_hours"),
         "weekly_total_hours": weekly_total,
         "weekly_overtime_hours": info.get("weekly_overtime_hours"),
         "weekly_night_hours": info.get("weekly_night_hours"),
