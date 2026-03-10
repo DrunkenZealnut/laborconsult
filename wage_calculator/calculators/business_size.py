@@ -8,8 +8,8 @@
 핵심 공식:
   상시근로자 수 = 법 적용 사유 발생일 전 1개월간 연인원 / 같은 기간 가동일수
 
-포함: 통상·기간제·단시간·일용·교대(비번일 포함)·외국인·휴직자·결근자·징계자
-제외: 휴직대체자, 해외현지법인 소속, 동거친족만 사업장의 친족
+포함: 통상·기간제·단시간·일용(출근일만)·교대(비번일 포함)·외국인·휴직자·결근자·징계자
+제외: 휴직대체자, 해외현지법인, 파견근로자, 외부용역, 대표자/비근로자, 동거친족만 사업장의 친족
 
 법 적용 기준 미달일수가 산정기간의 1/2 미만이면 법 적용 사업장으로 봄
 """
@@ -19,8 +19,16 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..base import BaseCalculatorResult
-from ..constants import DEFAULT_NON_OPERATING_WEEKDAYS
+from ..constants import DEFAULT_NON_OPERATING_WEEKDAYS, LABOR_LAW_BY_SIZE
 from ..models import BusinessSize, WorkerType, WorkerEntry, BusinessSizeInput
+
+# 연인원 집계에서 항상 제외되는 WorkerType
+_EXCLUDED_TYPES = {
+    WorkerType.OVERSEAS_LOCAL,
+    WorkerType.DISPATCHED,
+    WorkerType.OUTSOURCED,
+    WorkerType.OWNER,
+}
 
 
 @dataclass
@@ -38,6 +46,9 @@ class BusinessSizeResult(BaseCalculatorResult):
     below_threshold_days: int = 0
     above_threshold_days: int = 0
     is_law_applicable: bool = False
+    multi_threshold: dict = field(default_factory=dict)
+    applicable_laws: list = field(default_factory=list)
+    not_applicable_laws: list = field(default_factory=list)
 
 
 def calc_business_size(bsi: BusinessSizeInput) -> BusinessSizeResult:
@@ -60,8 +71,8 @@ def calc_business_size(bsi: BusinessSizeInput) -> BusinessSizeResult:
     else:
         event_dt = _parse_date(bsi.event_date)
 
-    # 빈 근로자 목록
-    if not bsi.workers:
+    # 빈 근로자 목록 + 간편 입력도 없음
+    if not bsi.workers and bsi.daily_headcount is None:
         return BusinessSizeResult(
             regular_worker_count=0.0,
             business_size=BusinessSize.UNDER_5,
@@ -112,9 +123,24 @@ def calc_business_size(bsi: BusinessSizeInput) -> BusinessSizeResult:
         )
 
     # 3. 일별 근로자 수 집계
-    daily_counts, included, excluded = _count_daily_workers(
-        operating_dates, bsi.workers, bsi.is_family_only_business, warnings,
-    )
+    operating_set = set(operating_dates)
+    if bsi.daily_headcount is not None:
+        # 간편 입력 모드: daily_headcount 직접 사용
+        daily_counts = {}
+        for d_str, count in bsi.daily_headcount.items():
+            d = _parse_date(d_str)
+            if period_start <= d <= period_end and d in operating_set:
+                daily_counts[d.isoformat()] = count
+        if not daily_counts:
+            warnings.append("간편 입력 데이터 중 산정기간 내 가동일이 없습니다")
+            daily_counts = {d.isoformat(): 0 for d in operating_dates}
+        included, excluded = [], []
+        op_count = len(daily_counts)
+    else:
+        # 기존 로직: workers 기반 일별 집계
+        daily_counts, included, excluded = _count_daily_workers(
+            operating_dates, bsi.workers, bsi.is_family_only_business, warnings,
+        )
 
     # 4. 연인원 ÷ 가동일수
     total_headcount = sum(daily_counts.values())
@@ -123,8 +149,14 @@ def calc_business_size(bsi: BusinessSizeInput) -> BusinessSizeResult:
     # 5. BusinessSize 결정
     biz_size = _determine_size(regular_count)
 
-    # 6. 미달일수 1/2 판정
+    # 6. 미달일수 1/2 판정 (5인 기준)
     below, above, is_applicable = _check_threshold(daily_counts, op_count)
+
+    # 7. 다중 threshold 판정
+    multi_threshold = _check_multi_threshold(daily_counts, op_count)
+
+    # 8. 규모별 적용법률
+    laws = _get_applicable_laws(regular_count)
 
     # 계산식
     formulas.append(
@@ -152,6 +184,16 @@ def calc_business_size(bsi: BusinessSizeInput) -> BusinessSizeResult:
         "5인 미만 일수": f"{below}일 / {op_count}일 ({below / op_count * 100:.1f}%)",
         "법 적용 여부": f"{'적용' if is_applicable else '미적용'} "
                       f"(미달일수 {'<' if is_applicable else '>='} 산정기간의 1/2)",
+        "규모별 기준 판정": {
+            f"{t}인 기준": {
+                "미달일수": f"{b}일",
+                "충족일수": f"{a}일",
+                "법 적용": "적용" if app else "미적용",
+            }
+            for t, (b, a, app) in multi_threshold.items()
+        },
+        "적용 노동법": laws["적용"],
+        "미적용 노동법": laws["미적용"],
         "포함 근로자": included_summary,
         "제외 근로자": excluded_summary,
     }
@@ -169,6 +211,9 @@ def calc_business_size(bsi: BusinessSizeInput) -> BusinessSizeResult:
         below_threshold_days=below,
         above_threshold_days=above,
         is_law_applicable=is_applicable,
+        multi_threshold=multi_threshold,
+        applicable_laws=laws["적용"],
+        not_applicable_laws=laws["미적용"],
         breakdown=breakdown,
         formulas=formulas,
         legal_basis=legal,
@@ -257,9 +302,15 @@ def _should_include_worker(
     if worker.is_leave_replacement:
         return False, "휴직대체자 (중복 산정 방지)"
 
-    # 3. 해외현지법인 → 제외
+    # 3. 제외 유형: 해외현지법인, 파견, 용역, 대표자
     if worker.worker_type == WorkerType.OVERSEAS_LOCAL:
         return False, "해외 현지법인 소속 (별개 법인격)"
+    if worker.worker_type == WorkerType.DISPATCHED:
+        return False, "파견근로자 (파견사업주 소속, 파견법 제2조)"
+    if worker.worker_type == WorkerType.OUTSOURCED:
+        return False, "외부용역 (도급업체 소속, 고용관계 없음)"
+    if worker.worker_type == WorkerType.OWNER:
+        return False, "대표자/비근로자 (근로기준법상 근로자 아님)"
 
     # 4. 동거친족만 사업장 + 가족근로자
     if is_family_only and worker.worker_type == WorkerType.FAMILY and not has_non_family_worker:
@@ -270,7 +321,16 @@ def _should_include_worker(
         if target_date.weekday() not in worker.specific_work_days:
             return False, "특정요일 출근자 — 해당 요일 아님"
 
-    # 6. 나머지 (통상/기간제/단시간/교대/외국인/가족/휴직자/결근자 등) → 포함
+    # 6. 일용직 → actual_work_dates 기반 판별
+    if worker.worker_type == WorkerType.DAILY:
+        if worker.actual_work_dates is not None:
+            if target_date.isoformat() not in worker.actual_work_dates:
+                return False, "일용직 — 해당일 미출근"
+            return True, "일용직 — 출근일"
+        # actual_work_dates 미입력 시: 매일 포함 (하위호환)
+        return True, "일용직 — 출근일 정보 미입력 (매일 포함 처리)"
+
+    # 7. 나머지 (통상/기간제/단시간/교대/외국인/가족/휴직자/결근자 등) → 포함
     if worker.is_on_leave:
         return True, "고용관계 유지 (휴직/휴가/결근/징계)"
     if worker.worker_type == WorkerType.SHIFT:
@@ -290,11 +350,11 @@ def _count_daily_workers(
     warnings: list[str],
 ) -> tuple[dict, list, list]:
     """일별 근로자 수 집계"""
-    # 비가족 근로자 존재 여부 판별
+    # 비가족 근로자 존재 여부 판별 (제외 유형 필터)
     has_non_family = any(
         w.worker_type != WorkerType.FAMILY
         for w in workers
-        if not w.is_leave_replacement and w.worker_type != WorkerType.OVERSEAS_LOCAL
+        if not w.is_leave_replacement and w.worker_type not in _EXCLUDED_TYPES
     )
 
     # 근로자별 산입일수 추적
@@ -327,6 +387,14 @@ def _count_daily_workers(
                 f"근로자 '{w.name or f'#{i+1}'}': 효력발생일 미입력으로 제외"
             )
 
+    # 일용직 actual_work_dates 미입력 경고
+    for i, w in enumerate(workers):
+        if w.worker_type == WorkerType.DAILY and w.actual_work_dates is None and w.start_date:
+            warnings.append(
+                f"근로자 '{w.name or f'#{i+1}'}': 일용직 실제 출근일(actual_work_dates) "
+                f"미입력으로 매 가동일 포함 처리"
+            )
+
     # 포함 근로자 내역
     included_list = []
     for i, info in worker_days.items():
@@ -355,8 +423,10 @@ def _determine_size(regular_count: float) -> BusinessSize:
     """상시근로자 수 → BusinessSize enum 결정"""
     if regular_count < 5:
         return BusinessSize.UNDER_5
-    if regular_count < 30:
+    if regular_count < 10:
         return BusinessSize.OVER_5
+    if regular_count < 30:
+        return BusinessSize.OVER_10
     if regular_count < 300:
         return BusinessSize.OVER_30
     return BusinessSize.OVER_300
@@ -376,6 +446,32 @@ def _check_threshold(
     above = operating_days - below
     is_applicable = below < (operating_days / 2)
     return below, above, is_applicable
+
+
+def _check_multi_threshold(
+    daily_counts: dict[str, int],
+    operating_days: int,
+) -> dict[int, tuple[int, int, bool]]:
+    """5인/10인/30인 기준 각각에 대한 미달일수 1/2 판정"""
+    return {
+        t: _check_threshold(daily_counts, operating_days, t)
+        for t in (5, 10, 30)
+    }
+
+
+def _get_applicable_laws(regular_count: float) -> dict[str, list[str]]:
+    """상시근로자 수 기반 적용/미적용 노동법 안내"""
+    applicable = []
+    not_applicable = []
+
+    for threshold in sorted(LABOR_LAW_BY_SIZE.keys()):
+        laws = LABOR_LAW_BY_SIZE[threshold]
+        if regular_count >= threshold:
+            applicable.extend(laws.get("적용", []))
+        else:
+            not_applicable.extend(laws.get("적용", []))
+
+    return {"적용": applicable, "미적용": not_applicable}
 
 
 def _summarize_workers(worker_list: list[dict]) -> str:

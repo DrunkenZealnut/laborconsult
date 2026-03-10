@@ -11,6 +11,7 @@
 import argparse
 import sys
 import os
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -1593,6 +1594,78 @@ TEST_CASES = [
             unused_annual_leave_pay=600_000,
         ),
         "targets": ["unemployment"],
+    },
+    # ── 상시근로자 수 산정 점검 테스트 (business-size-calculator-review) ───────
+    {
+        "id": 95,
+        "desc": "상시근로자 수 — 일용직 actual_work_dates (5명 상시 + 일용 2명 부분 출근)",
+        # 통상 5명(매일) + 일용A(5일) + 일용B(10일)
+        # 가동일수 = 20일 (2025-02: 평일)
+        # 연인원 = 5×20 + 5 + 10 = 115 → 상시 = 115/20 = 5.75명 → OVER_5
+        "input": BusinessSizeInput(
+            event_date="2025-03-01",
+            workers=[
+                WorkerEntry(name=f"직원{i+1}", worker_type=WorkerType.REGULAR, start_date="2024-01-02")
+                for i in range(5)
+            ] + [
+                WorkerEntry(
+                    name="일용A", worker_type=WorkerType.DAILY, start_date="2024-01-02",
+                    actual_work_dates=["2025-02-03", "2025-02-04", "2025-02-05",
+                                       "2025-02-06", "2025-02-07"],
+                ),
+                WorkerEntry(
+                    name="일용B", worker_type=WorkerType.DAILY, start_date="2024-01-02",
+                    actual_work_dates=["2025-02-03", "2025-02-04", "2025-02-05",
+                                       "2025-02-06", "2025-02-07", "2025-02-10",
+                                       "2025-02-11", "2025-02-12", "2025-02-13",
+                                       "2025-02-14"],
+                ),
+            ],
+        ),
+        "targets": ["business_size"],
+    },
+    {
+        "id": 96,
+        "desc": "상시근로자 수 — 파견·용역·대표자 제외 (10명 중 3명 제외 → 상시 7명)",
+        "input": BusinessSizeInput(
+            event_date="2025-03-01",
+            workers=[
+                WorkerEntry(name=f"직원{i+1}", worker_type=WorkerType.REGULAR, start_date="2024-01-02")
+                for i in range(7)
+            ] + [
+                WorkerEntry(name="파견F", worker_type=WorkerType.DISPATCHED, start_date="2024-01-02"),
+                WorkerEntry(name="용역G", worker_type=WorkerType.OUTSOURCED, start_date="2024-01-02"),
+                WorkerEntry(name="대표자H", worker_type=WorkerType.OWNER, start_date="2024-01-02"),
+            ],
+        ),
+        "targets": ["business_size"],
+    },
+    {
+        "id": 97,
+        "desc": "상시근로자 수 — 10인 경계값 (9명 → OVER_5, 10명 → OVER_10)",
+        # 9명: OVER_5 (5인이상10인미만)
+        "input": BusinessSizeInput(
+            event_date="2025-03-01",
+            workers=[
+                WorkerEntry(name=f"직원{i+1}", worker_type=WorkerType.REGULAR, start_date="2024-01-02")
+                for i in range(9)
+            ],
+        ),
+        "targets": ["business_size"],
+    },
+    {
+        "id": 98,
+        "desc": "상시근로자 수 — 간편 입력 (daily_headcount 8명 × 20일)",
+        # 2025-02 평일 20일 × 8명 = 연인원 160 → 상시 8.0명 → OVER_5
+        "input": BusinessSizeInput(
+            event_date="2025-03-01",
+            daily_headcount={
+                f"2025-02-{d:02d}": 8
+                for d in range(1, 29)
+                if date(2025, 2, d).weekday() < 5
+            },
+        ),
+        "targets": ["business_size"],
     },
 ]
 

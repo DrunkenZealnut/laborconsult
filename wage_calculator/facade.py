@@ -597,10 +597,16 @@ def _provided_info_to_input(info: dict) -> "WageInput | None":
     if 임금액 is None:
         return None   # 임금액 없으면 계산 불가
 
-    # 사업장 규모
+    # 사업장 규모 (300인 → 30인 → 10인 순서로 체크하여 부분 매칭 방지)
     size_str = info.get("사업장규모", "") or ""
     if "5인 미만" in size_str or "5인미만" in size_str:
         biz_size = BusinessSize.UNDER_5
+    elif "300인" in size_str:
+        biz_size = BusinessSize.OVER_300
+    elif "30인" in size_str:
+        biz_size = BusinessSize.OVER_30
+    elif "10인" in size_str:
+        biz_size = BusinessSize.OVER_10
     else:
         biz_size = BusinessSize.OVER_5
 

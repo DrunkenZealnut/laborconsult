@@ -54,6 +54,7 @@ class BusinessSize(Enum):
     """
     UNDER_5  = "5인미만"
     OVER_5   = "5인이상"
+    OVER_10  = "10인이상"
     OVER_30  = "30인이상"
     OVER_300 = "300인이상"
 
@@ -68,6 +69,9 @@ class WorkerType(Enum):
     FOREIGN        = "외국인"      # 외국인 → 포함
     FAMILY         = "가족"        # 가족근로자 → 조건부 포함
     OVERSEAS_LOCAL = "해외현지법인"  # 해외 현지법인 소속 → 제외
+    DISPATCHED     = "파견"        # 파견근로자 → 제외 (파견법 제2조)
+    OUTSOURCED     = "용역"        # 외부용역 → 제외 (도급업체 소속)
+    OWNER          = "대표자"      # 대표자/비근로자 → 제외
 
 
 @dataclass
@@ -258,6 +262,7 @@ class WorkerEntry:
     is_on_leave: bool = False         # 휴직/휴가/결근/징계 중 여부 (포함 대상)
     is_leave_replacement: bool = False  # 휴직대체자 여부 (제외 대상)
     specific_work_days: Optional[list] = None  # 특정 요일만 출근 (0=월~6=일, None이면 상시)
+    actual_work_dates: Optional[list] = None  # 일용직 실제 출근일 ["YYYY-MM-DD", ...]
     name: str = ""                    # 식별용 (선택)
 
 
@@ -268,3 +273,4 @@ class BusinessSizeInput:
     workers: list = field(default_factory=list)  # list[WorkerEntry]
     non_operating_days: Optional[list] = None    # 비가동일 "YYYY-MM-DD" 목록 (None이면 토·일)
     is_family_only_business: bool = False        # 동거친족만 사용하는 사업장
+    daily_headcount: Optional[dict] = None       # 간편 입력: {"YYYY-MM-DD": 인원수, ...}
