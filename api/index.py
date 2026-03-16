@@ -2,9 +2,11 @@
 
 import base64
 import json
+import logging
 import os
 import sys
 import time
+import traceback
 from collections import Counter
 from datetime import date, timedelta
 
@@ -97,15 +99,25 @@ def chat(req: ChatRequest):
 @app.get("/api/chat/stream")
 def chat_stream(message: str, session_id: str | None = None):
     """SSE 스트리밍 응답 (텍스트 전용, 하위 호환)"""
-    config = get_config()
-    session, _ = get_or_create_session(session_id, _restore_fn)
+    try:
+        config = get_config()
+        session, _ = get_or_create_session(session_id, _restore_fn)
+    except Exception as e:
+        logging.error("SSE 초기화 실패: %s\n%s", e, traceback.format_exc())
+
+        def error_gen():
+            yield f"data: {json.dumps({'type': 'error', 'text': f'서버 초기화 오류: {e}'}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(error_gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     def event_generator():
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
         try:
             for event in process_question(message, session, config):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception:
+        except Exception as e:
+            logging.error("답변 생성 실패: %s\n%s", e, traceback.format_exc())
             error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
             yield f"data: {json.dumps({'type': 'error', 'text': error_msg}, ensure_ascii=False)}\n\n"
 
@@ -123,8 +135,17 @@ def chat_stream(message: str, session_id: str | None = None):
 @app.post("/api/chat/stream")
 def chat_stream_with_files(req: ChatWithFilesRequest):
     """SSE 스트리밍 응답 — 파일 첨부 지원"""
-    config = get_config()
-    session, _ = get_or_create_session(req.session_id, _restore_fn)
+    try:
+        config = get_config()
+        session, _ = get_or_create_session(req.session_id, _restore_fn)
+    except Exception as e:
+        logging.error("SSE(POST) 초기화 실패: %s\n%s", e, traceback.format_exc())
+
+        def error_gen():
+            yield f"data: {json.dumps({'type': 'error', 'text': f'서버 초기화 오류: {e}'}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(error_gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     # 첨부파일 파싱
     parsed_attachments = []
@@ -157,7 +178,8 @@ def chat_stream_with_files(req: ChatWithFilesRequest):
             for event in process_question(req.message, session, config,
                                            attachments=parsed_attachments):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception:
+        except Exception as e:
+            logging.error("답변 생성 실패(POST): %s\n%s", e, traceback.format_exc())
             error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
             yield f"data: {json.dumps({'type': 'error', 'text': error_msg}, ensure_ascii=False)}\n\n"
 

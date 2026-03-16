@@ -640,7 +640,9 @@ async function send() {
       resp = await fetch(API_BASE + '/api/chat/stream?' + params);
     }
     if (!resp.ok) {
-      throw new Error('서버 오류 (' + resp.status + ')');
+      let detail = '';
+      try { const body = await resp.json(); detail = body.detail || ''; } catch (_) {}
+      throw new Error('서버 오류 (' + resp.status + ')' + (detail ? ': ' + detail : ''));
     }
     await readSSE(resp);
   } catch (e) {
