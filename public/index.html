@@ -579,6 +579,11 @@ async function readSSE(resp) {
     if (pendingContacts) renderContacts(pendingContacts, assistantEl);
     chat.scrollTop = chat.scrollHeight;
   }
+  // 스트림이 chunk/error/follow_up 없이 종료된 경우 상태 메시지 정리
+  if (!assistantEl && !document.querySelector('.msg.status + .msg.assistant')) {
+    removeStatus();
+    addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
+  }
 }
 
 // ── 전송 ─────────────────────────────────────────────────────────────────────
@@ -634,14 +639,19 @@ async function send() {
       if (sessionId) params.set('session_id', sessionId);
       resp = await fetch(API_BASE + '/api/chat/stream?' + params);
     }
+    if (!resp.ok) {
+      throw new Error('서버 오류 (' + resp.status + ')');
+    }
     await readSSE(resp);
   } catch (e) {
     removeStatus();
     addMsg('assistant', '오류가 발생했습니다: ' + e.message);
+  } finally {
+    // 어떤 경로로든 남아있는 상태 메시지 정리
+    removeStatus();
+    btn.disabled = false;
+    msgInput.focus();
   }
-
-  btn.disabled = false;
-  msgInput.focus();
 }
 </script>
 </body>
