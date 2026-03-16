@@ -35,6 +35,7 @@ from ..models import WageInput, WorkType, BusinessSize
 from ..utils import parse_date
 from .average_wage import calc_average_wage
 from .ordinary_wage import OrdinaryWageResult
+from .shared import DateRange
 
 
 @dataclass
@@ -61,17 +62,18 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
     ]
 
     # ── 재직기간 계산 ────────────────────────────────────────────────────────
-    start = parse_date(inp.start_date)
-    end   = parse_date(inp.end_date) or date.today()
+    dr = DateRange(inp.start_date, inp.end_date)
 
-    if start is None:
+    if not dr.is_valid:
         return _ineligible(
             "입사일(start_date)을 입력해주세요",
             ow, warnings, formulas, legal,
         )
 
-    service_days = (end - start).days
-    service_years = service_days / 365
+    start = dr.start
+    end = dr.end
+    service_days = dr.days
+    service_years = dr.years
 
     # ── 자격 요건 확인 ───────────────────────────────────────────────────────
     # 1) 계속근로 1년 이상

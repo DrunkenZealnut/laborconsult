@@ -176,6 +176,48 @@ def save_conversation(sb: SupabaseClient, record: ConversationRecord) -> str | N
 
 # ── 첨부파일 업로드 ──────────────────────────────────────────────────────────
 
+# ── 세션 데이터 영속화 (conversation-memory) ─────────────────────────────────
+
+def save_session_data(sb: SupabaseClient, session_id: str, snapshot: dict):
+    """세션 스냅샷을 qa_sessions.session_data에 저장 (fire-and-forget)"""
+    try:
+        sb.table("qa_sessions").update({
+            "session_data": snapshot,
+            "updated_at": "now()",
+        }).eq("id", session_id).execute()
+    except Exception as e:
+        logger.warning("세션 데이터 저장 실패: %s", e)
+
+
+def restore_session_data(sb: SupabaseClient, session_id: str) -> dict | None:
+    """qa_sessions에서 세션 데이터 복원. 24시간 TTL 초과 시 None 반환."""
+    try:
+        result = sb.table("qa_sessions").select(
+            "session_data, updated_at"
+        ).eq("id", session_id).execute()
+
+        if not result.data:
+            return None
+
+        row = result.data[0]
+        session_data = row.get("session_data")
+        if not session_data:
+            return None
+
+        # TTL 검사: 24시간 초과 시 무시
+        updated_at = row.get("updated_at")
+        if updated_at:
+            from datetime import datetime, timezone, timedelta
+            updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) - updated > timedelta(hours=24):
+                return None
+
+        return session_data
+    except Exception as e:
+        logger.warning("세션 복원 실패 (session_id=%s): %s", session_id, e)
+        return None
+
+
 def upload_attachment(
     sb: SupabaseClient,
     conversation_id: str,

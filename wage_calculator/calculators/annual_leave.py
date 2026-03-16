@@ -29,6 +29,7 @@ from ..base import BaseCalculatorResult
 from ..utils import parse_date
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
+from .shared import DateRange
 from ..constants import (
     ANNUAL_LEAVE_BASE_DAYS,
     ANNUAL_LEAVE_MAX_DAYS,
@@ -75,10 +76,9 @@ def calc_annual_leave(inp: WageInput, ow: OrdinaryWageResult) -> AnnualLeaveResu
         warnings.append("5인 미만 사업장: 연차휴가 규정 미적용 (근로기준법 제11조)")
 
     # 재직기간 계산
-    start = parse_date(inp.start_date)
-    end = parse_date(inp.end_date) or date.today()
+    dr = DateRange(inp.start_date, inp.end_date)
 
-    if start is None:
+    if not dr.is_valid:
         return AnnualLeaveResult(
             accrued_days=0, used_days=0, remaining_days=0, annual_leave_pay=0,
             service_years=0,
@@ -86,8 +86,10 @@ def calc_annual_leave(inp: WageInput, ow: OrdinaryWageResult) -> AnnualLeaveResu
             formulas=[], warnings=["입사일 미입력"], legal_basis=legal,
         )
 
-    service_days = (end - start).days
-    service_years = service_days / 365
+    start = dr.start
+    end = dr.end
+    service_days = dr.days
+    service_years = dr.years
 
     # 출근율 확인
     if inp.attendance_rate < 0.8:

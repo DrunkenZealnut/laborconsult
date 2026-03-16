@@ -23,6 +23,7 @@ from ..constants import OVERTIME_RATE
 from ..models import WageInput, BusinessSize
 from ..utils import WEEKS_PER_MONTH
 from .ordinary_wage import OrdinaryWageResult
+from .shared import MultiplierContext
 
 # ── 탄력적 근로시간제 단위기간별 최대 근로한도 ────────────────────────────────
 FLEXIBLE_WORK_LIMITS = {
@@ -69,7 +70,8 @@ def calc_flexible_work(inp: WageInput, ow: OrdinaryWageResult) -> FlexibleWorkRe
     ]
 
     hourly = ow.hourly_ordinary_wage
-    is_small = inp.business_size == BusinessSize.UNDER_5
+    mc = MultiplierContext(inp)
+    is_small = mc.is_small
 
     unit = getattr(inp, "flexible_work_unit", "") or ""
     weekly_hours_list = getattr(inp, "weekly_hours_list", None) or []

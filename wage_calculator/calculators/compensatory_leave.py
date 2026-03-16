@@ -14,6 +14,7 @@ from ..base import BaseCalculatorResult
 from ..utils import WEEKS_PER_MONTH
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
+from .shared import MultiplierContext
 from ..constants import OVERTIME_RATE, NIGHT_PREMIUM_RATE, HOLIDAY_RATE, HOLIDAY_OT_RATE
 
 
@@ -48,19 +49,20 @@ def calc_compensatory_leave(inp: WageInput, ow: OrdinaryWageResult) -> Compensat
     formulas = []
     legal = ["근로기준법 제57조 (보상휴가제)"]
 
-    is_small = inp.business_size == BusinessSize.UNDER_5
+    mc = MultiplierContext(inp)
 
-    if is_small:
+    small_warn = mc.small_business_warning()
+    if small_warn:
         warnings.append(
             "5인 미만 사업장: 가산수당 미적용으로 보상휴가 가산분도 미적용 "
             "(연장근로 1.0배, 야간근로 0배, 휴일근로 1.0배만 적용)"
         )
 
     # ── 배율 설정 (5인 미만은 가산 없음) ───────────────────────────────────
-    ot_rate      = OVERTIME_RATE if not is_small else 0.0
-    night_rate   = NIGHT_PREMIUM_RATE if not is_small else 0.0
-    hol_rate     = HOLIDAY_RATE if not is_small else 0.0
-    hol_ot_rate  = HOLIDAY_OT_RATE if not is_small else 0.0
+    ot_rate      = mc.overtime
+    night_rate   = mc.night
+    hol_rate     = mc.holiday
+    hol_ot_rate  = mc.holiday_ot
 
     # ── 보상휴가 시간 계산 ────────────────────────────────────────────────
     ot_hours         = s.weekly_overtime_hours
@@ -84,7 +86,7 @@ def calc_compensatory_leave(inp: WageInput, ow: OrdinaryWageResult) -> Compensat
         formulas.append(
             f"연장근로 보상휴가: {ot_hours}h × {rate} = {overtime_comp:.2f}h"
         )
-    if night_hours > 0 and not is_small:
+    if night_hours > 0 and not mc.is_small:
         formulas.append(
             f"야간근로 보상휴가(가산분): {night_hours}h × {night_rate} = {night_comp:.2f}h"
         )

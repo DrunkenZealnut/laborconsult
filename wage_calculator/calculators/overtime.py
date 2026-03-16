@@ -21,6 +21,7 @@ from ..base import BaseCalculatorResult
 from ..utils import WEEKS_PER_MONTH
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
+from .shared import MultiplierContext
 from ..constants import OVERTIME_RATE, NIGHT_PREMIUM_RATE, HOLIDAY_RATE, HOLIDAY_OT_RATE
 
 # 주 52시간 제한 시행일 (사업장 규모별)
@@ -51,16 +52,16 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
     formulas = []
     legal = []
 
-    is_small = inp.business_size == BusinessSize.UNDER_5
+    mc = MultiplierContext(inp)
 
-    # 5인 미만: 가산수당 미적용
-    overtime_multiplier  = OVERTIME_RATE if not is_small else 0.0
-    night_multiplier     = NIGHT_PREMIUM_RATE if not is_small else 0.0
-    holiday_multiplier   = HOLIDAY_RATE if not is_small else 0.0
-    holiday_ot_multiplier = HOLIDAY_OT_RATE if not is_small else 0.0
+    overtime_multiplier   = mc.overtime
+    night_multiplier      = mc.night
+    holiday_multiplier    = mc.holiday
+    holiday_ot_multiplier = mc.holiday_ot
 
-    if is_small:
-        warnings.append("5인 미만 사업장: 연장·야간·휴일 가산수당 미적용 (근로기준법 제11조)")
+    small_warn = mc.small_business_warning()
+    if small_warn:
+        warnings.append(small_warn)
         legal.append("근로기준법 제11조 (적용범위)")
     else:
         legal.append("근로기준법 제56조 (연장·야간·휴일 근로)")
@@ -77,7 +78,7 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
     # ── 야간수당 (22~06시, 연장/휴일과 중복 가산) ────────────────────────────
     night_hours = s.weekly_night_hours
     night_pay = hourly * night_hours * night_multiplier
-    if night_hours > 0 and not is_small:
+    if night_hours > 0 and not mc.is_small:
         formulas.append(
             f"야간수당: {hourly:,.1f}원 × {night_hours}h × 0.5 = {night_pay:,.0f}원/주 (중복 가산)"
         )

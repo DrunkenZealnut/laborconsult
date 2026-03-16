@@ -75,6 +75,94 @@ class WorkerType(Enum):
 
 
 @dataclass
+class FixedAllowance:
+    """고정수당 항목 (기존 dict 하위 호환)
+
+    기존 dict 예: {"name": "직책수당", "amount": 100000, "condition": "없음",
+                  "is_ordinary": True, "annual": False, "payment_cycle": "매월"}
+    """
+    name: str = "수당"
+    amount: float = 0.0
+    condition: str = "없음"            # AllowanceCondition.value 또는 문자열
+    is_ordinary: Optional[bool] = None # None=자동 판정, True/False=명시
+    annual: bool = False               # True이면 amount는 연간 총액 (÷12 환산)
+    payment_cycle: str = "매월"        # "매월" | "분기" | "반기" | "연"
+    min_wage_type: str = ""            # "" | "standard" | "regular_bonus" | "welfare" | "excluded"
+    guaranteed_amount: Optional[float] = None  # 최소보장 성과급의 보장분
+
+    @property
+    def monthly_amount(self) -> float:
+        """월 환산 금액 (payment_cycle 반영)"""
+        if self.annual or self.payment_cycle == "연":
+            return self.amount / 12
+        elif self.payment_cycle == "분기":
+            return self.amount / 3
+        elif self.payment_cycle == "반기":
+            return self.amount / 6
+        return self.amount
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "FixedAllowance":
+        """dict → FixedAllowance 변환 (하위 호환)"""
+        return cls(
+            name=d.get("name", "수당"),
+            amount=float(d.get("amount", 0)),
+            condition=d.get("condition", "없음"),
+            is_ordinary=d.get("is_ordinary"),
+            annual=d.get("annual", False),
+            payment_cycle=d.get("payment_cycle", "매월"),
+            min_wage_type=d.get("min_wage_type", ""),
+            guaranteed_amount=d.get("guaranteed_amount"),
+        )
+
+
+@dataclass
+class NonTaxableIncome:
+    """비과세 근로소득 항목별 입력 (소득세법 제12조)
+
+    각 필드는 월 지급액 기준. 법정 한도 초과분은 자동으로 과세 전환.
+    """
+    # ── 주요 비과세 (고빈도) ──────────────────────────────────
+    meal_allowance: float = 0.0            # 식대·식사비 (월)
+    car_subsidy: float = 0.0               # 자가운전보조금 (월)
+    childcare_allowance: float = 0.0       # 자녀보육수당 (월, 자녀 1인당)
+    num_childcare_children: int = 0        # 6세 이하 자녀 수
+
+    # ── 연장근로 비과세 (생산직) ──────────────────────────────
+    overtime_nontax: float = 0.0           # 연장·야간·휴일근로수당 비과세분 (월)
+    is_production_worker: bool = False     # 생산직 종사자 자기 선언
+    prev_year_total_salary: float = 0.0   # 전년도 총급여 (적격 판단용)
+
+    # ── 기타 비과세 ──────────────────────────────────────────
+    overseas_pay: float = 0.0              # 국외근로소득 (월)
+    is_overseas_construction: bool = False  # 해외건설현장 (한도 500만→100만)
+    research_subsidy: float = 0.0          # 연구보조비 (월)
+    reporting_subsidy: float = 0.0         # 취재수당 (월)
+    remote_area_subsidy: float = 0.0       # 벽지수당 (월)
+    invention_reward_annual: float = 0.0   # 직무발명보상금 (연간 총액)
+    childbirth_support: float = 0.0        # 출산지원금 (월 환산, 한도 없음)
+    other_nontaxable: float = 0.0          # 기타 비과세 (월, 사용자 직접 입력)
+
+    # ── §2 근로소득 미포함 ─────────────────────────────────────
+    group_insurance_annual: float = 0.0     # 단체보장성보험료 (연간 총액)
+    congratulatory_pay: float = 0.0         # 경조금 (월)
+
+    # ── §3 실비변상적 급여 (추가분) ─────────────────────────────
+    boarding_allowance: float = 0.0         # 승선수당 (월)
+    relocation_subsidy: float = 0.0         # 지방이전 이주수당 (월)
+    overnight_duty_pay: float = 0.0         # 일직·숙직료 (월)
+
+    # ── §7 기타 비과세 (추가분) ─────────────────────────────────
+    tuition_support: float = 0.0            # 근로자 학자금 (월 환산)
+    company_housing: float = 0.0            # 사택 제공 이익 (월 환산)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "NonTaxableIncome":
+        """dict → NonTaxableIncome 변환 (chatbot 연동용)"""
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
 class WorkSchedule:
     """근무 스케줄 — 소정근로 및 초과근로 시간 정보"""
     # 소정근로
@@ -179,6 +267,7 @@ class WageInput:
     tax_dependents: int = 1               # 부양가족 수 (본인 포함, 근로소득세 공제용)
     num_children_8_to_20: int = 0         # 8~20세 자녀 수 (자녀세액공제용, 소득세법 제59조의2)
     monthly_non_taxable: float = 200_000  # 월 비과세 소득 (식대 등, 기본 20만원)
+    non_taxable_detail: Optional["NonTaxableIncome"] = None  # 항목별 상세 (None=기존 방식)
 
     # ── 실업급여 계산용 ───────────────────────────────────────────────────────
     age: int = 0                           # 만 나이 (소정급여일수 50세 기준 구분)
@@ -248,6 +337,14 @@ class WageInput:
     # ── 퇴직금 평균임금 가산용 ───────────────────────────────────────────────
     annual_bonus_total: float = 0.0            # 연간 상여금 총액
     unused_annual_leave_pay: float = 0.0       # 최종 미사용 연차수당
+
+    # ── 평균임금 산정 제외 기간 (근기법 시행령 제2조) ──────────────────────
+    # [{"start": "2022-06-15", "end": "2022-06-28", "reason": "사용자귀책휴업", "paid": 0}]
+    excluded_periods: Optional[list] = None
+
+    # ── 다중 사업장 임금 (고용보험법 제45조 제1항 단서) ──────────────────
+    # [{"employer": "A사", "monthly_wage": 4200000, "months": 2}, ...]
+    multi_employer_wages: Optional[list] = None
 
     # ── 상시근로자 수 산정용 (선택) ──────────────────────────────────────────
     business_size_input: Optional["BusinessSizeInput"] = None  # 제공 시 business_size 자동 산정

@@ -30,3 +30,8 @@ class AnalysisResult(BaseModel):
     relevant_laws: list[str] = []
     missing_info: list[str] = []
     question_summary: str = ""
+    # 법률상담 전용 필드 (계산 불필요 + 괴롭힘 아닌 경우)
+    consultation_type: str | None = None
+    consultation_topic: str | None = None
+    # 판례 검색용 법적 쟁점 키워드 (맥락 기반 검색)
+    precedent_keywords: list[str] = []

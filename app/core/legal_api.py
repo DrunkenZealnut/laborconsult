@@ -512,6 +512,95 @@ def search_precedent(query: str, api_key: str,
         return []
 
 
+def search_precedent_multi(
+    queries: list[str],
+    api_key: str,
+    max_total: int = 5,
+) -> list[dict]:
+    """복수 쿼리로 판례 병렬 검색 → 중복 제거 후 max_total건 반환.
+
+    각 쿼리당 max_results=3으로 검색하고, 판례일련번호 기준 중복 제거.
+    """
+    if not queries or not api_key:
+        return []
+
+    seen_ids: set[int] = set()
+    all_results: list[dict] = []
+
+    def _search_one(q: str) -> list[dict]:
+        return search_precedent(q, api_key, max_results=3)
+
+    with ThreadPoolExecutor(max_workers=min(len(queries), 3)) as pool:
+        futures = {pool.submit(_search_one, q): q for q in queries}
+        for fut in as_completed(futures):
+            try:
+                results = fut.result()
+                for r in results:
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_results.append(r)
+            except Exception as e:
+                logger.warning("판례 다중검색 개별 실패 (%s): %s",
+                               futures[fut], e)
+
+    logger.info("판례 다중검색 완료: %d개 쿼리 → %d건 (중복제거)",
+                len(queries), len(all_results))
+    return all_results[:max_total]
+
+
+def fetch_precedent_details(
+    prec_results: list[dict],
+    api_key: str,
+) -> tuple[str | None, list[dict]]:
+    """검색된 판례 리스트의 판결요지를 병렬 조회하여 포매팅.
+
+    Returns:
+        (formatted_text, precedent_meta_list)
+    """
+    if not prec_results:
+        return None, []
+
+    t0 = time.time()
+    texts: dict[int, str] = {}
+    meta_list: list[dict] = []
+
+    def _fetch_one(idx: int, prec: dict) -> tuple[int, str | None]:
+        text = fetch_precedent(prec["id"], api_key)
+        if text:
+            header = f"[{prec['court']} {prec['case_name']}] (선고일: {prec['date']})"
+            return idx, f"{header}\n{text}"
+        return idx, None
+
+    with ThreadPoolExecutor(max_workers=min(len(prec_results), 5)) as pool:
+        futures = {
+            pool.submit(_fetch_one, i, p): i
+            for i, p in enumerate(prec_results)
+        }
+        for fut in as_completed(futures):
+            try:
+                idx, prec_text = fut.result()
+                if prec_text:
+                    texts[idx] = prec_text
+                    p = prec_results[idx]
+                    meta_list.append({
+                        "case_name": p["case_name"],
+                        "date": p["date"],
+                        "court": p["court"],
+                    })
+            except Exception as e:
+                logger.warning("판례 상세 조회 실패: %s", e)
+
+    elapsed = time.time() - t0
+    logger.info("판례 상세 조회 완료: %d/%d건 / %.2fs",
+                len(texts), len(prec_results), elapsed)
+
+    if not texts:
+        return None, []
+
+    formatted = "\n\n---\n\n".join(texts[k] for k in sorted(texts))
+    return formatted, meta_list
+
+
 def search_detc(query: str, api_key: str,
                 max_results: int = 3) -> list[dict]:
     """헌재 결정례 검색 → [{id, case_name, date}]"""
@@ -734,3 +823,67 @@ def fetch_relevant_articles(
 
     # 3. 원래 순서대로 정렬하여 반환
     return "\n\n".join(results[k] for k in sorted(results))
+
+
+def fetch_relevant_precedents(
+    query: str,
+    api_key: str | None,
+    max_results: int = 3,
+) -> tuple[str | None, list[dict]]:
+    """키워드로 법제처 API에서 판례를 검색하고 판결요지를 조회.
+
+    Returns:
+        (formatted_text, precedent_meta_list)
+        - formatted_text: LLM 컨텍스트에 포함할 판례 텍스트 (None이면 실패)
+        - precedent_meta_list: [{case_name, date, court, case_number}]
+    """
+    if not api_key or not query:
+        return None, []
+
+    t0 = time.time()
+
+    # 1. 판례 검색
+    prec_results = search_precedent(query, api_key, max_results=max_results)
+    if not prec_results:
+        logger.info("판례 키워드 검색 결과 없음: %s", query[:50])
+        return None, []
+
+    # 2. 판결요지 병렬 조회
+    texts: dict[int, str] = {}
+    meta_list: list[dict] = []
+
+    def _fetch_one(idx: int, prec: dict) -> tuple[int, str | None]:
+        text = fetch_precedent(prec["id"], api_key)
+        if text:
+            header = f"[{prec['court']} {prec['case_name']}] (선고일: {prec['date']})"
+            return idx, f"{header}\n{text}"
+        return idx, None
+
+    with ThreadPoolExecutor(max_workers=min(len(prec_results), 5)) as pool:
+        futures = {
+            pool.submit(_fetch_one, i, p): i
+            for i, p in enumerate(prec_results)
+        }
+        for fut in as_completed(futures):
+            try:
+                idx, prec_text = fut.result()
+                if prec_text:
+                    texts[idx] = prec_text
+                    p = prec_results[idx]
+                    meta_list.append({
+                        "case_name": p["case_name"],
+                        "date": p["date"],
+                        "court": p["court"],
+                    })
+            except Exception as e:
+                logger.warning("판례 조회 실패: %s", e)
+
+    elapsed = time.time() - t0
+    logger.info("판례 키워드 검색 완료: query=%r, %d/%d건 / %.2fs",
+                query[:30], len(texts), len(prec_results), elapsed)
+
+    if not texts:
+        return None, []
+
+    formatted = "\n\n---\n\n".join(texts[k] for k in sorted(texts))
+    return formatted, meta_list

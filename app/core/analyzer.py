@@ -106,10 +106,21 @@ def analyze_intent(
     question: str,
     history: list[dict],
     config: "AppConfig",
+    summary: str = "",
 ) -> AnalysisResult:
     """사용자 질문을 분석하여 계산 유형, 추출 정보, 누락 정보를 반환"""
 
     messages = []
+    # 이전 대화 요약이 있으면 맨 앞에 컨텍스트로 추가
+    if summary:
+        messages.append({
+            "role": "user",
+            "content": f"[이전 대화 요약] {summary}",
+        })
+        messages.append({
+            "role": "assistant",
+            "content": "네, 이전 대화 내용을 참고하겠습니다.",
+        })
     # 최근 대화 컨텍스트 (최대 4턴)
     for turn in history[-8:]:
         messages.append(turn)
@@ -161,6 +172,9 @@ def analyze_intent(
                 relevant_laws=inp.get("relevant_laws", []),
                 missing_info=missing_from_llm,
                 question_summary=inp.get("question_summary", ""),
+                consultation_type=inp.get("consultation_type"),
+                consultation_topic=inp.get("consultation_topic"),
+                precedent_keywords=inp.get("precedent_keywords", []),
             )
 
     return AnalysisResult(question_summary=question)

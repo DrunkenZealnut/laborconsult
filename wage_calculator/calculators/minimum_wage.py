@@ -27,19 +27,12 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType
 from .ordinary_wage import OrdinaryWageResult
+from .shared import normalize_allowances, AllowanceClassifier
 from ..constants import (
     MINIMUM_HOURLY_WAGE,
     PROBATION_MIN_WAGE_RATE,
     get_min_wage_inclusion_rates,
 )
-
-# ── 이름 패턴 기반 자동 분류 ──────────────────────────────────────────────────
-_EXCLUDED_PATTERNS = ["연장", "야간", "휴일", "특근"]
-_BONUS_PATTERNS    = ["상여금", "상여", "보너스", "격려금", "인센티브"]
-_WELFARE_PATTERNS  = [
-    "식대", "식비", "급식", "교통비", "교통", "차량", "통근",
-    "주거", "숙박", "가족수당", "복리",
-]
 
 
 @dataclass
@@ -101,10 +94,10 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     welfare_total  = 0.0
     allowance_rows: list[tuple[str, float, str]] = []   # (name, monthly, label)
 
-    for a in inp.fixed_allowances:
-        monthly_amt = _monthly_amount(a)
-        mwt         = _min_wage_type(a)
-        name        = a.get("name", "수당")
+    for a in normalize_allowances(inp.fixed_allowances):
+        monthly_amt = _monthly_amount_fa(a)
+        mwt         = AllowanceClassifier.classify_min_wage_type(a.name, a.min_wage_type)
+        name        = a.name
 
         if mwt == "excluded":
             allowance_rows.append((name, monthly_amt, "비산입(초과수당)"))
@@ -243,32 +236,14 @@ def _get_base_monthly(inp: WageInput, monthly_hours: float) -> float:
     return 0.0
 
 
-def _monthly_amount(a: dict) -> float:
-    """수당 월 환산 금액 (분기/반기/연 지급 주기 처리)"""
-    amount = float(a.get("amount", 0))
-    cycle  = a.get("payment_cycle", "월")
-    if a.get("annual", False) or cycle == "연":
+def _monthly_amount_fa(a) -> float:
+    """수당 월 환산 금액 — FixedAllowance 속성 접근"""
+    amount = a.amount
+    cycle = a.payment_cycle
+    if a.annual or cycle == "연":
         return amount / 12
     elif cycle == "분기":
         return amount / 3
     elif cycle == "반기":
         return amount / 6
     return amount
-
-
-def _min_wage_type(a: dict) -> str:
-    """수당 최저임금 산입 유형 결정 (명시 키 우선, 없으면 이름 패턴 추론)"""
-    mwt = a.get("min_wage_type", "")
-    if mwt in ("regular_bonus", "welfare", "excluded", "standard"):
-        return mwt
-    name = a.get("name", "")
-    for p in _EXCLUDED_PATTERNS:
-        if p in name:
-            return "excluded"
-    for p in _BONUS_PATTERNS:
-        if p in name:
-            return "regular_bonus"
-    for p in _WELFARE_PATTERNS:
-        if p in name:
-            return "welfare"
-    return "standard"

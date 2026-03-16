@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from .models import WageInput, BusinessSize, WageType
 from .calculators.ordinary_wage import OrdinaryWageResult
+from .calculators.shared import normalize_allowances
 from .constants import MINIMUM_HOURLY_WAGE, ORDINARY_WAGE_2024_RULING
 
 
@@ -43,6 +44,7 @@ def generate_legal_hints(
     hints.extend(_hints_overtime(inp))
     hints.extend(_hints_comprehensive(inp))
     hints.extend(_hints_small_business(inp))
+    hints.extend(_hints_nontaxable(inp))
 
     # 중요도 순 정렬 (1 먼저)
     return sorted(hints, key=lambda h: h.priority)
@@ -53,11 +55,11 @@ def generate_legal_hints(
 def _hints_ordinary_wage(inp: WageInput) -> list[LegalHint]:
     hints = []
 
-    for a in inp.fixed_allowances:
-        name = a.get("name", "수당")
-        condition = a.get("condition", "없음")
-        is_ordinary = a.get("is_ordinary")        # None = 미설정
-        payment_cycle = a.get("payment_cycle", "매월")
+    for a in normalize_allowances(inp.fixed_allowances):
+        name = a.name
+        condition = a.condition
+        is_ordinary = a.is_ordinary                # None = 미설정
+        payment_cycle = a.payment_cycle
 
         # 재직조건/근무일수 → 명시적으로 is_ordinary=False 처리된 경우
         if condition in ["재직조건", "근무일수"] and is_ordinary is False:
@@ -74,9 +76,9 @@ def _hints_ordinary_wage(inp: WageInput) -> list[LegalHint]:
                 priority=1,
             ))
 
-        # 성과조건인데 guaranteed_amount 키가 있는 경우 → 최소보장성과 전환 안내
-        if condition == "성과조건" and "guaranteed_amount" in a:
-            ga = a["guaranteed_amount"]
+        # 성과조건인데 guaranteed_amount가 있는 경우 → 최소보장성과 전환 안내
+        if condition == "성과조건" and a.guaranteed_amount is not None:
+            ga = a.guaranteed_amount
             hints.append(LegalHint(
                 category="통상임금",
                 condition=f"'{name}': 성과조건이나 최소보장분 {ga:,.0f}원 존재",
@@ -238,6 +240,43 @@ def _hints_small_business(inp: WageInput) -> list[LegalHint]:
                 basis="근로기준법 제11조, 제60조",
                 priority=2,
             ))
+
+    return hints
+
+
+# ── 비과세 소득 관련 힌트 ──────────────────────────────────────────────────────
+
+def _hints_nontaxable(inp: WageInput) -> list[LegalHint]:
+    hints = []
+
+    # 비과세 상세 미사용 + 기본 20만원 사용 시 추가 비과세 가능성 안내
+    if inp.non_taxable_detail is None and inp.monthly_non_taxable == 200_000:
+        hints.append(LegalHint(
+            category="비과세소득",
+            condition="식대 20만원만 비과세 적용 중",
+            hint=(
+                "자가운전보조금, 자녀보육수당, 연구보조비 등 추가 비과세 항목이 있으면 "
+                "non_taxable_detail로 상세 입력 시 실수령액이 증가할 수 있습니다."
+            ),
+            basis="소득세법 제12조 (비과세소득)",
+            priority=2,
+        ))
+
+    # 생산직 연장근로수당 비과세 가능성 안내
+    if (inp.non_taxable_detail is None
+            and (inp.monthly_wage or 0) > 0
+            and (inp.monthly_wage or 0) <= 2_600_000
+            and inp.schedule.weekly_overtime_hours > 0):
+        hints.append(LegalHint(
+            category="비과세소득",
+            condition=f"월급 {(inp.monthly_wage or 0):,.0f}원 + 연장근로 있음",
+            hint=(
+                "생산직 종사자인 경우 연장·야간·휴일근로수당 연 240만원까지 비과세 가능. "
+                "non_taxable_detail에 is_production_worker=True와 overtime_nontax를 설정하세요."
+            ),
+            basis="소득세법 제12조제3호나목",
+            priority=2,
+        ))
 
     return hints
 

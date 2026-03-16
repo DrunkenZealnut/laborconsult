@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..base import BaseCalculatorResult
-from ..utils import parse_date
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from .severance import SeveranceResult
+from .shared import DateRange
 from ..constants import (
     RETIREMENT_SERVICE_DEDUCTION,
     CONVERTED_SALARY_DEDUCTION,
@@ -78,9 +78,8 @@ def calc_retirement_tax(
         service_days = severance_result.service_days
     else:
         retirement_pay = inp.retirement_pay_amount
-        start = parse_date(inp.start_date)
-        end = parse_date(inp.end_date) or date.today()
-        service_days = (end - start).days if start else 0
+        dr = DateRange(inp.start_date, inp.end_date)
+        service_days = dr.days
 
     if retirement_pay <= 0 or service_days <= 0:
         return _zero_result(retirement_pay, warnings, formulas, legal)

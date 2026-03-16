@@ -16,7 +16,7 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(__file__))
 
 from wage_calculator import WageCalculator, WageInput, WageType, WorkType, BusinessSize, WorkSchedule, AllowanceCondition
-from wage_calculator import WorkerType, WorkerEntry, BusinessSizeInput
+from wage_calculator import WorkerType, WorkerEntry, BusinessSizeInput, NonTaxableIncome
 from wage_calculator.calculators.business_size import calc_business_size
 from wage_calculator.result import format_result
 
@@ -1666,6 +1666,379 @@ TEST_CASES = [
             },
         ),
         "targets": ["business_size"],
+    },
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 벤치마크 개선 검증 테스트 (#99~#102) — legal-case-calculator-benchmark
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # ── B2: 평균임금 산정 제외기간 (근기법 시행령 제2조) ────────────────────
+    {
+        "id": 99,
+        "desc": "평균임금 — 사용자 귀책 휴업 14일 제외 (excluded_periods)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2022-03-01",
+            end_date="2025-03-01",
+            last_3m_wages=[3_000_000, 3_000_000, 2_000_000],
+            excluded_periods=[
+                {"start": "2025-01-10", "end": "2025-01-23", "reason": "사용자귀책휴업", "paid": 700_000},
+            ],
+        ),
+        "targets": ["severance"],
+        # 3개월 임금총액: 8,000,000원
+        # 제외: 14일, 700,000원
+        # 유효 임금: 8,000,000 - 700,000 = 7,300,000원
+        # 산정기간: 3개월(12,1,2) = 90일 - 14일 = 76일
+        # 1일 평균임금: 7,300,000 / 76 ≈ 96,053원
+        # 퇴직금: 96,053 × 30 × (3년) = 8,644,737원
+    },
+    {
+        "id": 100,
+        "desc": "평균임금 — 제외기간 없음 (baseline 비교용)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            start_date="2022-03-01",
+            end_date="2025-03-01",
+            last_3m_wages=[3_000_000, 3_000_000, 2_000_000],
+        ),
+        "targets": ["severance"],
+        # 3개월 임금총액: 8,000,000원
+        # 산정기간: 90일
+        # 1일 평균임금: 8,000,000 / 90 ≈ 88,889원
+        # 퇴직금: 88,889 × 30 × 3 = 8,000,000원
+        # #99 vs #100: 제외기간 적용 시 평균임금이 더 높아짐 (정상)
+    },
+
+    # ── B3: 복수사업장 실업급여 (고용보험법 제45조) ──────────────────────────
+    {
+        "id": 101,
+        "desc": "실업급여 — 복수사업장 합산 (multi_employer_wages)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            insurance_months=60,
+            age=35,
+            is_involuntary_quit=True,
+            multi_employer_wages=[
+                {"employer": "A사", "monthly_wage": 2_000_000, "months": 3},
+                {"employer": "B사", "monthly_wage": 1_500_000, "months": 3},
+            ],
+        ),
+        "targets": ["unemployment"],
+        # A사 3개월: 6,000,000 + B사 3개월: 4,500,000 = 10,500,000
+        # 평균임금 일액: 10,500,000 / 92 ≈ 114,130원
+        # 60%: ≈ 68,478원 → 상한 66,000원(2025) 적용
+        # 소정급여일수: 60개월 × 50세미만 → 210일
+        # 총액: 66,000 × 210 = 13,860,000원
+    },
+    {
+        "id": 102,
+        "desc": "실업급여 — 단일사업장 (multi_employer 미사용 baseline)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_500_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            insurance_months=60,
+            age=35,
+            is_involuntary_quit=True,
+        ),
+        "targets": ["unemployment"],
+        # 단일사업장 3,500,000 × 3 / 92 ≈ 114,130원/일
+        # 60%: ≈ 68,478원 → 상한 66,000원(2025) 적용
+        # 소정급여일수: 210일
+        # 총액: 66,000 × 210 = 13,860,000원
+    },
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 비과세 근로소득 구조화 테스트 (#103~#110) — income-tax-nontaxable
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # ── NT-01: 식대만 (기존 호환 검증) ─────────────────────────────────────
+    {
+        "id": 103,
+        "desc": "비과세 NT-01 — 식대 20만원만 (기존 monthly_non_taxable=200,000과 동일 세금)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(meal_allowance=200_000),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 200,000원 (식대 한도 내)
+        # 과세소득: 3,000,000 - 200,000 = 2,800,000원
+        # 기존 monthly_non_taxable=200,000과 동일 세금
+    },
+
+    # ── NT-02: 식대+자가운전 ──────────────────────────────────────────────
+    {
+        "id": 104,
+        "desc": "비과세 NT-02 — 식대 20만 + 자가운전 20만 (비과세 40만)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                meal_allowance=200_000,
+                car_subsidy=200_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 200,000 + 200,000 = 400,000원
+        # 과세소득: 3,000,000 - 400,000 = 2,600,000원
+    },
+
+    # ── NT-03: 식대 한도 초과 ─────────────────────────────────────────────
+    {
+        "id": 105,
+        "desc": "비과세 NT-03 — 식대 30만원 (한도 20만 초과 → warning)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(meal_allowance=300_000),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 200,000원 (한도), 초과분 100,000원은 과세
+        # warning: "식대: 300,000원 중 200,000원만 비과세, 초과분 100,000원은 과세소득 편입"
+        # 과세소득: 3,000,000 - 200,000 = 2,800,000원
+    },
+
+    # ── NT-04: 생산직 OT 적격 ─────────────────────────────────────────────
+    {
+        "id": 106,
+        "desc": "비과세 NT-04 — 생산직 연장근로수당 비과세 적격 (월급 200만)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=2_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                overtime_nontax=300_000,
+                is_production_worker=True,
+                prev_year_total_salary=25_000_000,
+            ),
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 2025년 기준: 월급 2,100,000원 이하 & 전년도 총급여 3,000만원 이하 → 적격
+        # 월 한도: 2,400,000 / 12 = 200,000원
+        # 비과세: min(300,000, 200,000) = 200,000원
+        # warning: 월 300,000원 중 200,000원만 비과세
+    },
+
+    # ── NT-05: 생산직 OT 부적격 (월급 초과) ───────────────────────────────
+    {
+        "id": 107,
+        "desc": "비과세 NT-05 — 생산직 OT 부적격 (월급 300만 → 한도 초과)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                overtime_nontax=300_000,
+                is_production_worker=True,
+                prev_year_total_salary=25_000_000,
+            ),
+            schedule=WorkSchedule(
+                daily_work_hours=8,
+                weekly_work_days=5,
+                weekly_overtime_hours=10,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 2025년 기준: 월급 3,000,000 > 2,100,000 → 부적격
+        # warning: "연장근로수당 비과세 부적격: ..."
+        # 비과세 OT분: 0원
+    },
+
+    # ── NT-06: non_taxable_detail=None 하위 호환 ──────────────────────────
+    {
+        "id": 108,
+        "desc": "비과세 NT-06 — non_taxable_detail 미사용 (기존 동작 100% 호환)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            monthly_non_taxable=200_000,
+        ),
+        "targets": ["insurance"],
+        # non_taxable_detail=None → 기존 로직 (monthly_non_taxable 사용)
+        # 과세소득: 3,000,000 - 200,000 = 2,800,000원
+        # NT-01과 동일 세금 결과
+    },
+
+    # ── NT-07: 국외근로 (건설현장) ────────────────────────────────────────
+    {
+        "id": 109,
+        "desc": "비과세 NT-07 — 국외근로 건설현장 400만원 (한도 500만)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=6_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                overseas_pay=4_000_000,
+                is_overseas_construction=True,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 해외건설현장 한도: 5,000,000원/월
+        # 비과세: min(4,000,000, 5,000,000) = 4,000,000원
+        # 과세소득: 6,000,000 - 4,000,000 = 2,000,000원
+    },
+
+    # ── NT-08: 복합 항목 (식대+차량+보육) ─────────────────────────────────
+    {
+        "id": 110,
+        "desc": "비과세 NT-08 — 복합 (식대20+차량15+보육20, 자녀1명) = 비과세 55만",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=4_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                meal_allowance=200_000,
+                car_subsidy=150_000,
+                childcare_allowance=200_000,
+                num_childcare_children=1,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 식대: min(200,000, 200,000) = 200,000
+        # 자가운전: min(150,000, 200,000) = 150,000
+        # 보육수당: min(200,000, 200,000×1) = 200,000
+        # 비과세 합계: 550,000원
+        # 과세소득: 4,000,000 - 550,000 = 3,450,000원
+    },
+
+    # ── NT-09: 단체보장성보험료 연 70만 한도 ──────────────────────────────
+    {
+        "id": 111,
+        "desc": "비과세 NT-09 — 단체보장성보험료 연 80만 (한도 70만 초과)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                group_insurance_annual=800_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 연 700,000 → 월 58,333원
+        # warning: "단체보장성보험료: 연 800,000원 중 700,000원만 비과세"
+    },
+
+    # ── NT-10: 승선수당 월 20만 한도 ─────────────────────────────────────
+    {
+        "id": 112,
+        "desc": "비과세 NT-10 — 승선수당 25만 (한도 20만 초과)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                boarding_allowance=250_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 200,000원, 초과분 50,000원 과세
+    },
+
+    # ── NT-11: 근로자 학자금 무한도 ──────────────────────────────────────
+    {
+        "id": 113,
+        "desc": "비과세 NT-11 — 근로자 학자금 100만원 (무한도 전액 비과세)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                tuition_support=1_000_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 1,000,000원 전액, warning 없음
+    },
+
+    # ── NT-12: 경조금 무한도 ─────────────────────────────────────────────
+    {
+        "id": 114,
+        "desc": "비과세 NT-12 — 경조금 30만원 (무한도 전액 비과세)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=3_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                congratulatory_pay=300_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 300,000원 전액
+    },
+
+    # ── NT-13: 사택 제공 이익 무한도 ─────────────────────────────────────
+    {
+        "id": 115,
+        "desc": "비과세 NT-13 — 사택 제공 이익 50만원 (무한도 전액 비과세)",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=4_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                company_housing=500_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 비과세: 500,000원 전액
+    },
+
+    # ── NT-14: 복합 13개 항목 ────────────────────────────────────────────
+    {
+        "id": 116,
+        "desc": "비과세 NT-14 — 복합 (기존3 + 신규3: 단체보험+학자금+승선) = 비과세 합산 검증",
+        "input": WageInput(
+            wage_type=WageType.MONTHLY,
+            monthly_wage=5_000_000,
+            business_size=BusinessSize.OVER_5,
+            reference_year=2025,
+            non_taxable_detail=NonTaxableIncome(
+                meal_allowance=200_000,
+                car_subsidy=200_000,
+                childcare_allowance=200_000,
+                num_childcare_children=1,
+                group_insurance_annual=700_000,
+                tuition_support=500_000,
+                boarding_allowance=200_000,
+            ),
+        ),
+        "targets": ["insurance"],
+        # 식대: 200,000 + 자가운전: 200,000 + 보육: 200,000
+        # 단체보험: 700,000/12 = 58,333 + 학자금: 500,000 + 승선: 200,000
+        # 비과세 합계: 200,000 + 200,000 + 200,000 + 58,333 + 500,000 + 200,000 = 1,358,333원
     },
 ]
 

@@ -132,6 +132,72 @@ def search_pinecone_multi(
     return all_hits[:top_k * 2]  # 최대 top_k*2건
 
 
+RERANK_MODEL = "rerank-v3.5"
+RERANK_TOP_N = 5
+
+
+def rerank_results(
+    query: str,
+    hits: list[dict],
+    cohere_api_key: str,
+    top_n: int = RERANK_TOP_N,
+) -> list[dict]:
+    """Cohere Rerank로 검색 결과 재정렬.
+
+    Args:
+        query: 원본 사용자 질문 (rerank 기준)
+        hits: Pinecone 검색 결과 리스트
+        cohere_api_key: Cohere API 키
+        top_n: 반환할 상위 결과 수
+
+    Returns:
+        재정렬된 상위 top_n건. 실패 시 원본 hits[:top_n] 반환.
+    """
+    if not hits or not cohere_api_key:
+        return hits[:top_n]
+
+    try:
+        import cohere
+
+        co = cohere.ClientV2(api_key=cohere_api_key)
+
+        # Rerank용 문서 텍스트 추출
+        documents = []
+        for h in hits:
+            text = ""
+            if h.get("title"):
+                text += h["title"] + " "
+            if h.get("section"):
+                text += h["section"] + " "
+            if h.get("content"):
+                text += h["content"]
+            documents.append(text.strip() or "(empty)")
+
+        result = co.rerank(
+            model=RERANK_MODEL,
+            query=query,
+            documents=documents,
+            top_n=min(top_n, len(hits)),
+        )
+
+        # 재정렬된 인덱스로 hits 재구성
+        reranked = []
+        for item in result.results:
+            hit = hits[item.index].copy()
+            hit["rerank_score"] = round(item.relevance_score, 4)
+            reranked.append(hit)
+
+        logger.info(
+            "Rerank 완료: %d건 → %d건 (model=%s)",
+            len(hits), len(reranked), RERANK_MODEL,
+        )
+        return reranked
+
+    except Exception as e:
+        logger.warning("Rerank 실패, cosine 정렬 폴백: %s", e)
+        return hits[:top_n]
+
+
 def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
     """Pinecone 검색 결과를 LLM 컨텍스트 텍스트 + 메타 리스트로 변환.
 

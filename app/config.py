@@ -27,6 +27,7 @@ class AppConfig:
     supabase: SupabaseClient | None = None
     law_api_key: str | None = None
     odcloud_api_key: str | None = None
+    cohere_api_key: str | None = None
     analyzer_model: str = EXTRACT_MODEL
     embed_model: str = EMBED_MODEL
 
@@ -56,6 +57,7 @@ class AppConfig:
         supabase = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
         law_api_key = os.getenv("LAW_API_KEY")
         odcloud_api_key = os.getenv("ODCLOUD_API_KEY")
+        cohere_api_key = os.getenv("COHERE_API_KEY")
         return cls(
             openai_client=openai_client,
             pinecone_index=pinecone_index,
@@ -64,4 +66,5 @@ class AppConfig:
             supabase=supabase,
             law_api_key=law_api_key,
             odcloud_api_key=odcloud_api_key,
+            cohere_api_key=cohere_api_key,
         )

@@ -26,7 +26,7 @@ from datetime import date as _date, timedelta
 from ..base import BaseCalculatorResult
 from ..constants import WEEKLY_HOLIDAY_MIN_HOURS, WEEKLY_FULL_HOURS
 from ..models import WageInput, WageType
-from ..utils import WEEKS_PER_MONTH
+from ..utils import WEEKS_PER_MONTH, parse_date
 from .ordinary_wage import OrdinaryWageResult
 
 _DAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
@@ -129,7 +129,18 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
     # ── 퇴직 마지막 주 주휴수당 발생 여부 (고용부 2021.8.4. 행정해석 변경) ──
     # end_date = 퇴직일 (= 마지막 근무일 다음날)이 입력된 경우에만 판단
     if inp.end_date:
-        sep = _date.fromisoformat(inp.end_date)       # 퇴직일
+        sep = parse_date(inp.end_date)                 # 퇴직일
+        if sep is None:
+            return WeeklyHolidayResult(
+                weekly_holiday_pay=round(weekly_pay, 0),
+                monthly_holiday_pay=round(monthly_pay, 0),
+                holiday_hours=holiday_hours,
+                is_eligible=True,
+                breakdown=breakdown,
+                formulas=formulas,
+                warnings=warnings,
+                legal_basis=legal,
+            )
         last_work = sep - timedelta(days=1)            # 마지막 근무일
 
         # 마지막 근무일이 속한 주의 주휴일(일요일) 산출

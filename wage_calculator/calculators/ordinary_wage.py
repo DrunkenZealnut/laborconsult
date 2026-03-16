@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from ..models import WageInput, WageType, WorkType
 from ..constants import MONTHLY_STANDARD_HOURS, SHIFT_MONTHLY_HOURS, WEEKLY_HOLIDAY_MIN_HOURS
 from ..utils import WEEKS_PER_MONTH
+from .shared import normalize_allowances
 
 
 @dataclass
@@ -85,30 +86,27 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     # ── Step 2: 고정수당 중 통상임금 포함분 합산 ─────────────────────────────
     # 대법원 2023다302838: 재직조건·근무일수 조건부도 통상임금 포함 가능
     allowance_total = 0.0
-    for a in inp.fixed_allowances:
-        name = a.get("name", "수당")
-        condition = a.get("condition", "없음")
-        amount = float(a.get("amount", 0))
-        is_annual = a.get("annual", False)  # 연간 금액이면 /12
-        is_ordinary, note = _resolve_is_ordinary(a)
+    allowances = normalize_allowances(inp.fixed_allowances)
+    for a in allowances:
+        is_ordinary, note = _resolve_is_ordinary_fa(a)
 
         # 최소보장 성과급: guaranteed_amount가 있으면 그 금액만 산입
-        if condition == "최소보장성과" and is_ordinary:
-            guaranteed = float(a.get("guaranteed_amount", amount))
-            effective_amount = min(max(0, guaranteed), amount)  # 0 ≤ 보장분 ≤ 총액
+        if a.condition == "최소보장성과" and is_ordinary:
+            guaranteed = a.guaranteed_amount if a.guaranteed_amount is not None else a.amount
+            effective_amount = min(max(0, guaranteed), a.amount)
         else:
-            effective_amount = amount
+            effective_amount = a.amount
 
-        monthly_amount = effective_amount / 12 if is_annual else effective_amount
+        monthly_amount = effective_amount / 12 if a.annual else effective_amount
 
         if is_ordinary:
             allowance_total += monthly_amount
-            label = f"{name}: {monthly_amount:,.0f}원/월"
+            label = f"{a.name}: {monthly_amount:,.0f}원/월"
             if note:
                 label += f" ({note})"
             included_items.append(label)
         else:
-            label = f"{name}: {monthly_amount:,.0f}원/월 (통상임금 제외)"
+            label = f"{a.name}: {monthly_amount:,.0f}원/월 (통상임금 제외)"
             if note:
                 label += f" — {note}"
             excluded_items.append(label)
@@ -134,16 +132,17 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     )
 
 
-def _resolve_is_ordinary(allowance: dict) -> tuple[bool, str]:
+def _resolve_is_ordinary_fa(allowance) -> tuple[bool, str]:
     """
     수당의 통상임금 포함 여부 결정 (대법원 2023다302838 반영)
+    FixedAllowance 속성 접근 방식 사용
 
     Returns:
         (is_ordinary, note) — note는 판결 적용 시 설명 문자열
     """
-    condition = allowance.get("condition", "없음")
-    explicit = allowance.get("is_ordinary")   # None이면 미설정
-    name = allowance.get("name", "수당")
+    condition = allowance.condition
+    explicit = allowance.is_ordinary
+    name = allowance.name
 
     # 성과조건: 통상임금 제외 (명시적으로 포함 설정해도 경고)
     if condition == "성과조건":

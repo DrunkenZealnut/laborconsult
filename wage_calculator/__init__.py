@@ -29,7 +29,7 @@ from .base import BaseCalculatorResult
 from .calculators.ordinary_wage import OrdinaryWageResult
 from .models import (
     WageInput, WageType, WorkType, BusinessSize, WorkSchedule, AllowanceCondition,
-    WorkerType, WorkerEntry, BusinessSizeInput,
+    WorkerType, WorkerEntry, BusinessSizeInput, NonTaxableIncome,
 )
 from .result import WageResult, format_result, format_result_json
 from .legal_hints import LegalHint, generate_legal_hints, format_hints
@@ -50,6 +50,7 @@ __all__ = [
     "WorkerType",
     "WorkerEntry",
     "BusinessSizeInput",
+    "NonTaxableIncome",
     "BusinessSizeResult",
     "EitcResult",
     "AverageWageResult",

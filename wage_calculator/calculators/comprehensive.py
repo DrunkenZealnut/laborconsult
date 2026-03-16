@@ -25,8 +25,9 @@
 from dataclasses import dataclass, field
 
 from ..base import BaseCalculatorResult
-from ..models import WageInput, WageType, WorkType, BusinessSize
+from ..models import WageInput, WageType, WorkType
 from .ordinary_wage import OrdinaryWageResult
+from .shared import MultiplierContext
 from ..constants import MINIMUM_HOURLY_WAGE
 
 # 주 → 월 환산 계수
@@ -162,20 +163,20 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
 
         # 역산으로 추정되는 수당 내역
         s = inp.schedule
-        is_under5 = inp.business_size == BusinessSize.UNDER_5
+        mc = MultiplierContext(inp)
         base_hours = coeff_detail["기본시간"]
         est_base = effective_hourly * base_hours
         included_allowances["추정 기본급"] = f"{est_base:,.0f}원"
 
         if s.weekly_overtime_hours > 0:
-            ot_rate = 1.5 if not is_under5 else 1.0
+            ot_rate = 1.0 + mc.overtime
             est_ot = effective_hourly * s.weekly_overtime_hours * ot_rate * WEEKS_PER_MONTH
             included_allowances["추정 연장수당"] = f"{est_ot:,.0f}원"
-        if s.weekly_night_hours > 0 and not is_under5:
-            est_night = effective_hourly * s.weekly_night_hours * 0.5 * WEEKS_PER_MONTH
+        if s.weekly_night_hours > 0 and not mc.is_small:
+            est_night = effective_hourly * s.weekly_night_hours * mc.night * WEEKS_PER_MONTH
             included_allowances["추정 야간수당"] = f"{est_night:,.0f}원"
         if s.weekly_holiday_hours > 0:
-            hol_rate = 1.5 if not is_under5 else 1.0
+            hol_rate = 1.0 + mc.holiday
             est_hol = effective_hourly * s.weekly_holiday_hours * hol_rate * WEEKS_PER_MONTH
             included_allowances["추정 휴일수당"] = f"{est_hol:,.0f}원"
 
@@ -193,7 +194,8 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
         )
 
     # ── 5인 미만 안내 ──────────────────────────────────────────────────────────
-    if inp.business_size == BusinessSize.UNDER_5:
+    mc_warn = MultiplierContext(inp)
+    if mc_warn.is_small:
         warnings.append(
             "5인 미만 사업장: 연장·야간·휴일 가산수당(×0.5) 미적용 "
             "(근기법 제56조 적용 제외)"
@@ -292,7 +294,7 @@ def _check_validity(inp: WageInput) -> tuple[bool, list]:
 def _calc_coefficient_hours(inp: WageInput) -> tuple[float, dict]:
     """총계수시간 산출 — 가산율 반영 (5인 미만 시 가산 없음)"""
     s = inp.schedule
-    is_under5 = inp.business_size == BusinessSize.UNDER_5
+    mc = MultiplierContext(inp)
     wpm = WEEKS_PER_MONTH
 
     # 기본시간 = (소정근로 + 주휴) × 주→월 환산
@@ -300,11 +302,11 @@ def _calc_coefficient_hours(inp: WageInput) -> tuple[float, dict]:
     weekly_holiday_paid = s.daily_work_hours if weekly_paid >= 15 else 0
     base_hours = (weekly_paid + weekly_holiday_paid) * wpm
 
-    # 가산율 결정
-    ot_mult = 1.5 if not is_under5 else 1.0
-    night_mult = 0.5 if not is_under5 else 0.0
-    hol_mult = 1.5 if not is_under5 else 1.0
-    hol_ot_mult = 2.0 if not is_under5 else 1.0
+    # 가산율 결정 (MultiplierContext: 가산분만 반환, 기본 1.0은 여기서 추가)
+    ot_mult = 1.0 + mc.overtime
+    night_mult = mc.night
+    hol_mult = 1.0 + mc.holiday
+    hol_ot_mult = 1.0 + mc.holiday + mc.holiday_ot
 
     ot_coeff = s.weekly_overtime_hours * ot_mult * wpm
     night_coeff = s.weekly_night_hours * night_mult * wpm
@@ -328,21 +330,21 @@ def _calc_allowance_comparison(
 ) -> dict:
     """수당별 적정액 vs 포함액 비교"""
     s = inp.schedule
-    is_under5 = inp.business_size == BusinessSize.UNDER_5
+    mc = MultiplierContext(inp)
     wpm = WEEKS_PER_MONTH
 
     items = [
         ("연장수당", s.weekly_overtime_hours,
-         1.5 if not is_under5 else 1.0,
+         1.0 + mc.overtime,
          float(bd.get("overtime_pay", 0))),
         ("야간수당", s.weekly_night_hours,
-         0.5 if not is_under5 else 0.0,
+         mc.night,
          float(bd.get("night_pay", 0))),
         ("휴일수당(8h이내)", s.weekly_holiday_hours,
-         1.5 if not is_under5 else 1.0,
+         1.0 + mc.holiday,
          float(bd.get("holiday_pay", 0))),
         ("휴일수당(8h초과)", s.weekly_holiday_overtime_hours,
-         2.0 if not is_under5 else 1.0,
+         1.0 + mc.holiday + mc.holiday_ot,
          float(bd.get("holiday_ot_pay", 0))),
     ]
 

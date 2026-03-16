@@ -22,12 +22,12 @@
 """
 
 from dataclasses import dataclass
-from datetime import date
 
 from ..base import BaseCalculatorResult
 from ..constants import MINIMUM_HOURLY_WAGE, UNEMPLOYMENT_BENEFIT_UPPER
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
+from .shared import DateRange
 
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
@@ -107,9 +107,8 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
     # ── 1. 피보험기간 산정 ────────────────────────────────────────────────────
     insurance_months = getattr(inp, "insurance_months", None)
     if insurance_months is None and inp.start_date:
-        start = date.fromisoformat(inp.start_date)
-        end   = date.fromisoformat(inp.end_date) if inp.end_date else date.today()
-        insurance_months = max(0, int((end - start).days / 30.44))
+        dr = DateRange(inp.start_date, inp.end_date)
+        insurance_months = dr.months_approx
 
     if insurance_months is None:
         insurance_months = 0
@@ -146,12 +145,36 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
             return _ineligible(reason, warnings, legal)
 
     # ── 3. 평균임금 일액 산정 ─────────────────────────────────────────────────
-    # 상여금/연차수당 3개월 비례분 가산 (nodong.kr 기준)
+    # 3-0. 다중 사업장 평균임금 (고용보험법 제45조 제1항 단서)
+    multi = getattr(inp, "multi_employer_wages", None)
+    if multi and len(multi) >= 2:
+        total_wages = sum(
+            float(e.get("monthly_wage", 0)) * float(e.get("months", 1))
+            for e in multi
+        )
+        period_days_multi = 92  # 3개월 기준
+        avg_daily = total_wages / period_days_multi
+        formulas.append(
+            f"다중 사업장 평균임금: "
+            + " + ".join(
+                f"{e.get('employer', '?')} {float(e.get('monthly_wage', 0)):,.0f}원×{e.get('months', 1)}개월"
+                for e in multi
+            )
+            + f" = {total_wages:,.0f}원 ÷ {period_days_multi}일 = {avg_daily:,.0f}원"
+        )
+        legal.append("고용보험법 제45조 제1항 단서 (최종이직 전 3개월 내 2회 이상 피보험자격 취득)")
+    else:
+        # 상여금/연차수당 3개월 비례분 가산 (nodong.kr 기준)
+        avg_daily = None  # 아래에서 계산
+
+    # 단일 사업장 (기존 로직)
     bonus_3m = (inp.annual_bonus_total / 12) * 3 if inp.annual_bonus_total else 0
     leave_pay_3m = (inp.unused_annual_leave_pay / 12) * 3 if inp.unused_annual_leave_pay else 0
     extra_3m = bonus_3m + leave_pay_3m
 
-    if inp.last_3m_wages and inp.last_3m_days:
+    if avg_daily is not None:
+        pass  # 다중 사업장에서 이미 계산됨
+    elif inp.last_3m_wages and inp.last_3m_days:
         base_3m   = sum(inp.last_3m_wages)
         total_3m  = base_3m + extra_3m
         avg_daily = total_3m / inp.last_3m_days

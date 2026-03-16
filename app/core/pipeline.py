@@ -25,8 +25,9 @@ from app.core.legal_api import (
     search_precedent_multi, fetch_precedent_details,
 )
 from app.core.precedent_query import build_precedent_queries
+from app.core.query_decomposer import decompose_query
 from app.core.nlrc_cases import search_nlrc_with_details
-from app.core.rag import search_pinecone_multi, format_pinecone_hits
+from app.core.rag import search_pinecone_multi, format_pinecone_hits, rerank_results
 from app.core.legal_consultation import process_consultation
 from app.core.citation_validator import (
     build_available_citations_text,
@@ -37,6 +38,34 @@ from app.core.citation_validator import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ── 멀티쿼리 병합 헬퍼 ──────────────────────────────────────────────────────
+
+def _merge_search_queries(
+    decomposed: list[str],
+    rule_based: list[str],
+    fallback: str,
+    max_total: int = 5,
+) -> list[str]:
+    """LLM 분해 + 규칙 기반 쿼리를 병합, 중복 제거.
+
+    우선순위: decomposed > rule_based > fallback
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+
+    for q in decomposed + rule_based:
+        normalized = q.strip().lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            merged.append(q.strip())
+
+    # 결과가 없으면 폴백
+    if not merged:
+        merged.append(fallback)
+
+    return merged[:max_total]
 
 
 # ── LLM 스트리밍 (Claude → OpenAI → Gemini 폴백) ────────────────────────────
@@ -797,7 +826,7 @@ def process_question(query: str, session: Session, config: AppConfig,
         try:
             yield {"type": "status", "text": "관련 판례 검색 중..."}
 
-            # 맥락 기반 쿼리 확장
+            # 맥락 기반 쿼리 확장 (규칙 기반)
             prec_queries = []
             if getattr(analysis, "precedent_keywords", None):
                 prec_queries = build_precedent_queries(
@@ -806,13 +835,33 @@ def process_question(query: str, session: Session, config: AppConfig,
                     consultation_topic=analysis.consultation_topic,
                 )
 
-            # ① Pinecone 벡터 검색 (우선)
-            pinecone_search_queries = prec_queries or [
-                getattr(analysis, "question_summary", None) or query[:80]
-            ]
-            pinecone_hits = search_pinecone_multi(
-                pinecone_search_queries, config, top_k=5,
+            # LLM 멀티쿼리 분해 (복합 질문 → 2~4개 관점별 쿼리)
+            decomposed = decompose_query(
+                query,
+                config.claude_client,
+                consultation_topic=getattr(analysis, "consultation_topic", None),
+                question_summary=getattr(analysis, "question_summary", None),
             )
+
+            # 쿼리 병합: LLM 분해 + 규칙 기반 + 폴백(원본)
+            pinecone_search_queries = _merge_search_queries(
+                decomposed=decomposed,
+                rule_based=prec_queries,
+                fallback=getattr(analysis, "question_summary", None) or query[:80],
+            )
+
+            # ① Pinecone 벡터 검색 (우선) — rerank 시 후보 확대
+            search_top_k = 15 if config.cohere_api_key else 5
+            pinecone_hits = search_pinecone_multi(
+                pinecone_search_queries, config, top_k=search_top_k,
+            )
+
+            # ② Cohere Rerank (API 키 설정 시)
+            if pinecone_hits and config.cohere_api_key:
+                pinecone_hits = rerank_results(
+                    query, pinecone_hits, config.cohere_api_key,
+                )
+
             if pinecone_hits:
                 precedent_text, precedent_meta = format_pinecone_hits(pinecone_hits)
                 logger.info("Pinecone 판례·행정해석 %d건 사용", len(pinecone_hits))

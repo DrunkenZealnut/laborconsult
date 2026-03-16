@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from app.config import AppConfig
 from app.models.schemas import ChatRequest, ChatWithFilesRequest
 from app.models.session import get_or_create_session
+from app.core.storage import restore_session_data
 from app.core.pipeline import process_question
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
 
@@ -52,6 +53,14 @@ def get_config() -> AppConfig:
     return _config
 
 
+def _restore_fn(session_id: str) -> dict | None:
+    """Supabase 세션 복원 함수 (config 의존)"""
+    config = get_config()
+    if config.supabase:
+        return restore_session_data(config.supabase, session_id)
+    return None
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -61,7 +70,7 @@ def health():
 def chat(req: ChatRequest):
     """동기 응답 — 전체 답변 한 번에 반환"""
     config = get_config()
-    session = get_or_create_session(req.session_id)
+    session, _ = get_or_create_session(req.session_id, _restore_fn)
 
     full_text = ""
     calc_result = None
@@ -89,7 +98,7 @@ def chat(req: ChatRequest):
 def chat_stream(message: str, session_id: str | None = None):
     """SSE 스트리밍 응답 (텍스트 전용, 하위 호환)"""
     config = get_config()
-    session = get_or_create_session(session_id)
+    session, _ = get_or_create_session(session_id, _restore_fn)
 
     def event_generator():
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
@@ -115,7 +124,7 @@ def chat_stream(message: str, session_id: str | None = None):
 def chat_stream_with_files(req: ChatWithFilesRequest):
     """SSE 스트리밍 응답 — 파일 첨부 지원"""
     config = get_config()
-    session = get_or_create_session(req.session_id)
+    session, _ = get_or_create_session(req.session_id, _restore_fn)
 
     # 첨부파일 파싱
     parsed_attachments = []

@@ -53,11 +53,20 @@ def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResu
         "근로기준법 시행령 제2조 (평균임금 < 통상임금 시 통상임금 적용)",
     ]
 
-    # ── 1. 산정기간 일수 ───────────────────────────────────────────────────────
+    # ── 1. 산정기간 일수 (제외 기간 반영) ──────────────────────────────────────
     period_days = _calc_period_days(inp)
+    excluded_days, excluded_wages = _calc_excluded(inp)
+    period_days = max(period_days - excluded_days, 1)
 
-    # ── 2. 3개월 임금총액 ──────────────────────────────────────────────────────
+    # ── 2. 3개월 임금총액 (제외 임금 차감) ──────────────────────────────────────
     wage_total, wage_note = _calc_wage_total(inp, ow)
+    wage_total -= excluded_wages
+    if excluded_days > 0:
+        formulas.append(
+            f"산정기간 제외: {excluded_days}일, 제외 임금: {excluded_wages:,.0f}원 "
+            f"(근기법 시행령 제2조)"
+        )
+        legal.append("근로기준법 시행령 제2조 제1항 (평균임금 산정 제외 기간)")
 
     # ── 3. 상여금·연차수당 가산 ────────────────────────────────────────────────
     bonus_addition = inp.annual_bonus_total * 3 / 12 if inp.annual_bonus_total > 0 else 0
@@ -182,6 +191,27 @@ def _calc_wage_total(inp: WageInput, ow: OrdinaryWageResult) -> tuple[float, str
         return inp.monthly_wage * 3, " (월급 × 3 추정)"
 
     return ow.monthly_ordinary_wage * 3, " (통상임금 × 3 추정)"
+
+
+def _calc_excluded(inp: WageInput) -> tuple[int, float]:
+    """
+    평균임금 산정 제외 기간·임금 합산 (근기법 시행령 제2조)
+
+    Returns: (제외 일수, 제외 임금)
+    """
+    if not getattr(inp, "excluded_periods", None):
+        return 0, 0.0
+
+    excluded_days = 0
+    excluded_wages = 0.0
+    for period in inp.excluded_periods:
+        start = parse_date(period.get("start"))
+        end = parse_date(period.get("end"))
+        if start and end:
+            excluded_days += (end - start).days + 1
+            excluded_wages += float(period.get("paid", 0))
+
+    return excluded_days, excluded_wages
 
 
 def _subtract_months(d: date, months: int) -> date:

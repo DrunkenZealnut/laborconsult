@@ -28,7 +28,7 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
-from ..models import WageInput
+from ..models import WageInput, NonTaxableIncome
 from .ordinary_wage import OrdinaryWageResult
 from ..constants import (
     get_insurance_rates,
@@ -36,11 +36,18 @@ from ..constants import (
     INCOME_TAX_BRACKETS,
     EARNED_INCOME_DEDUCTION,
     PERSONAL_DEDUCTION_PER_PERSON,
-    CHILD_TAX_CREDIT_MONTHLY,
-    CHILD_TAX_CREDIT_BASE_3PLUS,
-    CHILD_TAX_CREDIT_PER_EXTRA,
     INDUSTRIAL_ACCIDENT_COMPONENTS,
     DEFAULT_INDUSTRY_RATE,
+    SPECIAL_DEDUCTION_PARAMS,
+    HIGH_INCOME_TAX_BRACKETS,
+    EARNED_INCOME_TAX_CREDIT_THRESHOLD,
+    EARNED_INCOME_TAX_CREDIT_LOW_RATE,
+    EARNED_INCOME_TAX_CREDIT_HIGH_BASE,
+    EARNED_INCOME_TAX_CREDIT_HIGH_RATE,
+    EARNED_INCOME_TAX_CREDIT_LIMITS,
+    get_child_tax_credit_monthly,
+    get_nontaxable_limits,
+    NON_TAXABLE_INCOME_LEGAL_BASIS,
 )
 
 # 실질 근로자 판단 체크리스트 (대법원 2006다49653 등)
@@ -159,40 +166,82 @@ def _calc_employee(
 
     total_insurance = national_pension + health_insurance + long_term_care + employment_insurance
 
-    # ── 근로소득세 (간이세액표 근사 계산) ───────────────────────────────────
-    # 과세 기준: 월 급여 - 비과세 소득
-    taxable_monthly = max(0.0, gross - inp.monthly_non_taxable)
-    # 연간 총급여
-    annual_gross = taxable_monthly * 12
+    # ── 비과세 근로소득 산정 ──────────────────────────────────────────────────
+    if inp.non_taxable_detail is not None:
+        nontax_amount, nontax_warns, nontax_formulas, nontax_legal = (
+            calc_nontaxable_total(inp.non_taxable_detail, year, inp)
+        )
+        warnings.extend(nontax_warns)
+        formulas.extend(nontax_formulas)
+        legal.extend(nontax_legal)
+    else:
+        nontax_amount = inp.monthly_non_taxable
 
-    # 근로소득공제
-    earned_deduction = _calc_earned_income_deduction(annual_gross)
-    # 기본공제 (부양가족 × 150만원)
-    personal_deduction = inp.tax_dependents * PERSONAL_DEDUCTION_PER_PERSON
-    # 표준세액공제 (연 13만원, 간이세액표 단순화)
-    standard_tax_credit = 130_000
+    # ── 근로소득세 (2026 간이세액표 산출식, 소득세법 시행령 별표 2 <개정 2026. 2. 27.>) ──
+    taxable_monthly = max(0.0, gross - nontax_amount)
 
-    taxable_income = max(0.0, annual_gross - earned_deduction - personal_deduction)
+    if taxable_monthly > 10_000_000:
+        # 월급여액 10,000천원 초과: 고소득 간이세액표 산출식
+        # ① 10,000천원 기준세액 산출 (산출식 ①~⑨ 적용)
+        base_annual = 10_000_000 * 12
+        earned_ded = _stepped_deduction(base_annual)
+        personal_ded = inp.tax_dependents * PERSONAL_DEDUCTION_PER_PERSON
+        pension_annual = national_pension * 12
+        special_ded = _calc_special_deduction(base_annual, inp.tax_dependents)
+        taxable_income = max(0.0, base_annual - earned_ded - personal_ded
+                             - pension_annual - special_ded)
+        assessed_tax = _calc_income_tax(taxable_income)
+        earned_credit = _calc_earned_income_tax_credit(assessed_tax, base_annual)
+        annual_tax_at_10m = max(0.0, assessed_tax - earned_credit)
+        base_tax = (int(annual_tax_at_10m / 12) // 10) * 10
 
-    annual_income_tax = _calc_income_tax(taxable_income) - standard_tax_credit
-    annual_income_tax = max(0.0, annual_income_tax)
+        # ② 초과분 가산세액
+        surcharge = _calc_high_income_surcharge(taxable_monthly)
+        income_tax = base_tax + surcharge
 
-    income_tax = int(annual_income_tax / 12)  # 원 미만 절사
+        formulas.append(
+            f"근로소득세(간이세액표 고소득): 10,000천원 기준세액 {base_tax:,.0f}원"
+            f" + 초과분 가산세액 {surcharge:,.0f}원 = 월 {income_tax:,.0f}원"
+            f" (부양가족 {inp.tax_dependents}인, 비과세 {nontax_amount:,.0f}원/월)"
+        )
+    else:
+        annual_gross = taxable_monthly * 12
+        # ① 근로소득공제
+        earned_deduction = _stepped_deduction(annual_gross)
+        # ② 인적공제 (공제대상가족 × 150만원)
+        personal_deduction = inp.tax_dependents * PERSONAL_DEDUCTION_PER_PERSON
+        # ③ 연금보험료공제 (국민연금 연간 납부액)
+        pension_annual = national_pension * 12
+        # ④ 특별소득공제 및 특별세액공제
+        special_deduction = _calc_special_deduction(annual_gross, inp.tax_dependents)
+        # ⑤ 과세표준
+        taxable_income = max(0.0, annual_gross - earned_deduction - personal_deduction
+                             - pension_annual - special_deduction)
+        # ⑥ 산출세액
+        assessed_tax = _calc_income_tax(taxable_income)
+        # ⑦ 근로소득세액공제
+        earned_tax_credit = _calc_earned_income_tax_credit(assessed_tax, annual_gross)
+        # ⑧ 연간 결정세액
+        annual_income_tax = max(0.0, assessed_tax - earned_tax_credit)
+        # ⑨ 월 근로소득세 (10원 미만 절사)
+        income_tax = (int(annual_income_tax / 12) // 10) * 10
 
-    # ── 자녀세액공제 (8~20세 자녀) ─────────────────────────────────────────
-    child_credit = _calc_child_tax_credit(inp.num_children_8_to_20)
+        formulas.append(
+            f"근로소득세(간이세액표): 연 과세표준 {taxable_income:,.0f}원"
+            f" → 산출세액 {assessed_tax:,.0f}원 - 세액공제 {earned_tax_credit:,.0f}원"
+            f" → 월 {income_tax:,.0f}원"
+            f" (부양가족 {inp.tax_dependents}인, 비과세 {nontax_amount:,.0f}원/월)"
+        )
+
+    # ⑩ 자녀세액공제 (간이세액표와 별도 공제, 소득세법 제59조의2)
+    child_credit = get_child_tax_credit_monthly(inp.num_children_8_to_20, year)
     if child_credit > 0:
         income_tax = max(0, income_tax - child_credit)
         formulas.append(
-            f"자녀세액공제: {inp.num_children_8_to_20}명 → 월 {child_credit:,.0f}원 공제"
+            f"자녀세액공제: {inp.num_children_8_to_20}명 → 월 {child_credit:,.0f}원 공제 ({year}년)"
         )
 
     local_income_tax = int(income_tax * 0.1)  # 원 미만 절사
-
-    formulas.append(
-        f"근로소득세: 연 과세표준 {taxable_income:,.0f}원 → 연 세액 {annual_income_tax:,.0f}원 → 월 {income_tax:,.0f}원"
-        f" (부양가족 {inp.tax_dependents}인, 비과세 {inp.monthly_non_taxable:,.0f}원/월)"
-    )
     formulas.append(f"지방소득세: {income_tax:,.0f}원 × 10% = {local_income_tax:,.0f}원")
 
     total_tax = income_tax + local_income_tax
@@ -468,14 +517,286 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     )
 
 
-def _calc_child_tax_credit(num_children: int) -> int:
-    """자녀세액공제 월 금액 계산 (소득세법 제59조의2)"""
-    if num_children <= 0:
-        return 0
-    if num_children <= 2:
-        return CHILD_TAX_CREDIT_MONTHLY.get(num_children, 0)
-    # 3명 이상: 2명 기본 + 추가분
-    return CHILD_TAX_CREDIT_BASE_3PLUS + (num_children - 2) * CHILD_TAX_CREDIT_PER_EXTRA
+def calc_nontaxable_total(
+    nti: NonTaxableIncome,
+    year: int,
+    inp: WageInput,
+) -> tuple[float, list[str], list[str], list[str]]:
+    """비과세 근로소득 항목별 한도 적용 후 월 합산
+
+    Args:
+        nti: 비과세 항목별 입력
+        year: 기준 연도
+        inp: WageInput (생산직 적격 판단용 monthly_wage 참조)
+
+    Returns:
+        (월 비과세 합계, warnings, formulas, legal_basis)
+    """
+    limits = get_nontaxable_limits(year)
+    total = 0.0
+    warnings: list[str] = []
+    formulas: list[str] = []
+    legal: list[str] = []
+
+    def _apply_cap(value: float, cap: float, label: str, legal_key: str) -> float:
+        """항목별 한도 적용 공통 로직"""
+        nonlocal total
+        if value <= 0:
+            return 0.0
+        applied = min(value, cap)
+        total += applied
+        formulas.append(f"{label} 비과세: {applied:,.0f}원 (한도 {cap:,.0f}원/월)")
+        legal.append(NON_TAXABLE_INCOME_LEGAL_BASIS[legal_key])
+        if value > cap:
+            excess = value - cap
+            warnings.append(
+                f"{label}: {value:,.0f}원 중 {cap:,.0f}원만 비과세, "
+                f"초과분 {excess:,.0f}원은 과세소득 편입"
+            )
+        return applied
+
+    def _apply_unlimited(value: float, label: str, legal_key: str) -> float:
+        """한도 없는 비과세 항목 처리"""
+        nonlocal total
+        if value <= 0:
+            return 0.0
+        total += value
+        formulas.append(f"{label} 비과세: {value:,.0f}원 (한도 없음)")
+        legal.append(NON_TAXABLE_INCOME_LEGAL_BASIS[legal_key])
+        return value
+
+    # ── 식대 ──────────────────────────────────────────────
+    _apply_cap(nti.meal_allowance, limits["meal"], "식대", "meal")
+
+    # ── 자가운전보조금 ────────────────────────────────────
+    _apply_cap(nti.car_subsidy, limits["car"], "자가운전보조금", "car")
+
+    # ── 자녀보육수당 ──────────────────────────────────────
+    if nti.childcare_allowance > 0:
+        if nti.num_childcare_children <= 0:
+            warnings.append("보육수당: 6세 이하 자녀 수(num_childcare_children) 미입력 — 비과세 미적용")
+        else:
+            cap = limits["childcare"] * nti.num_childcare_children
+            applied = min(nti.childcare_allowance, cap)
+            total += applied
+            formulas.append(
+                f"자녀보육수당 비과세: {applied:,.0f}원 "
+                f"(6세 이하 {nti.num_childcare_children}명, 한도 {cap:,.0f}원/월)"
+            )
+            legal.append(NON_TAXABLE_INCOME_LEGAL_BASIS["childcare"])
+            if nti.childcare_allowance > cap:
+                warnings.append(
+                    f"보육수당: {nti.childcare_allowance:,.0f}원 중 {cap:,.0f}원만 비과세"
+                )
+
+    # ── 생산직 연장근로수당 비과세 ─────────────────────────
+    if nti.overtime_nontax > 0:
+        eligible, reason = _check_overtime_nontax_eligible(nti, limits, inp)
+        if eligible:
+            monthly_cap = limits["overtime_annual"] / 12
+            applied = min(nti.overtime_nontax, monthly_cap)
+            total += applied
+            formulas.append(
+                f"연장근로수당 비과세: {applied:,.0f}원/월 "
+                f"(연 한도 {limits['overtime_annual']:,.0f}원)"
+            )
+            legal.append(NON_TAXABLE_INCOME_LEGAL_BASIS["overtime"])
+            if nti.overtime_nontax > monthly_cap:
+                warnings.append(
+                    f"연장근로수당: 월 {nti.overtime_nontax:,.0f}원 중 "
+                    f"{monthly_cap:,.0f}원만 비과세 (연 {limits['overtime_annual']:,.0f}원 한도)"
+                )
+        else:
+            warnings.append(f"연장근로수당 비과세 부적격: {reason}")
+
+    # ── 국외근로소득 ──────────────────────────────────────
+    if nti.overseas_pay > 0:
+        cap_key = "overseas_construction" if nti.is_overseas_construction else "overseas"
+        cap = limits[cap_key]
+        label = "해외건설현장" if nti.is_overseas_construction else "국외근로"
+        _apply_cap(nti.overseas_pay, cap, label, "overseas")
+
+    # ── 연구보조비 ────────────────────────────────────────
+    _apply_cap(nti.research_subsidy, limits["research"], "연구보조비", "research")
+
+    # ── 취재수당 ──────────────────────────────────────────
+    _apply_cap(nti.reporting_subsidy, limits["reporting"], "취재수당", "reporting")
+
+    # ── 벽지수당 ──────────────────────────────────────────
+    _apply_cap(nti.remote_area_subsidy, limits["remote_area"], "벽지수당", "remote_area")
+
+    # ── 직무발명보상금 (연간 → 월 환산) ───────────────────
+    if nti.invention_reward_annual > 0:
+        cap = limits["invention_annual"]
+        applied_annual = min(nti.invention_reward_annual, cap)
+        applied_monthly = applied_annual / 12
+        total += applied_monthly
+        formulas.append(
+            f"직무발명보상금 비과세: 연 {applied_annual:,.0f}원 "
+            f"→ 월 {applied_monthly:,.0f}원 (한도 연 {cap:,.0f}원)"
+        )
+        legal.append(NON_TAXABLE_INCOME_LEGAL_BASIS["invention"])
+        if nti.invention_reward_annual > cap:
+            warnings.append(
+                f"직무발명보상금: 연 {nti.invention_reward_annual:,.0f}원 중 "
+                f"{cap:,.0f}원만 비과세"
+            )
+
+    # ── §2 단체보장성보험료 (연간 → 월 환산) ─────────────────
+    if nti.group_insurance_annual > 0:
+        cap = limits["group_insurance_annual"]
+        applied_annual = min(nti.group_insurance_annual, cap)
+        applied_monthly = applied_annual / 12
+        total += applied_monthly
+        formulas.append(
+            f"단체보장성보험료 비과세: 연 {applied_annual:,.0f}원 "
+            f"→ 월 {applied_monthly:,.0f}원 (한도 연 {cap:,.0f}원)"
+        )
+        legal.append(NON_TAXABLE_INCOME_LEGAL_BASIS["group_insurance"])
+        if nti.group_insurance_annual > cap:
+            warnings.append(
+                f"단체보장성보험료: 연 {nti.group_insurance_annual:,.0f}원 중 "
+                f"{cap:,.0f}원만 비과세"
+            )
+
+    # ── §2 경조금 (무한도, 사회통념상 범위) ───────────────────
+    _apply_unlimited(nti.congratulatory_pay, "경조금", "congratulatory")
+
+    # ── §3 승선수당 ──────────────────────────────────────────
+    _apply_cap(nti.boarding_allowance, limits["boarding"], "승선수당", "boarding")
+
+    # ── §3 지방이전 이주수당 ─────────────────────────────────
+    _apply_cap(nti.relocation_subsidy, limits["relocation"], "지방이전 이주수당", "relocation")
+
+    # ── §3 일직·숙직료 ──────────────────────────────────────
+    if nti.overnight_duty_pay > 0:
+        _apply_cap(nti.overnight_duty_pay, limits["overnight_duty"], "일직·숙직료", "overnight_duty")
+        warnings.append("일직·숙직료: 실비변상 범위는 사내 규정 기준이며, 사회통념상 타당한 범위 내 비과세")
+
+    # ── §7 근로자 학자금 (무한도) ─────────────────────────────
+    _apply_unlimited(nti.tuition_support, "근로자 학자금", "tuition")
+
+    # ── §7 사택 제공 이익 (무한도) ────────────────────────────
+    _apply_unlimited(nti.company_housing, "사택 제공 이익", "company_housing")
+
+    # ── 출산지원금 (한도 없음) ─────────────────────────────
+    _apply_unlimited(nti.childbirth_support, "출산지원금", "childbirth")
+
+    # ── 기타 비과세 (사용자 직접 입력, 한도 없음) ──────────
+    if nti.other_nontaxable > 0:
+        total += nti.other_nontaxable
+        formulas.append(f"기타 비과세: {nti.other_nontaxable:,.0f}원 (사용자 입력)")
+
+    formulas.append(f"비과세 근로소득 합계: {total:,.0f}원/월")
+
+    return total, warnings, formulas, legal
+
+
+def _check_overtime_nontax_eligible(
+    nti: NonTaxableIncome,
+    limits: dict,
+    inp: WageInput,
+) -> tuple[bool, str]:
+    """생산직 연장근로수당 비과세 적격 여부 (소득세법 제12조제3호나목)
+
+    조건:
+      1. 생산직 및 관련직 종사자 (자기 선언)
+      2. 월정액급여 한도 이하
+      3. 전년도 총급여 한도 이하
+    """
+    if not nti.is_production_worker:
+        return False, "생산직 종사자가 아닌 것으로 입력됨 (is_production_worker=False)"
+
+    monthly_limit = limits["overtime_monthly_salary"]
+    monthly_wage = inp.monthly_wage or 0
+    if monthly_wage > monthly_limit:
+        return False, f"월정액급여 {monthly_wage:,.0f}원 > 한도 {monthly_limit:,.0f}원"
+
+    annual_limit = limits["overtime_prev_year_salary"]
+    if nti.prev_year_total_salary > 0 and nti.prev_year_total_salary > annual_limit:
+        return False, (
+            f"전년도 총급여 {nti.prev_year_total_salary:,.0f}원 > "
+            f"한도 {annual_limit:,.0f}원"
+        )
+
+    return True, ""
+
+
+def _calc_high_income_surcharge(monthly_salary: float) -> int:
+    """월급여액 10,000천원 초과분 가산세액 (소득세법 시행령 별표 2 <개정 2026. 2. 27.>)
+
+    10,000천원 초과 구간별:
+    - 10,000~14,000천원: 초과분 × 98% × 35% + 25,000원
+    - 14,000~28,000천원: 1,397,000 + 초과분 × 98% × 38%
+    - 28,000~30,000천원: 6,610,600 + 초과분 × 98% × 40%
+    - 30,000~45,000천원: 7,394,600 + 초과분 × 40%
+    - 45,000~87,000천원: 13,394,600 + 초과분 × 42%
+    - 87,000천원 초과:   31,034,600 + 초과분 × 45%
+    """
+    for upper, base_add, threshold, rate, apply_98 in HIGH_INCOME_TAX_BRACKETS:
+        if monthly_salary <= upper:
+            excess = monthly_salary - threshold
+            if apply_98:
+                return int(base_add + excess * 0.98 * rate)
+            else:
+                return int(base_add + excess * rate)
+    return 0
+
+
+def _calc_special_deduction(annual_gross: float, num_dependents: int) -> float:
+    """특별소득공제 및 특별세액공제 계산 (간이세액표 산출식, 소득세법 시행령 별표 2 <개정 2026. 2. 27.>)
+
+    - 공제대상가족수(1/2/3+)와 총급여 구간별 산출식
+    - 3인 이상·4500만~7000만: 4,000만원 초과분 × 4% 추가 공제
+    - 1.2억 초과: 특별소득공제 0원
+    """
+    if annual_gross <= 0:
+        return 0.0
+
+    dep_key = min(num_dependents, 3)
+    if dep_key < 1:
+        dep_key = 1
+
+    brackets = SPECIAL_DEDUCTION_PARAMS.get(dep_key, SPECIAL_DEDUCTION_PARAMS[1])
+
+    deduction = 0.0
+    for upper, base, rate, excess_rate, add_base, add_rate in brackets:
+        if annual_gross <= upper:
+            deduction = base + annual_gross * rate
+            if excess_rate > 0:
+                deduction -= max(0, annual_gross - 30_000_000) * excess_rate
+            if add_base > 0 and add_rate > 0:
+                deduction += max(0, annual_gross - add_base) * add_rate
+            break
+    # 1.2억 초과: 특별소득공제 없음 (brackets에 매칭 안 됨 → deduction = 0)
+
+    return max(0.0, deduction)
+
+
+def _calc_earned_income_tax_credit(assessed_tax: float, annual_gross: float) -> float:
+    """근로소득세액공제 계산 (소득세법 제59조)
+
+    - 산출세액 130만원 이하: 산출세액 × 55%
+    - 산출세액 130만원 초과: 71.5만원 + 초과분 × 30%
+    - 한도: 총급여 3,300만 이하 74만, 7,000만 이하 66만, 초과 50만
+    """
+    if assessed_tax <= 0:
+        return 0.0
+
+    # 세액공제 계산
+    if assessed_tax <= EARNED_INCOME_TAX_CREDIT_THRESHOLD:
+        credit = assessed_tax * EARNED_INCOME_TAX_CREDIT_LOW_RATE
+    else:
+        excess = assessed_tax - EARNED_INCOME_TAX_CREDIT_THRESHOLD
+        credit = EARNED_INCOME_TAX_CREDIT_HIGH_BASE + excess * EARNED_INCOME_TAX_CREDIT_HIGH_RATE
+
+    # 한도 적용
+    for upper, limit in EARNED_INCOME_TAX_CREDIT_LIMITS:
+        if annual_gross <= upper:
+            credit = min(credit, limit)
+            break
+
+    return credit
 
 
 def _calc_earned_income_deduction(annual_gross: float) -> float:
@@ -502,13 +823,13 @@ def _calc_earned_income_deduction(annual_gross: float) -> float:
 
 
 def _stepped_deduction(annual_gross: float) -> float:
-    """근로소득공제 단계별 계산"""
+    """근로소득공제 단계별 계산 (소득세법 제47조)"""
     steps = [
-        (5_000_000,   0.70),
-        (10_000_000,  0.40),
-        (30_000_000,  0.15),
-        (55_000_000,  0.05),
-        (float("inf"), 0.02),
+        (5_000_000,    0.70),   # ~500만: 70%
+        (15_000_000,   0.40),   # 500~1,500만: 40%
+        (45_000_000,   0.15),   # 1,500~4,500만: 15%
+        (100_000_000,  0.05),   # 4,500~1억: 5%
+        (float("inf"), 0.02),   # 1억 초과: 2%
     ]
     deduction = 0.0
     prev = 0.0

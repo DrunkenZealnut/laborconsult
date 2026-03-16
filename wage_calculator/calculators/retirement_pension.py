@@ -9,10 +9,10 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from ..base import BaseCalculatorResult
-from ..utils import parse_date
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from .severance import SeveranceResult
+from .shared import DateRange
 
 
 @dataclass
@@ -62,10 +62,9 @@ def _calc_db(
         )
     else:
         avg_daily = ow.hourly_ordinary_wage * 8
-        start = parse_date(inp.start_date)
-        end = parse_date(inp.end_date) or date.today()
-        service_days = (end - start).days if start else 0
-        service_years = round(service_days / 365, 2) if service_days > 0 else 0
+        dr = DateRange(inp.start_date, inp.end_date)
+        service_days = dr.days
+        service_years = round(dr.years, 2)
 
         if service_days > 0:
             total_pension = avg_daily * 30 * (service_days / 365)
@@ -121,9 +120,8 @@ def _calc_dc(
             })
     else:
         annual_wage = (inp.monthly_wage or ow.monthly_ordinary_wage) * 12
-        start = parse_date(inp.start_date)
-        end = parse_date(inp.end_date) or date.today()
-        years = max(1, round((end - start).days / 365)) if start else 1
+        dr2 = DateRange(inp.start_date, inp.end_date)
+        years = max(1, round(dr2.years)) if dr2.is_valid else 1
         for i in range(1, years + 1):
             contribution = annual_wage / 12
             contributions.append({
