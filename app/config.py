@@ -13,9 +13,9 @@ load_dotenv()
 
 EMBED_MODEL = "text-embedding-3-small"
 CLAUDE_MODEL = "claude-sonnet-4-6"
-OPENAI_CHAT_MODEL = "gpt-4o"
-GEMINI_MODEL = "gemini-2.0-flash"
-EXTRACT_MODEL = "claude-haiku-4-5-20251001"
+OPENAI_CHAT_MODEL = "o3"
+GEMINI_MODEL = "gemini-2.5-pro"
+EXTRACT_MODEL = "claude-sonnet-4-6"
 
 
 @dataclass
@@ -26,7 +26,9 @@ class AppConfig:
     gemini_api_key: str | None = None
     supabase: SupabaseClient | None = None
     law_api_key: str | None = None
+    odcloud_api_key: str | None = None
     analyzer_model: str = EXTRACT_MODEL
+    embed_model: str = EMBED_MODEL
 
     @property
     def anthropic_client(self) -> anthropic.Anthropic:
@@ -45,7 +47,7 @@ class AppConfig:
             )
         openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-        index_name = os.getenv("PINECONE_INDEX_NAME", "nodongok-bestqna")
+        index_name = os.getenv("PINECONE_INDEX_NAME", "semiconductor-lithography")
         pinecone_index = pc.Index(index_name)
         claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         gemini_api_key = os.getenv("GEMINI_API_KEY")
@@ -53,6 +55,7 @@ class AppConfig:
         supabase_key = os.getenv("SUPABASE_KEY")
         supabase = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
         law_api_key = os.getenv("LAW_API_KEY")
+        odcloud_api_key = os.getenv("ODCLOUD_API_KEY")
         return cls(
             openai_client=openai_client,
             pinecone_index=pinecone_index,
@@ -60,4 +63,5 @@ class AppConfig:
             gemini_api_key=gemini_api_key,
             supabase=supabase,
             law_api_key=law_api_key,
+            odcloud_api_key=odcloud_api_key,
         )

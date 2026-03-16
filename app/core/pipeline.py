@@ -9,8 +9,9 @@ import logging
 from app.config import AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL
 from app.core.file_parser import ParsedAttachment
 from app.core.analyzer import analyze_intent
-from app.core.composer import compose_follow_up
-from app.core.storage import save_conversation, upload_attachment, classify_category, infer_calc_types, ConversationRecord
+# compose_follow_up은 더 이상 파이프라인에서 사용하지 않음
+# (누락 정보가 있어도 답변을 생성하고 말미에 안내)
+from app.core.storage import save_conversation, save_session_data, upload_attachment, classify_category, infer_calc_types, ConversationRecord
 from app.models.session import Session
 from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
@@ -19,45 +20,23 @@ from harassment_assessor import assess_harassment, HarassmentInput, format_asses
 from app.core.labor_offices import find_commission, format_commission, format_all_commissions
 from app.core.employment_centers import find_center, format_center, format_center_guide
 from app.core.comwel_offices import find_office, format_office, format_office_guide
-from app.core.legal_api import fetch_relevant_articles
+from app.core.legal_api import (
+    fetch_relevant_articles, fetch_relevant_precedents,
+    search_precedent_multi, fetch_precedent_details,
+)
+from app.core.precedent_query import build_precedent_queries
+from app.core.nlrc_cases import search_nlrc_with_details
+from app.core.rag import search_pinecone_multi, format_pinecone_hits
+from app.core.legal_consultation import process_consultation
+from app.core.citation_validator import (
+    build_available_citations_text,
+    correct_hallucinated_citations,
+    extract_precedents_from_hits,
+    extract_admin_refs_from_hits,
+    validate_response_citations,
+)
 
 logger = logging.getLogger(__name__)
-
-# ── 벡터 검색 ────────────────────────────────────────────────────────────────
-
-def _embed(text: str, config: AppConfig) -> list[float]:
-    resp = config.openai_client.embeddings.create(model=EMBED_MODEL, input=[text])
-    return resp.data[0].embedding
-
-
-def _search(query: str, config: AppConfig, top_k: int = 5, threshold: float = 0.4) -> list[dict]:
-    qvec = _embed(query, config)
-    results = config.pinecone_index.query(vector=qvec, top_k=top_k, include_metadata=True)
-    hits = []
-    for m in results.matches:
-        if m.score < threshold:
-            continue
-        hits.append({
-            "score": round(m.score, 4),
-            "title": m.metadata.get("title", ""),
-            "date": m.metadata.get("date", ""),
-            "url": m.metadata.get("url", ""),
-            "section": m.metadata.get("section", ""),
-            "chunk_text": m.metadata.get("chunk_text", ""),
-        })
-    return hits
-
-
-def _build_context(hits: list[dict]) -> str:
-    parts = []
-    for i, h in enumerate(hits, 1):
-        section_info = f" > {h['section']}" if h["section"] not in ("질문", "본문", h["title"]) else ""
-        parts.append(
-            f"[문서 {i}] {h['title']}{section_info}\n"
-            f"출처: {h['url']}  |  작성일: {h['date']}\n\n"
-            f"{h['chunk_text']}"
-        )
-    return "\n\n---\n\n".join(parts)
 
 
 # ── LLM 스트리밍 (Claude → OpenAI → Gemini 폴백) ────────────────────────────
@@ -82,15 +61,15 @@ def _stream_claude(messages: list, system: str, config: AppConfig):
 
 
 def _stream_openai(messages: list, system: str, config: AppConfig):
-    """OpenAI GPT 스트리밍"""
-    oai_msgs = [{"role": "system", "content": system}]
+    """OpenAI 스트리밍 (o3 등 reasoning 모델 호환)"""
+    oai_msgs = [{"role": "developer", "content": system}]
     for m in messages:
         oai_msgs.append({"role": m["role"], "content": _flatten_content(m["content"])})
 
     stream = config.openai_client.chat.completions.create(
         model=OPENAI_CHAT_MODEL,
         messages=oai_msgs,
-        max_tokens=2048,
+        max_completion_tokens=2048,
         stream=True,
     )
     for chunk in stream:
@@ -637,7 +616,6 @@ def _run_assessor(params: dict) -> str | None:
 # ── 답변 생성 ─────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다.
-아래 '참고 문서'는 노동OK(www.nodong.kr)의 BEST Q&A에서 가져온 실제 상담 사례입니다.
 
 오늘 날짜: {today}
 ※ 사용자가 연도를 명시하지 않은 날짜(예: "2월28일")는 오늘 날짜 기준으로 해석하세요. 과거 시제이면 가장 최근의 해당 날짜입니다.
@@ -647,39 +625,56 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
    - 계산기 결과의 수치를 그대로 사용하세요. 절대로 직접 계산하거나 다른 수치를 제시하지 마세요.
    - 계산기의 계산 과정(formulas)과 법적 근거를 자연스럽게 풀어서 설명하세요.
    - 계산기의 주의사항(warnings)이 있으면 반드시 포함하세요.
-2. 참고 문서에 있는 내용을 바탕으로 정확하게 답변하세요.
+2. 참고 자료(판례·행정해석·법조문)가 제공된 경우, 해당 내용을 바탕으로 정확하게 답변하세요.
 3. 관련 법 조문이나 행정해석이 있으면 함께 언급하세요.
-4. **참고 문서가 없는 경우** ("관련 문서 없음"):
-   - 한국 노동법 지식을 바탕으로 답변하되, 답변 서두에 "⚠️ 참고 문서 없이 일반 노동법 지식을 기반으로 작성된 답변입니다. 정확한 사항은 노동청(1350) 또는 노무사에게 확인하시기 바랍니다."를 명시하세요.
+4. 참고 자료가 없는 경우:
+   - 한국 노동법 지식을 바탕으로 답변하되, 답변 서두에 "⚠️ 일반 노동법 지식을 기반으로 작성된 답변입니다. 정확한 사항은 고용노동부(☎ 1350) 또는 공인노무사에게 확인하시기 바랍니다."를 명시하세요.
    - 관련 법 조문(근로기준법, 시행령 등)을 반드시 인용하세요.
-5. 참고 문서가 있지만 질문과 직접 관련 없는 경우, "해당 내용은 참고 문서에서 확인되지 않습니다"라고 명시하세요.
-6. 답변 마지막에 참고 출처 URL을 표시하세요. (문서 없는 경우 생략)
-7. **괴롭힘 판정 결과가 포함된 경우**:
+5. **판례·행정해석 인용 규칙** (절대 규칙):
+   - [인용 가능한 판례·행정해석 목록]에 있는 것만 번호를 표기하세요.
+   - 목록에 없는 판례·해석은 번호 없이 내용만 서술하고,
+     "관련 판례가 있을 수 있으나 구체적 번호는 law.go.kr에서 확인이 필요합니다"로 안내하세요.
+   - 절대로 기억이나 추측으로 판례 번호를 생성하지 마세요.
+6. **괴롭힘 판정 결과가 포함된 경우**:
    - 판정기의 3요소 판정 결과와 종합 가능성을 그대로 사용하세요.
    - 판정 근거, 법적 조문, 대응 절차, 주의사항을 자연스럽게 설명하세요.
    - 면책 문구(법적 효력 없는 참고 정보)를 반드시 포함하세요.
-8. 법적 조언이 아닌 정보 제공임을 명심하세요.
-9. 질문에 이미 계산에 필요한 정보가 포함되어 있으면 추가 질문 없이 바로 답변하세요.
-10. 답변은 마크다운 형식으로 작성하세요.
-11. **노동위원회 연락처가 포함된 경우**:
+7. 법적 조언이 아닌 정보 제공임을 명심하세요.
+8. 질문에 이미 계산에 필요한 정보가 포함되어 있으면 추가 질문 없이 바로 답변하세요.
+   **사용자가 일부 정보만 제공한 경우**:
+   - 제공된 정보만으로 가능한 범위 내에서 답변하세요. 추가 정보가 없다고 답변을 거부하지 마세요.
+   - 계산기 결과가 없더라도 일반적인 기준(법정 기준 등)으로 설명하세요.
+   - 답변 말미에 "더 정확한 계산을 위해 아래 정보를 추가로 알려주시면 맞춤 계산이 가능합니다:" 형태로 자연스럽게 안내하세요.
+   - [사용자에게 안내할 추가 정보 요청]이 컨텍스트에 포함된 경우, 해당 항목을 답변 말미에 포함하세요.
+9. 답변은 마크다운 형식으로 작성하세요.
+10. **노동위원회 연락처가 포함된 경우**:
    - 부당해고 구제신청, 부당노동행위, 차별시정, 노동쟁의 조정 등 노동위원회 소관 사안이면
      제공된 노동위원회 연락처를 답변에 포함하세요.
    - 임금체불, 근로기준법 위반 등 고용노동부(근로감독관) 소관 사안은 기존대로 1350을 안내하세요.
    - 해고를 당한 근로자에게는 노동위원회 구제신청(30일 이내)을 반드시 안내하세요.
-12. **고용센터 연락처가 포함된 경우**:
+11. **고용센터 연락처가 포함된 경우**:
    - 실업급여(구직급여) 신청, 구직활동 지원, 직업훈련(내일배움카드), 고용보험, 취업지원 등
      고용센터 소관 사안이면 제공된 고용센터 연락처를 답변에 포함하세요.
    - 고용센터 연락처에 홈페이지 URL이 있으면 함께 안내하세요.
    - 지역 정보가 없으면 1350 전화 + 고용24(work24.go.kr) 검색을 안내하세요.
-13. **근로복지공단 연락처가 포함된 경우**:
+12. **근로복지공단 연락처가 포함된 경우**:
    - 산재보험(요양·휴업·장해급여), 체당금(체불임금보장), 근로복지대부(생활·주거안정자금),
      퇴직연금, 직업재활 등 근로복지공단 소관 사안이면 제공된 근로복지공단 연락처를 답변에 포함하세요.
    - 근로복지공단 대표전화 1588-0075도 함께 안내하세요.
    - 지역 정보가 없으면 1588-0075 + 지사 찾기 링크를 안내하세요.
+13. **중앙노동위원회 판정사례가 포함된 경우**:
+   - 사용자 질문과 관련된 중앙노동위원회 주요판정사례가 제공됩니다.
+   - 판정 제목과 자료구분(징계해고, 부당노동행위 등)을 참고하여 유사 사례를 안내하세요.
+   - 관련 판례가 함께 제공된 경우 해당 판례도 인용하세요.
+   - 출처를 "(중앙노동위원회 주요판정사례)"로 명시하세요.
 14. **현행 법조문이 포함된 경우**:
    - 법제처 국가법령정보센터에서 조회한 최신 법조문이 제공됩니다.
-   - 이 법조문을 우선 참조하여 답변하세요. RAG 참고 문서의 법조문과 내용이 다를 경우, 현행 법조문이 최신입니다.
-   - 법조문 출처를 "(법제처 국가법령정보센터 조회)"로 명시하세요."""
+   - 이 법조문을 우선 참조하여 답변하세요.
+   - 법조문 출처를 "(법제처 국가법령정보센터 조회)"로 명시하세요.
+14. **면책 고지** (반드시 포함):
+   "본 답변은 참고용 정보 제공이며 법적 효력이 없습니다.
+   구체적인 사안은 관할 고용노동부(☎ 1350) 또는 공인노무사에게 상담하시기 바랍니다."
+"""
 
 
 def process_question(query: str, session: Session, config: AppConfig,
@@ -714,12 +709,24 @@ def process_question(query: str, session: Session, config: AppConfig,
     try:
         if session.has_pending_info():
             # 추가 정보 제공됨 → 기존 pending과 병합
-            new_analysis = analyze_intent(combined_query, session.recent(), config)
+            new_analysis = analyze_intent(
+                combined_query, session.recent(), config,
+                summary=session.summary,
+            )
             analysis = session.merge_with_pending(new_analysis, query)
             use_analysis_params = True
         else:
             # 새 질문 → 분석
-            analysis = analyze_intent(combined_query, session.recent(), config)
+            analysis = analyze_intent(
+                combined_query, session.recent(), config,
+                summary=session.summary,
+            )
+
+            # 캐시 기반 extracted_info 프리필 (이전 계산 파라미터 재활용)
+            cached = session.get_cached_info()
+            for key, val in cached.items():
+                if key not in analysis.extracted_info or analysis.extracted_info[key] is None:
+                    analysis.extracted_info[key] = val
 
             # 코드 기반 누락 정보 판정 (LLM의 자유형 missing_info 대체)
             if analysis.requires_calculation and analysis.calculation_types:
@@ -729,22 +736,8 @@ def process_question(query: str, session: Session, config: AppConfig,
                 # LLM missing_info를 코드 판정 결과로 교체
                 analysis.missing_info = code_missing
 
-            # 계산 필요 + 누락 정보 있음 → 추가 질문
-            if analysis.requires_calculation and analysis.missing_info:
-                session.save_pending(analysis)
-                # 코드 기반 요약 사용 → LLM 비의존, 매번 동일한 추가질문 보장
-                deterministic_summary = _code_based_summary(analysis.calculation_types)
-                follow_up_text = compose_follow_up(
-                    analysis.missing_info, deterministic_summary
-                )
-                yield {"type": "follow_up", "text": follow_up_text,
-                       "missing_fields": analysis.missing_info}
-                session.add_user(query)
-                session.add_assistant(follow_up_text)
-                yield {"type": "done"}
-                return
-
-            # 분석에서 충분한 정보가 추출되었으면 활용
+            # 분석에서 계산이 필요하면 (누락 정보 유무와 관계없이) 진행
+            # 누락 정보가 있어도 가능한 범위 내에서 답변하고, 추가정보 안내를 포함
             if analysis.requires_calculation and analysis.extracted_info:
                 use_analysis_params = True
     except Exception:
@@ -765,6 +758,9 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "status", "text": "임금계산기 실행 중..."}
             calc_result = _run_calculator(params)
             if calc_result:
+                # 계산 결과 캐싱
+                for ct in (analysis.calculation_types or []):
+                    session.cache_calculation(ct, analysis.extracted_info)
                 yield {"type": "meta", "calc_result": calc_result}
     else:
         # 기존 로직: _extract_params 사용
@@ -794,31 +790,137 @@ def process_question(query: str, session: Session, config: AppConfig,
         except Exception as e:
             logger.warning("법령 API 조회 실패 (무시하고 진행): %s", e)
 
-    # 3. RAG 검색 (질문 텍스트만 사용, 첨부 텍스트 제외)
-    yield {"type": "status", "text": "관련 문서 검색 중..."}
-    try:
-        hits = _search(query, config)
-    except Exception as e:
-        logger.warning("RAG 검색 실패: %s", e)
-        hits = []
+    # 2-1b. 판례·행정해석 검색 (Pinecone 우선 → 법제처 API 폴백)
+    precedent_text = None
+    precedent_meta: list[dict] = []
+    if analysis:
+        try:
+            yield {"type": "status", "text": "관련 판례 검색 중..."}
 
-    sources = [{"title": h["title"], "url": h["url"], "score": h["score"]} for h in hits]
-    yield {"type": "sources", "hits": sources}
+            # 맥락 기반 쿼리 확장
+            prec_queries = []
+            if getattr(analysis, "precedent_keywords", None):
+                prec_queries = build_precedent_queries(
+                    precedent_keywords=analysis.precedent_keywords,
+                    relevant_laws=analysis.relevant_laws or None,
+                    consultation_topic=analysis.consultation_topic,
+                )
+
+            # ① Pinecone 벡터 검색 (우선)
+            pinecone_search_queries = prec_queries or [
+                getattr(analysis, "question_summary", None) or query[:80]
+            ]
+            pinecone_hits = search_pinecone_multi(
+                pinecone_search_queries, config, top_k=5,
+            )
+            if pinecone_hits:
+                precedent_text, precedent_meta = format_pinecone_hits(pinecone_hits)
+                logger.info("Pinecone 판례·행정해석 %d건 사용", len(pinecone_hits))
+
+            # ② Pinecone 결과 부족 시 법제처 API 폴백
+            if not precedent_text and config.law_api_key:
+                if prec_queries:
+                    prec_results = search_precedent_multi(
+                        prec_queries, config.law_api_key, max_total=5,
+                    )
+                    if prec_results:
+                        precedent_text, precedent_meta = fetch_precedent_details(
+                            prec_results, config.law_api_key,
+                        )
+                if not precedent_text:
+                    prec_query = getattr(analysis, "question_summary", None) or query[:80]
+                    precedent_text, precedent_meta = fetch_relevant_precedents(
+                        prec_query, config.law_api_key, max_results=3,
+                    )
+                if precedent_text:
+                    logger.info("법제처 API 판례 폴백 사용")
+        except Exception as e:
+            logger.warning("판례 검색 실패 (무시하고 진행): %s", e)
+
+    # 2-1c. 중앙노동위원회 주요판정사례 검색 (odcloud API + 법제처 보강)
+    nlrc_text = None
+    if analysis and config.odcloud_api_key:
+        try:
+            nlrc_keywords = getattr(analysis, "precedent_keywords", None) or []
+            # consultation_topic에서 추가 키워드 추출
+            topic = getattr(analysis, "consultation_topic", None)
+            if topic:
+                nlrc_keywords = list(nlrc_keywords) + [topic.replace("·", " ")]
+            if nlrc_keywords:
+                nlrc_text = search_nlrc_with_details(
+                    nlrc_keywords,
+                    odcloud_api_key=config.odcloud_api_key,
+                    law_api_key=config.law_api_key,
+                    max_results=3,
+                )
+                if nlrc_text:
+                    logger.info("NLRC 판정사례 검색 완료")
+        except Exception as e:
+            logger.warning("NLRC 판정사례 검색 실패 (무시): %s", e)
+
+    # 2-2. 법률상담 전용 경로 (consultation_type 감지 시)
+    consultation_context = None
+    consultation_hits = []
+    if (analysis
+            and analysis.consultation_type
+            and not calc_result
+            and not assessment_result):
+        yield {"type": "status", "text": "법률 자료 검색 중..."}
+        try:
+            consultation_context, consultation_hits = process_consultation(
+                query=query,
+                consultation_topic=analysis.consultation_topic,
+                relevant_laws=analysis.relevant_laws,
+                config=config,
+            )
+        except Exception as e:
+            logger.warning("법률상담 처리 실패 (RAG fallback): %s", e)
+
+    yield {"type": "sources", "hits": []}
 
     has_attachments = attachments and len(attachments) > 0
 
     # 3. 컨텍스트 구성
-    context = _build_context(hits) if hits else "(관련 문서 없음)"
-
-    parts = [f"참고 문서:\n\n{context}"]
+    if consultation_context:
+        # 법률상담 경로: 전용 컨텍스트 사용
+        parts = [f"참고 자료:\n\n{consultation_context}"]
+        # 인용 가능한 판례 목록 명시 (환각 방지)
+        citation_list = build_available_citations_text(
+            consultation_hits, legal_precedents=precedent_meta,
+        )
+        parts.append(citation_list)
+    else:
+        parts = []
+        # 비 consultation 경로에서도 인용 가능 목록 주입 (환각 방지)
+        if precedent_meta:
+            citation_list = build_available_citations_text(
+                [], legal_precedents=precedent_meta,
+            )
+            parts.append(citation_list)
+    if precedent_text:
+        parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{precedent_text}")
     if calc_result:
         parts.append(f"임금계산기 결과 (정확한 계산 — 이 수치를 사용하세요):\n\n{calc_result}")
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
+    if nlrc_text:
+        parts.append(f"중앙노동위원회 주요판정사례 (공공데이터포털 조회):\n\n{nlrc_text}")
     if legal_articles_text:
         parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{legal_articles_text}")
     if attachment_text:
         parts.append(f"첨부된 문서 내용:\n\n{attachment_text}")
+
+    # 누락 정보 안내 (계산 시도 후에도 부족한 정보가 있을 때)
+    if analysis and analysis.missing_info:
+        deterministic_summary = _code_based_summary(analysis.calculation_types)
+        missing_lines = [f"  {i}. {info}" for i, info in enumerate(analysis.missing_info, 1)]
+        parts.append(
+            f"[사용자에게 안내할 추가 정보 요청]\n"
+            f"'{deterministic_summary}'에 대해 아래 정보가 제공되지 않았습니다:\n"
+            + "\n".join(missing_lines) + "\n"
+            f"답변 시 제공된 정보 범위 내에서 최대한 답변하되, "
+            f"답변 말미에 더 정확한 계산을 위해 필요한 정보를 자연스럽게 안내하세요."
+        )
 
     # 노동위원회 연락처 (해고·차별·쟁의 관련 시)
     _COMMISSION_KEYWORDS = ["해고", "부당해고", "구제신청", "부당노동행위", "차별시정",
@@ -927,7 +1029,11 @@ def process_question(query: str, session: Session, config: AppConfig,
     used_provider = None
     try:
         from datetime import date as _date
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(today=_date.today().isoformat())
+        if consultation_context:
+            from app.templates.prompts import CONSULTATION_SYSTEM_PROMPT
+            system_prompt = CONSULTATION_SYSTEM_PROMPT.format(today=_date.today().isoformat())
+        else:
+            system_prompt = SYSTEM_PROMPT_TEMPLATE.format(today=_date.today().isoformat())
         for provider, text in _stream_answer(messages, system_prompt, config):
             if not used_provider:
                 used_provider = provider
@@ -940,9 +1046,41 @@ def process_question(query: str, session: Session, config: AppConfig,
         yield {"type": "done"}
         return
 
+    # 6-1. 판례 인용 검증 (환각 감지 + 사용자 경고)
+    all_source_hits = list(consultation_hits) if consultation_context else []
+    # precedent_meta(Pinecone/법제처 API) 판례도 화이트리스트에 포함
+    if precedent_meta:
+        for m in precedent_meta:
+            all_source_hits.append({
+                "title": m.get("case_name", m.get("title", "")),
+                "chunk_text": "",
+            })
+    available_precs = extract_precedents_from_hits(all_source_hits)
+    available_admins = extract_admin_refs_from_hits(all_source_hits)
+    citation_check = validate_response_citations(
+        full_text, available_precs, available_admins,
+    )
+    if citation_check["hallucinated"]:
+        logger.warning(
+            "⚠️ 환각 판례 감지 — query=%r, hallucinated=%s, valid=%s",
+            query[:80], citation_check["hallucinated"], citation_check["valid"],
+        )
+        # 다른 LLM으로 환각 판례 교정
+        corrected = correct_hallucinated_citations(
+            response_text=full_text,
+            hallucinated=citation_check["hallucinated"],
+            gemini_api_key=config.gemini_api_key,
+            openai_client=config.openai_client,
+        )
+        if corrected:
+            full_text = corrected
+            yield {"type": "replace", "text": corrected}
+            logger.info("환각 판례 교정 완료 — replace 이벤트 전송")
+
     # 7. 세션에 이력 저장
     session.add_user(query)
     session.add_assistant(full_text)
+    session.condense_if_needed()
 
     # 8. Supabase에 영구 저장 (fire-and-forget — 실패해도 답변에 영향 없음)
     if not config.supabase:
@@ -985,6 +1123,8 @@ def process_question(query: str, session: Session, config: AppConfig,
                         config.supabase, conv_id, session.id,
                         att.filename, att.content_type, att.raw_data,
                     )
+        # 세션 데이터(summary + calc_cache) 영속 저장
+        save_session_data(config.supabase, session.id, session.to_snapshot())
     except Exception as e:
         logger.warning("Supabase 저장 실패 (답변은 정상 전송됨): %s", e)
 

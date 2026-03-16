@@ -1,64 +1,174 @@
-"""Pinecone 통합 검색 — laborlaw namespace (Q&A + 법령/판례)
+"""Pinecone 벡터 검색 모듈 — 멀티 네임스페이스 (laborlaw-v2 + counsel)
 
-laborlaw namespace 메타데이터 구조:
-  - content: 청크 전문 (임베딩 텍스트)
-  - content_preview: 미리보기
-  - document_title: 문서 제목
-  - section_title: 섹션 제목
-  - filename: 파일명
-  - relative_path: 상대 경로
-  - source_collection: 'laborlaw'
-  - chunk_index, total_chunks, token_count
+판례·행정해석·노무사 상담을 Pinecone에서 먼저 검색하고,
+결과가 부족하면 법제처 API(legal_api.py)로 폴백한다.
 """
 
+from __future__ import annotations
 
-def _embed_query(query: str, config) -> list[float]:
-    resp = config.openai_client.embeddings.create(
-        model=config.embed_model,
-        input=[query],
-    )
-    return resp.data[0].embedding
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+logger = logging.getLogger(__name__)
 
-def _search(query_vec: list[float], config, top_k: int, threshold: float) -> list[dict]:
-    """Pinecone laborlaw namespace 검색"""
-    results = config.pinecone_index.query(
-        vector=query_vec,
-        top_k=top_k,
-        include_metadata=True,
-        namespace=config.namespace,
-    )
-    hits = []
-    for match in results.matches:
-        if match.score < threshold:
-            continue
-        md = match.metadata or {}
-        hits.append({
-            "score": round(match.score, 4),
-            "title": md.get("document_title", ""),
-            "section": md.get("section_title", ""),
-            "content": md.get("content", md.get("content_preview", "")),
-            "filename": md.get("filename", ""),
-            "path": md.get("relative_path", ""),
-            "chunk_index": md.get("chunk_index", 0),
-            "total_chunks": md.get("total_chunks", 0),
-        })
-    return hits
+NAMESPACES = ["laborlaw-v2", "counsel"]
+TOP_K = 5
+MIN_SCORE = 0.35  # 이 점수 이하는 무관한 결과로 간주
 
 
-def search_qna(question: str, calculation_type: str | None, config) -> list[dict]:
-    """Q&A 검색: 사용자 질문으로 유사 상담 사례 검색"""
-    query_vec = _embed_query(question, config)
-    return _search(query_vec, config, top_k=config.rag_top_k, threshold=config.rag_threshold)
+def search_pinecone(
+    query: str,
+    config: "AppConfig",
+    top_k: int = TOP_K,
+    source_type: str | None = None,
+) -> list[dict]:
+    """Pinecone 멀티 네임스페이스 벡터 검색.
 
+    Args:
+        query: 검색 쿼리 텍스트
+        config: AppConfig (openai_client, pinecone_index)
+        top_k: 최대 반환 건수
+        source_type: 필터 ("precedent", "interpretation", "counsel" 등). None이면 전체.
 
-def search_legal(laws: list[str], legal_basis: list[str], config) -> list[dict]:
-    """법령/판례 검색: 법조문 키워드로 Pinecone 검색"""
-    if not laws and not legal_basis:
+    Returns:
+        [{score, title, section, content, source_type, id}, ...]
+    """
+    try:
+        # 쿼리 임베딩 (1회만)
+        resp = config.openai_client.embeddings.create(
+            model=config.embed_model,
+            input=query,
+        )
+        vector = resp.data[0].embedding
+
+        # 멀티 네임스페이스 검색
+        all_hits = []
+        seen_ids: set[str] = set()
+
+        for ns in NAMESPACES:
+            kwargs = {
+                "vector": vector,
+                "top_k": top_k,
+                "namespace": ns,
+                "include_metadata": True,
+            }
+            if source_type:
+                kwargs["filter"] = {"source_type": {"$eq": source_type}}
+
+            try:
+                result = config.pinecone_index.query(**kwargs)
+                for m in result.matches:
+                    if m.score < MIN_SCORE or m.id in seen_ids:
+                        continue
+                    seen_ids.add(m.id)
+                    meta = m.metadata or {}
+                    all_hits.append({
+                        "score": round(m.score, 4),
+                        "title": meta.get("title", ""),
+                        "section": meta.get("section", ""),
+                        "content": meta.get("text", ""),
+                        "source_type": meta.get("source_type", ""),
+                        "id": m.id,
+                    })
+            except Exception as e:
+                logger.warning("Pinecone ns=%s 검색 실패: %s", ns, e)
+
+        # score 내림차순 정렬 후 top_k 반환
+        all_hits.sort(key=lambda x: x["score"], reverse=True)
+        hits = all_hits[:top_k]
+
+        logger.info("Pinecone 검색: query=%r, source=%s, %d건 (ns=%s, ≥%.2f)",
+                     query[:40], source_type or "all", len(hits),
+                     "+".join(NAMESPACES), MIN_SCORE)
+        return hits
+
+    except Exception as e:
+        logger.warning("Pinecone 검색 실패: %s", e)
         return []
 
-    query_parts = list(laws[:5]) + list(legal_basis[:5])
-    legal_query = " ".join(query_parts)
 
-    query_vec = _embed_query(legal_query, config)
-    return _search(query_vec, config, top_k=config.legal_top_k, threshold=config.rag_threshold)
+def search_pinecone_multi(
+    queries: list[str],
+    config: "AppConfig",
+    top_k: int = TOP_K,
+    source_type: str | None = None,
+) -> list[dict]:
+    """복수 쿼리로 Pinecone 병렬 검색 → 중복 제거.
+
+    Args:
+        queries: 검색 쿼리 리스트
+        config: AppConfig
+        top_k: 쿼리당 최대 건수
+        source_type: 필터 (None이면 전체)
+
+    Returns:
+        중복 제거된 결과 리스트 (score 내림차순)
+    """
+    if not queries:
+        return []
+
+    seen_ids: set[str] = set()
+    all_hits: list[dict] = []
+
+    def _search_one(q: str) -> list[dict]:
+        return search_pinecone(q, config, top_k=top_k, source_type=source_type)
+
+    with ThreadPoolExecutor(max_workers=min(len(queries), 3)) as pool:
+        futures = {pool.submit(_search_one, q): q for q in queries}
+        for fut in as_completed(futures):
+            try:
+                hits = fut.result()
+                for h in hits:
+                    if h["id"] not in seen_ids:
+                        seen_ids.add(h["id"])
+                        all_hits.append(h)
+            except Exception as e:
+                logger.warning("Pinecone 다중검색 개별 실패: %s", e)
+
+    # score 내림차순 정렬
+    all_hits.sort(key=lambda x: x["score"], reverse=True)
+    logger.info("Pinecone 다중검색: %d개 쿼리 → %d건 (중복제거)",
+                len(queries), len(all_hits))
+    return all_hits[:top_k * 2]  # 최대 top_k*2건
+
+
+def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
+    """Pinecone 검색 결과를 LLM 컨텍스트 텍스트 + 메타 리스트로 변환.
+
+    Returns:
+        (formatted_text, meta_list)
+        - formatted_text: LLM에 제공할 포매팅된 텍스트 (없으면 None)
+        - meta_list: [{title, section, source_type, score}, ...]
+    """
+    if not hits:
+        return None, []
+
+    parts = []
+    meta_list = []
+    for h in hits:
+        source_label = {
+            "precedent": "판례",
+            "interpretation": "행정해석",
+            "regulation": "훈령/예규",
+            "counsel": "노무사 상담",
+        }.get(h["source_type"], h["source_type"])
+
+        header = f"[{source_label}] {h['title']}"
+        if h.get("section"):
+            header += f" — {h['section']}"
+
+        content = h.get("content", "")
+        if content:
+            parts.append(f"{header}\n{content}")
+            meta_list.append({
+                "title": h["title"],
+                "section": h.get("section", ""),
+                "source_type": h["source_type"],
+                "score": h["score"],
+            })
+
+    if not parts:
+        return None, []
+
+    formatted = "\n\n---\n\n".join(parts)
+    return formatted, meta_list
