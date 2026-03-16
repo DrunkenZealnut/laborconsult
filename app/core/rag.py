@@ -1,6 +1,8 @@
-"""Pinecone 벡터 검색 모듈 — 멀티 네임스페이스 (laborlaw-v2 + counsel)
+"""Pinecone 벡터 검색 모듈 — 2그룹 병렬 검색
 
-판례·행정해석·노무사 상담을 Pinecone에서 먼저 검색하고,
+그룹 A: laborlaw-v2 (판례·행정해석·훈령)
+그룹 B: counsel + qa (상담사례)
+두 그룹을 병렬로 검색하여 응답 속도를 개선한다.
 결과가 부족하면 법제처 API(legal_api.py)로 폴백한다.
 """
 
@@ -11,9 +13,54 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
-NAMESPACES = ["laborlaw-v2", "counsel", "qa"]
+# 병렬 검색 그룹 정의
+NS_GROUP_LAW = ["laborlaw-v2"]          # 그룹 A: 법령·판례
+NS_GROUP_COUNSEL = ["counsel", "qa"]    # 그룹 B: 상담사례
+NS_GROUPS = [NS_GROUP_LAW, NS_GROUP_COUNSEL]
 TOP_K = 5
 MIN_SCORE = 0.35  # 이 점수 이하는 무관한 결과로 간주
+
+
+def _query_namespaces(
+    namespaces: list[str],
+    vector: list[float],
+    top_k: int,
+    source_type: str | None,
+    pinecone_index,
+) -> list[dict]:
+    """네임스페이스 그룹 내 순차 검색 → 결과 병합."""
+    hits = []
+    seen_ids: set[str] = set()
+
+    for ns in namespaces:
+        kwargs = {
+            "vector": vector,
+            "top_k": top_k,
+            "namespace": ns,
+            "include_metadata": True,
+        }
+        if source_type:
+            kwargs["filter"] = {"source_type": {"$eq": source_type}}
+
+        try:
+            result = pinecone_index.query(**kwargs)
+            for m in result.matches:
+                if m.score < MIN_SCORE or m.id in seen_ids:
+                    continue
+                seen_ids.add(m.id)
+                meta = m.metadata or {}
+                hits.append({
+                    "score": round(m.score, 4),
+                    "title": meta.get("title", ""),
+                    "section": meta.get("section", ""),
+                    "content": meta.get("text", ""),
+                    "source_type": meta.get("source_type", ""),
+                    "id": m.id,
+                })
+        except Exception as e:
+            logger.warning("Pinecone ns=%s 검색 실패: %s", ns, e)
+
+    return hits
 
 
 def search_pinecone(
@@ -22,7 +69,10 @@ def search_pinecone(
     top_k: int = TOP_K,
     source_type: str | None = None,
 ) -> list[dict]:
-    """Pinecone 멀티 네임스페이스 벡터 검색.
+    """Pinecone 2그룹 병렬 벡터 검색.
+
+    그룹 A (laborlaw-v2)와 그룹 B (counsel+qa)를 병렬로 검색한 뒤
+    결과를 합치고 score 내림차순으로 정렬한다.
 
     Args:
         query: 검색 쿼리 텍스트
@@ -41,45 +91,40 @@ def search_pinecone(
         )
         vector = resp.data[0].embedding
 
-        # 멀티 네임스페이스 검색
+        # 2그룹 병렬 검색
         all_hits = []
-        seen_ids: set[str] = set()
 
-        for ns in NAMESPACES:
-            kwargs = {
-                "vector": vector,
-                "top_k": top_k,
-                "namespace": ns,
-                "include_metadata": True,
+        with ThreadPoolExecutor(max_workers=len(NS_GROUPS)) as pool:
+            futures = {
+                pool.submit(
+                    _query_namespaces, group, vector, top_k, source_type,
+                    config.pinecone_index,
+                ): group
+                for group in NS_GROUPS
             }
-            if source_type:
-                kwargs["filter"] = {"source_type": {"$eq": source_type}}
+            for fut in as_completed(futures):
+                group = futures[fut]
+                try:
+                    all_hits.extend(fut.result())
+                except Exception as e:
+                    logger.warning("Pinecone 그룹 %s 검색 실패: %s", group, e)
 
-            try:
-                result = config.pinecone_index.query(**kwargs)
-                for m in result.matches:
-                    if m.score < MIN_SCORE or m.id in seen_ids:
-                        continue
-                    seen_ids.add(m.id)
-                    meta = m.metadata or {}
-                    all_hits.append({
-                        "score": round(m.score, 4),
-                        "title": meta.get("title", ""),
-                        "section": meta.get("section", ""),
-                        "content": meta.get("text", ""),
-                        "source_type": meta.get("source_type", ""),
-                        "id": m.id,
-                    })
-            except Exception as e:
-                logger.warning("Pinecone ns=%s 검색 실패: %s", ns, e)
+        # 그룹 간 ID 중복 제거
+        seen_ids: set[str] = set()
+        deduped = []
+        for h in all_hits:
+            if h["id"] not in seen_ids:
+                seen_ids.add(h["id"])
+                deduped.append(h)
 
         # score 내림차순 정렬 후 top_k 반환
-        all_hits.sort(key=lambda x: x["score"], reverse=True)
-        hits = all_hits[:top_k]
+        deduped.sort(key=lambda x: x["score"], reverse=True)
+        hits = deduped[:top_k]
 
+        all_ns = [ns for g in NS_GROUPS for ns in g]
         logger.info("Pinecone 검색: query=%r, source=%s, %d건 (ns=%s, ≥%.2f)",
                      query[:40], source_type or "all", len(hits),
-                     "+".join(NAMESPACES), MIN_SCORE)
+                     "+".join(all_ns), MIN_SCORE)
         return hits
 
     except Exception as e:
