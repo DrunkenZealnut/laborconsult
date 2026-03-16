@@ -57,6 +57,10 @@
   .msg-wrapper { display: flex; flex-direction: column; }
   .msg-wrapper.user-side { align-items: flex-end; }
   .msg-wrapper.assistant-side { align-items: flex-start; }
+  #export-btn { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0; }
+  #export-btn:hover { border-color: var(--primary); color: var(--primary); }
+  #export-btn.exported { color: #16a34a; border-color: #16a34a; }
+
   .copy-btn { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; color: var(--muted); font-size: 12px; opacity: 0; transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; align-self: flex-start; }
   .msg-wrapper:hover .copy-btn { opacity: 1; }
   .copy-btn:hover { color: var(--primary); border-color: var(--primary); }
@@ -102,6 +106,7 @@
     /* FR-06: 헤더 축소 */
     header h1 { font-size: 16px; }
     header span { font-size: 11px; }
+    #export-btn { padding: 6px 8px; font-size: 12px; min-height: 36px; }
   }
 </style>
 </head>
@@ -110,6 +115,10 @@
 <header>
   <h1>AI 노동상담 챗봇</h1>
   <span>nodong.kr BEST Q&A 기반</span>
+  <button id="export-btn" title="대화 내용을 마크다운 파일로 저장">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    저장
+  </button>
 </header>
 
 <div id="chat">
@@ -147,12 +156,90 @@
 <script>
 const chat = document.getElementById('chat');
 const msgInput = document.getElementById('msg-input');
+
+// ── 대화 저장 (마크다운) ────────────────────────────────────────────────────
+
+document.getElementById('export-btn').addEventListener('click', exportChatMarkdown);
+
+function exportChatMarkdown() {
+  const wrappers = chat.querySelectorAll('.msg-wrapper');
+  const pairs = [];
+  let questionNum = 0;
+
+  for (const w of wrappers) {
+    const userEl = w.querySelector('.msg.user');
+    const assistantEl = w.querySelector('.msg.assistant');
+
+    if (userEl) {
+      questionNum++;
+      pairs.push({ type: 'user', num: questionNum, text: userEl.innerText.trim() });
+    }
+    if (assistantEl) {
+      // 인사말(첫 번째 assistant, 질문 전)은 제외
+      if (questionNum === 0) continue;
+      const mdText = assistantEl.dataset.md || assistantEl.innerText;
+      pairs.push({ type: 'assistant', num: questionNum, text: mdText.trim() });
+    }
+  }
+
+  if (pairs.length === 0) {
+    alert('저장할 대화 내용이 없습니다.');
+    return;
+  }
+
+  // 마크다운 조합
+  const now = new Date();
+  const dateStr = now.toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const lines = [
+    '# 노동OK 상담 기록\n',
+    `> 날짜: ${dateStr}`,
+    '> 출처: nodong.kr AI 노동상담 챗봇\n',
+    '---\n',
+  ];
+
+  for (const p of pairs) {
+    if (p.type === 'user') {
+      lines.push(`## 질문 ${p.num}\n`);
+      lines.push(p.text + '\n');
+    } else {
+      lines.push(`## 답변 ${p.num}\n`);
+      lines.push(p.text + '\n');
+      lines.push('---\n');
+    }
+  }
+
+  lines.push('> 본 상담 기록은 AI가 제공한 참고 정보이며, 법적 효력이 없습니다.');
+  lines.push('> 정확한 사항은 고용노동부(1350) 또는 공인노무사에게 확인하시기 바랍니다.');
+
+  const md = lines.join('\n');
+
+  // 파일 다운로드
+  const ts = now.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const filename = `노동OK_상담_${ts}.md`;
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // 피드백
+  const btn = document.getElementById('export-btn');
+  btn.classList.add('exported');
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 저장됨';
+  setTimeout(() => {
+    btn.classList.remove('exported');
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 저장';
+  }, 2000);
+}
 const btn = document.getElementById('send-btn');
 const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
 const filePreview = document.getElementById('file-preview');
 const dropOverlay = document.getElementById('drop-overlay');
 let sessionId = null;
+try { sessionId = sessionStorage.getItem('chatSessionId'); } catch (e) { /* ignore */ }
 let pendingFiles = [];
 const MAX_FILES = 3;
 
@@ -448,6 +535,7 @@ async function readSSE(resp) {
 
       if (event.type === 'session') {
         sessionId = event.session_id;
+        try { sessionStorage.setItem('chatSessionId', sessionId); } catch (e) { /* ignore */ }
       } else if (event.type === 'status') {
         statusEl.textContent = event.text;
       } else if (event.type === 'contacts') {
@@ -465,6 +553,15 @@ async function readSSE(resp) {
         if (pendingContacts) renderContacts(pendingContacts, el);
       } else if (event.type === 'sources' || event.type === 'meta') {
         // handled in answer
+      } else if (event.type === 'replace') {
+        // LLM 교정 결과로 전체 답변 교체 (환각 판례 제거)
+        if (assistantEl) {
+          fullText = event.text;
+          assistantEl.innerHTML = md(fullText);
+          assistantEl.dataset.md = fullText;
+          renderPendingMath(assistantEl);
+          chat.scrollTop = chat.scrollHeight;
+        }
       } else if (event.type === 'chunk') {
         removeStatus();
         if (!assistantEl) assistantEl = addMsg('assistant', '', '');

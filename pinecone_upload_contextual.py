@@ -81,16 +81,25 @@ SOURCES = [
         "label": "훈령/예규",
     },
     {
+        "directory": "output_qna",
+        "namespace": "qa",
+        "source_type": "qa",
+        "label": "Q&A 상담 (1차)",
+        "source": "nodongok",
+    },
+    {
         "directory": "output_qna_2",
         "namespace": "qa",
         "source_type": "qa",
-        "label": "Q&A 상담",
+        "label": "Q&A 상담 (2차)",
+        "source": "nodongok",
     },
     {
         "directory": "output_legal_cases",
         "namespace": "qa",
         "source_type": "qa",
         "label": "법률 상담사례",
+        "source": "nodongok",
     },
     {
         "directory": "nodong_counsel",
@@ -660,6 +669,7 @@ def process_source(
                     "values": emb,
                     "metadata": {
                         "source_type": source_type,
+                        "source": source_config.get("source", ""),
                         "title": title[:200],
                         "category": category[:50],
                         "date": date_str,
@@ -667,6 +677,7 @@ def process_source(
                         "section": chunk["section"][:100],
                         "chunk_index": chunk["chunk_index"],
                         "chunk_text": chunk["chunk_text"][:900],
+                        "text": chunk["chunk_text"][:900],
                         "contextualized": not skip_context,
                     },
                 })

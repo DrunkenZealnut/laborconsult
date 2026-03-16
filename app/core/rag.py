@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
-NAMESPACES = ["laborlaw-v2", "counsel"]
+NAMESPACES = ["laborlaw-v2", "counsel", "qa"]
 TOP_K = 5
 MIN_SCORE = 0.35  # 이 점수 이하는 무관한 결과로 간주
 
@@ -151,6 +151,7 @@ def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
             "interpretation": "행정해석",
             "regulation": "훈령/예규",
             "counsel": "노무사 상담",
+            "qa": "상담 Q&A",
         }.get(h["source_type"], h["source_type"])
 
         header = f"[{source_label}] {h['title']}"
