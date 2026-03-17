@@ -153,6 +153,8 @@ def analyze_intent(
                 "notice_days_given", "parental_leave_months",
                 "arrear_amount", "arrear_due_date",
                 "use_minimum_wage", "reference_year",
+                "is_probation", "contract_months", "occupation_code",
+                "is_platform_worker",
             }
             extracted = {k: v for k, v in inp.items() if k in info_keys and v is not None}
 

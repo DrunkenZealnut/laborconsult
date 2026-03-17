@@ -45,6 +45,7 @@ def generate_legal_hints(
     hints.extend(_hints_comprehensive(inp))
     hints.extend(_hints_small_business(inp))
     hints.extend(_hints_nontaxable(inp))
+    hints.extend(_hints_platform_worker(inp))
 
     # 중요도 순 정렬 (1 먼저)
     return sorted(hints, key=lambda h: h.priority)
@@ -304,3 +305,107 @@ def format_hints(hints: list[LegalHint]) -> str:
         "산재보험·체당금은 관할 근로복지공단(1588-0075)에 접수합니다."
     )
     return "\n".join(lines)
+
+
+# ── 특수고용직(노무제공자) 관련 힌트 ─────────────────────────────────────────
+
+def _hints_platform_worker(inp: WageInput) -> list[LegalHint]:
+    """특수고용직 업무상 재해·안전조치·갑질 관련 법률 힌트"""
+    hints: list[LegalHint] = []
+
+    if not inp.is_platform_worker:
+        return hints
+
+    # 업무상 재해 인정 기준 안내
+    hints.append(LegalHint(
+        category="산재보험",
+        condition="특수고용직(노무제공자) 산재 적용",
+        hint=(
+            "특수고용직도 업무상 재해(업무상 사고·질병·출퇴근 재해)에 대해 "
+            "산재보험 급여를 받을 수 있습니다. "
+            "업무 수행성(업무 중 발생)과 업무 기인성(업무와 인과관계)을 갖추면 인정됩니다. "
+            "단, 고의·자해·범죄행위는 제외됩니다."
+        ),
+        basis="산업재해보상보험법 제37조 (업무상 재해의 인정 기준), 제125조 (특수형태근로종사자 특례)",
+        priority=1,
+    ))
+
+    # 산업안전보건법 교육 의무 안내
+    hints.append(LegalHint(
+        category="안전보건",
+        condition="특수고용직 안전·보건 교육 의무",
+        hint=(
+            "노무를 제공받는 사업주는 특수고용직에 대해 최초 계약 시 "
+            "안전·보건에 관한 정기 교육 및 특별 교육을 실시해야 합니다. "
+            "위반 시 500만원 이하 과태료. "
+            "배달 종사자 중계 플랫폼은 안전조치 의무 위반 시 1천만원 이하 과태료."
+        ),
+        basis="산업안전보건법 제77조 (안전보건교육), 제79조 (배달종사자 안전조치)",
+        priority=2,
+    ))
+
+    # 뇌심혈관 질환 위험도 체크
+    weekly_total = (
+        inp.schedule.daily_work_hours * inp.schedule.weekly_work_days
+        + inp.schedule.weekly_overtime_hours
+    )
+    from .constants import CEREBROVASCULAR_WEEKLY_HOURS_ACUTE, CEREBROVASCULAR_WEEKLY_HOURS_CAUTION
+    if weekly_total > CEREBROVASCULAR_WEEKLY_HOURS_CAUTION:
+        hints.append(LegalHint(
+            category="건강위험",
+            condition=f"주 {weekly_total:.0f}시간 근무 — 뇌심혈관 질환 위험",
+            hint=(
+                f"주 평균 {weekly_total:.0f}시간 근무는 뇌심혈관 질환 산재 인정 기준에 근접합니다. "
+                f"발병 전 12주간 주 평균 {CEREBROVASCULAR_WEEKLY_HOURS_ACUTE}시간 이상 시 산재 인정, "
+                f"{CEREBROVASCULAR_WEEKLY_HOURS_CAUTION}시간 초과 + 업무 가중요인(스트레스, 교대, 유해환경) 시에도 인정 추세. "
+                "하루 12시간 이상 연속근무 회피, 8시간 이상 수면, 4시간 이상 휴식을 권장합니다."
+            ),
+            basis="고용노동부 고시 (뇌심혈관 질환 업무상 질병 인정기준)",
+            priority=1,
+        ))
+
+    # 갑질 피해 대처
+    hints.append(LegalHint(
+        category="갑질 대처",
+        condition="특수고용직 갑질 피해 대처 안내",
+        hint=(
+            "사업주의 상품/용역 구입 강제, 과도한 판매 목표 강요, "
+            "손해액 대신 물기 등은 독점규제 및 공정거래법상 불공정 거래행위로 신고 가능합니다. "
+            "고객의 폭언·성희롱·폭행 시 즉시 관리자에게 알리고, "
+            "날짜·시간·내용을 기록(녹음 포함)하여 신고하세요. "
+            "직장 내 괴롭힘에 해당하면 산재보험법상 업무상 질병으로 인정될 수 있습니다."
+        ),
+        basis="독점규제 및 공정거래에 관한 법률 제45조, 산재보험법 제37조 제1항 제2호 라목",
+        priority=2,
+    ))
+
+    # 근로자성 판단 안내 (근로기준법 vs 노동조합법)
+    hints.append(LegalHint(
+        category="근로자성",
+        condition="특수고용직 근로자성 판단 안내",
+        hint=(
+            "특수고용직은 근로기준법상 근로자에 해당하지 않더라도, "
+            "노동조합법상 근로자로 인정될 수 있습니다. "
+            "판단 핵심: ① 특정 사업주에 대한 경제적 의존성 ② 계약 내용의 일방적 결정 "
+            "③ 사업 수행에 필수적 노무 제공. "
+            "노동조합법상 근로자로 인정되면 단결권·단체교섭권·단체행동권(노동 3권)을 "
+            "행사할 수 있습니다 (헌법 제33조 제1항)."
+        ),
+        basis="헌법 제33조 제1항, 노동조합법 제2조 제1호, 대법원 2018다238518 (학습지 교사)",
+        priority=2,
+    ))
+
+    # 프리랜서와 특수고용직 구분
+    hints.append(LegalHint(
+        category="근로자성",
+        condition="프리랜서 vs 특수고용직 구분",
+        hint=(
+            "프리랜서(3.3%)라도 실질적으로 특수고용직 요건(전속성·계속성·비대체성)을 "
+            "갖추면 고용보험·산재보험 가입 대상입니다. "
+            "사업주가 가입을 거부하면 근로복지공단(1588-0075)에 신고 가능합니다."
+        ),
+        basis="고용보험법 제77조의2, 산업재해보상보험법 제125조",
+        priority=2,
+    ))
+
+    return hints

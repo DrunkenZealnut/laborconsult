@@ -91,6 +91,49 @@ def calc_industrial_accident(
     ]
     year = inp.reference_year
 
+    if getattr(inp, "is_platform_worker", False):
+        warnings.append(
+            "특수고용직(노무제공자)은 산재보험료를 사업주와 50%씩 분담합니다 "
+            "(산업재해보상보험법 제126조의2). "
+            "산재 급여 산정(휴업급여·장해급여 등)은 일반 근로자와 동일합니다."
+        )
+        legal.append("산업재해보상보험법 제125조 (특수형태근로종사자 특례)")
+        legal.append("산업재해보상보험법 제126조의2 (보험료 분담)")
+
+    # ── 재해 유형별 안내 ─────────────────────────────────────────────────
+    injury_type = getattr(inp, "injury_type", "") or ""
+
+    if getattr(inp, "is_commute_injury", False) or injury_type == "출퇴근":
+        warnings.append(
+            "출퇴근 재해: 통상적인 경로와 방법으로 출퇴근 중 발생한 사고는 "
+            "업무상 재해로 인정됩니다 (산재보험법 제37조 제1항 제3호). "
+            "자가용·대중교통 모두 포함되나, 통상 경로 이탈 시 제외될 수 있습니다."
+        )
+        legal.append("산업재해보상보험법 제37조 제1항 제3호 (출퇴근 재해)")
+
+    if getattr(inp, "is_traffic_accident", False) or injury_type == "사고":
+        from ..constants import TRAFFIC_GROSS_NEGLIGENCE
+        warnings.append(
+            "교통사고 산재 인정: 업무 수행 중 교통사고는 원칙적으로 산재 인정되나, "
+            "12대 중과실 사고(신호위반, 중앙선 침범, 음주운전 등)에 해당하면 "
+            "불인정될 수 있습니다. 다만 불가피한 위반은 예외 인정 가능합니다."
+        )
+        legal.append("교통사고처리 특례법 제3조 (12대 중과실)")
+
+    if injury_type == "뇌심혈관":
+        from ..constants import (
+            CEREBROVASCULAR_WEEKLY_HOURS_ACUTE,
+            CEREBROVASCULAR_WEEKLY_HOURS_CAUTION,
+            CEREBROVASCULAR_OBSERVATION_WEEKS,
+        )
+        warnings.append(
+            f"뇌심혈관 질환 산재 인정 기준: 발병 전 {CEREBROVASCULAR_OBSERVATION_WEEKS}주간 "
+            f"주 평균 {CEREBROVASCULAR_WEEKLY_HOURS_ACUTE}시간 이상 근무 시 인정. "
+            f"주 {CEREBROVASCULAR_WEEKLY_HOURS_CAUTION}시간 초과 + 업무 가중요인"
+            "(스트레스, 교대근무, 유해환경 등) 복합 시에도 인정 추세."
+        )
+        legal.append("고용노동부 고시 '뇌혈관 질병 또는 심장 질병의 업무상 질병 인정 여부 결정에 필요한 사항'")
+
     # ── 1. 평균임금 결정 ──────────────────────────────────────────────────
     avg_daily = ow.daily_ordinary_wage  # 기본: 통상임금 환산일급
     if inp.monthly_wage:

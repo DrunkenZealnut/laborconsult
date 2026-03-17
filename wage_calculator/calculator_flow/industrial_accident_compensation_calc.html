@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">전체 구조</button>
+<button onclick="showTab(1)" id="t1">휴업급여</button>
+<button onclick="showTab(2)" id="t2">장해급여</button>
+<button onclick="showTab(3)" id="t3">유족·장례비</button>
+<button onclick="showTab(4)" id="t4">재해 인정 기준</button>
+<button onclick="showTab(5)" id="t5">보상금 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 구조 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">산재보상금 — 전체 구조와 급여 유형</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">산업재해보상보험법 제36조, 제52조, 제54조, 제57조, 제62조, 제71조</p>
+<p style="font-size:12px;color:var(--color-text-warning);margin:6px 0 0;font-weight:500">※ 특수고용직(노무제공자)도 산재보험 적용 — 급여 산정은 동일, 보험료만 사업주와 50:50 분담 (제125조, 제126조의2)</p>
+</div>
+<svg width="100%" viewBox="0 0 680 760">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 평균임금 -->
+<g class="c-coral">
+<rect x="120" y="20" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">평균임금 산정 (모든 급여의 기초)</text>
+<text class="ts" x="340" y="62" text-anchor="middle" dominant-baseline="central">평균임금(일) = max(월급 / 30, 통상임금 일급)</text>
+<text class="ts" x="340" y="80" text-anchor="middle" dominant-baseline="central">둘 중 유리한 금액 적용</text>
+</g>
+
+<!-- 분기 화살표 -->
+<line x1="180" y1="96" x2="105" y2="136" class="arr" marker-end="url(#ar)"/>
+<line x1="280" y1="96" x2="280" y2="136" class="arr" marker-end="url(#ar)"/>
+<line x1="400" y1="96" x2="460" y2="136" class="arr" marker-end="url(#ar)"/>
+<line x1="500" y1="96" x2="590" y2="136" class="arr" marker-end="url(#ar)"/>
+
+<!-- 6가지 급여 유형 -->
+<g class="node c-teal" onclick="sendPrompt('휴업급여 계산과정을 더 자세히 알려줘')">
+<rect x="40" y="136" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="105" y="156" text-anchor="middle" dominant-baseline="central">휴업급여</text>
+<text class="ts" x="105" y="174" text-anchor="middle" dominant-baseline="central">요양 중 소득</text>
+</g>
+
+<g class="node c-purple" onclick="showTab(2)">
+<rect x="215" y="136" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="280" y="156" text-anchor="middle" dominant-baseline="central">장해급여</text>
+<text class="ts" x="280" y="174" text-anchor="middle" dominant-baseline="central">1~14급</text>
+</g>
+
+<g class="node c-amber" onclick="showTab(3)">
+<rect x="395" y="136" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="460" y="156" text-anchor="middle" dominant-baseline="central">유족급여</text>
+<text class="ts" x="460" y="174" text-anchor="middle" dominant-baseline="central">사망 시</text>
+</g>
+
+<g class="node c-gray" onclick="showTab(3)">
+<rect x="540" y="136" width="100" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="590" y="156" text-anchor="middle" dominant-baseline="central">장례비</text>
+<text class="ts" x="590" y="174" text-anchor="middle" dominant-baseline="central">120일분</text>
+</g>
+
+<!-- 상병보상연금 -->
+<line x1="105" y1="192" x2="105" y2="222" class="arr" marker-end="url(#ar)"/>
+<g class="c-blue">
+<rect x="40" y="222" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="105" y="244" text-anchor="middle" dominant-baseline="central">상병보상연금</text>
+</g>
+<text class="ts" x="190" y="248">2년↑ 요양 + 1~3급</text>
+
+<!-- 구분선 -->
+<line x1="40" y1="296" x2="640" y2="296" stroke="var(--b)" stroke-width="0.5" stroke-dasharray="4 4"/>
+<text class="ts" x="340" y="316" text-anchor="middle">아래: 각 급여의 핵심 공식 요약</text>
+
+<!-- 휴업급여 공식 -->
+<g class="c-teal">
+<rect x="40" y="336" width="290" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="356" text-anchor="middle" dominant-baseline="central">휴업급여 (제52조)</text>
+<text class="ts" x="185" y="376" text-anchor="middle" dominant-baseline="central">기본: 평균임금 x 70%</text>
+<text class="ts" x="185" y="394" text-anchor="middle" dominant-baseline="central">저임금자: 최대 90%까지 상향</text>
+<text class="ts" x="185" y="412" text-anchor="middle" dominant-baseline="central">총액 = 1일 수당 x 요양일수</text>
+</g>
+
+<!-- 장해급여 공식 -->
+<g class="c-purple">
+<rect x="350" y="336" width="290" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="356" text-anchor="middle" dominant-baseline="central">장해급여 (제57조)</text>
+<text class="ts" x="495" y="376" text-anchor="middle" dominant-baseline="central">1~3급: 연금만 (329~257일)</text>
+<text class="ts" x="495" y="394" text-anchor="middle" dominant-baseline="central">4~7급: 연금 or 일시금 선택</text>
+<text class="ts" x="495" y="412" text-anchor="middle" dominant-baseline="central">8~14급: 일시금만 (495~55일)</text>
+</g>
+
+<!-- 유족급여 공식 -->
+<g class="c-amber">
+<rect x="40" y="442" width="290" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="462" text-anchor="middle" dominant-baseline="central">유족급여 (제62조)</text>
+<text class="ts" x="185" y="482" text-anchor="middle" dominant-baseline="central">연금: 연 평균임금 x (47%+5%n)</text>
+<text class="ts" x="185" y="500" text-anchor="middle" dominant-baseline="central">n=유족수, 최대 67%</text>
+<text class="ts" x="185" y="518" text-anchor="middle" dominant-baseline="central">일시금: 평균임금 x 1,300일</text>
+</g>
+
+<!-- 장례비 공식 -->
+<g class="c-gray">
+<rect x="350" y="442" width="290" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="462" text-anchor="middle" dominant-baseline="central">장례비 (제71조)</text>
+<text class="ts" x="495" y="482" text-anchor="middle" dominant-baseline="central">평균임금 x 120일</text>
+<text class="ts" x="495" y="500" text-anchor="middle" dominant-baseline="central">하한: 13,943,000원 (2026)</text>
+<text class="ts" x="495" y="518" text-anchor="middle" dominant-baseline="central">상한: 19,279,760원 (2026)</text>
+</g>
+
+<!-- 상병보상연금 공식 -->
+<g class="c-blue">
+<rect x="40" y="548" width="600" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="570" text-anchor="middle" dominant-baseline="central">상병보상연금 (제66조) — 2년 이상 요양 + 폐질 1~3급</text>
+<text class="ts" x="340" y="592" text-anchor="middle" dominant-baseline="central">1급: 329일분 | 2급: 291일분 | 3급: 257일분</text>
+<text class="ts" x="340" y="610" text-anchor="middle" dominant-baseline="central">연간 연금 = 평균임금(일) x 해당 등급 일수 → 휴업급여 대체</text>
+</g>
+
+<!-- 핵심 메시지 -->
+<rect x="40" y="650" width="600" height="86" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="674" text-anchor="middle">반도체 산업 주요 산재 유형</text>
+<text class="ts" x="340" y="698" text-anchor="middle">화학물질 노출(백혈병 등), 설비 사고, 근골격계 질환</text>
+<text class="ts" x="340" y="718" text-anchor="middle">장기 요양 → 휴업급여 장기 수령 또는 상병보상연금 전환이 핵심</text>
+</svg>
+</div>
+
+<!-- TAB 1: 휴업급여 상세 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">휴업급여 — 저임금자 보호 로직이 핵심</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">산업재해보상보험법 제52조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 660">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-coral">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">평균임금(일) 확인</text>
+</g>
+
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#a1)"/>
+
+<!-- 기본 70% -->
+<g class="c-teal">
+<rect x="180" y="94" width="320" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="114" text-anchor="middle" dominant-baseline="central">기본 산정: 평균임금 x 70%</text>
+<text class="ts" x="340" y="134" text-anchor="middle" dominant-baseline="central">일반적인 경우 여기서 확정</text>
+</g>
+
+<line x1="340" y1="150" x2="340" y2="180" class="arr" marker-end="url(#a1)"/>
+
+<!-- 저임금 분기 -->
+<g class="c-amber">
+<rect x="80" y="180" width="520" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="202" text-anchor="middle" dominant-baseline="central">저임금자 체크: 70% ≤ 최저보상기준 x 80% ?</text>
+</g>
+
+<line x1="220" y1="224" x2="160" y2="260" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="176" y="238">아니오</text>
+<line x1="460" y1="224" x2="520" y2="260" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="502" y="238">예 (저임금)</text>
+
+<g>
+<rect x="60" y="260" width="200" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="160" y="286" text-anchor="middle" dominant-baseline="central">70% 그대로 적용</text>
+</g>
+
+<!-- 90% 시도 -->
+<g class="c-purple">
+<rect x="380" y="260" width="260" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="510" y="280" text-anchor="middle" dominant-baseline="central">90%로 상향 시도</text>
+<text class="ts" x="510" y="298" text-anchor="middle" dominant-baseline="central">평균임금 x 90%</text>
+</g>
+
+<line x1="510" y1="316" x2="510" y2="350" class="arr" marker-end="url(#a1)"/>
+
+<g class="c-amber">
+<rect x="340" y="350" width="300" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="490" y="372" text-anchor="middle" dominant-baseline="central">90% > 최저보상기준 x 80% ?</text>
+</g>
+
+<line x1="420" y1="394" x2="340" y2="428" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="364" y="408">예</text>
+<line x1="560" y1="394" x2="560" y2="428" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="574" y="412">아니오</text>
+
+<g>
+<rect x="220" y="428" width="240" height="44" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#3C3489;font-weight:500" x="340" y="454" text-anchor="middle" dominant-baseline="central">최저보상기준 x 80% 적용</text>
+</g>
+
+<g>
+<rect x="480" y="428" width="160" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="560" y="454" text-anchor="middle" dominant-baseline="central">90% 적용</text>
+</g>
+
+<!-- 하한 -->
+<line x1="340" y1="500" x2="340" y2="520" class="arr" marker-end="url(#a1)"/>
+
+<g class="c-gray">
+<rect x="120" y="520" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="540" text-anchor="middle" dominant-baseline="central">최종 하한 체크</text>
+<text class="ts" x="340" y="558" text-anchor="middle" dominant-baseline="central">하한 = 최저시급 x 8h = 10,320 x 8 = 82,560원/일</text>
+</g>
+
+<line x1="340" y1="576" x2="340" y2="606" class="arr" marker-end="url(#a1)"/>
+
+<g class="c-teal">
+<rect x="140" y="606" width="400" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="628" text-anchor="middle" dominant-baseline="central">총 휴업급여 = 확정 1일 수당 x 요양일수</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 2: 장해급여 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">장해급여 — 14등급, 연금/일시금 분기</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">산업재해보상보험법 제57조</p>
+</div>
+
+<div style="overflow-x:auto;margin-bottom:16px">
+<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+<thead>
+<tr style="border-bottom:1.5px solid var(--color-border-secondary)">
+<th style="text-align:left;padding:8px 6px;color:var(--color-text-secondary);font-weight:500;width:50px">등급</th>
+<th style="text-align:center;padding:8px 6px;color:var(--color-text-secondary);font-weight:500;width:80px">연금(일수)</th>
+<th style="text-align:center;padding:8px 6px;color:var(--color-text-secondary);font-weight:500;width:80px">일시금(일수)</th>
+<th style="text-align:left;padding:8px 6px;color:var(--color-text-secondary);font-weight:500">선택</th>
+</tr>
+</thead>
+<tbody id="gradeTable"></tbody>
+</table>
+</div>
+
+<svg width="100%" viewBox="0 0 680 260">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="200" y="10" width="280" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="32" text-anchor="middle" dominant-baseline="central">장해등급 확정</text>
+</g>
+
+<line x1="240" y1="54" x2="130" y2="88" class="arr" marker-end="url(#a2)"/>
+<line x1="340" y1="54" x2="340" y2="88" class="arr" marker-end="url(#a2)"/>
+<line x1="440" y1="54" x2="550" y2="88" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-purple">
+<rect x="40" y="88" width="180" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="130" y="108" text-anchor="middle" dominant-baseline="central">1~3급</text>
+<text class="ts" x="130" y="128" text-anchor="middle" dominant-baseline="central">연금만 가능</text>
+</g>
+
+<g class="c-teal">
+<rect x="250" y="88" width="180" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="108" text-anchor="middle" dominant-baseline="central">4~7급</text>
+<text class="ts" x="340" y="128" text-anchor="middle" dominant-baseline="central">연금 or 일시금 선택</text>
+</g>
+
+<g class="c-amber">
+<rect x="460" y="88" width="180" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="550" y="108" text-anchor="middle" dominant-baseline="central">8~14급</text>
+<text class="ts" x="550" y="128" text-anchor="middle" dominant-baseline="central">일시금만 가능</text>
+</g>
+
+<rect x="40" y="170" width="600" height="76" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="194" text-anchor="middle">계산 공식</text>
+<text class="ts" x="340" y="216" text-anchor="middle">연금: 평균임금(일) x 해당 등급 연금일수 = 연간 수령액</text>
+<text class="ts" x="340" y="236" text-anchor="middle">일시금: 평균임금(일) x 해당 등급 일시금일수 = 일회 수령액</text>
+</svg>
+</div>
+
+<!-- TAB 3: 유족·장례비 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">유족급여 · 장례비 — 사망 시 보상</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">산업재해보상보험법 제62조, 제71조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 580">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="340" y="24" text-anchor="middle">유족급여 (제62조)</text>
+
+<g class="c-coral">
+<rect x="180" y="40" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="62" text-anchor="middle" dominant-baseline="central">평균임금(일) x 365 = 연간 평균임금</text>
+</g>
+
+<line x1="240" y1="84" x2="160" y2="118" class="arr" marker-end="url(#a3)"/>
+<line x1="440" y1="84" x2="520" y2="118" class="arr" marker-end="url(#a3)"/>
+
+<!-- 연금 -->
+<g class="c-amber">
+<rect x="40" y="118" width="240" height="120" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="140" text-anchor="middle" dominant-baseline="central">유족보상연금</text>
+<text class="ts" x="160" y="164" text-anchor="middle" dominant-baseline="central">기본: 연 평균임금 x 47%</text>
+<text class="ts" x="160" y="184" text-anchor="middle" dominant-baseline="central">+ 유족 1인당 5% 가산</text>
+<text class="ts" x="160" y="204" text-anchor="middle" dominant-baseline="central">최대: 연 평균임금 x 67%</text>
+<text class="ts" x="160" y="224" text-anchor="middle" dominant-baseline="central">(유족 4인 이상에서 상한)</text>
+</g>
+
+<!-- 일시금 -->
+<g class="c-teal">
+<rect x="400" y="118" width="240" height="120" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="140" text-anchor="middle" dominant-baseline="central">유족보상일시금</text>
+<text class="ts" x="520" y="168" text-anchor="middle" dominant-baseline="central">평균임금(일) x 1,300일</text>
+<text class="ts" x="520" y="196" text-anchor="middle" dominant-baseline="central">연금 수급자격이 없거나</text>
+<text class="ts" x="520" y="216" text-anchor="middle" dominant-baseline="central">일시금을 선택한 경우</text>
+</g>
+
+<!-- 예시 -->
+<rect x="40" y="260" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="282" text-anchor="middle">예시: 평균임금 10만원/일, 유족 3인</text>
+<text class="ts" x="340" y="302" text-anchor="middle">연금: 10만 x 365 x (47%+5%x3) = 10만 x 365 x 62% = 2,263만원/년</text>
+<text class="ts" x="340" y="318" text-anchor="middle">일시금: 10만 x 1,300 = 1억 3,000만원 (일회)</text>
+
+<!-- 장례비 -->
+<line x1="340" y1="346" x2="340" y2="376" class="arr" marker-end="url(#a3)"/>
+<text class="th" x="340" y="396" text-anchor="middle">장례비 (제71조)</text>
+
+<g class="c-gray">
+<rect x="120" y="410" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="430" text-anchor="middle" dominant-baseline="central">장례비 = 평균임금(일) x 120일</text>
+<text class="ts" x="340" y="450" text-anchor="middle" dominant-baseline="central">예: 10만원 x 120 = 1,200만원</text>
+</g>
+
+<line x1="340" y1="466" x2="340" y2="496" class="arr" marker-end="url(#a3)"/>
+
+<rect x="80" y="496" width="520" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="518" text-anchor="middle">2026년 상·하한</text>
+<text class="ts" x="340" y="540" text-anchor="middle">하한: 13,943,000원 | 상한: 19,279,760원</text>
+<text class="ts" x="340" y="556" text-anchor="middle">평균임금이 낮아도 최소 약 1,394만원 보장</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<!-- TAB 4: 업무상 재해 인정 기준 (platform2.md 반영) -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">업무상 재해 인정 기준 — 산재보험법 제37조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">업무상 사고 · 업무상 질병 · 출퇴근 재해 | 특수고용직 포함</p>
+</div>
+
+<div style="overflow-x:auto;margin-bottom:14px">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead>
+<tr style="border-bottom:2px solid var(--color-border-secondary)">
+<th style="text-align:left;padding:8px;color:var(--color-text-secondary);font-weight:500;width:25%">유형</th>
+<th style="text-align:left;padding:8px;color:var(--color-text-secondary);font-weight:500">인정 요건</th>
+<th style="text-align:left;padding:8px;color:var(--color-text-secondary);font-weight:500;width:25%">예시</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)">
+<td style="padding:8px;font-weight:600">업무상 사고</td>
+<td style="padding:8px">업무 수행 중 발생 + 업무 기인성</td>
+<td style="padding:8px;font-size:12px">작업 중 추락, 시설물 결함, 휴게시간 대기 중 사고</td>
+</tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)">
+<td style="padding:8px;font-weight:600">업무상 질병</td>
+<td style="padding:8px">유해요인 노출, 직장내 괴롭힘·고객 폭언으로 인한 정신질환</td>
+<td style="padding:8px;font-size:12px">근골격계 질환, 우울증, PTSD</td>
+</tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)">
+<td style="padding:8px;font-weight:600">출퇴근 재해</td>
+<td style="padding:8px">통상적 경로·방법으로 출퇴근 중 사고 (2018 개정)</td>
+<td style="padding:8px;font-size:12px">자가용·대중교통 모두 인정, 경로 이탈 시 제외</td>
+</tr>
+<tr>
+<td style="padding:8px;font-weight:600;color:var(--color-text-danger)">제외</td>
+<td style="padding:8px;color:var(--color-text-danger)">고의·자해·범죄행위</td>
+<td style="padding:8px;font-size:12px;color:var(--color-text-danger)">단, 정상 인식능력 현저히 저하 시 예외</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:600;margin:0 0 8px;color:var(--color-text-primary)">교통사고 산재 인정 (특수고용직 핵심)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 업무 수행 중 교통사고는 원칙적으로 산재 인정</p>
+<p style="font-size:12px;color:var(--color-text-danger);margin:2px 0;font-weight:500">• 12대 중과실 사고 시 불인정: 신호위반, 중앙선 침범, 음주운전, 제한속도 20km↑ 초과 등</p>
+<p style="font-size:12px;color:var(--color-text-success);margin:2px 0">• 불가피한 위반은 예외 인정 가능</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0">사고 시: 산재 의료기관 후송 → 소견서 → 근로복지공단 요양·휴업급여 신청</p>
+</div>
+
+<div style="background:var(--color-background-danger);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:600;margin:0 0 8px;color:var(--color-text-danger)">뇌심혈관 질환 산재 인정 기준</p>
+<p style="font-size:12px;color:var(--color-text-primary);margin:2px 0"><strong>급성:</strong> 돌발적 사건·급격한 업무환경 변화 → 24시간 이내 발병</p>
+<p style="font-size:12px;color:var(--color-text-primary);margin:2px 0"><strong>단기:</strong> 발병 전 1주 업무량이 이전 12주 평균 대비 30%↑ 증가</p>
+<p style="font-size:12px;color:var(--color-text-primary);margin:2px 0"><strong>만성:</strong> 발병 전 12주간 <strong>주 평균 60시간</strong> 이상 → 인정</p>
+<p style="font-size:12px;color:var(--color-text-warning);margin:2px 0;font-weight:500">• 주 52시간 초과 + 가중요인(스트레스·교대·유해환경) → 인정 추세</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0">예방: 하루 12시간↑ 연속근무 회피, 8시간 수면, 4시간 휴식 권장</p>
+</div>
+
+<div style="background:var(--color-background-info);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:600;margin:0 0 8px;color:var(--color-text-info)">특수고용직 갑질 피해 대처</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 상품/용역 구입 강제, 과도한 판매목표 → <strong>공정거래법 불공정거래 신고</strong></p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 고객 폭언·성희롱·폭행 → 즉시 관리자 보고 + <strong>날짜·시간·내용 기록(녹음)</strong></p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 직장 내 괴롭힘에 의한 정신질환 → <strong>업무상 질병(산재) 인정 가능</strong></p>
+</div>
+</div>
+
+<div id="tab5" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">산재보상금 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">평균임금과 조건을 입력하면 각 급여별 금액을 산출합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">월급</label>
+<input type="range" min="100" max="600" value="250" step="10" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salaryOut">250만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">통상임금(일)</label>
+<input type="range" min="50000" max="200000" value="80000" step="1000" id="ordDaily" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="ordOut">80,000원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">요양일수</label>
+<input type="range" min="30" max="730" value="180" step="10" id="healDays" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="healOut">180일</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">장해등급</label>
+<select id="grade" onchange="calc()" style="flex:1;height:36px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:0 8px;background:var(--color-background-primary);color:var(--color-text-primary);font-size:13px">
+<option value="0">해당 없음</option>
+<option value="1">1급</option><option value="2">2급</option><option value="3">3급</option>
+<option value="4">4급</option><option value="5">5급</option><option value="6">6급</option><option value="7">7급</option>
+<option value="8">8급</option><option value="9">9급</option><option value="10">10급</option>
+<option value="11">11급</option><option value="12">12급</option><option value="13">13급</option><option value="14" selected>14급</option>
+</select>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">유족수 (사망시)</label>
+<input type="range" min="0" max="6" value="0" step="1" id="survivors" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="survOut">0명</span>
+</div>
+</div>
+
+<!-- 평균임금 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<div style="display:flex;justify-content:space-between;align-items:center">
+<span style="font-size:13px;color:var(--color-text-secondary)">적용 평균임금(일) = max(월급/30, 통상임금일급)</span>
+<span style="font-size:16px;font-weight:500;color:var(--color-text-primary)" id="avgWage">0원</span>
+</div>
+</div>
+
+<!-- 결과 그리드 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">휴업급여 총액</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="restBen">0원</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="restDetail"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">장해급여</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="disBen">-</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="disDetail"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">유족급여 (연금/년)</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="survBen">-</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="survDetail"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">장례비</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="funeral">-</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="funDetail"></p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formulaBox" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var PENSION_DAYS=[0,329,291,257,234,205,179,138,0,0,0,0,0,0,0];
+var LUMP_DAYS=[0,0,0,0,1474,1309,1155,616,495,385,297,220,154,99,55];
+var GRADE_TYPE=['','연금만','연금만','연금만','선택','선택','선택','선택','일시금','일시금','일시금','일시금','일시금','일시금','일시금'];
+var MIN_HOURLY=10320;
+
+function buildGradeTable(){
+  var tb=document.getElementById('gradeTable');
+  var rows='';
+  for(var g=1;g<=14;g++){
+    var p=PENSION_DAYS[g]||'-';
+    var l=LUMP_DAYS[g]||'-';
+    var t=GRADE_TYPE[g];
+    var bgP=g<=3?'var(--color-background-info)':'transparent';
+    var bgL=g>=8?'var(--color-background-warning)':'transparent';
+    if(g>=4&&g<=7){bgP='var(--color-background-secondary)';bgL='var(--color-background-secondary)';}
+    rows+='<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:6px;font-weight:500">'+g+'급</td><td style="padding:6px;text-align:center;background:'+bgP+'">'+p+'</td><td style="padding:6px;text-align:center;background:'+bgL+'">'+l+'</td><td style="padding:6px;font-size:12px;color:var(--color-text-secondary)">'+t+'</td></tr>';
+  }
+  tb.innerHTML=rows;
+}
+buildGradeTable();
+
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+
+function calc(){
+  var sal=parseInt(document.getElementById('salary').value);
+  var ordD=parseInt(document.getElementById('ordDaily').value);
+  var hDays=parseInt(document.getElementById('healDays').value);
+  var grade=parseInt(document.getElementById('grade').value);
+  var surv=parseInt(document.getElementById('survivors').value);
+
+  document.getElementById('salaryOut').textContent=sal+'만원';
+  document.getElementById('ordOut').textContent=fmt(ordD)+'원';
+  document.getElementById('healOut').textContent=hDays+'일';
+  document.getElementById('survOut').textContent=surv+'명';
+
+  var salWon=sal*10000;
+  var avgD=Math.max(Math.round(salWon/30),ordD);
+  document.getElementById('avgWage').textContent=fmt(avgD)+'원/일';
+
+  // 휴업급여
+  var rest70=avgD*0.7;
+  var minFloor=MIN_HOURLY*8;
+  var restDaily=Math.max(rest70,minFloor);
+  var restTotal=restDaily*hDays;
+  document.getElementById('restBen').textContent=fmt(restTotal)+'원';
+  document.getElementById('restDetail').textContent=fmt(restDaily)+'원/일 x '+hDays+'일';
+
+  // 장해급여
+  var disEl=document.getElementById('disBen');
+  var disDetEl=document.getElementById('disDetail');
+  if(grade===0){
+    disEl.textContent='-';
+    disDetEl.textContent='등급 미선택';
+  } else if(grade<=3){
+    var annP=avgD*PENSION_DAYS[grade];
+    disEl.textContent=fmt(annP)+'원/년';
+    disDetEl.textContent=fmt(avgD)+'원 x '+PENSION_DAYS[grade]+'일 (연금)';
+  } else if(grade<=7){
+    var annP2=avgD*PENSION_DAYS[grade];
+    var lump2=avgD*LUMP_DAYS[grade];
+    disEl.textContent='연금 '+fmt(annP2)+'원/년';
+    disDetEl.textContent='또는 일시금 '+fmt(lump2)+'원';
+  } else {
+    var lump3=avgD*LUMP_DAYS[grade];
+    disEl.textContent=fmt(lump3)+'원';
+    disDetEl.textContent=fmt(avgD)+'원 x '+LUMP_DAYS[grade]+'일 (일시금)';
+  }
+
+  // 유족급여
+  var survEl=document.getElementById('survBen');
+  var survDetEl=document.getElementById('survDetail');
+  if(surv===0){
+    survEl.textContent='-';
+    survDetEl.textContent='유족 0명 (해당없음)';
+  } else {
+    var pctS=Math.min(47+5*surv,67);
+    var annS=avgD*365*pctS/100;
+    var lumpS=avgD*1300;
+    survEl.textContent=fmt(annS)+'원/년';
+    survDetEl.textContent=pctS+'% 적용 | 일시금: '+fmt(lumpS)+'원';
+  }
+
+  // 장례비
+  var funEl=document.getElementById('funeral');
+  var funDetEl=document.getElementById('funDetail');
+  if(surv===0){
+    funEl.textContent='-';
+    funDetEl.textContent='사망 미해당';
+  } else {
+    var funRaw=avgD*120;
+    var funFinal=Math.max(Math.min(funRaw,19279760),13943000);
+    funEl.textContent=fmt(funFinal)+'원';
+    funDetEl.textContent=fmt(avgD)+'원 x 120일'+(funRaw!==funFinal?' → 상·하한 적용':'');
+  }
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">산출 근거</p>',
+    '<p style="margin:2px 0">월급/30 = '+fmt(Math.round(salWon/30))+'원 vs 통상임금일급 = '+fmt(ordD)+'원 → <span style="font-weight:500">max = '+fmt(avgD)+'원</span></p>',
+    '<p style="margin:2px 0">휴업: '+fmt(avgD)+' x 70% = '+fmt(rest70)+'원/일'+(rest70<minFloor?' → 하한 '+fmt(minFloor)+'원 적용':'')+'</p>'
+  ];
+  if(grade>0){
+    if(grade<=7&&PENSION_DAYS[grade]>0) fl.push('<p style="margin:2px 0">장해연금: '+fmt(avgD)+' x '+PENSION_DAYS[grade]+'일 = '+fmt(avgD*PENSION_DAYS[grade])+'원/년</p>');
+    if(LUMP_DAYS[grade]>0) fl.push('<p style="margin:2px 0">장해일시금: '+fmt(avgD)+' x '+LUMP_DAYS[grade]+'일 = '+fmt(avgD*LUMP_DAYS[grade])+'원</p>');
+  }
+  if(surv>0){
+    var pctS2=Math.min(47+5*surv,67);
+    fl.push('<p style="margin:2px 0">유족연금: '+fmt(avgD)+' x 365 x '+pctS2+'% = '+fmt(avgD*365*pctS2/100)+'원/년</p>');
+    fl.push('<p style="margin:2px 0">유족일시금: '+fmt(avgD)+' x 1,300 = '+fmt(avgD*1300)+'원</p>');
+  }
+  document.getElementById('formulaBox').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<6;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===5)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

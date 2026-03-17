@@ -31,6 +31,9 @@ from .shared import normalize_allowances, AllowanceClassifier
 from ..constants import (
     MINIMUM_HOURLY_WAGE,
     PROBATION_MIN_WAGE_RATE,
+    PROBATION_MIN_CONTRACT_MONTHS,
+    ELEMENTARY_OCCUPATION_CODES,
+    ELEMENTARY_OCCUPATION_KEYWORDS,
     get_min_wage_inclusion_rates,
 )
 
@@ -64,18 +67,36 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         warnings.append(f"{inp.reference_year}년 최저임금 미확정 — {year}년 기준 적용")
     legal_minimum = float(MINIMUM_HOURLY_WAGE[year])
 
-    # ── 수습기간 특례 ─────────────────────────────────────────────────────────
+    # ── 수습기간 특례 (최저임금법 제5조 제2항) ─────────────────────────────────
+    # 조건: ① 1년 이상 근로계약 ② 수습 3개월 이내 ③ 단순노무종사자 아닐 것
     if inp.is_probation:
-        adjusted = legal_minimum * PROBATION_MIN_WAGE_RATE
-        warnings.append(
-            f"수습기간 ({inp.probation_months}개월) 최저임금 특례 적용: "
-            f"{legal_minimum:,.0f}원 × 90% = {adjusted:,.0f}원"
-        )
-        formulas.append(
-            f"수습 최저임금: {legal_minimum:,.0f}원 × 0.9 = {adjusted:,.0f}원"
-        )
-        legal.append("최저임금법 제5조제2항 (수습 사용 중인 근로자)")
-        legal_minimum = adjusted
+        is_elementary = _is_elementary_worker(inp.occupation_code)
+        contract_ok = (inp.contract_months is None  # 기간 정함 없음 = 1년 이상
+                       or inp.contract_months >= PROBATION_MIN_CONTRACT_MONTHS)
+
+        if is_elementary:
+            warnings.append(
+                "수습기간이지만 단순노무종사자(한국표준직업분류 대분류 9)는 "
+                "최저임금 감액 적용이 불가합니다 (최저임금법 시행령 제3조)."
+            )
+            legal.append("최저임금법 제5조제2항, 시행령 제3조 (단순노무종사자 감액 제외)")
+        elif not contract_ok:
+            warnings.append(
+                f"수습기간이지만 근로계약기간이 {inp.contract_months}개월로 "
+                f"1년 미만이므로 최저임금 감액이 적용되지 않습니다."
+            )
+            legal.append("최저임금법 제5조제2항 (1년 이상 근로계약 요건)")
+        else:
+            adjusted = legal_minimum * PROBATION_MIN_WAGE_RATE
+            warnings.append(
+                f"수습기간 ({inp.probation_months}개월) 최저임금 특례 적용: "
+                f"{legal_minimum:,.0f}원 × 90% = {adjusted:,.0f}원"
+            )
+            formulas.append(
+                f"수습 최저임금: {legal_minimum:,.0f}원 × 0.9 = {adjusted:,.0f}원"
+            )
+            legal.append("최저임금법 제5조제2항 (수습 사용 중인 근로자)")
+            legal_minimum = adjusted
 
     monthly_hours = ow.monthly_base_hours
 
@@ -218,6 +239,23 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
 
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────────────────
+
+def _is_elementary_worker(occupation_code: str | None) -> bool:
+    """한국표준직업분류 대분류 9(단순노무종사자) 해당 여부 판별.
+
+    occupation_code가 "9", "91", "9100", "91001" 등 어느 단계든
+    ELEMENTARY_OCCUPATION_CODES에 포함되거나 "9"로 시작하면 True.
+    """
+    if not occupation_code:
+        return False
+    code = occupation_code.strip()
+    if code in ELEMENTARY_OCCUPATION_CODES:
+        return True
+    # 코드가 "9"로 시작하면 단순노무종사자 대분류
+    if code.startswith("9"):
+        return True
+    return False
+
 
 def _get_base_monthly(inp: WageInput, monthly_hours: float) -> float:
     """기본급만 월 환산 (fixed_allowances 미포함)"""
