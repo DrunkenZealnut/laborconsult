@@ -624,7 +624,7 @@ function calc(){
   var barHtml='';var legHtml='';
   items.forEach(function(item){
     var pct=totalDed>0?(item.v/totalDed*100):0;
-    barHtml+='<div style="width:'+pct+'%;background:'+item.c+';min-width:'+(pct>3?'0':'0')+'px"></div>';
+    barHtml+='<div style="width:'+pct+'%;background:'+item.c+';min-width:0"></div>';
     legHtml+='<span style="color:var(--color-text-secondary)"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+item.c+';margin-right:4px"></span>'+item.l+' '+fmt(item.v)+'</span>';
   });
   document.getElementById('bar').innerHTML=barHtml;

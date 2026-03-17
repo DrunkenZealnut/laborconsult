@@ -313,7 +313,7 @@ def _hints_platform_worker(inp: WageInput) -> list[LegalHint]:
     """특수고용직 업무상 재해·안전조치·갑질 관련 법률 힌트"""
     hints: list[LegalHint] = []
 
-    if not getattr(inp, "is_platform_worker", False):
+    if not inp.is_platform_worker:
         return hints
 
     # 업무상 재해 인정 기준 안내
@@ -349,15 +349,15 @@ def _hints_platform_worker(inp: WageInput) -> list[LegalHint]:
         inp.schedule.daily_work_hours * inp.schedule.weekly_work_days
         + inp.schedule.weekly_overtime_hours
     )
-    if weekly_total > 52:
-        from .constants import CEREBROVASCULAR_WEEKLY_HOURS_ACUTE
+    from .constants import CEREBROVASCULAR_WEEKLY_HOURS_ACUTE, CEREBROVASCULAR_WEEKLY_HOURS_CAUTION
+    if weekly_total > CEREBROVASCULAR_WEEKLY_HOURS_CAUTION:
         hints.append(LegalHint(
             category="건강위험",
             condition=f"주 {weekly_total:.0f}시간 근무 — 뇌심혈관 질환 위험",
             hint=(
                 f"주 평균 {weekly_total:.0f}시간 근무는 뇌심혈관 질환 산재 인정 기준에 근접합니다. "
                 f"발병 전 12주간 주 평균 {CEREBROVASCULAR_WEEKLY_HOURS_ACUTE}시간 이상 시 산재 인정, "
-                "52시간 초과 + 업무 가중요인(스트레스, 교대, 유해환경) 시에도 인정 추세. "
+                f"{CEREBROVASCULAR_WEEKLY_HOURS_CAUTION}시간 초과 + 업무 가중요인(스트레스, 교대, 유해환경) 시에도 인정 추세. "
                 "하루 12시간 이상 연속근무 회피, 8시간 이상 수면, 4시간 이상 휴식을 권장합니다."
             ),
             basis="고용노동부 고시 (뇌심혈관 질환 업무상 질병 인정기준)",

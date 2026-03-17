@@ -377,7 +377,7 @@ def _calc_platform_worker(
     health_insurance = 0
     long_term_care = 0
 
-    # 고용보험: 0.8% (월 보수 80만원 이상)
+    # 고용보험 (월 보수 최소 기준 이상 시 가입)
     pw_income = getattr(inp, "platform_monthly_income", None) or gross
     if pw_income >= PLATFORM_MIN_MONTHLY_INCOME:
         employment_insurance = int(pw_income * PLATFORM_EMP_INSURANCE_RATE)
@@ -388,21 +388,21 @@ def _calc_platform_worker(
     else:
         employment_insurance = 0
         warnings.append(
-            f"월 보수 {pw_income:,.0f}원 < 80만원 — 고용보험 가입 대상 아님. "
-            "둘 이상 사업장 합산하여 80만원 이상이면 가입 가능."
+            f"월 보수 {pw_income:,.0f}원 < {PLATFORM_MIN_MONTHLY_INCOME:,.0f}원 — 고용보험 가입 대상 아님. "
+            f"둘 이상 사업장 합산하여 {PLATFORM_MIN_MONTHLY_INCOME:,.0f}원 이상이면 가입 가능."
         )
 
     total_insurance = employment_insurance
 
-    # 소득세: 사업소득 3.3% 원천징수
-    income_tax = int(gross * 0.03)
-    local_income_tax = int(gross * 0.003)
+    # 소득세: 사업소득 3.3% 원천징수 (pw_income 기준)
+    income_tax = int(pw_income * 0.03)
+    local_income_tax = int(pw_income * 0.003)
     total_tax = income_tax + local_income_tax
 
-    formulas.append(f"사업소득세: {gross:,.0f}원 × 3.0% = {income_tax:,.0f}원")
-    formulas.append(f"지방소득세: {gross:,.0f}원 × 0.3% = {local_income_tax:,.0f}원")
+    formulas.append(f"사업소득세: {pw_income:,.0f}원 × 3.0% = {income_tax:,.0f}원")
+    formulas.append(f"지방소득세: {pw_income:,.0f}원 × 0.3% = {local_income_tax:,.0f}원")
 
-    monthly_net = round(gross - total_insurance - total_tax)
+    monthly_net = round(pw_income - total_insurance - total_tax)
 
     warnings.append(
         "특수고용직(노무제공자)은 국민연금·건강보험에 지역가입자로 별도 가입해야 합니다. "
@@ -416,8 +416,8 @@ def _calc_platform_worker(
 
     breakdown = {
         "근로자 유형":        "특수고용직(노무제공자)",
-        "지급액 (세전)":     f"{gross:,.0f}원",
-        "고용보험 (0.8%)":   f"{employment_insurance:,.0f}원",
+        "지급액 (세전)":     f"{pw_income:,.0f}원",
+        f"고용보험 ({PLATFORM_EMP_INSURANCE_RATE*100:.1f}%)": f"{employment_insurance:,.0f}원",
         "국민연금":          "지역가입자 (별도)",
         "건강보험":          "지역가입자 (별도)",
         "장기요양":          "지역가입자 (별도)",
@@ -428,7 +428,7 @@ def _calc_platform_worker(
     }
 
     return InsuranceResult(
-        monthly_gross=gross,
+        monthly_gross=pw_income,
         monthly_net=monthly_net,
         national_pension=0.0,
         health_insurance=0.0,
@@ -556,6 +556,16 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     total_accident_rate = industry_rate + commute_rate + wage_claim_rate + asbestos_rate
     is_pw = getattr(inp, "is_platform_worker", False)
     if is_pw:
+        # 노무제공자: 국민연금/건보/장기요양/직능개발 없음, 고용보험 0.8%
+        employer_pension = 0
+        employer_health = 0
+        employer_ltc = 0
+        employer_vocational = 0
+        employer_employment = int(gross * PLATFORM_EMP_INSURANCE_BIZ)
+        formulas.append(
+            f"고용보험(노무제공자-사업주): {gross:,.0f}원 × {PLATFORM_EMP_INSURANCE_BIZ:.1%} "
+            f"= {employer_employment:,.0f}원"
+        )
         employer_share = 1 - PLATFORM_INDUSTRIAL_SPLIT
         employer_accident = int(gross * total_accident_rate * employer_share)
         worker_accident = int(gross * total_accident_rate * PLATFORM_INDUSTRIAL_SPLIT)
