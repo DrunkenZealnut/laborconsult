@@ -327,6 +327,9 @@ class WageInput:
     survivor_pension: bool = True                # 유족급여 연금 선택 (True=연금, False=일시금)
     sick_leave_days: int = 0                     # 요양(휴업) 일수
     is_deceased: bool = False                    # 사망 여부
+    is_commute_injury: bool = False              # 출퇴근 재해 여부
+    is_traffic_accident: bool = False            # 교통사고 여부
+    injury_type: str = ""                        # "사고" / "질병" / "출퇴근" / "뇌심혈관"
 
     # ── 사업주 4대보험 계산용 ─────────────────────────────────────────────────
     company_size_category: str = "under_150"   # "under_150", "150_999", "over_1000"
