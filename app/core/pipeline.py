@@ -939,6 +939,20 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     yield {"type": "sources", "hits": []}
 
+    # ── GraphRAG 검색 ─────────────────────────────────────────────────
+    graph_context = ""
+    if analysis:
+        try:
+            from app.core.graph import graph_search
+            graph_context, _graph_results = graph_search(
+                relevant_laws=analysis.relevant_laws,
+                precedent_keywords=getattr(analysis, "precedent_keywords", None),
+                consultation_topic=getattr(analysis, "consultation_topic", None),
+                calculation_types=analysis.calculation_types if analysis.requires_calculation else None,
+            )
+        except Exception as e:
+            logger.warning("GraphRAG 검색 실패 (fallback): %s", e)
+
     has_attachments = attachments and len(attachments) > 0
 
     # 3. 컨텍스트 구성
@@ -958,6 +972,8 @@ def process_question(query: str, session: Session, config: AppConfig,
                 [], legal_precedents=precedent_meta,
             )
             parts.append(citation_list)
+    if graph_context:
+        parts.append(f"법령 관계 분석 (지식 그래프):\n\n{graph_context}")
     if precedent_text:
         parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{precedent_text}")
     if calc_result:

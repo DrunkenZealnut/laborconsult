@@ -23,6 +23,7 @@ class WorkType(Enum):
     CONTRACT     = "계약직"
     PART_TIME    = "파트타임"
     DAILY_WORKER = "일용직"
+    PLATFORM_WORKER = "특수고용직"  # 노무제공자/플랫폼 종사자
     SHIFT_4_2    = "4조2교대"
     SHIFT_3_2    = "3조2교대"
     SHIFT_3      = "3교대"
@@ -258,6 +259,14 @@ class WageInput:
     # ── 수습기간 여부 ─────────────────────────────────────────────────────────
     is_probation: bool = False             # 수습기간 여부 (최저임금 90% 특례)
     probation_months: int = 3              # 수습기간 (개월)
+    contract_months: Optional[int] = None  # 근로계약기간 (개월). None=기간 정함 없음(=1년 이상으로 간주)
+    occupation_code: Optional[str] = None  # 한국표준직업분류 코드 (예: "91", "9100"). 대분류 "9"=단순노무종사자
+
+    # ── 특수고용직(노무제공자) ────────────────────────────────────────────────
+    is_platform_worker: bool = False                    # 특수고용직 여부
+    platform_monthly_income: Optional[float] = None     # 월 보수액 (총수입−비과세−경비)
+    platform_insured_months: int = 0                    # 고용보험 피보험 개월수
+    platform_income_decreased: bool = False             # 소득 30%↑ 감소 이직 여부
 
     # ── 유급 공휴일 계산용 ────────────────────────────────────────────────────
     public_holiday_days: int = 0           # 비근무 유급 공휴일 일수

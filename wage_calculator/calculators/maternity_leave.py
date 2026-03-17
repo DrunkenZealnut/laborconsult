@@ -86,10 +86,28 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         formulas.append(f"출산전후휴가: {leave_days}일")
 
     # ── 상한액 조회 ─────────────────────────────────────────────────────
-    upper = MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[2025])
+    is_pw = getattr(inp, "is_platform_worker", False)
+    if is_pw:
+        from ..constants import PLATFORM_MATERNITY_UPPER, PLATFORM_INSURED_REQ_MONTHS
+        upper = PLATFORM_MATERNITY_UPPER
+        legal.append("고용보험법 제77조의3 (노무제공자 출산전후휴가급여)")
+        # 노무제공자 수급요건: 피보험 3개월 이상
+        pw_months = getattr(inp, "platform_insured_months", 0)
+        if pw_months < 3:
+            warnings.append(
+                f"노무제공자 출산전후휴가급여 수급요건 미충족: "
+                f"피보험기간 {pw_months}개월 < 3개월. "
+                "출산일 전 피보험 단위기간 3개월 이상 필요합니다."
+            )
+    else:
+        upper = MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[2025])
 
     # ── 월 급여 계산 ─────────────────────────────────────────────────────
-    monthly_ow = ow.monthly_ordinary_wage
+    if is_pw:
+        pw_income = getattr(inp, "platform_monthly_income", None) or ow.monthly_ordinary_wage
+        monthly_ow = pw_income  # 직전 1년 월 평균 보수 100%
+    else:
+        monthly_ow = ow.monthly_ordinary_wage
     upper_applied = monthly_ow > upper
     monthly_benefit = min(monthly_ow, upper)
 

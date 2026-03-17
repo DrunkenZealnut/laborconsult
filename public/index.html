@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <style>
-  :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; }
+  :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --co-legal-bg: #eff6ff; --co-legal-border: #2563eb; --co-legal-icon: #1d4ed8; --co-warn-bg: #fffbeb; --co-warn-border: #d97706; --co-warn-icon: #b45309; --co-danger-bg: #fef2f2; --co-danger-border: #dc2626; --co-danger-icon: #b91c1c; --co-tip-bg: #f0fdf4; --co-tip-border: #16a34a; --co-tip-icon: #15803d; --co-summary-bg: #eff6ff; --co-summary-border: #2563eb; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -42,14 +42,42 @@
   .msg.assistant h3 { font-size: 15px; margin: 10px 0 4px; }
   .msg.assistant p { margin: 6px 0; }
   .msg.assistant ul, .msg.assistant ol { margin: 6px 0 6px 20px; }
-  .msg.assistant table { border-collapse: collapse; margin: 8px 0; font-size: 14px; width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .msg.assistant th, .msg.assistant td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; white-space: nowrap; }
-  .msg.assistant th { background: var(--bg); font-weight: 600; }
+  .msg.assistant table { border-collapse: collapse; margin: 10px 0; font-size: 14px; width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--border); }
+  .msg.assistant th { background: var(--primary); color: #fff; font-weight: 600; padding: 8px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid #1d4ed8; }
+  .msg.assistant td { padding: 7px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 1px solid var(--border); }
+  .msg.assistant tr:nth-child(even) td { background: var(--bg); }
+  .msg.assistant tr:last-child td { border-bottom: none; }
+  .msg.assistant tr.total-row td { font-weight: 700; border-top: 2px solid var(--primary); background: var(--co-legal-bg); }
+  .msg.assistant td.num-cell { text-align: right; font-variant-numeric: tabular-nums; }
   .msg.assistant code { background: var(--bg); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
   .msg.assistant pre { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; }
   .msg.assistant pre code { background: none; padding: 0; }
   .msg.assistant strong { font-weight: 600; }
   .msg.assistant blockquote { border-left: 3px solid var(--primary); padding-left: 10px; color: var(--muted); margin: 6px 0; }
+  /* ── 콜아웃 박스 ── */
+  .msg.assistant .callout { border-left: 4px solid var(--border); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 10px 0; font-size: 14px; line-height: 1.6; color: var(--text); }
+  .msg.assistant .callout-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .msg.assistant .callout-legal  { background: var(--co-legal-bg);  border-left-color: var(--co-legal-border); }
+  .msg.assistant .callout-warn   { background: var(--co-warn-bg);   border-left-color: var(--co-warn-border); }
+  .msg.assistant .callout-danger { background: var(--co-danger-bg); border-left-color: var(--co-danger-border); }
+  .msg.assistant .callout-tip    { background: var(--co-tip-bg);    border-left-color: var(--co-tip-border); }
+  .msg.assistant .callout-legal  .callout-title { color: var(--co-legal-icon); }
+  .msg.assistant .callout-warn   .callout-title { color: var(--co-warn-icon); }
+  .msg.assistant .callout-danger .callout-title { color: var(--co-danger-icon); }
+  .msg.assistant .callout-tip    .callout-title { color: var(--co-tip-icon); }
+  /* ── 요약 배지 ── */
+  .msg.assistant .summary-badge { background: var(--co-summary-bg); border-left: 5px solid var(--co-summary-border); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 10px 0; font-size: 15px; line-height: 1.7; }
+  .msg.assistant .summary-badge h2 { font-size: 16px; margin: 0 0 6px; color: var(--co-legal-icon); }
+  /* ── 스텝 인디케이터 ── */
+  .msg.assistant .step-list { list-style: none; margin: 10px 0; padding: 0; counter-reset: step-counter; }
+  .msg.assistant .step-list li { counter-increment: step-counter; position: relative; padding: 8px 0 8px 40px; margin: 0; line-height: 1.5; font-size: 14px; }
+  .msg.assistant .step-list li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .msg.assistant .step-list li::after { content: ''; position: absolute; left: 12px; top: 36px; width: 2px; height: calc(100% - 28px); background: var(--border); }
+  .msg.assistant .step-list li:last-child::after { display: none; }
+  /* ── 구분선 ── */
+  .msg.assistant hr { border: none; height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent); margin: 18px 0; }
+  /* ── 면책 고지 ── */
+  .msg.assistant .disclaimer-notice { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; line-height: 1.5; }
   .msg.assistant .math-display { overflow-x: auto; margin: 10px 0; text-align: center; }
   .msg.assistant .math-inline { display: inline; }
 
@@ -107,6 +135,12 @@
     header h1 { font-size: 16px; }
     header span { font-size: 11px; }
     #export-btn { padding: 6px 8px; font-size: 12px; min-height: 36px; }
+    /* 리치 컴포넌트 모바일 */
+    .msg.assistant .callout { padding: 8px 10px; margin: 8px 0; }
+    .msg.assistant .summary-badge { padding: 10px 12px; }
+    .msg.assistant .step-list li { padding-left: 34px; }
+    .msg.assistant .step-list li::before { width: 22px; height: 22px; font-size: 11px; }
+    .msg.assistant .step-list li::after { left: 10px; top: 32px; }
   }
 </style>
 </head>
@@ -434,58 +468,112 @@ function renderPendingMath(container) {
 
 // ── Markdown → HTML ──────────────────────────────────────────────────────────
 
+function inlineTransform(t) {
+  return t
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+}
+
+const CALLOUT_MAP = [
+  { pattern: /^(?:📘\s*)?(?:\*\*)?(?:법적\s*근거|관련\s*법조문|관련\s*법률|관련\s*판례|법령)(?:\*\*)?/i, type: 'legal', icon: '📘' },
+  { pattern: /^(?:⚠️\s*)?(?:\*\*)?(?:주의사항|주의|유의|예외)(?:\*\*)?/i, type: 'warn', icon: '⚠️' },
+  { pattern: /^(?:🚨\s*)?(?:\*\*)?(?:중요|필수|경고|금지)(?:\*\*)?/i, type: 'danger', icon: '🚨' },
+  { pattern: /^(?:💡\s*)?(?:\*\*)?(?:참고|팁|알아두세요|도움말|안내)(?:\*\*)?/i, type: 'tip', icon: '💡' },
+];
+
 function md(text) {
   const blocks = [];
   function stash(html) { blocks.push(html); return '\x00B' + (blocks.length - 1) + '\x00'; }
 
+  // Phase 1: 블록 레벨 stash
+  // ① code block
   text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
     stash('<pre><code>' + code.replace(/</g, '&lt;') + '</code></pre>')
   );
+  // ② math
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => stash(renderTex(tex.trim(), true)));
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => stash(renderTex(tex.trim(), true)));
   text = text.replace(/\$([^\$\n]+?)\$/g, (_, tex) => stash(renderTex(tex.trim(), false)));
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => stash(renderTex(tex.trim(), false)));
 
+  // ③ 향상된 테이블 (합계 행, 금액 셀 감지)
   text = text.replace(/((?:^\|.+\|[ \t]*$\n?)+)/gm, block => {
     const rows = block.trim().split('\n');
-    let html = '<table>';
+    let h = '<table>';
     let headerDone = false;
     for (const row of rows) {
       if (/^\|[\s:|-]+\|$/.test(row.trim())) { headerDone = true; continue; }
       const cells = row.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
       const tag = !headerDone ? 'th' : 'td';
-      html += '<tr>' + cells.map(c => '<' + tag + '>' + c + '</' + tag + '>').join('') + '</tr>';
+      const isTotal = cells.some(c => /^(?:\*\*)?(?:합\s*계|총\s*계|소\s*계|total|sum)(?:\*\*)?$/i.test(c.replace(/\*\*/g, '').trim()));
+      h += '<tr' + (isTotal ? ' class="total-row"' : '') + '>';
+      for (const c of cells) {
+        const isNum = (tag === 'td') && /^[\d,]+(?:\.\d+)?(?:\s*원)?$/.test(c.replace(/\*\*/g, '').trim());
+        h += '<' + tag + (isNum ? ' class="num-cell"' : '') + '>' + c + '</' + tag + '>';
+      }
+      h += '</tr>';
       if (!headerDone) headerDone = true;
     }
-    html += '</table>';
-    return stash(html);
+    h += '</table>';
+    return stash(h);
   });
 
+  // ④ ul
   text = text.replace(/((?:^[ \t]*[-*] .+$\n?)+)/gm, block => {
     const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*[-*] /, '') + '</li>');
     return stash('<ul>' + items.join('') + '</ul>');
   });
-  text = text.replace(/((?:^[ \t]*\d+\. .+$\n?)+)/gm, block => {
-    const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*\d+\. /, '') + '</li>');
-    return stash('<ol>' + items.join('') + '</ol>');
+
+  // ⑤ ol (스텝 인디케이터 조건부)
+  text = text.replace(/((?:^[ \t]*\d+\. .+$\n?)+)/gm, (block, _, offset) => {
+    const preceding = text.slice(Math.max(0, offset - 200), offset);
+    const isStep = /(?:절차|방법|순서|과정|단계|대응|신청|진행)\s*$/m.test(preceding)
+      || /^#{2,3}\s.*(?:절차|방법|순서|과정|단계|대응|신청|진행)/m.test(preceding);
+    const items = block.trim().split('\n').map(l => '<li>' + inlineTransform(l.replace(/^[ \t]*\d+\. /, '')) + '</li>');
+    return stash(isStep ? '<ol class="step-list">' + items.join('') + '</ol>' : '<ol>' + items.join('') + '</ol>');
   });
 
+  // ⑥ blockquote 블록 (콜아웃 변환)
+  text = text.replace(/((?:^> .+$\n?)+)/gm, block => {
+    const lines = block.trim().split('\n').map(l => l.replace(/^> ?/, ''));
+    const joined = lines.join('\n');
+    for (const { pattern, type, icon } of CALLOUT_MAP) {
+      const m = joined.match(pattern);
+      if (m) {
+        const title = m[0].replace(/\*\*/g, '');
+        const body = inlineTransform(joined.slice(m[0].length).replace(/^[\s:：\-]+/, '')).replace(/\n/g, '<br>');
+        return stash('<div class="callout callout-' + type + '"><div class="callout-title">' + icon + ' ' + title + '</div>' + body + '</div>');
+      }
+    }
+    return stash('<blockquote>' + inlineTransform(joined).replace(/\n/g, '<br>') + '</blockquote>');
+  });
+
+  // Phase 2: 인라인 변환
   let html = text
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^## (.+)$/gm, (_, title) => {
+      if (/^(?:⚖️\s*|📋\s*)?(?:핵심\s*답변|결론|답변\s*요약|요약)/.test(title)) {
+        return '<div class="summary-badge"><h2>' + title + '</h2></div>';
+      }
+      return '<h2>' + title + '</h2>';
+    })
     .replace(/^# (.+)$/gm, '<h2>$1</h2>')
     .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
     .replace(/^---$/gm, '<hr>');
 
+  // Phase 3: 후처리
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
   html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
   html = '<p>' + html + '</p>';
   html = html.replace(/<p>\s*<\/p>/g, '');
+  // 면책 고지 감지
+  html = html.replace(/(<p>(?:⚠️\s*)?본\s*(?:답변|계산\s*결과|판정\s*결과)은?\s*참고용[\s\S]*?<\/p>)$/, '<div class="disclaimer-notice">$1</div>');
   return html;
 }
 

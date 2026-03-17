@@ -24,7 +24,13 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
-from ..constants import MINIMUM_HOURLY_WAGE, UNEMPLOYMENT_BENEFIT_UPPER
+from ..constants import (
+    MINIMUM_HOURLY_WAGE,
+    UNEMPLOYMENT_BENEFIT_UPPER,
+    PLATFORM_UNEMPLOYMENT_UPPER,
+    PLATFORM_INSURED_REQ_MONTHS,
+    PLATFORM_INSURED_REQ_WINDOW,
+)
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from .shared import DateRange
@@ -117,14 +123,36 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
 
     # ── 2. 수급 자격 판단 ────────────────────────────────────────────────────
 
-    # ① 피보험단위기간 부족
-    if insured_days_approx < MIN_INSURED_DAYS:
-        reason = (
-            f"피보험단위기간 약 {insured_days_approx}일 — 최소 {MIN_INSURED_DAYS}일 필요. "
-            "이직일 이전 18개월 이내(초단시간근로자는 24개월, 일용직은 1년)에 "
-            "피보험단위기간 합계가 180일 이상이어야 합니다."
-        )
-        return _ineligible(reason, warnings, legal)
+    is_pw = getattr(inp, "is_platform_worker", False)
+
+    if is_pw:
+        # 노무제공자: 이직 전 24개월 중 12개월 이상 보험료 납부
+        pw_months = getattr(inp, "platform_insured_months", 0) or insurance_months
+        if pw_months < PLATFORM_INSURED_REQ_MONTHS:
+            reason = (
+                f"노무제공자 피보험기간 {pw_months}개월 — "
+                f"최소 {PLATFORM_INSURED_REQ_MONTHS}개월 필요 "
+                f"(이직 전 {PLATFORM_INSURED_REQ_WINDOW}개월 기준). "
+                "근로자·예술인 피보험기간 합산 가능 (고용보험법 제77조의6)."
+            )
+            return _ineligible(reason, warnings, legal)
+        legal.append("고용보험법 제77조의6 (노무제공자 구직급여)")
+        # 소득 30% 감소 이직 → 비자발적 인정
+        if getattr(inp, "platform_income_decreased", False):
+            is_involuntary = True
+            warnings.append(
+                "노무제공자 소득 30% 이상 감소로 비자발적 이직 인정 "
+                "(고용보험법 시행규칙 제101조의5)."
+            )
+    else:
+        # ① 피보험단위기간 부족 (일반 근로자)
+        if insured_days_approx < MIN_INSURED_DAYS:
+            reason = (
+                f"피보험단위기간 약 {insured_days_approx}일 — 최소 {MIN_INSURED_DAYS}일 필요. "
+                "이직일 이전 18개월 이내(초단시간근로자는 24개월, 일용직은 1년)에 "
+                "피보험단위기간 합계가 180일 이상이어야 합니다."
+            )
+            return _ineligible(reason, warnings, legal)
 
     # ② 자발적 이직 여부
     if not is_involuntary:
@@ -207,9 +235,14 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
     # ── 4. 구직급여 일액 산정 ─────────────────────────────────────────────────
     base_daily = avg_daily * BENEFIT_RATE
 
-    upper = float(UNEMPLOYMENT_BENEFIT_UPPER.get(
-        year, UNEMPLOYMENT_BENEFIT_UPPER[max(UNEMPLOYMENT_BENEFIT_UPPER)]
-    ))
+    if is_pw:
+        upper = float(PLATFORM_UNEMPLOYMENT_UPPER.get(
+            year, PLATFORM_UNEMPLOYMENT_UPPER[max(PLATFORM_UNEMPLOYMENT_UPPER)]
+        ))
+    else:
+        upper = float(UNEMPLOYMENT_BENEFIT_UPPER.get(
+            year, UNEMPLOYMENT_BENEFIT_UPPER[max(UNEMPLOYMENT_BENEFIT_UPPER)]
+        ))
 
     # 하한액: 최저임금 × 80% × 8h
     min_wage = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[max(MINIMUM_HOURLY_WAGE)])

@@ -98,7 +98,9 @@ def calc_insurance(inp: WageInput, ow: OrdinaryWageResult) -> InsuranceResult:
     gross = ow.monthly_ordinary_wage
     formulas.append(f"세전 월 급여: {gross:,.0f}원 (통상임금 기준)")
 
-    if inp.is_freelancer:
+    if getattr(inp, "is_platform_worker", False):
+        return _calc_platform_worker(inp, gross, warnings, formulas, legal, inp.reference_year)
+    elif inp.is_freelancer:
         return _calc_freelancer(inp, gross, warnings, formulas, legal)
     else:
         return _calc_employee(inp, gross, warnings, formulas, legal, inp.reference_year)
@@ -354,6 +356,93 @@ def _calc_freelancer(
     )
 
 
+def _calc_platform_worker(
+    inp: WageInput,
+    gross: float,
+    warnings: list,
+    formulas: list,
+    legal: list,
+    year: int,
+) -> InsuranceResult:
+    """특수고용직(노무제공자) 보험료 — 고용보험만 + 3.3% 세금."""
+    from ..constants import (
+        PLATFORM_EMP_INSURANCE_RATE,
+        PLATFORM_MIN_MONTHLY_INCOME,
+    )
+
+    legal.append("고용보험법 제77조의2 (노무제공자 고용보험 적용)")
+    legal.append("산업재해보상보험법 제125조 (특수형태근로종사자)")
+
+    # 국민연금·건강보험·장기요양: 지역가입자 (계산 제외)
+    national_pension = 0
+    health_insurance = 0
+    long_term_care = 0
+
+    # 고용보험: 0.8% (월 보수 80만원 이상)
+    pw_income = getattr(inp, "platform_monthly_income", None) or gross
+    if pw_income >= PLATFORM_MIN_MONTHLY_INCOME:
+        employment_insurance = int(pw_income * PLATFORM_EMP_INSURANCE_RATE)
+        formulas.append(
+            f"고용보험(노무제공자): {pw_income:,.0f}원 × {PLATFORM_EMP_INSURANCE_RATE:.1%} "
+            f"= {employment_insurance:,.0f}원"
+        )
+    else:
+        employment_insurance = 0
+        warnings.append(
+            f"월 보수 {pw_income:,.0f}원 < 80만원 — 고용보험 가입 대상 아님. "
+            "둘 이상 사업장 합산하여 80만원 이상이면 가입 가능."
+        )
+
+    total_insurance = employment_insurance
+
+    # 소득세: 사업소득 3.3% 원천징수
+    income_tax = int(gross * 0.03)
+    local_income_tax = int(gross * 0.003)
+    total_tax = income_tax + local_income_tax
+
+    formulas.append(f"사업소득세: {gross:,.0f}원 × 3.0% = {income_tax:,.0f}원")
+    formulas.append(f"지방소득세: {gross:,.0f}원 × 0.3% = {local_income_tax:,.0f}원")
+
+    monthly_net = round(gross - total_insurance - total_tax)
+
+    warnings.append(
+        "특수고용직(노무제공자)은 국민연금·건강보험에 지역가입자로 별도 가입해야 합니다. "
+        "위 계산에는 지역가입 보험료가 포함되어 있지 않습니다."
+    )
+
+    breakdown = {
+        "근로자 유형":        "특수고용직(노무제공자)",
+        "지급액 (세전)":     f"{gross:,.0f}원",
+        "고용보험 (0.8%)":   f"{employment_insurance:,.0f}원",
+        "국민연금":          "지역가입자 (별도)",
+        "건강보험":          "지역가입자 (별도)",
+        "장기요양":          "지역가입자 (별도)",
+        "소득세 (3%)":       f"{income_tax:,.0f}원",
+        "지방소득세 (0.3%)": f"{local_income_tax:,.0f}원",
+        "공제 합계":         f"{total_insurance + total_tax:,.0f}원",
+        "실수령액 (세후)":   f"{monthly_net:,.0f}원",
+    }
+
+    return InsuranceResult(
+        monthly_gross=gross,
+        monthly_net=monthly_net,
+        national_pension=0.0,
+        health_insurance=0.0,
+        long_term_care=0.0,
+        employment_insurance=float(employment_insurance),
+        total_insurance=float(total_insurance),
+        income_tax=income_tax,
+        local_income_tax=local_income_tax,
+        total_tax=total_tax,
+        total_deduction=total_insurance + total_tax,
+        is_freelancer=False,
+        breakdown=breakdown,
+        formulas=formulas,
+        warnings=warnings,
+        legal_basis=legal,
+    )
+
+
 @dataclass
 class EmployerInsuranceResult(BaseCalculatorResult):
     """사업주 4대보험 부담금 계산 결과"""
@@ -461,7 +550,24 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     wage_claim_rate = INDUSTRIAL_ACCIDENT_COMPONENTS["wage_claim"]
     asbestos_rate = INDUSTRIAL_ACCIDENT_COMPONENTS["asbestos"]
     total_accident_rate = industry_rate + commute_rate + wage_claim_rate + asbestos_rate
-    employer_accident = int(gross * total_accident_rate)  # 원 미만 절사
+    is_pw = getattr(inp, "is_platform_worker", False)
+    if is_pw:
+        from ..constants import PLATFORM_INDUSTRIAL_SPLIT
+        employer_share = 1 - PLATFORM_INDUSTRIAL_SPLIT
+        employer_accident = int(gross * total_accident_rate * employer_share)
+        worker_accident = int(gross * total_accident_rate * PLATFORM_INDUSTRIAL_SPLIT)
+        formulas.append(
+            f"산재보험(노무제공자): 총 {total_accident_rate*100:.2f}% "
+            f"× 사업주 {employer_share:.0%} = {employer_accident:,.0f}원 "
+            f"(노무제공자 부담 {worker_accident:,.0f}원)"
+        )
+        warnings.append(
+            f"특수고용직 산재보험료: 사업주 {employer_accident:,.0f}원 + "
+            f"노무제공자 {worker_accident:,.0f}원 (50:50 분담, 산재보험법 제126조의2)"
+        )
+        legal.append("산업재해보상보험법 제126조의2 (특수형태근로종사자의 보험료)")
+    else:
+        employer_accident = int(gross * total_accident_rate)  # 원 미만 절사
     formulas.append(
         f"산재보험: 업종({industry_rate*100:.2f}%) + 출퇴근({commute_rate*100:.1f}%) "
         f"+ 임금채권({wage_claim_rate*100:.1f}%) + 석면({asbestos_rate*100:.2f}%) "

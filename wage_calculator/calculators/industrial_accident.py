@@ -91,6 +91,15 @@ def calc_industrial_accident(
     ]
     year = inp.reference_year
 
+    if getattr(inp, "is_platform_worker", False):
+        warnings.append(
+            "특수고용직(노무제공자)은 산재보험료를 사업주와 50%씩 분담합니다 "
+            "(산업재해보상보험법 제126조의2). "
+            "산재 급여 산정(휴업급여·장해급여 등)은 일반 근로자와 동일합니다."
+        )
+        legal.append("산업재해보상보험법 제125조 (특수형태근로종사자 특례)")
+        legal.append("산업재해보상보험법 제126조의2 (보험료 분담)")
+
     # ── 1. 평균임금 결정 ──────────────────────────────────────────────────
     avg_daily = ow.daily_ordinary_wage  # 기본: 통상임금 환산일급
     if inp.monthly_wage:

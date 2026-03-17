@@ -1,0 +1,895 @@
+{
+ "directed": true,
+ "multigraph": false,
+ "graph": {},
+ "nodes": [
+  {
+   "type": "statute",
+   "name": "근로기준법",
+   "mst": 265959,
+   "short": "근기법",
+   "id": "statute:근로기준법"
+  },
+  {
+   "type": "statute",
+   "name": "근로기준법 시행령",
+   "mst": 270551,
+   "short": "",
+   "id": "statute:근로기준법 시행령"
+  },
+  {
+   "type": "statute",
+   "name": "최저임금법",
+   "mst": 218303,
+   "short": "최임법",
+   "id": "statute:최저임금법"
+  },
+  {
+   "type": "statute",
+   "name": "고용보험법",
+   "mst": 276843,
+   "short": "고보법",
+   "id": "statute:고용보험법"
+  },
+  {
+   "type": "statute",
+   "name": "산업재해보상보험법",
+   "mst": 279733,
+   "short": "산재법",
+   "id": "statute:산업재해보상보험법"
+  },
+  {
+   "type": "statute",
+   "name": "근로자퇴직급여 보장법",
+   "mst": 279829,
+   "short": "퇴직급여법",
+   "id": "statute:근로자퇴직급여 보장법"
+  },
+  {
+   "type": "statute",
+   "name": "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률",
+   "mst": 276851,
+   "short": "",
+   "id": "statute:남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률"
+  },
+  {
+   "type": "statute",
+   "name": "소득세법",
+   "mst": 276127,
+   "short": "",
+   "id": "statute:소득세법"
+  },
+  {
+   "type": "statute",
+   "name": "기간제 및 단시간근로자 보호 등에 관한 법률",
+   "mst": 232201,
+   "short": "기간제법",
+   "id": "statute:기간제 및 단시간근로자 보호 등에 관한 법률"
+  },
+  {
+   "type": "statute",
+   "name": "파견근로자 보호 등에 관한 법률",
+   "mst": 223983,
+   "short": "파견법",
+   "id": "statute:파견근로자 보호 등에 관한 법률"
+  },
+  {
+   "type": "statute",
+   "name": "임금채권보장법",
+   "mst": 259881,
+   "short": "임채법",
+   "id": "statute:임금채권보장법"
+  },
+  {
+   "type": "statute",
+   "name": "노동조합 및 노동관계조정법",
+   "mst": 273667,
+   "short": "노조법",
+   "id": "statute:노동조합 및 노동관계조정법"
+  },
+  {
+   "type": "concept",
+   "name": "통상임금",
+   "aliases": [
+    "통상시급",
+    "통상급"
+   ],
+   "description": "",
+   "id": "concept:통상임금"
+  },
+  {
+   "type": "concept",
+   "name": "평균임금",
+   "aliases": [
+    "평균급"
+   ],
+   "description": "",
+   "id": "concept:평균임금"
+  },
+  {
+   "type": "concept",
+   "name": "연장근로수당",
+   "aliases": [
+    "연장수당",
+    "초과수당"
+   ],
+   "description": "",
+   "id": "concept:연장근로수당"
+  },
+  {
+   "type": "concept",
+   "name": "야간근로수당",
+   "aliases": [
+    "야간수당"
+   ],
+   "description": "",
+   "id": "concept:야간근로수당"
+  },
+  {
+   "type": "concept",
+   "name": "휴일근로수당",
+   "aliases": [
+    "휴일수당"
+   ],
+   "description": "",
+   "id": "concept:휴일근로수당"
+  },
+  {
+   "type": "concept",
+   "name": "주휴수당",
+   "aliases": [],
+   "description": "",
+   "id": "concept:주휴수당"
+  },
+  {
+   "type": "concept",
+   "name": "최저임금",
+   "aliases": [
+    "최저시급"
+   ],
+   "description": "",
+   "id": "concept:최저임금"
+  },
+  {
+   "type": "concept",
+   "name": "퇴직금",
+   "aliases": [
+    "퇴직급여"
+   ],
+   "description": "",
+   "id": "concept:퇴직금"
+  },
+  {
+   "type": "concept",
+   "name": "해고예고수당",
+   "aliases": [],
+   "description": "",
+   "id": "concept:해고예고수당"
+  },
+  {
+   "type": "concept",
+   "name": "부당해고",
+   "aliases": [
+    "부당 해고"
+   ],
+   "description": "",
+   "id": "concept:부당해고"
+  },
+  {
+   "type": "concept",
+   "name": "연차유급휴가",
+   "aliases": [
+    "연차",
+    "연차수당"
+   ],
+   "description": "",
+   "id": "concept:연차유급휴가"
+  },
+  {
+   "type": "concept",
+   "name": "실업급여",
+   "aliases": [
+    "구직급여"
+   ],
+   "description": "",
+   "id": "concept:실업급여"
+  },
+  {
+   "type": "concept",
+   "name": "육아휴직",
+   "aliases": [
+    "육아휴직급여"
+   ],
+   "description": "",
+   "id": "concept:육아휴직"
+  },
+  {
+   "type": "concept",
+   "name": "출산전후휴가",
+   "aliases": [
+    "출산휴가",
+    "산전후휴가"
+   ],
+   "description": "",
+   "id": "concept:출산전후휴가"
+  },
+  {
+   "type": "concept",
+   "name": "산재보상",
+   "aliases": [
+    "산재",
+    "산업재해"
+   ],
+   "description": "",
+   "id": "concept:산재보상"
+  },
+  {
+   "type": "concept",
+   "name": "4대보험",
+   "aliases": [
+    "사대보험"
+   ],
+   "description": "",
+   "id": "concept:4대보험"
+  },
+  {
+   "type": "concept",
+   "name": "근로계약",
+   "aliases": [],
+   "description": "",
+   "id": "concept:근로계약"
+  },
+  {
+   "type": "concept",
+   "name": "직장내괴롭힘",
+   "aliases": [
+    "직장 내 괴롭힘",
+    "괴롭힘",
+    "갑질"
+   ],
+   "description": "",
+   "id": "concept:직장내괴롭힘"
+  },
+  {
+   "type": "concept",
+   "name": "임금체불",
+   "aliases": [
+    "체불",
+    "밀린 임금"
+   ],
+   "description": "",
+   "id": "concept:임금체불"
+  },
+  {
+   "type": "concept",
+   "name": "포괄임금제",
+   "aliases": [
+    "포괄임금"
+   ],
+   "description": "",
+   "id": "concept:포괄임금제"
+  },
+  {
+   "type": "concept",
+   "name": "휴업수당",
+   "aliases": [],
+   "description": "",
+   "id": "concept:휴업수당"
+  },
+  {
+   "type": "concept",
+   "name": "근로시간",
+   "aliases": [
+    "소정근로시간"
+   ],
+   "description": "",
+   "id": "concept:근로시간"
+  },
+  {
+   "type": "topic",
+   "name": "해고·징계",
+   "id": "topic:해고·징계"
+  },
+  {
+   "type": "topic",
+   "name": "임금·통상임금",
+   "id": "topic:임금·통상임금"
+  },
+  {
+   "type": "topic",
+   "name": "근로시간·휴일",
+   "id": "topic:근로시간·휴일"
+  },
+  {
+   "type": "topic",
+   "name": "퇴직·퇴직금",
+   "id": "topic:퇴직·퇴직금"
+  },
+  {
+   "type": "topic",
+   "name": "연차휴가",
+   "id": "topic:연차휴가"
+  },
+  {
+   "type": "topic",
+   "name": "산재보상",
+   "id": "topic:산재보상"
+  },
+  {
+   "type": "topic",
+   "name": "비정규직",
+   "id": "topic:비정규직"
+  },
+  {
+   "type": "topic",
+   "name": "노동조합",
+   "id": "topic:노동조합"
+  },
+  {
+   "type": "topic",
+   "name": "직장내괴롭힘",
+   "id": "topic:직장내괴롭힘"
+  },
+  {
+   "type": "topic",
+   "name": "근로계약",
+   "id": "topic:근로계약"
+  },
+  {
+   "type": "topic",
+   "name": "고용보험",
+   "id": "topic:고용보험"
+  },
+  {
+   "type": "topic",
+   "name": "기타",
+   "id": "topic:기타"
+  },
+  {
+   "type": "calculator",
+   "name": "overtime",
+   "id": "calc:overtime"
+  },
+  {
+   "type": "calculator",
+   "name": "minimum_wage",
+   "id": "calc:minimum_wage"
+  },
+  {
+   "type": "calculator",
+   "name": "weekly_holiday",
+   "id": "calc:weekly_holiday"
+  },
+  {
+   "type": "calculator",
+   "name": "annual_leave",
+   "id": "calc:annual_leave"
+  },
+  {
+   "type": "calculator",
+   "name": "dismissal",
+   "id": "calc:dismissal"
+  },
+  {
+   "type": "calculator",
+   "name": "severance",
+   "id": "calc:severance"
+  },
+  {
+   "type": "calculator",
+   "name": "unemployment",
+   "id": "calc:unemployment"
+  },
+  {
+   "type": "calculator",
+   "name": "insurance",
+   "id": "calc:insurance"
+  },
+  {
+   "type": "calculator",
+   "name": "employer_insurance",
+   "id": "calc:employer_insurance"
+  },
+  {
+   "type": "calculator",
+   "name": "parental_leave",
+   "id": "calc:parental_leave"
+  },
+  {
+   "type": "calculator",
+   "name": "maternity_leave",
+   "id": "calc:maternity_leave"
+  },
+  {
+   "type": "calculator",
+   "name": "wage_arrears",
+   "id": "calc:wage_arrears"
+  },
+  {
+   "type": "calculator",
+   "name": "comprehensive",
+   "id": "calc:comprehensive"
+  },
+  {
+   "type": "calculator",
+   "name": "compensatory_leave",
+   "id": "calc:compensatory_leave"
+  },
+  {
+   "type": "calculator",
+   "name": "flexible_work",
+   "id": "calc:flexible_work"
+  },
+  {
+   "type": "calculator",
+   "name": "average_wage",
+   "id": "calc:average_wage"
+  },
+  {
+   "type": "calculator",
+   "name": "shutdown_allowance",
+   "id": "calc:shutdown_allowance"
+  },
+  {
+   "type": "calculator",
+   "name": "industrial_accident",
+   "id": "calc:industrial_accident"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2023다302838",
+   "court": "대법원",
+   "year": 2023,
+   "summary": "고정성 요건 폐지, 정기적·일률적으로 지급되는 수당은 통상임금에 포함",
+   "id": "precedent:2023다302838"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2012다89399",
+   "court": "대법원",
+   "year": 2013,
+   "summary": "통상임금 판단 기준에 관한 전원합의체 판결",
+   "id": "precedent:2012다89399"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2010다111757",
+   "court": "대법원",
+   "year": 2013,
+   "summary": "부당해고 판단 기준과 사용자의 입증 책임",
+   "id": "precedent:2010다111757"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2013다25194",
+   "court": "대법원",
+   "year": 2014,
+   "summary": "퇴직금 산정 시 평균임금 산정 기준",
+   "id": "precedent:2013다25194"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2018다200709",
+   "court": "대법원",
+   "year": 2019,
+   "summary": "연차유급휴가 사용촉진 제도의 적법 요건",
+   "id": "precedent:2018다200709"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2020나2016258",
+   "court": "서울고등법원",
+   "year": 2021,
+   "summary": "직장 내 괴롭힘 판단 요소와 사용자 조치 의무",
+   "id": "precedent:2020나2016258"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2019다293449",
+   "court": "대법원",
+   "year": 2020,
+   "summary": "주휴수당 산정 기준과 소정근로시간",
+   "id": "precedent:2019다293449"
+  },
+  {
+   "type": "precedent",
+   "case_number": "2017다261387",
+   "court": "대법원",
+   "year": 2019,
+   "summary": "최저임금 산입 범위와 상여금 포함 여부",
+   "id": "precedent:2017다261387"
+  }
+ ],
+ "edges": [
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:최저임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:연장근로수당"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:야간근로수당"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:휴일근로수당"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:주휴수당"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:해고예고수당"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:통상임금",
+   "target": "concept:연차유급휴가"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:평균임금",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:평균임금",
+   "target": "concept:퇴직금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:평균임금",
+   "target": "concept:실업급여"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:연장근로수당",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:야간근로수당",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:휴일근로수당",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:주휴수당",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:최저임금",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:퇴직금",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:퇴직금",
+   "target": "concept:임금체불"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:해고예고수당",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:연차유급휴가",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:실업급여",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "RELATED_TO",
+   "source": "concept:임금체불",
+   "target": "concept:퇴직금"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:해고·징계",
+   "target": "concept:부당해고"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:해고·징계",
+   "target": "concept:해고예고수당"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:임금·통상임금",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:임금·통상임금",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:임금·통상임금",
+   "target": "concept:최저임금"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:임금·통상임금",
+   "target": "concept:임금체불"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로시간·휴일",
+   "target": "concept:연장근로수당"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로시간·휴일",
+   "target": "concept:야간근로수당"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로시간·휴일",
+   "target": "concept:휴일근로수당"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로시간·휴일",
+   "target": "concept:주휴수당"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로시간·휴일",
+   "target": "concept:근로시간"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:퇴직·퇴직금",
+   "target": "concept:퇴직금"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:퇴직·퇴직금",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:연차휴가",
+   "target": "concept:연차유급휴가"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:산재보상",
+   "target": "concept:산재보상"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:비정규직",
+   "target": "concept:근로계약"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:직장내괴롭힘",
+   "target": "concept:직장내괴롭힘"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로계약",
+   "target": "concept:근로계약"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:근로계약",
+   "target": "concept:포괄임금제"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:고용보험",
+   "target": "concept:실업급여"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:고용보험",
+   "target": "concept:육아휴직"
+  },
+  {
+   "rel": "TOPIC_HAS",
+   "source": "topic:고용보험",
+   "target": "concept:출산전후휴가"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:overtime",
+   "target": "concept:연장근로수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:overtime",
+   "target": "concept:야간근로수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:overtime",
+   "target": "concept:휴일근로수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:overtime",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:minimum_wage",
+   "target": "concept:최저임금"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:weekly_holiday",
+   "target": "concept:주휴수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:annual_leave",
+   "target": "concept:연차유급휴가"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:dismissal",
+   "target": "concept:해고예고수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:dismissal",
+   "target": "concept:부당해고"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:severance",
+   "target": "concept:퇴직금"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:severance",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:unemployment",
+   "target": "concept:실업급여"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:insurance",
+   "target": "concept:4대보험"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:employer_insurance",
+   "target": "concept:4대보험"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:parental_leave",
+   "target": "concept:육아휴직"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:maternity_leave",
+   "target": "concept:출산전후휴가"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:wage_arrears",
+   "target": "concept:임금체불"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:comprehensive",
+   "target": "concept:포괄임금제"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:comprehensive",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:compensatory_leave",
+   "target": "concept:연장근로수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:flexible_work",
+   "target": "concept:연장근로수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:flexible_work",
+   "target": "concept:근로시간"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:average_wage",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:shutdown_allowance",
+   "target": "concept:휴업수당"
+  },
+  {
+   "rel": "CALC_FOR",
+   "source": "calc:industrial_accident",
+   "target": "concept:산재보상"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2023다302838",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2012다89399",
+   "target": "concept:통상임금"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2010다111757",
+   "target": "concept:부당해고"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2013다25194",
+   "target": "concept:퇴직금"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2013다25194",
+   "target": "concept:평균임금"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2018다200709",
+   "target": "concept:연차유급휴가"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2020나2016258",
+   "target": "concept:직장내괴롭힘"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2019다293449",
+   "target": "concept:주휴수당"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2017다261387",
+   "target": "concept:최저임금"
+  }
+ ]
+}
