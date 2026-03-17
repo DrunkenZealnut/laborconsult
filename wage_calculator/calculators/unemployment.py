@@ -127,7 +127,9 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
 
     if is_pw:
         # 노무제공자: 이직 전 24개월 중 12개월 이상 보험료 납부
-        pw_months = getattr(inp, "platform_insured_months", 0) or insurance_months
+        pw_months = getattr(inp, "platform_insured_months", None)
+        if pw_months is None:
+            pw_months = insurance_months or 0
         if pw_months < PLATFORM_INSURED_REQ_MONTHS:
             reason = (
                 f"노무제공자 피보험기간 {pw_months}개월 — "

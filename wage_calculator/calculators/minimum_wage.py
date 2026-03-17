@@ -252,7 +252,7 @@ def _is_elementary_worker(occupation_code: str | None) -> bool:
     if code in ELEMENTARY_OCCUPATION_CODES:
         return True
     # 코드가 "9"로 시작하면 단순노무종사자 대분류
-    if code.startswith("9") and code[0:1].isdigit():
+    if code.startswith("9"):
         return True
     return False
 

@@ -48,6 +48,10 @@ from ..constants import (
     get_child_tax_credit_monthly,
     get_nontaxable_limits,
     NON_TAXABLE_INCOME_LEGAL_BASIS,
+    PLATFORM_EMP_INSURANCE_RATE,
+    PLATFORM_EMP_INSURANCE_BIZ,
+    PLATFORM_MIN_MONTHLY_INCOME,
+    PLATFORM_INDUSTRIAL_SPLIT,
 )
 
 # 실질 근로자 판단 체크리스트 (대법원 2006다49653 등)
@@ -365,11 +369,6 @@ def _calc_platform_worker(
     year: int,
 ) -> InsuranceResult:
     """특수고용직(노무제공자) 보험료 — 고용보험만 + 3.3% 세금."""
-    from ..constants import (
-        PLATFORM_EMP_INSURANCE_RATE,
-        PLATFORM_MIN_MONTHLY_INCOME,
-    )
-
     legal.append("고용보험법 제77조의2 (노무제공자 고용보험 적용)")
     legal.append("산업재해보상보험법 제125조 (특수형태근로종사자)")
 
@@ -552,7 +551,6 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     total_accident_rate = industry_rate + commute_rate + wage_claim_rate + asbestos_rate
     is_pw = getattr(inp, "is_platform_worker", False)
     if is_pw:
-        from ..constants import PLATFORM_INDUSTRIAL_SPLIT
         employer_share = 1 - PLATFORM_INDUSTRIAL_SPLIT
         employer_accident = int(gross * total_accident_rate * employer_share)
         worker_accident = int(gross * total_accident_rate * PLATFORM_INDUSTRIAL_SPLIT)
@@ -568,11 +566,11 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
         legal.append("산업재해보상보험법 제126조의2 (특수형태근로종사자의 보험료)")
     else:
         employer_accident = int(gross * total_accident_rate)  # 원 미만 절사
-    formulas.append(
-        f"산재보험: 업종({industry_rate*100:.2f}%) + 출퇴근({commute_rate*100:.1f}%) "
-        f"+ 임금채권({wage_claim_rate*100:.1f}%) + 석면({asbestos_rate*100:.2f}%) "
-        f"= {total_accident_rate*100:.2f}% → {employer_accident:,.0f}원"
-    )
+        formulas.append(
+            f"산재보험: 업종({industry_rate*100:.2f}%) + 출퇴근({commute_rate*100:.1f}%) "
+            f"+ 임금채권({wage_claim_rate*100:.1f}%) + 석면({asbestos_rate*100:.2f}%) "
+            f"= {total_accident_rate*100:.2f}% → {employer_accident:,.0f}원"
+        )
     if industry_rate == DEFAULT_INDUSTRY_RATE:
         warnings.append(
             f"산재보험 업종요율: 전체 평균 {DEFAULT_INDUSTRY_RATE*100:.1f}% 적용. "
