@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">역일 vs 소정근로일</button>
+<button onclick="showTab(2)" id="t2">4대보험 일할</button>
+<button onclick="showTab(3)" id="t3">일할 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 계산 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">중도입사 일할계산 — 전체 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제43조 | 월 중간에 입사하면 일한 만큼만 급여를 지급</p>
+</div>
+<svg width="100%" viewBox="0 0 680 720">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">월 15일에 입사하면, 그 달은 15~31일까지 일한 만큼의 급여를 받습니다</text>
+
+<!-- Step 1 -->
+<g class="c-gray">
+<rect x="120" y="72" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="94" text-anchor="middle" dominant-baseline="central">Step 1. 해당 월 총 일수 확인</text>
+<text class="ts" x="340" y="114" text-anchor="middle" dominant-baseline="central">= 해당월의 역일수 (28 / 29 / 30 / 31일)</text>
+<text class="ts" x="340" y="132" text-anchor="middle" dominant-baseline="central">예: 3월 → 31일 | 4월 → 30일 | 2월 → 28일(윤년 29일)</text>
+</g>
+<line x1="340" y1="148" x2="340" y2="178" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-teal">
+<rect x="120" y="178" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="200" text-anchor="middle" dominant-baseline="central">Step 2. 근무 역일수 산정</text>
+<text style="font-size:15px;fill:#0F6E56;font-weight:500" x="340" y="232" text-anchor="middle" dominant-baseline="central">근무 역일수 = 마지막 날 − 입사일 + 1</text>
+</g>
+<line x1="340" y1="254" x2="340" y2="284" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-purple">
+<rect x="80" y="284" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="306" text-anchor="middle" dominant-baseline="central">Step 3. 일할 임금 산출</text>
+<text style="font-size:16px;fill:#3C3489;font-weight:500" x="340" y="340" text-anchor="middle" dominant-baseline="central">일할 임금 = 월급 × 근무 역일수 ÷ 해당 월 총 일수</text>
+</g>
+<line x1="340" y1="360" x2="340" y2="390" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4 -->
+<g class="c-amber">
+<rect x="120" y="390" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="410" text-anchor="middle" dominant-baseline="central">Step 4. 수당 일할 (해당시)</text>
+<text class="ts" x="340" y="428" text-anchor="middle" dominant-baseline="central">고정수당도 동일 비율로 일할 적용</text>
+</g>
+<line x1="340" y1="446" x2="340" y2="476" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-coral">
+<rect x="120" y="476" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="496" text-anchor="middle" dominant-baseline="central">Step 5. 4대보험 일할 (해당시)</text>
+<text class="ts" x="340" y="514" text-anchor="middle" dominant-baseline="central">보험료도 일할 산정 → "4대보험 일할" 탭</text>
+</g>
+<line x1="340" y1="532" x2="340" y2="562" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<g class="c-blue">
+<rect x="80" y="562" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="584" text-anchor="middle" dominant-baseline="central">Step 6. 실수령액</text>
+<text style="font-size:15px;fill:var(--color-text-info);font-weight:500" x="340" y="618" text-anchor="middle" dominant-baseline="central">= 일할 임금 + 일할 수당 − 일할 공제</text>
+</g>
+
+<!-- 예시 -->
+<rect x="60" y="660" width="560" height="44" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="686" text-anchor="middle">예: 월급 300만, 3월 15일 입사 → 300만 × 17일 ÷ 31일 = 1,645,161원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 역일 vs 소정근로일 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">역일 기준 vs 소정근로일 기준 — 어떤 게 유리한가?</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">대법원 판례는 역일 기준 | 실무에서 소정근로일 기준을 쓰는 회사도 있음</p>
+</div>
+<svg width="100%" viewBox="0 0 680 620">
+<!-- 두 기준 비교 -->
+<g class="c-blue">
+<rect x="40" y="20" width="290" height="160" rx="8" stroke-width="0.5"/>
+<text style="font-size:15px;fill:var(--color-text-info);font-weight:500" x="185" y="44" text-anchor="middle" dominant-baseline="central">역일(曆日) 기준</text>
+<text class="ts" x="185" y="72" text-anchor="middle" dominant-baseline="central">= 월급 × 근무 역일수 ÷ 총 역일수</text>
+<text class="ts" x="185" y="96" text-anchor="middle" dominant-baseline="central">토·일·공휴일 포함 카운트</text>
+<text class="ts" x="185" y="116" text-anchor="middle" dominant-baseline="central">대법원 인정 기준</text>
+<rect x="70" y="136" width="230" height="28" rx="4" fill="var(--color-background-info)" stroke="none"/>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="185" y="154" text-anchor="middle" dominant-baseline="central">근기법 제43조 기본 해석</text>
+</g>
+
+<g class="c-teal">
+<rect x="350" y="20" width="290" height="160" rx="8" stroke-width="0.5"/>
+<text style="font-size:15px;fill:var(--color-text-success);font-weight:500" x="495" y="44" text-anchor="middle" dominant-baseline="central">소정근로일 기준</text>
+<text class="ts" x="495" y="72" text-anchor="middle" dominant-baseline="central">= 월급 × 실근무일 ÷ 월 소정근로일</text>
+<text class="ts" x="495" y="96" text-anchor="middle" dominant-baseline="central">실제 일한 날만 카운트</text>
+<text class="ts" x="495" y="116" text-anchor="middle" dominant-baseline="central">일부 기업 취업규칙에서 사용</text>
+<rect x="380" y="136" width="230" height="28" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="495" y="154" text-anchor="middle" dominant-baseline="central">취업규칙에 명시된 경우만</text>
+</g>
+
+<!-- 수치 비교 -->
+<rect x="40" y="206" width="600" height="230" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="230" text-anchor="middle">동일 조건 비교: 월급 300만, 3월 15일(토) 입사</text>
+
+<!-- 달력 시각화 -->
+<text style="font-size:11px;fill:var(--color-text-secondary)" x="60" y="256">3월</text>
+<text style="font-size:10px;fill:var(--color-text-secondary)" x="100" y="256">월</text>
+<text style="font-size:10px;fill:var(--color-text-secondary)" x="130" y="256">화</text>
+<text style="font-size:10px;fill:var(--color-text-secondary)" x="160" y="256">수</text>
+<text style="font-size:10px;fill:var(--color-text-secondary)" x="190" y="256">목</text>
+<text style="font-size:10px;fill:var(--color-text-secondary)" x="220" y="256">금</text>
+<text style="font-size:10px;fill:#A32D2D" x="250" y="256">토</text>
+<text style="font-size:10px;fill:#A32D2D" x="280" y="256">일</text>
+
+<!-- 1~14일 (미입사) -->
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="250" y="274">1</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="280" y="274">2</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="100" y="292">3</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="130" y="292">4</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="160" y="292">5</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="190" y="292">6</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="220" y="292">7</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="250" y="292">8</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="280" y="292">9</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="100" y="310">10</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="130" y="310">11</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="160" y="310">12</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="190" y="310">13</text>
+<text style="font-size:10px;fill:var(--color-text-secondary);opacity:0.3" x="220" y="310">14</text>
+
+<!-- 15~31일 (입사 후) -->
+<rect x="244" y="298" width="24" height="18" rx="3" fill="#378ADD" opacity="0.3"/>
+<text style="font-size:10px;fill:var(--color-text-info);font-weight:600" x="256" y="311" text-anchor="middle">15</text>
+<rect x="274" y="298" width="24" height="18" rx="3" fill="#378ADD" opacity="0.15"/>
+<text style="font-size:10px;fill:#A32D2D" x="286" y="311" text-anchor="middle">16</text>
+<rect x="94" y="316" width="24" height="18" rx="3" fill="#378ADD" opacity="0.3"/>
+<text style="font-size:10px;fill:var(--color-text-info)" x="106" y="329" text-anchor="middle">17</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="136" y="329">18</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="166" y="329">19</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="196" y="329">20</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="226" y="329">21</text>
+<text style="font-size:10px;fill:#A32D2D" x="256" y="329">22</text>
+<text style="font-size:10px;fill:#A32D2D" x="286" y="329">23</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="106" y="347">24</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="136" y="347">25</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="166" y="347">26</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="196" y="347">27</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="226" y="347">28</text>
+<text style="font-size:10px;fill:#A32D2D" x="256" y="347">29</text>
+<text style="font-size:10px;fill:#A32D2D" x="286" y="347">30</text>
+<text style="font-size:10px;fill:var(--color-text-info)" x="106" y="365">31</text>
+
+<!-- 두 기준 결과 -->
+<rect x="340" y="270" width="280" height="60" rx="6" fill="var(--color-background-info)" stroke="var(--color-border-info)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-info);font-weight:500" x="480" y="290" text-anchor="middle" dominant-baseline="central">역일: 300만 × 17 ÷ 31</text>
+<text style="font-size:15px;fill:var(--color-text-info);font-weight:500" x="480" y="316" text-anchor="middle" dominant-baseline="central">= 1,645,161원</text>
+
+<rect x="340" y="342" width="280" height="60" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="480" y="362" text-anchor="middle" dominant-baseline="central">소정근로일: 300만 × 13일 ÷ 23일</text>
+<text style="font-size:15px;fill:#085041;font-weight:500" x="480" y="388" text-anchor="middle" dominant-baseline="central">= 1,695,652원</text>
+
+<text style="font-size:12px;fill:var(--color-text-secondary)" x="340" y="420" text-anchor="middle">역일 17일 (토·일 포함) vs 소정근로일 13일 (실 근무일만)</text>
+
+<!-- 핵심 -->
+<rect x="40" y="456" width="600" height="80" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="478" text-anchor="middle">어떤 기준을 써야 하는가?</text>
+<text class="ts" x="340" y="502" text-anchor="middle">취업규칙에 소정근로일 기준이 명시되어 있으면 → 소정근로일 기준</text>
+<text class="ts" x="340" y="522" text-anchor="middle">아무 규정이 없으면 → 역일 기준 (대법원 판례 기본)</text>
+
+<rect x="40" y="556" width="600" height="44" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="576" text-anchor="middle">입사일이 토요일이면?</text>
+<text class="ts" x="340" y="596" text-anchor="middle">역일 기준: 토·일도 포함이라 근무일수↑ | 소정근로일: 월요일부터 카운트 시작</text>
+</svg>
+</div>
+
+<!-- TAB 2: 4대보험 일할 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">4대보험 일할 — 보험마다 방식이 다르다</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">중도입사 시 보험료도 일할 산정되지만, 보험별로 기준이 다릅니다</p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:14px;font-weight:500;color:var(--color-text-info);margin:0 0 8px">국민연금</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">가입일수 기준 일할</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">= 월 보험료 × 가입일수 ÷ 해당월 총일수</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0;padding-top:6px;border-top:0.5px solid var(--color-border-tertiary)">입사일부터 월말까지의 역일수</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:14px;font-weight:500;color:var(--color-text-info);margin:0 0 8px">건강보험</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">가입일수 기준 일할</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">= 월 보험료 × 가입일수 ÷ 해당월 총일수</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0;padding-top:6px;border-top:0.5px solid var(--color-border-tertiary)">장기요양도 동일 비율 적용</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:14px;font-weight:500;color:var(--color-text-warning);margin:0 0 8px">고용보험</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">일할 임금 기준</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">= 일할 임금 × 0.9%</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0;padding-top:6px;border-top:0.5px solid var(--color-border-tertiary)">임금 자체가 일할이므로 자동 반영</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:14px;font-weight:500;color:var(--color-text-danger);margin:0 0 8px">산재보험</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">사업주 전액 → 근로자 무관</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">급여명세서에 표시 안 됨</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0;padding-top:6px;border-top:0.5px solid var(--color-border-tertiary)">입사 첫날부터 산재보호 적용</p>
+</div>
+</div>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:14px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">예시: 월급 300만, 3월 15일 입사 (17일 근무)</p>
+<div style="font-size:13px;color:var(--color-text-secondary)">
+<div style="display:flex;justify-content:space-between;padding:3px 0"><span>일할 임금</span><span style="font-weight:500;color:var(--color-text-primary)">1,645,161원</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0"><span>국민연금: 134,850 × 17/31</span><span style="font-weight:500;color:var(--color-text-primary)">73,946원</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0"><span>건강보험: 107,850 × 17/31</span><span style="font-weight:500;color:var(--color-text-primary)">59,141원</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0"><span>장기요양: 14,170 × 17/31</span><span style="font-weight:500;color:var(--color-text-primary)">7,770원</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0"><span>고용보험: 1,645,161 × 0.9%</span><span style="font-weight:500;color:var(--color-text-primary)">14,806원</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0 0;margin-top:4px;border-top:0.5px solid var(--color-border-tertiary);font-weight:500;color:var(--color-text-primary)"><span>보험료 합계</span><span>155,663원</span></div>
+</div>
+</div>
+
+<div style="background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-warning);margin:0 0 4px">실무 주의사항</p>
+<p style="font-size:13px;color:var(--color-text-warning);margin:0">첫 달 급여가 적어서 "4대보험이 너무 많이 빠진 것 같다"고 느낄 수 있지만, 보험료도 일할 산정되므로 비율은 동일합니다. 오히려 고용보험은 일할 임금 기준이라 정확히 비례합니다.</p>
+</div>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">일할 임금 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">월급·입사일·월을 입력하면 역일 기준 일할 임금과 4대보험을 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">월 급여</label>
+<input type="range" min="100" max="800" value="300" step="10" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salOut">300만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">입사 월</label>
+<input type="range" min="1" max="12" value="3" step="1" id="month" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="monthOut">3월</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">입사일</label>
+<input type="range" min="1" max="28" value="15" step="1" id="day" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="dayOut">15일</span>
+</div>
+</div>
+
+<!-- 달력 비주얼 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-primary)" id="calTitle">3월</p>
+<div id="calendar" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:12px"></div>
+<div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--color-text-secondary)">
+<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--color-border-tertiary);margin-right:4px;opacity:0.4"></span>미입사</span>
+<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--color-text-info);margin-right:4px;opacity:0.4"></span>역일 카운트</span>
+</div>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">근무 역일수</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="workDays">0일</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="workNote"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">일할 임금</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="prorated">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="proNote"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">실수령 (보험 공제 후)</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-success)" id="netPay">0원</p>
+</div>
+</div>
+
+<!-- 공제 내역 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">4대보험 일할 공제</p>
+<div style="font-size:13px;color:var(--color-text-secondary)" id="insBreak"></div>
+</div>
+
+<!-- 만근 vs 일할 비교 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">만근했다면</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="fullPay">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0">전체 월급</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">일할 비율</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="ratio">0%</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="ratioNote"></p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function daysInMonth(m){return[31,28,31,30,31,30,31,31,30,31,30,31][m-1];}
+
+function calcNP(sal){var b=Math.floor(sal/1000)*1000;b=Math.max(390000,Math.min(b,6170000));return Math.floor(b*0.0475);}
+function calcHI(sal){return Math.floor(sal*0.03595);}
+function calcLTC(hi){return Math.floor(hi*0.1314);}
+function calcEI(sal){return Math.floor(sal*0.009);}
+
+function calc(){
+  var sal=+document.getElementById('salary').value;
+  var month=+document.getElementById('month').value;
+  var day=+document.getElementById('day').value;
+
+  var totalDays=daysInMonth(month);
+  if(day>totalDays)day=totalDays;
+  document.getElementById('day').max=totalDays;
+
+  document.getElementById('salOut').textContent=sal+'만원';
+  document.getElementById('monthOut').textContent=month+'월';
+  document.getElementById('dayOut').textContent=day+'일';
+
+  var salW=sal*10000;
+  var workDays=totalDays-day+1;
+  var prorated=Math.round(salW*workDays/totalDays);
+  var ratio=workDays/totalDays;
+
+  // 4대보험 일할
+  var fullNP=calcNP(salW),fullHI=calcHI(salW),fullLTC=calcLTC(fullHI);
+  var pNP=Math.round(fullNP*workDays/totalDays);
+  var pHI=Math.round(fullHI*workDays/totalDays);
+  var pLTC=Math.round(fullLTC*workDays/totalDays);
+  var pEI=Math.floor(prorated*0.009);
+  var pTotal=pNP+pHI+pLTC+pEI;
+  var net=prorated-pTotal;
+
+  document.getElementById('workDays').textContent=workDays+'일';
+  document.getElementById('workNote').textContent=month+'월 '+day+'일 ~ '+totalDays+'일';
+  document.getElementById('prorated').textContent=fmt(prorated)+'원';
+  document.getElementById('proNote').textContent=fmt(salW)+' × '+workDays+' ÷ '+totalDays;
+  document.getElementById('netPay').textContent=fmt(net)+'원';
+  document.getElementById('fullPay').textContent=fmt(salW)+'원';
+  document.getElementById('ratio').textContent=(ratio*100).toFixed(1)+'%';
+  document.getElementById('ratioNote').textContent=workDays+' ÷ '+totalDays+'일';
+
+  // 보험 내역
+  var ib='';
+  ib+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span>국민연금: '+fmt(fullNP)+' × '+workDays+'/'+totalDays+'</span><span style="font-weight:500;color:var(--color-text-primary)">'+fmt(pNP)+'원</span></div>';
+  ib+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span>건강보험: '+fmt(fullHI)+' × '+workDays+'/'+totalDays+'</span><span style="font-weight:500;color:var(--color-text-primary)">'+fmt(pHI)+'원</span></div>';
+  ib+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span>장기요양: '+fmt(fullLTC)+' × '+workDays+'/'+totalDays+'</span><span style="font-weight:500;color:var(--color-text-primary)">'+fmt(pLTC)+'원</span></div>';
+  ib+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span>고용보험: '+fmt(prorated)+' × 0.9%</span><span style="font-weight:500;color:var(--color-text-primary)">'+fmt(pEI)+'원</span></div>';
+  ib+='<div style="display:flex;justify-content:space-between;padding:6px 0 0;margin-top:4px;border-top:0.5px solid var(--color-border-tertiary);font-weight:500;color:var(--color-text-primary)"><span>공제 합계</span><span>'+fmt(pTotal)+'원</span></div>';
+  document.getElementById('insBreak').innerHTML=ib;
+
+  // 달력
+  document.getElementById('calTitle').textContent=month+'월 (총 '+totalDays+'일)';
+  var calHtml='';
+  var dayNames=['일','월','화','수','목','금','토'];
+  dayNames.forEach(function(d,i){
+    var c=i===0||i===6?'var(--color-text-danger)':'var(--color-text-secondary)';
+    calHtml+='<div style="font-weight:500;color:'+c+';padding:4px 0;font-size:11px">'+d+'</div>';
+  });
+  // 2026년 기준 각 월의 1일 요일 (간략 계산)
+  var firstDayOfWeek=[0,4,0,0,3,5,1,3,6,2,4,0,2]; // 2026 Jan=Thu(4)
+  var startDow=firstDayOfWeek[month];
+  for(var i=0;i<startDow;i++)calHtml+='<div></div>';
+  for(var d=1;d<=totalDays;d++){
+    var isWork=d>=day;
+    var bg=isWork?'var(--color-text-info)':'var(--color-border-tertiary)';
+    var op=isWork?'0.3':'0.15';
+    var fw=d===day?'700':'400';
+    var tc=isWork?'var(--color-text-info)':'var(--color-text-secondary)';
+    calHtml+='<div style="background:'+bg+';opacity:'+(isWork?1:0.5)+';border-radius:4px;padding:4px 0;font-weight:'+fw+';color:'+tc+'"><div style="opacity:'+(isWork?0.8:0.5)+'">'+d+'</div></div>';
+  }
+  document.getElementById('calendar').innerHTML=calHtml;
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식 (역일 기준)</p>',
+    '<p style="margin:2px 0">해당 월: '+month+'월 = '+totalDays+'일</p>',
+    '<p style="margin:2px 0">근무 역일수: '+totalDays+' − '+day+' + 1 = '+workDays+'일</p>',
+    '<p style="margin:2px 0">일할 임금: '+fmt(salW)+' × '+workDays+' ÷ '+totalDays+' = '+fmt(prorated)+'원</p>',
+    '<p style="margin:2px 0">4대보험 공제: '+fmt(pTotal)+'원</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">실수령: '+fmt(prorated)+' − '+fmt(pTotal)+' = '+fmt(net)+'원</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===3)calc();
+}
+</script>
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

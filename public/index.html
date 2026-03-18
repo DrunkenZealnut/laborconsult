@@ -9,12 +9,17 @@
 <style>
   :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --co-legal-bg: #eff6ff; --co-legal-border: #2563eb; --co-legal-icon: #1d4ed8; --co-warn-bg: #fffbeb; --co-warn-border: #d97706; --co-warn-icon: #b45309; --co-danger-bg: #fef2f2; --co-danger-border: #dc2626; --co-danger-icon: #b91c1c; --co-tip-bg: #f0fdf4; --co-tip-border: #16a34a; --co-tip-icon: #15803d; --co-summary-bg: #eff6ff; --co-summary-border: #2563eb; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: flex; flex-direction: column; }
 
-  header { background: var(--card); border-bottom: 1px solid var(--border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; }
   header h1 { font-size: 18px; font-weight: 700; }
   header span { font-size: 13px; color: var(--muted); }
 
+  /* ── Main scroll container ── */
+  #main-content { flex: 1; overflow-y: auto; }
+
+  /* ── SEC-01: Chat Section ── */
+  #chat-section { height: 80vh; display: flex; flex-direction: column; position: relative; }
   #chat { flex: 1; overflow-y: auto; padding: 16px max(20px, env(safe-area-inset-right)) 16px max(20px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 12px; }
 
   .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 15px; line-height: 1.6; word-break: break-word; }
@@ -94,10 +99,6 @@
   .copy-btn:hover { color: var(--primary); border-color: var(--primary); }
   .copy-btn.copied { color: #16a34a; border-color: #16a34a; }
 
-  @media (max-width: 600px) {
-    .copy-btn { opacity: 0.7; }
-  }
-
   /* Input area */
   #input-wrapper { background: var(--card); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
   #file-preview { display: flex; gap: 6px; padding: 8px 20px 0; flex-wrap: wrap; }
@@ -118,29 +119,95 @@
   #drop-overlay { display: none; position: fixed; inset: 0; background: rgba(37,99,235,0.08); border: 3px dashed var(--primary); z-index: 100; align-items: center; justify-content: center; font-size: 18px; color: var(--primary); font-weight: 600; pointer-events: none; }
   #drop-overlay.active { display: flex; }
 
-  .disclaimer { text-align: center; font-size: 11px; color: var(--muted); padding: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--border); }
+  /* ── SEC-02~04: Page Sections ── */
+  .page-section { padding: 48px 20px; max-width: 900px; margin: 0 auto; width: 100%; border-top: 1px solid var(--border); }
+  .section-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; text-align: center; }
+  .section-desc { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+  .section-link-wrap { text-align: center; margin-top: 16px; }
+  .section-link { color: var(--primary); text-decoration: none; font-size: 14px; font-weight: 600; }
+  .section-link:hover { text-decoration: underline; }
+
+  /* FAQ tabs */
+  #faq-tabs { display: flex; gap: 8px; padding-bottom: 16px; justify-content: center; flex-wrap: wrap; }
+  .faq-tab { padding: 8px 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--card); cursor: pointer; font-size: 14px; white-space: nowrap; transition: all 0.15s; font-family: inherit; color: var(--text); }
+  .faq-tab:hover { border-color: var(--primary); color: var(--primary); }
+  .faq-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+  #faq-list { display: flex; flex-direction: column; gap: 8px; }
+  .faq-item { padding: 12px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 14px; text-align: left; transition: all 0.15s; display: flex; align-items: center; gap: 8px; font-family: inherit; color: var(--text); width: 100%; }
+  .faq-item:hover { border-color: var(--primary); background: var(--co-legal-bg); }
+  .faq-item::before { content: "\1F4AC"; font-size: 16px; flex-shrink: 0; }
+
+  /* Calculator grid */
+  #calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .calc-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .calc-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(37,99,235,0.1); transform: translateY(-2px); }
+  .calc-card .calc-icon { font-size: 28px; margin-bottom: 8px; }
+  .calc-card .calc-name { font-size: 14px; font-weight: 600; }
+  .calc-card .calc-desc { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Board */
+  .board-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; transition: border-color 0.15s; }
+  .board-item:hover { border-color: var(--primary); }
+  .board-q { padding: 12px 16px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .board-q .board-cat { background: var(--co-legal-bg); color: var(--primary); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
+  .board-q .board-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-q .board-time { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+  .board-q .board-chevron { color: var(--muted); transition: transform 0.2s; flex-shrink: 0; font-size: 12px; }
+  .board-item.open .board-chevron { transform: rotate(180deg); }
+  .board-a { display: none; padding: 0 16px 12px; font-size: 13px; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 12px; }
+  .board-item.open .board-a { display: block; }
+  .board-ask-btn { display: inline-block; margin-top: 8px; color: var(--primary); font-size: 12px; font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; }
+  .board-ask-btn:hover { text-decoration: underline; }
+  #board-more-btn { border: none; background: none; cursor: pointer; color: var(--primary); font-size: 14px; font-weight: 600; font-family: inherit; padding: 8px 16px; }
+  #board-more-btn:hover { text-decoration: underline; }
+
+  /* ── SEC-05: Footer ── */
+  #site-footer { background: var(--text); color: #94a3b8; padding: 40px 20px 24px; font-size: 13px; line-height: 1.6; }
+  .footer-inner { max-width: 900px; margin: 0 auto; text-align: center; }
+  .footer-org { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+  .footer-org strong { color: #e2e8f0; font-size: 15px; }
+  .footer-org a { color: var(--primary); text-decoration: none; }
+  .footer-org a:hover { text-decoration: underline; }
+  .footer-links { margin-bottom: 16px; display: flex; gap: 8px; justify-content: center; }
+  .footer-links a { color: #94a3b8; text-decoration: none; }
+  .footer-links a:hover { color: #e2e8f0; }
+  .footer-disclaimer { color: #64748b; font-size: 12px; margin-bottom: 8px; }
+  .footer-copyright { color: #475569; font-size: 11px; }
+
+  /* ── Mobile responsive ── */
+  @media (max-width: 768px) {
+    #calc-grid { grid-template-columns: repeat(2, 1fr); }
+  }
 
   @media (max-width: 600px) {
+    .copy-btn { opacity: 0.7; }
     .msg { max-width: 92%; }
     #input-area { padding: 10px; }
     #file-preview { padding: 8px 10px 0; }
-    /* FR-03: 터치 타겟 44px */
     #send-btn { min-height: 44px; min-width: 44px; padding: 10px 16px; }
     #attach-btn { min-width: 44px; min-height: 44px; }
     .file-chip .remove { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; font-size: 18px; }
-    /* FR-05: 연락처 카드 */
     .contact-bar { max-width: 100%; }
     .contact-chip { flex: 1 1 100%; min-width: 0; }
-    /* FR-06: 헤더 축소 */
     header h1 { font-size: 16px; }
     header span { font-size: 11px; }
     #export-btn { padding: 6px 8px; font-size: 12px; min-height: 36px; }
-    /* 리치 컴포넌트 모바일 */
     .msg.assistant .callout { padding: 8px 10px; margin: 8px 0; }
     .msg.assistant .summary-badge { padding: 10px 12px; }
     .msg.assistant .step-list li { padding-left: 34px; }
     .msg.assistant .step-list li::before { width: 22px; height: 22px; font-size: 11px; }
     .msg.assistant .step-list li::after { left: 10px; top: 32px; }
+
+    /* Sections mobile */
+    .page-section { padding: 32px 16px; }
+    .section-title { font-size: 18px; }
+    #faq-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #calc-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .calc-card { padding: 12px; }
+    .calc-card .calc-icon { font-size: 24px; margin-bottom: 6px; }
+    .calc-card .calc-name { font-size: 13px; }
+    .footer-org { font-size: 12px; }
+    #chat-section { height: 75vh; }
   }
 </style>
 </head>
@@ -153,41 +220,103 @@
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     저장
   </button>
+  <a href="/calculators" style="font-size:13px;color:var(--primary);text-decoration:none;" title="계산기별 계산 흐름도 보기">📊 흐름도</a>
 </header>
 
-<div id="chat">
-  <div class="msg-wrapper assistant-side">
-    <div class="msg assistant">
-      안녕하세요! 한국 노동법 관련 질문에 답변해 드립니다.<br>
-      임금계산(주휴수당, 연장수당, 퇴직금 등)도 가능합니다.<br>
-      근로계약서, 급여명세서 등 파일을 첨부하면 내용을 읽어 상담에 활용합니다.<br><br>
-      <strong>예시 질문:</strong><br>
-      - 시급 15,000원, 주 4일(3h+5h+5h+4h) 일하면 주휴수당은?<br>
-      - 월급 250만원, 3년 근무 후 퇴직금은 얼마인가요?<br>
-      - 5인 미만 사업장에서도 연장수당을 받을 수 있나요?
+<main id="main-content">
+
+  <!-- SEC-01: 챗봇 채팅창 -->
+  <section id="chat-section">
+    <div id="chat">
+      <div class="msg-wrapper assistant-side">
+        <div class="msg assistant">
+          안녕하세요! 한국 노동법 관련 질문에 답변해 드립니다.<br>
+          임금계산(주휴수당, 연장수당, 퇴직금 등)도 가능합니다.<br>
+          근로계약서, 급여명세서 등 파일을 첨부하면 내용을 읽어 상담에 활용합니다.<br><br>
+          <strong>예시 질문:</strong><br>
+          - 시급 15,000원, 주 4일(3h+5h+5h+4h) 일하면 주휴수당은?<br>
+          - 월급 250만원, 3년 근무 후 퇴직금은 얼마인가요?<br>
+          - 5인 미만 사업장에서도 연장수당을 받을 수 있나요?
+        </div>
+      </div>
+    </div>
+
+    <div id="input-wrapper">
+      <div id="file-preview"></div>
+      <div id="input-area">
+        <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
+        <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요... (Shift+Enter: 줄바꿈)" rows="1" autocomplete="off"></textarea>
+        <button id="send-btn">전송</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEC-02: 많이 하는 질문 -->
+  <section id="faq-section" class="page-section">
+    <h2 class="section-title">많이 하는 질문</h2>
+    <p class="section-desc">카테고리를 선택하고, 질문을 클릭하면 바로 상담이 시작됩니다</p>
+    <div id="faq-tabs" role="tablist"></div>
+    <div id="faq-list" role="tabpanel"></div>
+  </section>
+
+  <!-- SEC-03: 임금 계산기 -->
+  <section id="calc-section" class="page-section">
+    <h2 class="section-title">임금 계산기</h2>
+    <p class="section-desc">궁금한 계산기를 선택하면 바로 상담이 시작됩니다</p>
+    <div id="calc-grid"></div>
+    <div class="section-link-wrap">
+      <a href="/calculators" class="section-link">전체 25개 계산기 보기 →</a>
+    </div>
+  </section>
+
+  <!-- SEC-04: 질문게시판 -->
+  <section id="board-section" class="page-section">
+    <h2 class="section-title">질문게시판</h2>
+    <p class="section-desc">다른 분들이 최근에 물어본 질문들입니다</p>
+    <div id="board-list"></div>
+    <div class="section-link-wrap">
+      <button id="board-more-btn">더 보기 ↓</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- SEC-05: Footer -->
+<footer id="site-footer">
+  <div class="footer-inner">
+    <div class="footer-org">
+      <strong>청년노동자인권센터</strong>
+      <span>서울시 종로구 성균관로12 5층</span>
+      <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a>
+    </div>
+    <div class="footer-links">
+      <a href="#">개인정보처리방침</a>
+      <span>|</span>
+      <a href="#">이용약관</a>
+    </div>
+    <div class="footer-disclaimer">
+      본 답변은 참고용이며 법적 효력이 없습니다.
+      정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요.
+    </div>
+    <div class="footer-copyright">
+      © 2026 청년노동자인권센터. AI 노동상담 챗봇.
     </div>
   </div>
-</div>
-
-<div id="input-wrapper">
-  <div id="file-preview"></div>
-  <div id="input-area">
-    <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-      </svg>
-    </button>
-    <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
-    <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요... (Shift+Enter: 줄바꿈)" rows="1" autocomplete="off"></textarea>
-    <button id="send-btn">전송</button>
-  </div>
-</div>
+</footer>
 
 <div id="drop-overlay">파일을 여기에 놓으세요</div>
 
-<div class="disclaimer">본 답변은 참고용이며 법적 효력이 없습니다. 정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요.</div>
-
 <script>
+// ── API 베이스 URL ────────────────────────────────────────────────────────────
+const API_BASE = location.hostname.includes('github.io')
+  ? 'https://laborconsult.vercel.app'
+  : '';
+
 const chat = document.getElementById('chat');
 const msgInput = document.getElementById('msg-input');
 
@@ -245,12 +374,12 @@ function exportChatMarkdown() {
   lines.push('> 본 상담 기록은 AI가 제공한 참고 정보이며, 법적 효력이 없습니다.');
   lines.push('> 정확한 사항은 고용노동부(1350) 또는 공인노무사에게 확인하시기 바랍니다.');
 
-  const md = lines.join('\n');
+  const md_text = lines.join('\n');
 
   // 파일 다운로드
   const ts = now.toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const filename = `노동OK_상담_${ts}.md`;
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const blob = new Blob([md_text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -259,12 +388,12 @@ function exportChatMarkdown() {
   URL.revokeObjectURL(url);
 
   // 피드백
-  const btn = document.getElementById('export-btn');
-  btn.classList.add('exported');
-  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 저장됨';
+  const exportBtn = document.getElementById('export-btn');
+  exportBtn.classList.add('exported');
+  exportBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 저장됨';
   setTimeout(() => {
-    btn.classList.remove('exported');
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 저장';
+    exportBtn.classList.remove('exported');
+    exportBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 저장';
   }, 2000);
 }
 const btn = document.getElementById('send-btn');
@@ -393,7 +522,7 @@ function ensureCopyBtn(el) {
   wrapper.appendChild(copyBtn);
 }
 
-function copyConversation(wrapper, btn) {
+function copyConversation(wrapper, cbtn) {
   const parts = [];
   // 바로 위 user 메시지 찾기
   let prev = wrapper.previousElementSibling;
@@ -410,11 +539,11 @@ function copyConversation(wrapper, btn) {
   parts.push('**A.**\n' + mdText.trim());
 
   navigator.clipboard.writeText(parts.join('\n\n')).then(() => {
-    btn.classList.add('copied');
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+    cbtn.classList.add('copied');
+    cbtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
     setTimeout(() => {
-      btn.classList.remove('copied');
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+      cbtn.classList.remove('copied');
+      cbtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
     }, 2000);
   });
 }
@@ -595,8 +724,8 @@ function renderContacts(agencies, afterEl) {
     bar.appendChild(chip);
   }
   // 복사 버튼 앞에 삽입
-  const copyBtn = wrapper.querySelector('.copy-btn');
-  if (copyBtn) wrapper.insertBefore(bar, copyBtn);
+  const copyBtnEl = wrapper.querySelector('.copy-btn');
+  if (copyBtnEl) wrapper.insertBefore(bar, copyBtnEl);
   else wrapper.appendChild(bar);
 }
 
@@ -705,11 +834,6 @@ async function send() {
   renderPreview();
   btn.disabled = true;
 
-  // API 베이스 URL: 같은 도메인(Vercel)이면 상대경로, GitHub Pages 등 외부면 Vercel 절대경로
-  const API_BASE = location.hostname.includes('github.io')
-    ? 'https://laborconsult.vercel.app'
-    : '';
-
   try {
     let resp;
     if (attachments.length > 0) {
@@ -743,6 +867,215 @@ async function send() {
     msgInput.focus();
   }
 }
+
+// ── SEC-02: FAQ ──────────────────────────────────────────────────────────────
+
+const FAQ_DATA = {
+  "임금/수당": {
+    icon: "\uD83D\uDCB0",
+    questions: [
+      "시급 10,000원인데 주휴수당은 얼마인가요?",
+      "연장근로수당은 어떻게 계산하나요?",
+      "야간수당과 휴일수당을 동시에 받을 수 있나요?",
+      "2026년 최저임금은 얼마인가요?",
+    ]
+  },
+  "퇴직/해고": {
+    icon: "\uD83D\uDCCB",
+    questions: [
+      "1년 6개월 근무 후 퇴직금은 얼마인가요?",
+      "해고예고수당은 어떻게 계산하나요?",
+      "권고사직도 퇴직금을 받을 수 있나요?",
+      "부당해고 구제 신청은 어떻게 하나요?",
+    ]
+  },
+  "근로계약": {
+    icon: "\uD83D\uDCDD",
+    questions: [
+      "근로계약서를 안 쓰면 어떻게 되나요?",
+      "수습기간에도 최저임금을 받아야 하나요?",
+      "계약직 갱신 거절은 부당해고인가요?",
+    ]
+  },
+  "4대보험": {
+    icon: "\uD83C\uDFE5",
+    questions: [
+      "4대보험 가입 기준이 어떻게 되나요?",
+      "4대보험료는 얼마나 내나요?",
+      "일용직도 4대보험에 가입해야 하나요?",
+    ]
+  },
+  "직장 내 괴롭힘": {
+    icon: "\uD83D\uDEAB",
+    questions: [
+      "직장 내 괴롭힘 판단 기준이 뭔가요?",
+      "괴롭힘 신고는 어디에 하나요?",
+      "괴롭힘 증거는 어떻게 모으나요?",
+    ]
+  },
+  "출산/육아": {
+    icon: "\uD83D\uDC76",
+    questions: [
+      "출산휴가 급여는 얼마인가요?",
+      "육아휴직 급여는 어떻게 계산하나요?",
+      "배우자 출산휴가는 며칠인가요?",
+    ]
+  }
+};
+
+function initFAQ() {
+  const tabs = document.getElementById('faq-tabs');
+  const categories = Object.keys(FAQ_DATA);
+
+  categories.forEach((cat, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'faq-tab' + (i === 0 ? ' active' : '');
+    tab.textContent = FAQ_DATA[cat].icon + ' ' + cat;
+    tab.onclick = () => {
+      document.querySelectorAll('.faq-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderFaqList(cat);
+    };
+    tabs.appendChild(tab);
+  });
+
+  renderFaqList(categories[0]);
+}
+
+function renderFaqList(cat) {
+  const list = document.getElementById('faq-list');
+  list.innerHTML = '';
+  FAQ_DATA[cat].questions.forEach(q => {
+    const item = document.createElement('button');
+    item.className = 'faq-item';
+    item.textContent = q;
+    item.onclick = () => askQuestion(q);
+    list.appendChild(item);
+  });
+}
+
+function askQuestion(text) {
+  document.getElementById('chat-section').scrollIntoView({ behavior: 'smooth' });
+  msgInput.value = text;
+  msgInput.dispatchEvent(new Event('input'));
+  setTimeout(() => send(), 300);
+}
+
+// ── SEC-03: Calculator Shortcuts ─────────────────────────────────────────────
+
+const CALC_SHORTCUTS = [
+  { icon: "\uD83D\uDCB0", name: "\uC8FC\uD734\uC218\uB2F9", desc: "\uC8FC 15\uC2DC\uAC04 \uC774\uC0C1 \uADFC\uBB34 \uC2DC", query: "\uC2DC\uAE09 10,000\uC6D0, \uC8FC 40\uC2DC\uAC04 \uADFC\uBB34\uD560 \uB54C \uC8FC\uD734\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDCCA", name: "\uD1F4\uC9C1\uAE08", desc: "1\uB144 \uC774\uC0C1 \uADFC\uBB34 \uC2DC", query: "\uC6D4\uAE09 300\uB9CC\uC6D0, 3\uB144 \uADFC\uBB34 \uD6C4 \uD1F4\uC9C1\uAE08\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83C\uDFD6\uFE0F", name: "\uC5F0\uCC28\uC218\uB2F9", desc: "\uBBF8\uC0AC\uC6A9 \uC5F0\uCC28 \uC815\uC0B0", query: "\uC6D4\uAE09 250\uB9CC\uC6D0, \uBBF8\uC0AC\uC6A9 \uC5F0\uCC28 5\uC77C\uC758 \uC5F0\uCC28\uC218\uB2F9\uC740?" },
+  { icon: "\u2696\uFE0F", name: "\uCD5C\uC800\uC784\uAE08 \uAC80\uC99D", desc: "2026\uB144 \uAE30\uC900 \uD655\uC778", query: "\uC2DC\uAE09 10,030\uC6D0\uC774 \uCD5C\uC800\uC784\uAE08 \uC774\uC0C1\uC778\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694" },
+  { icon: "\uD83D\uDCCB", name: "\uC2E4\uC5C5\uAE09\uC5EC", desc: "\uC218\uAE09 \uC790\uACA9/\uAE08\uC561", query: "\uC6D4\uAE09 280\uB9CC\uC6D0, 2\uB144 \uADFC\uBB34 \uD6C4 \uC2E4\uC5C5\uAE09\uC5EC\uB294 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83C\uDFE5", name: "4\uB300\uBCF4\uD5D8\uB8CC", desc: "\uADFC\uB85C\uC790/\uC0AC\uC5C5\uC8FC \uBD80\uB2F4", query: "\uC6D4\uAE09 300\uB9CC\uC6D0\uC77C \uB54C 4\uB300\uBCF4\uD5D8\uB8CC\uB294 \uAC01\uAC01 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDCBC", name: "\uC5F0\uC7A5/\uC57C\uAC04/\uD734\uC77C\uC218\uB2F9", desc: "\uD560\uC99D\uB960 \uC801\uC6A9 \uACC4\uC0B0", query: "\uC2DC\uAE09 12,000\uC6D0, \uC5F0\uC7A5\uADFC\uB85C 10\uC2DC\uAC04\uC758 \uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDEAB", name: "\uD574\uACE0\uC608\uACE0\uC218\uB2F9", desc: "30\uC77C\uBD84 \uD1B5\uC0C1\uC784\uAE08", query: "\uC6D4\uAE09 250\uB9CC\uC6D0\uC77C \uB54C \uD574\uACE0\uC608\uACE0\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+];
+
+function initCalcGrid() {
+  const grid = document.getElementById('calc-grid');
+  CALC_SHORTCUTS.forEach(calc => {
+    const card = document.createElement('div');
+    card.className = 'calc-card';
+    card.innerHTML =
+      '<div class="calc-icon">' + calc.icon + '</div>' +
+      '<div class="calc-name">' + calc.name + '</div>' +
+      '<div class="calc-desc">' + calc.desc + '</div>';
+    card.onclick = () => askQuestion(calc.query);
+    grid.appendChild(card);
+  });
+}
+
+// ── SEC-04: Board ────────────────────────────────────────────────────────────
+
+let boardPage = 1;
+let boardLoading = false;
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function getTimeAgo(isoStr) {
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '방금 전';
+  if (mins < 60) return mins + '분 전';
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + '시간 전';
+  const days = Math.floor(hours / 24);
+  if (days < 30) return days + '일 전';
+  return new Date(isoStr).toLocaleDateString('ko-KR');
+}
+
+async function loadBoard(append) {
+  if (boardLoading) return;
+  boardLoading = true;
+
+  const moreBtn = document.getElementById('board-more-btn');
+  moreBtn.textContent = '불러오는 중...';
+
+  try {
+    const resp = await fetch(API_BASE + '/api/board/recent?page=' + boardPage + '&per_page=10');
+    if (!resp.ok) throw new Error('API error');
+    const data = await resp.json();
+
+    const list = document.getElementById('board-list');
+    if (!append) list.innerHTML = '';
+
+    data.items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'board-item';
+      const timeAgo = getTimeAgo(item.created_at);
+      const qText = escHtml(item.question);
+      const aText = escHtml(item.answer_preview);
+      div.innerHTML =
+        '<div class="board-q" onclick="this.parentElement.classList.toggle(\'open\')">' +
+          '<span class="board-cat">' + escHtml(item.category || '일반') + '</span>' +
+          '<span class="board-text">' + qText + '</span>' +
+          '<span class="board-time">' + timeAgo + '</span>' +
+          '<span class="board-chevron">\u25BC</span>' +
+        '</div>' +
+        '<div class="board-a">' +
+          aText +
+          '<br><button class="board-ask-btn" onclick="askQuestion(\'' + qText.replace(/'/g, "\\'") + '\')">비슷한 질문하기 \u2192</button>' +
+        '</div>';
+      list.appendChild(div);
+    });
+
+    moreBtn.style.display = data.has_more ? '' : 'none';
+    moreBtn.textContent = '더 보기 \u2193';
+  } catch (e) {
+    console.error('Board load error:', e);
+    if (!append) {
+      document.getElementById('board-list').innerHTML =
+        '<p style="text-align:center;color:var(--muted);padding:20px;">질문을 불러올 수 없습니다.</p>';
+    }
+    moreBtn.style.display = 'none';
+  } finally {
+    boardLoading = false;
+  }
+}
+
+document.getElementById('board-more-btn').addEventListener('click', () => {
+  boardPage++;
+  loadBoard(true);
+});
+
+// Lazy load board when scrolled into view
+const boardObserver = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting && !boardLoading) {
+    loadBoard(false);
+    boardObserver.disconnect();
+  }
+}, { rootMargin: '200px' });
+boardObserver.observe(document.getElementById('board-section'));
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+initFAQ();
+initCalcGrid();
 </script>
 </body>
 </html>

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">4대보험 상세</button>
+<button onclick="showTab(2)" id="t2">근로소득세</button>
+<button onclick="showTab(3)" id="t3">프리랜서 3.3%</button>
+<button onclick="showTab(4)" id="t4">특수고용직(노무제공자)</button>
+<button onclick="showTab(5)" id="t5">실수령액 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">4대보험·소득세 → 실수령액 — 전체 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">국민연금법, 건강보험법, 고용보험법, 소득세법 | 2026년 기준</p>
+</div>
+<svg width="100%" viewBox="0 0 680 760">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">월 총 급여에서 6가지 항목을 공제하면 실수령액이 나옵니다</text>
+
+<!-- 월 총 급여 -->
+<g class="c-gray">
+<rect x="220" y="72" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="94" text-anchor="middle" dominant-baseline="central">월 총 급여</text>
+</g>
+
+<line x1="200" y1="116" x2="130" y2="150" class="arr" marker-end="url(#ar)"/>
+<line x1="480" y1="116" x2="530" y2="150" class="arr" marker-end="url(#ar)"/>
+
+<!-- 4대보험 -->
+<g class="c-teal">
+<rect x="40" y="150" width="240" height="220" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="174" text-anchor="middle" dominant-baseline="central">4대보험 (근로자 부담)</text>
+
+<rect x="60" y="194" width="200" height="32" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041" x="160" y="214" text-anchor="middle" dominant-baseline="central">국민연금: 4.75%</text>
+
+<rect x="60" y="234" width="200" height="32" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041" x="160" y="254" text-anchor="middle" dominant-baseline="central">건강보험: 3.595%</text>
+
+<rect x="60" y="274" width="200" height="32" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041" x="160" y="294" text-anchor="middle" dominant-baseline="central">장기요양: 건보 × 13.14%</text>
+
+<rect x="60" y="314" width="200" height="32" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041" x="160" y="334" text-anchor="middle" dominant-baseline="central">고용보험: 0.9%</text>
+</g>
+
+<!-- 소득세 -->
+<g class="c-purple">
+<rect x="400" y="150" width="240" height="220" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="174" text-anchor="middle" dominant-baseline="central">소득세</text>
+
+<rect x="420" y="194" width="200" height="56" rx="4" fill="#EEEDFE" stroke="none"/>
+<text style="font-size:12px;fill:#3C3489" x="520" y="214" text-anchor="middle" dominant-baseline="central">근로소득세</text>
+<text style="font-size:11px;fill:#534AB7" x="520" y="234" text-anchor="middle" dominant-baseline="central">간이세액표 기반 (6~45%)</text>
+
+<rect x="420" y="260" width="200" height="32" rx="4" fill="#EEEDFE" stroke="none"/>
+<text style="font-size:12px;fill:#3C3489" x="520" y="280" text-anchor="middle" dominant-baseline="central">지방소득세: 소득세 × 10%</text>
+
+<rect x="420" y="302" width="200" height="44" rx="4" fill="#EEEDFE" stroke="none"/>
+<text style="font-size:12px;fill:#3C3489" x="520" y="318" text-anchor="middle" dominant-baseline="central">자녀세액공제 (해당시)</text>
+<text style="font-size:11px;fill:#534AB7" x="520" y="336" text-anchor="middle" dominant-baseline="central">1자녀 20,830원/월 차감</text>
+</g>
+
+<!-- 합산 -->
+<line x1="160" y1="370" x2="260" y2="410" class="arr" marker-end="url(#ar)"/>
+<line x1="520" y1="370" x2="420" y2="410" class="arr" marker-end="url(#ar)"/>
+
+<g class="c-coral">
+<rect x="120" y="410" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="430" text-anchor="middle" dominant-baseline="central">총 공제 = 4대보험 + 근로소득세 + 지방소득세</text>
+<text class="ts" x="340" y="450" text-anchor="middle" dominant-baseline="central">대략 월급의 12~18% 수준</text>
+</g>
+<line x1="340" y1="466" x2="340" y2="496" class="arr" marker-end="url(#ar)"/>
+
+<!-- 실수령 -->
+<g class="c-amber">
+<rect x="120" y="496" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="516" text-anchor="middle" dominant-baseline="central">실수령액</text>
+<text style="font-size:15px;fill:#633806;font-weight:500" x="340" y="538" text-anchor="middle" dominant-baseline="central">= 월 총 급여 − 총 공제</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="552" x2="340" y2="582" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="582" width="560" height="160" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="606" text-anchor="middle">예시: 월급 300만원, 부양가족 1인 (본인)</text>
+<text class="ts" x="100" y="632">국민연금: 134,850원</text>
+<text class="ts" x="100" y="652">건강보험: 107,850원</text>
+<text class="ts" x="100" y="672">장기요양: 14,170원</text>
+<text class="ts" x="100" y="692">고용보험: 27,000원</text>
+<text class="ts" x="380" y="632">4대보험 소계: 283,870원</text>
+<text class="ts" x="380" y="652">근로소득세: 약 56,500원</text>
+<text class="ts" x="380" y="672">지방소득세: 약 5,650원</text>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="380" y="700">총 공제: 약 346,020원</text>
+<text style="font-size:13px;fill:var(--color-text-info);font-weight:500" x="380" y="724">실수령: 약 2,653,980원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 4대보험 상세 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">4대보험 상세 — 각각의 산식과 절사 규칙</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">2026년 근로자 부담분 기준</p>
+</div>
+<svg width="100%" viewBox="0 0 680 740">
+<!-- 국민연금 -->
+<g class="c-teal">
+<rect x="40" y="10" width="600" height="130" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="34" text-anchor="middle" dominant-baseline="central">국민연금 — 4.75%</text>
+<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">기준소득월액 = 월급을 1,000원 미만 절사 후 39만~617만 범위로 클램프</text>
+<text class="ts" x="340" y="78" text-anchor="middle" dominant-baseline="central">보험료 = 기준소득월액 × 4.75% → 원 단위 절사</text>
+<rect x="70" y="96" width="240" height="28" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:11px;fill:#085041" x="190" y="114" text-anchor="middle" dominant-baseline="central">하한: 월급 39만 이하 → 18,520원</text>
+<rect x="370" y="96" width="240" height="28" rx="4" fill="#FAEEDA" stroke="none"/>
+<text style="font-size:11px;fill:#633806" x="490" y="114" text-anchor="middle" dominant-baseline="central">상한: 월급 617만 이상 → 293,070원</text>
+</g>
+
+<!-- 건강보험 -->
+<g class="c-blue">
+<rect x="40" y="156" width="600" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="180" text-anchor="middle" dominant-baseline="central">건강보험 — 3.595%</text>
+<text class="ts" x="340" y="204" text-anchor="middle" dominant-baseline="central">보험료 = int(월급 × 3.595%)</text>
+<text class="ts" x="340" y="224" text-anchor="middle" dominant-baseline="central">최저·최고 보험료 범위 내 클램프 (int = 소수점 이하 절사)</text>
+<text class="ts" x="340" y="244" text-anchor="middle" dominant-baseline="central">보수월액 기준이므로 비과세 수당은 제외 후 계산</text>
+</g>
+
+<!-- 장기요양 -->
+<g class="c-purple">
+<rect x="40" y="272" width="600" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="296" text-anchor="middle" dominant-baseline="central">장기요양보험 — 건보료 × 13.14%</text>
+<text class="ts" x="340" y="320" text-anchor="middle" dominant-baseline="central">보험료 = int(건강보험료 × 13.14%)</text>
+<text class="ts" x="340" y="340" text-anchor="middle" dominant-baseline="central">별도 요율이 아니라 건강보험료에 종속 (건보가 올라가면 같이 상승)</text>
+</g>
+
+<!-- 고용보험 -->
+<g class="c-amber">
+<rect x="40" y="368" width="600" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="392" text-anchor="middle" dominant-baseline="central">고용보험 — 0.9%</text>
+<text class="ts" x="340" y="416" text-anchor="middle" dominant-baseline="central">보험료 = int(월급 × 0.9%)</text>
+<text class="ts" x="340" y="436" text-anchor="middle" dominant-baseline="central">실업급여 재원 — 상·하한 없이 단순 요율 적용</text>
+</g>
+
+<!-- 합산 요약 -->
+<rect x="40" y="470" width="600" height="80" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="494" text-anchor="middle">4대보험 합계 = 국민연금 + 건강보험 + 장기요양 + 고용보험</text>
+<text class="ts" x="340" y="518" text-anchor="middle">실질 합산 요율: 약 9.4% (장기요양 포함)</text>
+<text class="ts" x="340" y="538" text-anchor="middle">사업주도 동일 요율 부담 (+ 산재보험은 사업주 전액)</text>
+
+<!-- 절사 규칙 정리 -->
+<rect x="40" y="570" width="600" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="594" text-anchor="middle">절사 규칙 정리 (실무에서 자주 오차 발생)</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="622">국민연금</text>
+<text class="ts" x="200" y="622">기준소득월액: 1,000원 미만 절사 → 보험료: 원 단위 절사</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="646">건강보험</text>
+<text class="ts" x="200" y="646">int() = 소수점 이하 절사</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="670">장기요양</text>
+<text class="ts" x="200" y="670">int() = 소수점 이하 절사 (건보료에 종속)</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="694">고용보험</text>
+<text class="ts" x="200" y="694">int() = 소수점 이하 절사</text>
+
+<text class="ts" x="340" y="718" text-anchor="middle">절사 방식이 보험마다 달라서 수작업 계산 시 1~2원 오차 주의</text>
+</svg>
+</div>
+
+<!-- TAB 2: 근로소득세 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">근로소득세 — 간이세액표 기반 9단계 산출</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">소득세법 | 월 과세표준 ≤ 1,000만원 기준</p>
+</div>
+<svg width="100%" viewBox="0 0 680 700">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="40" y="10" width="600" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="30" text-anchor="middle" dominant-baseline="central">① 연 급여 = 월급 × 12</text>
+<text class="ts" x="340" y="50" text-anchor="middle" dominant-baseline="central">연간 기준으로 환산 후 각종 공제 적용</text>
+</g>
+<line x1="340" y1="66" x2="340" y2="86" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-teal">
+<rect x="40" y="86" width="600" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="106" text-anchor="middle" dominant-baseline="central">② 근로소득공제 (5단계)</text>
+<text class="ts" x="340" y="126" text-anchor="middle" dominant-baseline="central">70% / 40% / 15% / 5% / 2% 구간별 누진 공제</text>
+</g>
+<line x1="340" y1="142" x2="340" y2="162" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-teal">
+<rect x="40" y="162" width="290" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="184" text-anchor="middle" dominant-baseline="central">③ 인적공제 = 부양가족 × 150만</text>
+</g>
+
+<g class="c-teal">
+<rect x="350" y="162" width="290" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="184" text-anchor="middle" dominant-baseline="central">④ 국민연금공제 = 연금 × 12</text>
+</g>
+<line x1="340" y1="206" x2="340" y2="226" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-amber">
+<rect x="40" y="226" width="600" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="246" text-anchor="middle" dominant-baseline="central">⑤ 특별공제 (부양가족 × 급여 구간별 테이블)</text>
+<text class="ts" x="340" y="266" text-anchor="middle" dominant-baseline="central">보험료·교육비·주택자금 등을 간이세액표로 표준화</text>
+</g>
+<line x1="340" y1="282" x2="340" y2="302" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-purple">
+<rect x="100" y="302" width="480" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="322" text-anchor="middle" dominant-baseline="central">⑥ 과세소득 = 연 급여 − ②③④⑤</text>
+<text class="ts" x="340" y="342" text-anchor="middle" dominant-baseline="central">각종 공제를 모두 차감한 금액</text>
+</g>
+<line x1="340" y1="358" x2="340" y2="378" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-coral">
+<rect x="100" y="378" width="480" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="398" text-anchor="middle" dominant-baseline="central">⑦ 산출세액 = 누진세율 적용 (6~45% 8구간)</text>
+<text class="ts" x="340" y="418" text-anchor="middle" dominant-baseline="central">퇴직소득세와 동일한 8단계 세율 구조</text>
+</g>
+<line x1="340" y1="434" x2="340" y2="454" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-blue">
+<rect x="40" y="454" width="600" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="474" text-anchor="middle" dominant-baseline="central">⑧ 근로소득세액공제</text>
+<text class="ts" x="340" y="496" text-anchor="middle" dominant-baseline="central">130만원 이하: 55% | 초과: 71.5만 + (초과×30%)</text>
+<text class="ts" x="340" y="516" text-anchor="middle" dominant-baseline="central">상한: 총급여별 74만 / 66만 / 50만원</text>
+</g>
+<line x1="340" y1="530" x2="340" y2="550" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-gray">
+<rect x="100" y="550" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="572" text-anchor="middle" dominant-baseline="central">⑨ 월 소득세 = (⑦ − ⑧) ÷ 12</text>
+<text class="ts" x="340" y="594" text-anchor="middle" dominant-baseline="central">10원 미만 절사</text>
+<text class="ts" x="340" y="612" text-anchor="middle" dominant-baseline="central">지방소득세 = 소득세 × 10%</text>
+</g>
+
+<!-- 자녀공제 -->
+<rect x="40" y="650" width="600" height="36" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="672" text-anchor="middle">자녀공제(2026): 1자녀 20,830원/월 | 2자녀 45,830원/월 | 3자녀+ 추가 33,330원/월 차감</text>
+</svg>
+</div>
+
+<!-- TAB 3: 프리랜서 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">프리랜서 3.3% 원천징수 — 완전히 다른 구조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">4대보험 미적용, 소득세 3.0% + 지방소득세 0.3% = 3.3%만 공제</p>
+</div>
+<svg width="100%" viewBox="0 0 680 440">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="200" y="20" width="280" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">월 급여 (사업소득)</text>
+</g>
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#a3)"/>
+
+<g class="c-coral">
+<rect x="120" y="94" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="116" text-anchor="middle" dominant-baseline="central">3.3% 원천징수</text>
+<text class="ts" x="340" y="140" text-anchor="middle" dominant-baseline="central">소득세 = 월 급여 × 3.0%</text>
+<text class="ts" x="340" y="158" text-anchor="middle" dominant-baseline="central">지방소득세 = 월 급여 × 0.3%</text>
+</g>
+<line x1="340" y1="170" x2="340" y2="200" class="arr" marker-end="url(#a3)"/>
+
+<g class="c-amber">
+<rect x="140" y="200" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="220" text-anchor="middle" dominant-baseline="central">실수령 = 월 급여 × 96.7%</text>
+<text class="ts" x="340" y="240" text-anchor="middle" dominant-baseline="central">4대보험 공제 없음</text>
+</g>
+
+<!-- 비교 -->
+<rect x="40" y="284" width="600" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="308" text-anchor="middle">동일 300만원: 근로자 vs 프리랜서</text>
+
+<rect x="70" y="326" width="250" height="66" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="195" y="346" text-anchor="middle" dominant-baseline="central">근로자 (4대보험+소득세)</text>
+<text style="font-size:12px;fill:#085041" x="195" y="368" text-anchor="middle" dominant-baseline="central">공제 약 34.6만 → 실수령 약 265만</text>
+<text style="font-size:12px;fill:#085041" x="195" y="384" text-anchor="middle" dominant-baseline="central">4대보험 혜택 ✓</text>
+
+<rect x="360" y="326" width="250" height="66" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#633806;font-weight:500" x="485" y="346" text-anchor="middle" dominant-baseline="central">프리랜서 (3.3%)</text>
+<text style="font-size:12px;fill:#633806" x="485" y="368" text-anchor="middle" dominant-baseline="central">공제 9.9만 → 실수령 약 290만</text>
+<text style="font-size:12px;fill:#633806" x="485" y="384" text-anchor="middle" dominant-baseline="central">4대보험 혜택 ✗ (종합소득세 별도)</text>
+
+<text class="ts" x="340" y="410" text-anchor="middle">프리랜서는 당장 실수령이 높지만, 국민연금·건강보험·실업급여 혜택이 없고 5월 종합소득세 신고 필요</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<!-- TAB 4: 특수고용직(노무제공자) -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">특수고용직(노무제공자) 보험료 — 일반 근로자와 다른 구조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용보험법 제77조의2, 산업재해보상보험법 제125조</p>
+</div>
+
+<div style="overflow-x:auto;margin-bottom:12px">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead>
+<tr style="border-bottom:2px solid var(--color-border-secondary)">
+<th style="text-align:left;padding:8px;color:var(--color-text-secondary);font-weight:500">항목</th>
+<th style="text-align:center;padding:8px;color:var(--color-text-secondary);font-weight:500">일반 근로자</th>
+<th style="text-align:center;padding:8px;color:var(--color-text-info);font-weight:600">노무제공자</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">국민연금</td><td style="padding:8px;text-align:center">4.75%</td><td style="padding:8px;text-align:center;color:var(--color-text-danger)">미가입 (지역가입)</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">건강보험</td><td style="padding:8px;text-align:center">3.595%</td><td style="padding:8px;text-align:center;color:var(--color-text-danger)">미가입 (지역가입)</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">장기요양</td><td style="padding:8px;text-align:center">건보×13.14%</td><td style="padding:8px;text-align:center;color:var(--color-text-danger)">미가입 (지역가입)</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">고용보험</td><td style="padding:8px;text-align:center">0.9%</td><td style="padding:8px;text-align:center;color:var(--color-text-info);font-weight:600">0.8%</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">산재보험</td><td style="padding:8px;text-align:center">사업주 100%</td><td style="padding:8px;text-align:center;color:var(--color-text-warning);font-weight:600">사업주 50% + 본인 50%</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">소득세</td><td style="padding:8px;text-align:center">간이세액표</td><td style="padding:8px;text-align:center">3.3% 원천징수</td></tr>
+<tr><td style="padding:8px;font-weight:500">가입 최소 소득</td><td style="padding:8px;text-align:center">-</td><td style="padding:8px;text-align:center">월 80만원 이상</td></tr>
+</tbody>
+</table>
+</div>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 6px;color:var(--color-text-primary)">적용 대상 직종 (2022년 기준 모두 적용 완료)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 2021.7~: 보험설계사, 학습지교사, 택배기사</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 2022.1~: 퀵서비스, 대리운전</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 2022.7~: SW기술자, 관광안내원, 골프장캐디, 통학버스기사</p>
+</div>
+
+<div style="background:var(--color-background-info);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-info)">핵심 차이점</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 국민연금·건강보험은 <strong>지역가입자</strong>로 별도 가입 (직장가입 아님)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 고용보험은 <strong>구직급여·출산휴가급여만</strong> 적용 (육아휴직·고용안정 미적용)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">• 산재보험료는 사업주와 <strong>50:50 분담</strong> (일반 근로자는 사업주 전액)</p>
+</div>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-top:12px">
+<p style="font-size:13px;font-weight:600;margin:0 0 8px;color:var(--color-text-primary)">근로자성 판단 — 프리랜서(3.3%) vs 특수고용직</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">프리랜서(3.3%)라도 아래 요건을 갖추면 <strong>특수고용직</strong>으로 고용·산재보험 가입 대상:</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0;padding-left:12px">• <strong>전속성</strong>: 주로 하나의 사업에 노무 제공</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0;padding-left:12px">• <strong>계속성</strong>: 상시적 노무 제공 + 보수로 생활</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0;padding-left:12px">• <strong>비대체성</strong>: 타인을 사용하지 않고 본인이 직접 수행</p>
+<p style="font-size:12px;color:var(--color-text-warning);margin:6px 0 0;font-weight:500">사업주 가입 거부 시 → 근로복지공단(1588-0075) 신고 가능</p>
+</div>
+
+<div style="background:var(--color-background-success);border-radius:var(--border-radius-md);padding:1rem;margin-top:12px">
+<p style="font-size:13px;font-weight:600;margin:0 0 8px;color:var(--color-text-success)">노동 3권 — 특수고용직도 행사 가능</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">노동조합법상 근로자로 인정되면 (근로기준법상 근로자가 아니어도):</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0;padding-left:12px">• <strong>단결권</strong>: 노동조합 설립·가입 (노동조합법 제5조)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0;padding-left:12px">• <strong>단체교섭권</strong>: 사용자와 근로조건 교섭 + 단체협약 체결</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0;padding-left:12px">• <strong>단체행동권</strong>: 교섭 결렬 시 쟁의행위(파업 등)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 0">판단 기준: 경제적 의존성, 계약 일방적 결정, 사업 수행 필수적 노무 등 (헌법 제33조)</p>
+</div>
+</div>
+
+<div id="tab5" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">실수령액 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">월급과 부양가족을 입력하면 6가지 공제와 실수령액을 실시간 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">월 급여</label>
+<input type="range" min="100" max="1000" value="300" step="10" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salOut">300만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">부양가족수</label>
+<input type="range" min="1" max="7" value="1" step="1" id="dep" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="depOut">1명(본인)</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">자녀 수</label>
+<input type="range" min="0" max="4" value="0" step="1" id="child" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="childOut">0명</span>
+</div>
+</div>
+
+<!-- 공제 내역 바 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-primary)">공제 구성 비율</p>
+<div style="display:flex;height:32px;border-radius:6px;overflow:hidden;gap:1px" id="bar"></div>
+<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11px" id="barLegend"></div>
+</div>
+
+<!-- 공제 내역 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">국민연금</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vNP">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">건강보험</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vHI">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">장기요양</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vLTC">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">고용보험</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vEI">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">근로소득세</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vIT">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">지방소득세</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vLT">0원</p>
+</div>
+</div>
+
+<!-- 최종 결과 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 공제</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-danger)" id="totalDed">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="dedRate"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">실수령액</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="netPay">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="netRate"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">프리랜서였다면</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="freePay">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="freeDiff"></p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+
+function calcNP(sal){
+  var base=Math.floor(sal/1000)*1000;
+  base=Math.max(390000,Math.min(base,6170000));
+  return Math.floor(base*0.0475);
+}
+function calcHI(sal){return Math.floor(sal*0.03595);}
+function calcLTC(hi){return Math.floor(hi*0.1314);}
+function calcEI(sal){return Math.floor(sal*0.009);}
+
+function calcIT(sal,dep,child){
+  var annSal=sal*12;
+  // 근로소득공제 (간략)
+  var ded=0;
+  if(annSal<=5000000)ded=annSal*0.7;
+  else if(annSal<=15000000)ded=3500000+(annSal-5000000)*0.4;
+  else if(annSal<=45000000)ded=7500000+(annSal-15000000)*0.15;
+  else if(annSal<=100000000)ded=12000000+(annSal-45000000)*0.05;
+  else ded=14750000+(annSal-100000000)*0.02;
+
+  var personal=dep*1500000;
+  var np=calcNP(sal)*12;
+
+  // 특별공제 간이 (간략화)
+  var special=0;
+  if(annSal<=30000000)special=3100000+dep*600000;
+  else if(annSal<=45000000)special=3100000+dep*500000;
+  else if(annSal<=70000000)special=3100000+dep*400000;
+  else special=3100000+dep*300000;
+
+  var taxableIncome=Math.max(0,annSal-ded-personal-np-special);
+
+  // 누진세율
+  var tax=0;
+  var brackets=[[14000000,0.06,0],[50000000,0.15,1260000],[88000000,0.24,5760000],[150000000,0.35,15440000],[300000000,0.38,19940000],[500000000,0.40,25940000],[1000000000,0.42,35940000],[Infinity,0.45,65940000]];
+  for(var i=0;i<brackets.length;i++){
+    if(taxableIncome<=brackets[i][0]){tax=Math.floor(taxableIncome*brackets[i][1]-brackets[i][2]);break;}
+  }
+
+  // 근로소득세액공제
+  var taxCredit=0;
+  if(tax<=1300000)taxCredit=tax*0.55;
+  else taxCredit=715000+(tax-1300000)*0.3;
+  if(annSal<=33000000)taxCredit=Math.min(taxCredit,740000);
+  else if(annSal<=70000000)taxCredit=Math.min(taxCredit,660000);
+  else taxCredit=Math.min(taxCredit,500000);
+
+  var annTax=Math.max(0,tax-Math.floor(taxCredit));
+
+  // 자녀공제
+  var childDed=0;
+  if(child>=1)childDed=20830;
+  if(child>=2)childDed=45830;
+  if(child>=3)childDed=45830+(child-2)*33330;
+
+  var monthTax=Math.max(0,Math.floor(annTax/12/10)*10-childDed);
+  return Math.max(0,monthTax);
+}
+
+function calc(){
+  var sal=parseInt(document.getElementById('salary').value);
+  var dep=parseInt(document.getElementById('dep').value);
+  var child=parseInt(document.getElementById('child').value);
+
+  document.getElementById('salOut').textContent=sal+'만원';
+  document.getElementById('depOut').textContent=dep+'명'+(dep===1?'(본인)':'');
+  document.getElementById('childOut').textContent=child+'명';
+
+  var salW=sal*10000;
+
+  var np=calcNP(salW);
+  var hi=calcHI(salW);
+  var ltc=calcLTC(hi);
+  var ei=calcEI(salW);
+  var ins4=np+hi+ltc+ei;
+
+  var it=calcIT(salW,dep,child);
+  var lt=Math.floor(it*0.1);
+
+  var totalDed=ins4+it+lt;
+  var net=salW-totalDed;
+
+  document.getElementById('vNP').textContent=fmt(np)+'원';
+  document.getElementById('vHI').textContent=fmt(hi)+'원';
+  document.getElementById('vLTC').textContent=fmt(ltc)+'원';
+  document.getElementById('vEI').textContent=fmt(ei)+'원';
+  document.getElementById('vIT').textContent=fmt(it)+'원';
+  document.getElementById('vLT').textContent=fmt(lt)+'원';
+
+  document.getElementById('totalDed').textContent=fmt(totalDed)+'원';
+  document.getElementById('dedRate').textContent='공제율 '+(totalDed/salW*100).toFixed(1)+'%';
+  document.getElementById('netPay').textContent=fmt(net)+'원';
+  document.getElementById('netRate').textContent='실수령률 '+(net/salW*100).toFixed(1)+'%';
+
+  var freePay=Math.round(salW*0.967);
+  document.getElementById('freePay').textContent=fmt(freePay)+'원';
+  document.getElementById('freeDiff').textContent='차이 '+fmt(freePay-net)+'원 (4대보험 없음)';
+
+  // 공제 비율 바
+  var items=[
+    {v:np,c:'#1D9E75',l:'국민연금'},
+    {v:hi,c:'#378ADD',l:'건강보험'},
+    {v:ltc,c:'#7F77DD',l:'장기요양'},
+    {v:ei,c:'#BA7517',l:'고용보험'},
+    {v:it,c:'#D85A30',l:'소득세'},
+    {v:lt,c:'#D4537E',l:'지방세'}
+  ];
+  var barHtml='';var legHtml='';
+  items.forEach(function(item){
+    var pct=totalDed>0?(item.v/totalDed*100):0;
+    barHtml+='<div style="width:'+pct+'%;background:'+item.c+';min-width:0"></div>';
+    legHtml+='<span style="color:var(--color-text-secondary)"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+item.c+';margin-right:4px"></span>'+item.l+' '+fmt(item.v)+'</span>';
+  });
+  document.getElementById('bar').innerHTML=barHtml;
+  document.getElementById('barLegend').innerHTML=legHtml;
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">공제 산식 (2026년)</p>',
+    '<p style="margin:2px 0">국민연금: clamp('+fmt(salW)+', 39만~617만) × 4.75% = '+fmt(np)+'원</p>',
+    '<p style="margin:2px 0">건강보험: '+fmt(salW)+' × 3.595% = '+fmt(hi)+'원</p>',
+    '<p style="margin:2px 0">장기요양: '+fmt(hi)+' × 13.14% = '+fmt(ltc)+'원</p>',
+    '<p style="margin:2px 0">고용보험: '+fmt(salW)+' × 0.9% = '+fmt(ei)+'원</p>',
+    '<p style="margin:2px 0">4대보험 소계: '+fmt(ins4)+'원</p>',
+    '<p style="margin:2px 0">근로소득세: '+fmt(it)+'원 (부양가족 '+dep+'명, 자녀 '+child+'명)</p>',
+    '<p style="margin:2px 0">지방소득세: '+fmt(lt)+'원</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">총 공제 '+fmt(totalDed)+'원 → 실수령 '+fmt(net)+'원</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<6;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===5)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

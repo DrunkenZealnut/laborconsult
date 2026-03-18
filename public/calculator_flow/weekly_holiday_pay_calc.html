@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">발생 조건</button>
+<button onclick="showTab(2)" id="t2">주휴시간 산정</button>
+<button onclick="showTab(3)" id="t3">퇴직 시 판정</button>
+<button onclick="showTab(4)" id="t4">수당 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 계산 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">주휴수당 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제55조, 대법원 2022다291153</p>
+</div>
+<svg width="100%" viewBox="0 0 680 680">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">주휴수당은 "쉬는 날에도 임금을 받는" 유급휴일 제도입니다</text>
+
+<!-- Step 1 -->
+<g class="c-amber">
+<rect x="140" y="72" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="94" text-anchor="middle" dominant-baseline="central">Step 1. 발생 조건 확인</text>
+<text class="ts" x="340" y="114" text-anchor="middle" dominant-baseline="central">① 주 소정근로 ≥ 15시간</text>
+<text class="ts" x="340" y="132" text-anchor="middle" dominant-baseline="central">② 소정근로일 전부 출근 (개근)</text>
+</g>
+
+<line x1="240" y1="148" x2="160" y2="182" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="186" y="162">미충족</text>
+<line x1="340" y1="148" x2="340" y2="192" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="354" y="170">충족</text>
+
+<g>
+<rect x="60" y="182" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="160" y="208" text-anchor="middle" dominant-baseline="central">주휴수당 미발생 (0원)</text>
+</g>
+
+<!-- Step 2 -->
+<g class="c-teal">
+<rect x="140" y="192" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="214" text-anchor="middle" dominant-baseline="central">Step 2. 주휴시간 산정</text>
+<text class="ts" x="340" y="234" text-anchor="middle" dominant-baseline="central">주 5일 이상 vs 미만에 따라 달라짐</text>
+<text class="ts" x="340" y="252" text-anchor="middle" dominant-baseline="central">→ "주휴시간 산정" 탭에서 상세 확인</text>
+</g>
+<line x1="340" y1="268" x2="340" y2="298" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-coral">
+<rect x="140" y="298" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="318" text-anchor="middle" dominant-baseline="central">Step 3. 통상시급 확인</text>
+<text class="ts" x="340" y="336" text-anchor="middle" dominant-baseline="central">통상임금 계산기에서 산출된 시급</text>
+</g>
+<line x1="340" y1="354" x2="340" y2="384" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4 -->
+<g class="c-purple">
+<rect x="100" y="384" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="406" text-anchor="middle" dominant-baseline="central">Step 4. 주 주휴수당 산출</text>
+<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="434" text-anchor="middle" dominant-baseline="central">주 주휴수당 = 통상시급 × 주휴시간</text>
+</g>
+<line x1="340" y1="460" x2="340" y2="490" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-gray">
+<rect x="140" y="490" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="510" text-anchor="middle" dominant-baseline="central">Step 5. 월 환산</text>
+<text class="ts" x="340" y="530" text-anchor="middle" dominant-baseline="central">월 주휴수당 = 주 주휴수당 × 4.345</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="546" x2="340" y2="576" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="576" width="560" height="80" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="600" text-anchor="middle">예시: 주5일 8시간, 통상시급 12,000원</text>
+<text class="ts" x="340" y="622" text-anchor="middle">주휴시간 = 8h → 주 수당 = 12,000 × 8 = 96,000원</text>
+<text class="ts" x="340" y="642" text-anchor="middle">월 수당 = 96,000 × 4.345 = 417,120원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 발생 조건 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">발생 조건 — 두 가지를 모두 충족해야</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">하나라도 미충족이면 해당 주의 주휴수당은 0원</p>
+</div>
+<svg width="100%" viewBox="0 0 680 520">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 조건 1 -->
+<g class="c-teal">
+<rect x="40" y="20" width="290" height="120" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="44" text-anchor="middle" dominant-baseline="central">조건 1: 주 소정근로 ≥ 15h</text>
+<text class="ts" x="185" y="72" text-anchor="middle" dominant-baseline="central">근로계약서상 약정된</text>
+<text class="ts" x="185" y="92" text-anchor="middle" dominant-baseline="central">주 소정근로시간이 15시간 이상</text>
+<text class="ts" x="185" y="118" text-anchor="middle" dominant-baseline="central">초단시간(15h 미만) → 제외</text>
+</g>
+
+<!-- 조건 2 -->
+<g class="c-purple">
+<rect x="350" y="20" width="290" height="120" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="44" text-anchor="middle" dominant-baseline="central">조건 2: 개근</text>
+<text class="ts" x="495" y="72" text-anchor="middle" dominant-baseline="central">소정근로일 전부 출근</text>
+<text class="ts" x="495" y="92" text-anchor="middle" dominant-baseline="central">결근 1일이라도 → 미발생</text>
+<text class="ts" x="495" y="118" text-anchor="middle" dominant-baseline="central">지각·조퇴는 출근으로 인정</text>
+</g>
+
+<line x1="185" y1="140" x2="280" y2="180" class="arr" marker-end="url(#a1)"/>
+<line x1="495" y1="140" x2="400" y2="180" class="arr" marker-end="url(#a1)"/>
+
+<g class="c-gray">
+<rect x="180" y="180" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="202" text-anchor="middle" dominant-baseline="central">두 조건 모두 충족?</text>
+</g>
+
+<line x1="240" y1="224" x2="160" y2="264" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="186" y="240">아니오</text>
+<line x1="440" y1="224" x2="520" y2="264" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="494" y="240">예</text>
+
+<g>
+<rect x="60" y="264" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="160" y="290" text-anchor="middle" dominant-baseline="central">주휴수당 미발생</text>
+</g>
+<g>
+<rect x="420" y="264" width="200" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="520" y="290" text-anchor="middle" dominant-baseline="central">주휴수당 발생</text>
+</g>
+
+<!-- 자주 묻는 질문 -->
+<rect x="40" y="336" width="600" height="170" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="360" text-anchor="middle">자주 묻는 질문</text>
+
+<text class="ts" x="60" y="388">Q. 주 3일, 하루 6시간 (18h) 알바인데 주휴수당 받나요?</text>
+<text style="font-size:12px;fill:var(--color-text-success);font-weight:500" x="60" y="408">→ 18h ≥ 15h, 개근하면 발생합니다</text>
+
+<text class="ts" x="60" y="436">Q. 주 2일, 하루 7시간 (14h) 인데요?</text>
+<text style="font-size:12px;fill:var(--color-text-danger);font-weight:500" x="60" y="456">→ 14h < 15h, 미발생합니다 (초단시간)</text>
+
+<text class="ts" x="60" y="484">Q. 월~금 출근했는데 수요일에 2시간 지각했어요</text>
+<text style="font-size:12px;fill:var(--color-text-success);font-weight:500" x="60" y="504">→ 지각·조퇴는 출근으로 인정, 개근 충족</text>
+</svg>
+</div>
+
+<!-- TAB 2: 주휴시간 산정 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">주휴시간 산정 — 근무일수에 따라 다르다</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">대법원 2022다291153</p>
+</div>
+<svg width="100%" viewBox="0 0 680 560">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="200" y="20" width="280" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">주 근무일수 확인</text>
+</g>
+
+<line x1="240" y1="64" x2="160" y2="104" class="arr" marker-end="url(#a2)"/>
+<text class="ts" x="186" y="80">5일 이상</text>
+<line x1="440" y1="64" x2="520" y2="104" class="arr" marker-end="url(#a2)"/>
+<text class="ts" x="494" y="80">5일 미만</text>
+
+<!-- 5일 이상 -->
+<g class="c-teal">
+<rect x="40" y="104" width="240" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="126" text-anchor="middle" dominant-baseline="central">주 5일 이상</text>
+<text class="ts" x="160" y="152" text-anchor="middle" dominant-baseline="central">주휴시간 =</text>
+<text class="ts" x="160" y="172" text-anchor="middle" dominant-baseline="central">min(1일 소정근로시간, 8h)</text>
+<text class="ts" x="160" y="192" text-anchor="middle" dominant-baseline="central">→ 보통 8시간</text>
+</g>
+
+<!-- 5일 미만 -->
+<g class="c-purple">
+<rect x="400" y="104" width="240" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="126" text-anchor="middle" dominant-baseline="central">주 5일 미만</text>
+<text class="ts" x="520" y="152" text-anchor="middle" dominant-baseline="central">주휴시간 =</text>
+<text class="ts" x="520" y="172" text-anchor="middle" dominant-baseline="central">min(주 소정근로 ÷ 5, 8h)</text>
+<text class="ts" x="520" y="192" text-anchor="middle" dominant-baseline="central">→ 비례 산정</text>
+</g>
+
+<!-- 예시들 -->
+<rect x="40" y="230" width="600" height="310" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="256" text-anchor="middle">다양한 근무 형태별 주휴시간 예시</text>
+
+<!-- 예시 1 -->
+<rect x="70" y="276" width="250" height="76" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="195" y="296" text-anchor="middle" dominant-baseline="central">주5일 × 8시간 (40h)</text>
+<text style="font-size:12px;fill:#085041" x="195" y="318" text-anchor="middle" dominant-baseline="central">주휴 = min(8, 8) = 8시간</text>
+<text style="font-size:12px;fill:#085041" x="195" y="338" text-anchor="middle" dominant-baseline="central">가장 일반적인 경우</text>
+
+<!-- 예시 2 -->
+<rect x="360" y="276" width="250" height="76" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="485" y="296" text-anchor="middle" dominant-baseline="central">주5일 × 6시간 (30h)</text>
+<text style="font-size:12px;fill:#085041" x="485" y="318" text-anchor="middle" dominant-baseline="central">주휴 = min(6, 8) = 6시간</text>
+<text style="font-size:12px;fill:#085041" x="485" y="338" text-anchor="middle" dominant-baseline="central">단시간 근로자</text>
+
+<!-- 예시 3 -->
+<rect x="70" y="368" width="250" height="76" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#3C3489;font-weight:500" x="195" y="388" text-anchor="middle" dominant-baseline="central">주3일 × 6시간 (18h)</text>
+<text style="font-size:12px;fill:#3C3489" x="195" y="410" text-anchor="middle" dominant-baseline="central">주휴 = min(18÷5, 8) = 3.6시간</text>
+<text style="font-size:12px;fill:#3C3489" x="195" y="430" text-anchor="middle" dominant-baseline="central">5일 미만이므로 비례</text>
+
+<!-- 예시 4 -->
+<rect x="360" y="368" width="250" height="76" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#3C3489;font-weight:500" x="485" y="388" text-anchor="middle" dominant-baseline="central">주4일 × 10시간 (40h)</text>
+<text style="font-size:12px;fill:#3C3489" x="485" y="410" text-anchor="middle" dominant-baseline="central">주휴 = min(40÷5, 8) = 8시간</text>
+<text style="font-size:12px;fill:#3C3489" x="485" y="430" text-anchor="middle" dominant-baseline="central">5일 미만이지만 상한 적용</text>
+
+<!-- 핵심 -->
+<text class="ts" x="340" y="468" text-anchor="middle">5일 미만일 때 "÷5"가 핵심 — 5일 기준으로 환산하는 비례 방식</text>
+
+<rect x="70" y="484" width="540" height="36" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="340" y="506" text-anchor="middle" dominant-baseline="central">주휴시간은 어떤 경우든 최대 8시간 (상한)</text>
+</svg>
+</div>
+
+<!-- TAB 3: 퇴직 시 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">퇴직 시 마지막 주 주휴수당 판정</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용부 2021.8.4 행정해석 | 퇴직일과 주휴일(일요일)의 관계가 핵심</p>
+</div>
+<svg width="100%" viewBox="0 0 680 480">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 타임라인 -->
+<text class="th" x="340" y="24" text-anchor="middle">한 주의 타임라인 (주휴일 = 일요일 가정)</text>
+
+<line x1="60" y1="70" x2="620" y2="70" stroke="var(--p)" stroke-width="1.5"/>
+<line x1="60" y1="58" x2="60" y2="82" stroke="var(--p)" stroke-width="1.5"/>
+<text class="ts" x="60" y="98" text-anchor="middle">월</text>
+<line x1="150" y1="62" x2="150" y2="78" stroke="var(--b)" stroke-width="1"/>
+<text class="ts" x="150" y="98" text-anchor="middle">화</text>
+<line x1="240" y1="62" x2="240" y2="78" stroke="var(--b)" stroke-width="1"/>
+<text class="ts" x="240" y="98" text-anchor="middle">수</text>
+<line x1="330" y1="62" x2="330" y2="78" stroke="var(--b)" stroke-width="1"/>
+<text class="ts" x="330" y="98" text-anchor="middle">목</text>
+<line x1="420" y1="62" x2="420" y2="78" stroke="var(--b)" stroke-width="1"/>
+<text class="ts" x="420" y="98" text-anchor="middle">금</text>
+<line x1="510" y1="62" x2="510" y2="78" stroke="var(--b)" stroke-width="1"/>
+<text class="ts" x="510" y="98" text-anchor="middle">토</text>
+<line x1="600" y1="58" x2="600" y2="82" stroke="#185FA5" stroke-width="2"/>
+<circle cx="600" cy="70" r="5" fill="#185FA5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="600" y="98" text-anchor="middle">일(주휴일)</text>
+
+<!-- 소정근로일 구간 -->
+<rect x="60" y="56" width="360" height="28" rx="4" fill="#E1F5EE" opacity="0.5"/>
+<text style="font-size:11px;fill:#085041" x="240" y="52" text-anchor="middle">소정근로일 (월~금)</text>
+
+<!-- 핵심 규칙 -->
+<g class="c-gray">
+<rect x="140" y="120" width="400" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="142" text-anchor="middle" dominant-baseline="central">퇴직일이 주휴일보다 뒤인가?</text>
+</g>
+
+<line x1="240" y1="164" x2="160" y2="200" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="186" y="178">이전·당일</text>
+<line x1="440" y1="164" x2="520" y2="200" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="492" y="178">이후</text>
+
+<g>
+<rect x="60" y="200" width="200" height="56" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#791F1F;font-weight:500" x="160" y="220" text-anchor="middle" dominant-baseline="central">미발생</text>
+<text style="font-size:12px;fill:#791F1F" x="160" y="240" text-anchor="middle" dominant-baseline="central">퇴직일 ≤ 주휴일(일)</text>
+</g>
+
+<g>
+<rect x="420" y="200" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="520" y="220" text-anchor="middle" dominant-baseline="central">발생</text>
+<text style="font-size:12px;fill:#085041" x="520" y="240" text-anchor="middle" dominant-baseline="central">퇴직일 > 주휴일(일)</text>
+</g>
+
+<!-- 구체적 사례 -->
+<rect x="40" y="284" width="600" height="180" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="308" text-anchor="middle">구체적 사례 (주휴일 = 일요일)</text>
+
+<rect x="70" y="328" width="250" height="56" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="195" y="348" text-anchor="middle" dominant-baseline="central">금요일 퇴직 → 발생 ✓</text>
+<text style="font-size:12px;fill:#085041" x="195" y="370" text-anchor="middle" dominant-baseline="central">개근 후 주휴일 전 퇴직 안 함</text>
+
+<rect x="360" y="328" width="250" height="56" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="485" y="348" text-anchor="middle" dominant-baseline="central">월요일 퇴직 → 발생 ✓</text>
+<text style="font-size:12px;fill:#085041" x="485" y="370" text-anchor="middle" dominant-baseline="central">전주 주휴일 이후이므로</text>
+
+<rect x="70" y="398" width="250" height="56" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="195" y="418" text-anchor="middle" dominant-baseline="central">토요일 퇴직 → 미발생 ✗</text>
+<text style="font-size:12px;fill:#791F1F" x="195" y="440" text-anchor="middle" dominant-baseline="central">주휴일(일) 전에 퇴직</text>
+
+<rect x="360" y="398" width="250" height="56" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="485" y="418" text-anchor="middle" dominant-baseline="central">일요일 퇴직 → 미발생 ✗</text>
+<text style="font-size:12px;fill:#791F1F" x="485" y="440" text-anchor="middle" dominant-baseline="central">주휴일 당일이라 ≤ 관계</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">주휴수당 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근무 조건을 입력하면 주휴시간과 수당을 실시간으로 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">통상시급</label>
+<input type="range" min="8000" max="30000" value="12000" step="500" id="wage" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="wageOut">12,000원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">주 근무일수</label>
+<input type="range" min="1" max="6" value="5" step="1" id="days" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="daysOut">5일</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">1일 소정근로</label>
+<input type="range" min="3" max="10" value="8" step="0.5" id="daily" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="dailyOut">8시간</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">이번 주 개근</label>
+<button id="btnY" onclick="setAtt(true);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">개근</button>
+<button id="btnN" onclick="setAtt(false);calc()">결근 있음</button>
+</div>
+</div>
+
+<!-- 조건 충족 여부 -->
+<div id="condCheck" style="border-radius:var(--border-radius-md);padding:12px;margin-bottom:12px"></div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">주 소정근로</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="weeklyH">0h</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">주휴시간</p>
+<p style="font-size:16px;font-weight:500;margin:0;color:var(--color-text-info)" id="holH">0h</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">주 주휴수당</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="weekPay">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">월 주휴수당</p>
+<p style="font-size:16px;font-weight:500;margin:0;color:var(--color-text-info)" id="monthPay">0원</p>
+</div>
+</div>
+
+<!-- 시급에 주휴 포함 시 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">시급에 주휴수당 포함 시 실제 시급</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0" id="inclWage"></p>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var attend=true;
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setAtt(v){attend=v;setBtn('btnY',v);setBtn('btnN',!v);}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function fmtD(n){return Number(n).toFixed(1);}
+
+function calc(){
+  var w=parseInt(document.getElementById('wage').value);
+  var days=parseInt(document.getElementById('days').value);
+  var daily=parseFloat(document.getElementById('daily').value);
+
+  document.getElementById('wageOut').textContent=fmt(w)+'원';
+  document.getElementById('daysOut').textContent=days+'일';
+  document.getElementById('dailyOut').textContent=fmtD(daily)+'시간';
+
+  var weeklyH=days*daily;
+  var cond15=weeklyH>=15;
+  var condAll=cond15&&attend;
+
+  // 주휴시간 산정
+  var holH=0;
+  if(condAll){
+    if(days>=5){
+      holH=Math.min(daily,8);
+    } else {
+      holH=Math.min(weeklyH/5,8);
+    }
+  }
+
+  var weekPay=w*holH;
+  var monthPay=weekPay*4.345;
+
+  document.getElementById('weeklyH').textContent=fmtD(weeklyH)+'h';
+  document.getElementById('holH').textContent=fmtD(holH)+'h';
+  document.getElementById('weekPay').textContent=fmt(weekPay)+'원';
+  document.getElementById('monthPay').textContent=fmt(monthPay)+'원';
+
+  // 조건 체크
+  var el=document.getElementById('condCheck');
+  if(!cond15){
+    el.style.background='var(--color-background-danger)';
+    el.style.color='var(--color-text-danger)';
+    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">✗ 주휴수당 미발생</p><p style="margin:0;font-size:13px">주 소정근로 '+fmtD(weeklyH)+'h < 15h (초단시간 근로자)</p>';
+  } else if(!attend){
+    el.style.background='var(--color-background-danger)';
+    el.style.color='var(--color-text-danger)';
+    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">✗ 주휴수당 미발생</p><p style="margin:0;font-size:13px">소정근로 '+fmtD(weeklyH)+'h ≥ 15h이지만 개근 미충족</p>';
+  } else {
+    el.style.background='var(--color-background-success)';
+    el.style.color='var(--color-text-success)';
+    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">✓ 주휴수당 발생</p><p style="margin:0;font-size:13px">소정근로 '+fmtD(weeklyH)+'h ≥ 15h + 개근 → 주휴시간 '+fmtD(holH)+'h</p>';
+  }
+
+  // 주휴 포함 시급
+  var inclEl=document.getElementById('inclWage');
+  if(condAll&&weeklyH>0){
+    var totalMonthH=(weeklyH+holH)*4.345;
+    var inclRate=w*(weeklyH+holH)/weeklyH;
+    inclEl.textContent='기본 시급 '+fmt(w)+'원 → 주휴 포함 시 환산 시급 약 '+fmt(Math.round(inclRate))+'원 (구인공고에서 "시급 주휴포함"이란 이 금액)';
+  } else {
+    inclEl.textContent='-';
+  }
+
+  // 산식
+  var fl=['<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>'];
+  fl.push('<p style="margin:2px 0">주 소정근로 = '+days+'일 × '+fmtD(daily)+'h = '+fmtD(weeklyH)+'h</p>');
+  if(condAll){
+    if(days>=5){
+      fl.push('<p style="margin:2px 0">주휴시간 = min('+fmtD(daily)+', 8) = '+fmtD(holH)+'h (주 5일 이상)</p>');
+    } else {
+      fl.push('<p style="margin:2px 0">주휴시간 = min('+fmtD(weeklyH)+'÷5, 8) = min('+fmtD(weeklyH/5)+', 8) = '+fmtD(holH)+'h (주 5일 미만)</p>');
+    }
+    fl.push('<p style="margin:2px 0">주 주휴수당 = '+fmt(w)+'원 × '+fmtD(holH)+'h = '+fmt(weekPay)+'원</p>');
+    fl.push('<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">월 주휴수당 = '+fmt(weekPay)+'원 × 4.345 = '+fmt(monthPay)+'원</p>');
+  } else {
+    fl.push('<p style="margin:2px 0;color:var(--color-text-danger)">조건 미충족 → 주휴수당 0원</p>');
+  }
+  document.getElementById('formula').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<5;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===4)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

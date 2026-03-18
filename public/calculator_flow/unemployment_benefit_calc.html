@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">수급 자격</button>
+<button onclick="showTab(2)" id="t2">소정급여일수</button>
+<button onclick="showTab(3)" id="t3">조기재취업수당</button>
+<button onclick="showTab(4)" id="t4">급여 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">실업급여(구직급여) — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용보험법 제40조, 제45~50조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 780">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">비자발적으로 직장을 잃은 근로자의 생활 안정과 재취업 지원</text>
+
+<!-- Step 1 -->
+<g class="c-amber">
+<rect x="80" y="72" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 수급 자격 확인 (근로자 유형에 따라 다름)</text>
+<text class="ts" x="340" y="112" text-anchor="middle" dominant-baseline="central">일반 근로자: 18개월 중 피보험 180일 이상</text>
+<text class="ts" x="340" y="130" text-anchor="middle" dominant-baseline="central">노무제공자(특수고용): 24개월 중 12개월 이상 보험료 납부</text>
+</g>
+
+<line x1="240" y1="128" x2="140" y2="162" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="174" y="142">불충족</text>
+<line x1="340" y1="128" x2="340" y2="172" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="354" y="150">충족</text>
+
+<g>
+<rect x="40" y="162" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="140" y="188" text-anchor="middle" dominant-baseline="central">수급 불가</text>
+</g>
+
+<!-- Step 2 -->
+<g class="c-coral">
+<rect x="120" y="172" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="194" text-anchor="middle" dominant-baseline="central">Step 2. 1일 평균임금 산정</text>
+<text class="ts" x="340" y="214" text-anchor="middle" dominant-baseline="central">(3개월 임금 + 상여금 3/12 + 연차 3/12) ÷ 산정일수</text>
+<text class="ts" x="340" y="232" text-anchor="middle" dominant-baseline="central">평균임금 계산기에서 산출된 값</text>
+</g>
+<line x1="340" y1="248" x2="340" y2="278" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-teal">
+<rect x="120" y="278" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="298" text-anchor="middle" dominant-baseline="central">Step 3. 기준 일액 산정</text>
+<text style="font-size:15px;fill:#0F6E56;font-weight:500" x="340" y="320" text-anchor="middle" dominant-baseline="central">기준 일액 = 평균임금 × 60%</text>
+</g>
+<line x1="340" y1="334" x2="340" y2="364" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4: 상하한 -->
+<g class="c-purple">
+<rect x="60" y="364" width="560" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="386" text-anchor="middle" dominant-baseline="central">Step 4. 상·하한 적용 (2026년)</text>
+
+<rect x="90" y="404" width="230" height="48" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="205" y="420" text-anchor="middle" dominant-baseline="central">상한: 68,100원 (일반근로자)</text>
+<text style="font-size:11px;fill:#791F1F" x="205" y="440" text-anchor="middle" dominant-baseline="central">66,000원 (노무제공자)</text>
+
+<rect x="360" y="404" width="240" height="36" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="480" y="426" text-anchor="middle" dominant-baseline="central">하한: 66,048원/일</text>
+
+<text class="ts" x="340" y="456" text-anchor="middle">하한 = 최저시급 × 80% × 8h = 10,320 × 0.8 × 8</text>
+</g>
+<line x1="340" y1="464" x2="340" y2="494" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-blue">
+<rect x="120" y="494" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="514" text-anchor="middle" dominant-baseline="central">Step 5. 소정급여일수 결정</text>
+<text class="ts" x="340" y="532" text-anchor="middle" dominant-baseline="central">연령 + 피보험기간으로 결정 → "소정급여일수" 탭</text>
+</g>
+<line x1="340" y1="550" x2="340" y2="580" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<g class="c-gray">
+<rect x="100" y="580" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="602" text-anchor="middle" dominant-baseline="central">Step 6. 총 구직급여</text>
+<text style="font-size:16px;fill:#2C2C2A;font-weight:500" x="340" y="636" text-anchor="middle" dominant-baseline="central">총 급여 = 1일 수급액 × 소정급여일수</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="656" x2="340" y2="686" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="686" width="560" height="76" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="708" text-anchor="middle">예시: 평균임금 12만원/일, 50세 미만, 피보험 5년</text>
+<text class="ts" x="340" y="730" text-anchor="middle">기준일액 = 120,000 × 60% = 72,000 → 상한 68,100원 적용</text>
+<text class="ts" x="340" y="748" text-anchor="middle">68,100 × 210일 = 14,301,000원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 수급 자격 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">수급 자격 — 두 가지 조건을 모두 충족해야</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용보험법 제40조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 640">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 조건 1: 일반 근로자 -->
+<g class="c-teal">
+<rect x="40" y="20" width="290" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="40" text-anchor="middle" dominant-baseline="central">조건 1: 피보험기간</text>
+<text class="ts" x="185" y="62" text-anchor="middle" dominant-baseline="central">[일반 근로자]</text>
+<text class="ts" x="185" y="80" text-anchor="middle" dominant-baseline="central">이직 전 18개월 중 180일↑</text>
+<text class="ts" x="185" y="100" text-anchor="middle" dominant-baseline="central">[노무제공자(특수고용)]</text>
+<text class="ts" x="185" y="118" text-anchor="middle" dominant-baseline="central">이직 전 24개월 중 12개월↑</text>
+</g>
+
+<!-- 조건 2 -->
+<g class="c-purple">
+<rect x="350" y="20" width="290" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="44" text-anchor="middle" dominant-baseline="central">조건 2: 비자발적 이직</text>
+<text class="ts" x="495" y="70" text-anchor="middle" dominant-baseline="central">본인 의사에 반한 이직</text>
+<text class="ts" x="495" y="90" text-anchor="middle" dominant-baseline="central">또는 자발적이지만</text>
+<text class="ts" x="495" y="110" text-anchor="middle" dominant-baseline="central">정당한 사유 있는 이직</text>
+</g>
+
+<!-- 자발적 이직 예외 사유 -->
+<rect x="40" y="146" width="600" height="260" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="170" text-anchor="middle">자발적 이직이라도 수급 가능한 13가지 예외 사유</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="198">임금·근로조건 관련</text>
+<text class="ts" x="60" y="218">① 임금체불 (2개월 이상)</text>
+<text class="ts" x="60" y="238">② 근로조건이 계약과 다른 경우</text>
+<text class="ts" x="60" y="258">③ 최저임금 미달</text>
+<text class="ts" x="60" y="278">④ 임금의 30% 이상 감액</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="360" y="198">직장환경 관련</text>
+<text class="ts" x="360" y="218">⑤ 직장 내 괴롭힘·성희롱</text>
+<text class="ts" x="360" y="238">⑥ 사업장 이전 (통근 곤란)</text>
+<text class="ts" x="360" y="258">⑦ 종류·장소 변경 거부 시 해고</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="306">건강·가정 관련</text>
+<text class="ts" x="60" y="326">⑧ 본인 건강 악화</text>
+<text class="ts" x="60" y="346">⑨ 임신·출산·육아(초등입학 전)</text>
+<text class="ts" x="60" y="366">⑩ 가족 간호 (30일 이상)</text>
+
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="360" y="306">기타</text>
+<text class="ts" x="360" y="326">⑪ 정년 퇴직</text>
+<text class="ts" x="360" y="346">⑫ 계약기간 만료</text>
+<text class="ts" x="360" y="366">⑬ 기타 불가피한 사유</text>
+
+<text class="ts" x="340" y="398" text-anchor="middle">위 사유에 해당하면 본인이 퇴사했어도 실업급여 수급 가능</text>
+
+<!-- 반도체고 관련 -->
+<rect x="40" y="430" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="454" text-anchor="middle">반도체고 졸업생 핵심 포인트</text>
+<text class="ts" x="340" y="480" text-anchor="middle">취업 후 6개월(180일) 이상 고용보험에 가입되어야 자격 발생</text>
+<text class="ts" x="340" y="500" text-anchor="middle">수습기간이라도 고용보험은 첫날부터 가입 → 피보험기간에 산입</text>
+<text class="ts" x="340" y="520" text-anchor="middle">임금체불(①), 근로조건 불일치(②), 괴롭힘(⑤)이 가장 빈번한 예외 사유</text>
+
+<!-- 주의 -->
+<rect x="40" y="554" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="576" text-anchor="middle">단순 자발적 퇴사는 수급 불가</text>
+<text class="ts" x="340" y="600" text-anchor="middle">"더 좋은 직장으로", "적성에 안 맞아서" 등의 사유로는 실업급여를 받을 수 없습니다</text>
+</svg>
+</div>
+
+<!-- TAB 2: 소정급여일수 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">소정급여일수 — 연령 × 피보험기간 매트릭스</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용보험법 제50조 | 이 일수만큼 구직급여를 받습니다</p>
+</div>
+
+<div style="overflow-x:auto;margin-bottom:16px">
+<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+<thead>
+<tr style="border-bottom:1.5px solid var(--color-border-secondary)">
+<th style="text-align:left;padding:8px 6px;color:var(--color-text-secondary);font-weight:500;width:110px">피보험기간</th>
+<th style="text-align:center;padding:8px 6px;color:var(--color-text-secondary);font-weight:500">50세 미만</th>
+<th style="text-align:center;padding:8px 6px;color:var(--color-text-secondary);font-weight:500">50세↑·장애인</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px 6px;font-weight:500">1년 미만</td><td style="padding:8px 6px;text-align:center">120일</td><td style="padding:8px 6px;text-align:center">120일</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px 6px;font-weight:500">1~3년</td><td style="padding:8px 6px;text-align:center">150일</td><td style="padding:8px 6px;text-align:center">180일</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px 6px;font-weight:500">3~5년</td><td style="padding:8px 6px;text-align:center">180일</td><td style="padding:8px 6px;text-align:center">210일</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px 6px;font-weight:500">5~10년</td><td style="padding:8px 6px;text-align:center">210일</td><td style="padding:8px 6px;text-align:center">240일</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-info)"><td style="padding:8px 6px;font-weight:500">10년 이상</td><td style="padding:8px 6px;text-align:center;font-weight:500;color:var(--color-text-info)">240일</td><td style="padding:8px 6px;text-align:center;font-weight:500;color:var(--color-text-info)">270일</td></tr>
+</tbody>
+</table>
+</div>
+
+<svg width="100%" viewBox="0 0 680 240">
+<rect x="40" y="10" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="34" text-anchor="middle">핵심 포인트</text>
+<text class="ts" x="340" y="58" text-anchor="middle">피보험기간이 길수록, 나이가 많을수록 더 오래 받습니다</text>
+<text class="ts" x="340" y="78" text-anchor="middle">최소 120일(약 4개월) ~ 최대 270일(약 9개월)</text>
+<text class="ts" x="340" y="98" text-anchor="middle">반도체고 졸업 직후(20대 초반 + 1~3년 근속) → 대부분 150일</text>
+
+<rect x="40" y="128" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="152" text-anchor="middle">소정급여일수의 의미</text>
+<text class="ts" x="340" y="176" text-anchor="middle">이 일수가 끝나면 실업급여가 종료됩니다</text>
+<text class="ts" x="340" y="196" text-anchor="middle">기간 내에 재취업하면 잔여일수로 조기재취업수당 가능</text>
+<text class="ts" x="340" y="216" text-anchor="middle">수급 중 구직활동 실적을 4주마다 제출해야 계속 수급</text>
+</svg>
+</div>
+
+<!-- TAB 3: 조기재취업수당 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">조기재취업수당 — 빨리 취업하면 보너스</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">소정급여일수의 절반 이상 남기고 재취업하면 잔여분의 50% 지급</p>
+</div>
+<svg width="100%" viewBox="0 0 680 500">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="140" y="20" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">실업급여 수급 중 재취업</text>
+<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">소정급여일수가 아직 남아 있는 상태</text>
+</g>
+<line x1="340" y1="76" x2="340" y2="106" class="arr" marker-end="url(#a3)"/>
+
+<g class="c-amber">
+<rect x="120" y="106" width="440" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="128" text-anchor="middle" dominant-baseline="central">잔여일수 ≥ 소정급여일수의 1/2?</text>
+</g>
+
+<line x1="240" y1="150" x2="140" y2="186" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="174" y="164">미만</text>
+<line x1="440" y1="150" x2="520" y2="186" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="492" y="164">이상</text>
+
+<g>
+<rect x="40" y="186" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="140" y="212" text-anchor="middle" dominant-baseline="central">수당 미발생</text>
+</g>
+
+<g>
+<rect x="420" y="186" width="220" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="530" y="212" text-anchor="middle" dominant-baseline="central">조기재취업수당 발생</text>
+</g>
+
+<line x1="530" y1="230" x2="340" y2="270" class="arr" marker-end="url(#a3)"/>
+
+<g class="c-purple">
+<rect x="80" y="270" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="292" text-anchor="middle" dominant-baseline="central">조기재취업수당 공식</text>
+<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="326" text-anchor="middle" dominant-baseline="central">= 1일 수급액 × (잔여일수 ÷ 2) × 50%</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="346" x2="340" y2="376" class="arr" marker-end="url(#a3)"/>
+<rect x="60" y="376" width="560" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="398" text-anchor="middle">예시: 1일 68,100원, 소정 210일, 60일 만에 재취업</text>
+<text class="ts" x="340" y="422" text-anchor="middle">잔여 = 210 − 60 = 150일 ≥ 105일(210÷2) → 발생 ✓</text>
+<text class="ts" x="340" y="442" text-anchor="middle">이미 받은 급여: 68,100 × 60일 = 4,086,000원</text>
+<text class="ts" x="340" y="462" text-anchor="middle">조기수당: 68,100 × (150÷2) × 50% = 2,553,750원 (추가로 받음)</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">실업급여 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">임금과 조건을 입력하면 1일 수급액, 총 급여, 조기재취업수당까지 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">월급</label>
+<input type="range" min="150" max="600" value="300" step="10" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salOut">300만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">연간 상여금</label>
+<input type="range" min="0" max="2000" value="0" step="50" id="bonus" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="bonusOut">0만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">피보험기간</label>
+<input type="range" min="180" max="4000" value="1100" step="30" id="insured" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="insOut">1,100일</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">연령</label>
+<button id="btnU50" onclick="setAge(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">50세 미만</button>
+<button id="btnO50" onclick="setAge(true);calc()">50세 이상·장애인</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">재취업까지</label>
+<input type="range" min="0" max="270" value="0" step="5" id="reemploy" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="reOut">미정</span>
+</div>
+</div>
+
+<!-- 1일 수급액 산정 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">1일 수급액 산정</p>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">평균임금</p>
+<p style="font-size:14px;font-weight:500;margin:0" id="vAvg">0원</p>
+</div>
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">× 60%</p>
+<p style="font-size:14px;font-weight:500;margin:0" id="v60">0원</p>
+</div>
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">상·하한 적용</p>
+<p style="font-size:14px;font-weight:500;margin:0;color:var(--color-text-info)" id="vClamp">0원</p>
+</div>
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">소정급여일수</p>
+<p style="font-size:14px;font-weight:500;margin:0" id="vDays">0일</p>
+</div>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0" id="clampNote"></p>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 구직급여</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="totalBen">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="totalNote"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">월 환산 수령액</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="monthBen">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0">= 1일 수급액 × 30</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">조기재취업수당</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="earlyBen">-</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="earlyNote"></p>
+</div>
+</div>
+
+<!-- 급여 소진 타임라인 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">급여 기간 타임라인</p>
+<div style="display:flex;height:28px;border-radius:6px;overflow:hidden;gap:2px" id="timeline"></div>
+<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-text-secondary);margin-top:4px" id="timeLabels"></div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var over50=false;
+var UPPER=68100, LOWER=66048;
+var TABLE_U50=[0,120,150,180,210,240];
+var TABLE_O50=[0,120,180,210,240,270];
+// index: 0=<1y, 1=1-3, 2=3-5, 3=5-10, 4=10+
+
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setAge(v){over50=v;setBtn('btnU50',!v);setBtn('btnO50',v);}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function getDays(insDays){
+  var years=insDays/365;
+  var tbl=over50?TABLE_O50:TABLE_U50;
+  if(years>=10)return tbl[5];
+  if(years>=5)return tbl[4];
+  if(years>=3)return tbl[3];
+  if(years>=1)return tbl[2];
+  return tbl[1];
+}
+
+function calc(){
+  var sal=parseInt(document.getElementById('salary').value);
+  var bonus=parseInt(document.getElementById('bonus').value);
+  var ins=parseInt(document.getElementById('insured').value);
+  var reDay=parseInt(document.getElementById('reemploy').value);
+
+  document.getElementById('salOut').textContent=sal+'만원';
+  document.getElementById('bonusOut').textContent=bonus+'만원';
+  document.getElementById('insOut').textContent=fmt(ins)+'일';
+  document.getElementById('reOut').textContent=reDay===0?'미정':reDay+'일째';
+
+  var salW=sal*10000, bonW=bonus*10000;
+
+  // 평균임금
+  var total3=(salW*3)+(bonW*3/12);
+  var avgD=Math.round(total3/92);
+
+  // 60%
+  var base60=Math.round(avgD*0.6);
+
+  // 상하한
+  var clamped=Math.max(Math.min(base60,UPPER),LOWER);
+  var clampNote='';
+  if(base60>UPPER)clampNote='기준일액 '+fmt(base60)+'원 > 상한 → '+fmt(UPPER)+'원 적용';
+  else if(base60<LOWER)clampNote='기준일액 '+fmt(base60)+'원 < 하한 → '+fmt(LOWER)+'원 적용';
+  else clampNote='상·하한 범위 내 → '+fmt(clamped)+'원 그대로 적용';
+
+  // 소정급여일수
+  var sDays=getDays(ins);
+
+  document.getElementById('vAvg').textContent=fmt(avgD)+'원';
+  document.getElementById('v60').textContent=fmt(base60)+'원';
+  document.getElementById('vClamp').textContent=fmt(clamped)+'원';
+  document.getElementById('vDays').textContent=sDays+'일';
+  document.getElementById('clampNote').textContent=clampNote;
+
+  // 총 급여
+  var totalBen=clamped*sDays;
+  document.getElementById('totalBen').textContent=fmt(totalBen)+'원';
+  document.getElementById('totalNote').textContent=fmt(clamped)+' × '+sDays+'일';
+  document.getElementById('monthBen').textContent=fmt(clamped*30)+'원';
+
+  // 조기재취업수당
+  var earlyEl=document.getElementById('earlyBen');
+  var earlyNote=document.getElementById('earlyNote');
+  if(reDay===0){
+    earlyEl.textContent='-';
+    earlyNote.textContent='재취업일 미입력';
+  } else {
+    var remain=sDays-reDay;
+    var halfDays=Math.floor(sDays/2);
+    if(remain>=halfDays&&remain>0){
+      var earlyAmt=Math.round(clamped*(remain/2)*0.5);
+      earlyEl.textContent=fmt(earlyAmt)+'원';
+      earlyEl.style.color='var(--color-text-success)';
+      earlyNote.textContent='잔여 '+remain+'일 ≥ '+halfDays+'일 → 발생 ✓';
+    } else if(remain<=0){
+      earlyEl.textContent='0원';
+      earlyEl.style.color='var(--color-text-danger)';
+      earlyNote.textContent='소정기간 초과 (잔여 0일)';
+    } else {
+      earlyEl.textContent='0원';
+      earlyEl.style.color='var(--color-text-danger)';
+      earlyNote.textContent='잔여 '+remain+'일 < '+halfDays+'일 → 미발생';
+    }
+  }
+
+  // 타임라인
+  var tl=document.getElementById('timeline');
+  var lb=document.getElementById('timeLabels');
+  if(reDay>0&&reDay<sDays){
+    var p1=reDay/sDays*100;
+    var p2=(sDays-reDay)/sDays*100;
+    tl.innerHTML='<div style="width:'+p1+'%;background:#85B7EB;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:var(--color-border-tertiary);border-radius:0 4px 4px 0"></div>';
+    lb.innerHTML='<span>수급 시작</span><span style="color:var(--color-text-success)">'+reDay+'일째 재취업</span><span>'+sDays+'일 만료</span>';
+  } else {
+    tl.innerHTML='<div style="width:100%;background:#85B7EB;border-radius:4px"></div>';
+    lb.innerHTML='<span>수급 시작</span><span>'+sDays+'일 만료 (약 '+Math.round(sDays/30)+'개월)</span>';
+  }
+
+  // 산식
+  var yrs=(ins/365).toFixed(1);
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>',
+    '<p style="margin:2px 0">평균임금 = ('+fmt(salW)+'×3 + '+fmt(bonW)+'×3/12) ÷ 92 = '+fmt(avgD)+'원/일</p>',
+    '<p style="margin:2px 0">기준일액 = '+fmt(avgD)+' × 60% = '+fmt(base60)+'원 → '+clampNote+'</p>',
+    '<p style="margin:2px 0">피보험기간 '+fmt(ins)+'일 (약 '+yrs+'년), '+(over50?'50세↑':'50세 미만')+' → '+sDays+'일</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">총 구직급여 = '+fmt(clamped)+' × '+sDays+' = '+fmt(totalBen)+'원</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<5;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===4)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

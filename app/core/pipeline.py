@@ -25,9 +25,9 @@ from app.core.legal_api import (
     search_precedent_multi, fetch_precedent_details,
 )
 from app.core.precedent_query import build_precedent_queries
-from app.core.query_decomposer import decompose_query
+from app.core.query_decomposer import decompose_query, classify_complexity, COMPLEXITY_PARAMS
 from app.core.nlrc_cases import search_nlrc_with_details
-from app.core.rag import search_pinecone_multi, format_pinecone_hits, rerank_results
+from app.core.rag import search_pinecone_multi, search_hybrid, format_pinecone_hits, rerank_results
 from app.core.legal_consultation import process_consultation
 from app.core.citation_validator import (
     build_available_citations_text,
@@ -445,8 +445,28 @@ def _run_calculator(params: dict) -> str | None:
     if params.get("end_date"):
         inp.end_date = params["end_date"]
 
+    # 특수고용직(노무제공자) 판별
+    if params.get("is_platform_worker"):
+        inp.is_platform_worker = True
+        from wage_calculator.models import WorkType
+        inp.work_type = WorkType.PLATFORM_WORKER
+
     calc_type = params.get("calculation_type", "임금계산")
     targets = CALC_TYPE_MAP.get(calc_type, ["minimum_wage"])
+
+    # 특수고용직: 근로기준법 미적용 계산기 제외 + insurance/legal_hints 자동 추가
+    if inp.is_platform_worker:
+        _pw_exclude = {
+            "overtime", "weekly_holiday", "annual_leave", "dismissal",
+            "severance", "comprehensive", "prorated", "public_holiday",
+            "shutdown_allowance", "weekly_hours_check",
+            "retirement_tax", "retirement_pension",
+        }
+        targets = [t for t in targets if t not in _pw_exclude]
+        if "insurance" not in targets:
+            targets.append("insurance")
+        if "legal_hints" not in targets:
+            targets.append("legal_hints")
 
     try:
         calc = WageCalculator()
@@ -614,6 +634,9 @@ def _analysis_to_extract_params(analysis) -> dict:
         "end_date": info.get("end_date"),
         "use_minimum_wage": info.get("use_minimum_wage"),
         "reference_year": info.get("reference_year"),
+        "is_platform_worker": info.get("is_platform_worker"),
+        "is_probation": info.get("is_probation"),
+        "contract_months": info.get("contract_months"),
     }
     return {k: v for k, v in params.items() if v is not None}
 
@@ -838,6 +861,23 @@ def process_question(query: str, session: Session, config: AppConfig,
         try:
             yield {"type": "status", "text": "관련 판례 검색 중..."}
 
+            # ── Adaptive Retrieval: 복잡도 분류 → 파라미터 동적 조정 ──
+            try:
+                complexity = classify_complexity(
+                    query,
+                    relevant_laws=getattr(analysis, "relevant_laws", None),
+                    calculation_types=analysis.calculation_types if analysis.requires_calculation else None,
+                )
+            except Exception:
+                from app.core.query_decomposer import QueryComplexity
+                complexity = QueryComplexity.MODERATE
+            adaptive_params = COMPLEXITY_PARAMS[complexity]
+            logger.info("Adaptive: %s → top_k=%d, rerank_n=%d, self_rag=%s",
+                        complexity.value,
+                        adaptive_params["search_top_k"],
+                        adaptive_params["rerank_top_n"],
+                        adaptive_params["self_rag"])
+
             # 맥락 기반 쿼리 확장 (규칙 기반)
             prec_queries = []
             if getattr(analysis, "precedent_keywords", None):
@@ -847,32 +887,62 @@ def process_question(query: str, session: Session, config: AppConfig,
                     consultation_topic=analysis.consultation_topic,
                 )
 
-            # LLM 멀티쿼리 분해 (복합 질문 → 2~4개 관점별 쿼리)
-            decomposed = decompose_query(
-                query,
-                config.claude_client,
-                consultation_topic=getattr(analysis, "consultation_topic", None),
-                question_summary=getattr(analysis, "question_summary", None),
-            )
+            # LLM 멀티쿼리 분해 — Adaptive: SIMPLE은 건너뜀, COMPLEX는 강제 분해
+            if adaptive_params["max_queries"] <= 1:
+                decomposed = []
+            else:
+                decomposed = decompose_query(
+                    query,
+                    config.claude_client,
+                    consultation_topic=getattr(analysis, "consultation_topic", None),
+                    question_summary=getattr(analysis, "question_summary", None),
+                    force=adaptive_params.get("force_decompose", False),
+                )
 
             # 쿼리 병합: LLM 분해 + 규칙 기반 + 폴백(원본)
             pinecone_search_queries = _merge_search_queries(
                 decomposed=decomposed,
                 rule_based=prec_queries,
                 fallback=getattr(analysis, "question_summary", None) or query[:80],
+                max_total=adaptive_params["max_queries"] + 2,
             )
 
-            # ① Pinecone 벡터 검색 (우선) — rerank 시 후보 확대
-            search_top_k = 15 if config.cohere_api_key else 5
-            pinecone_hits = search_pinecone_multi(
+            # ① Hybrid Search (Dense + BM25 RRF) — Adaptive top_k
+            search_top_k = adaptive_params["search_top_k"] if config.cohere_api_key else 5
+            pinecone_hits = search_hybrid(
                 pinecone_search_queries, config, top_k=search_top_k,
             )
 
-            # ② Cohere Rerank (API 키 설정 시)
+            # ② Cohere Rerank — Adaptive top_n
             if pinecone_hits and config.cohere_api_key:
                 pinecone_hits = rerank_results(
                     query, pinecone_hits, config.cohere_api_key,
+                    top_n=adaptive_params["rerank_top_n"],
                 )
+
+            # ③ Self-RAG 관련성 필터 (COMPLEX만)
+            if adaptive_params["self_rag"] and pinecone_hits and len(pinecone_hits) > 2:
+                try:
+                    from app.core.self_rag import filter_by_relevance
+                    pinecone_hits, needs_wider = filter_by_relevance(
+                        query, pinecone_hits, config.claude_client,
+                    )
+                    if needs_wider:
+                        logger.info("Self-RAG wider search: top_k %d → %d",
+                                    search_top_k, search_top_k * 2)
+                        wider_hits = search_hybrid(
+                            pinecone_search_queries, config,
+                            top_k=search_top_k * 2,
+                        )
+                        if wider_hits and config.cohere_api_key:
+                            wider_hits = rerank_results(
+                                query, wider_hits, config.cohere_api_key,
+                                top_n=adaptive_params["rerank_top_n"] + 3,
+                            )
+                        if wider_hits:
+                            pinecone_hits = wider_hits
+                except Exception as e:
+                    logger.warning("Self-RAG 실패 (rerank 결과 유지): %s", e)
 
             if pinecone_hits:
                 precedent_text, precedent_meta = format_pinecone_hits(pinecone_hits)

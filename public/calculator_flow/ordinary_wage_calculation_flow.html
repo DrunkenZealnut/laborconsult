@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>임금계산 핵심 흐름 — 5단계</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#fff;color:#222;padding:1.5rem;}
+@media(prefers-color-scheme:dark){body{background:#1a1a1a;color:#e0e0e0;}}
+h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:16px;}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+.tabs button{padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:transparent;color:#555;font-size:13px;cursor:pointer;font-family:inherit;}
+.tabs button.active{font-weight:600;background:#E6F1FB;color:#185FA5;border-color:#185FA5;}
+@media(prefers-color-scheme:dark){
+  .tabs button{border-color:#555;color:#aaa;}
+  .tabs button.active{background:#042C53;color:#85B7EB;border-color:#85B7EB;}
+}
+.step{display:none;}
+.step.active{display:block;}
+.info-bar{background:#f5f5f0;border-radius:10px;padding:12px 16px;margin-bottom:12px;}
+.info-bar h2{font-size:14px;font-weight:600;margin-bottom:4px;}
+.info-bar p{font-size:13px;color:#888;}
+@media(prefers-color-scheme:dark){.info-bar{background:#2a2a2a;}.info-bar p{color:#999;}}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+
+/* Light mode SVG colors */
+.box-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}
+.box-gray .th{fill:#2C2C2A;font-weight:600;font-size:14px;}
+.box-gray .ts{fill:#5F5E5A;font-size:12px;}
+
+.box-coral rect{fill:#FAECE7;stroke:#993C1D;}
+.box-coral .th{fill:#712B13;font-weight:600;font-size:14px;}
+.box-coral .ts{fill:#993C1D;font-size:12px;}
+
+.box-teal rect{fill:#E1F5EE;stroke:#0F6E56;}
+.box-teal .th{fill:#085041;font-weight:600;font-size:14px;}
+.box-teal .ts{fill:#0F6E56;font-size:12px;}
+
+.box-purple rect{fill:#EEEDFE;stroke:#534AB7;}
+.box-purple .th{fill:#3C3489;font-weight:600;font-size:14px;}
+.box-purple .ts{fill:#534AB7;font-size:12px;}
+
+.box-blue rect{fill:#E6F1FB;stroke:#185FA5;}
+.box-blue .th{fill:#0C447C;font-weight:600;font-size:14px;}
+.box-blue .ts{fill:#185FA5;font-size:12px;}
+
+.box-amber rect{fill:#FAEEDA;stroke:#854F0B;}
+.box-amber .th{fill:#633806;font-weight:600;font-size:14px;}
+.box-amber .ts{fill:#854F0B;font-size:12px;}
+
+.pill-green{fill:#E1F5EE;stroke:#0F6E56;}
+.pill-green text{fill:#085041;font-size:12px;}
+.pill-red{fill:#FCEBEB;stroke:#A32D2D;}
+.pill-red text{fill:#791F1F;font-size:12px;}
+
+.arr{stroke:#888;stroke-width:1.5;fill:none;}
+.bg-rect{fill:#f5f5f0;stroke:#ddd;}
+.bg-text{fill:#555;font-size:12px;}
+.bg-th{fill:#333;font-size:14px;font-weight:600;}
+
+@media(prefers-color-scheme:dark){
+  .box-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}
+  .box-gray .th{fill:#D3D1C7;}
+  .box-gray .ts{fill:#B4B2A9;}
+
+  .box-coral rect{fill:#4A1B0C;stroke:#F0997B;}
+  .box-coral .th{fill:#F5C4B3;}
+  .box-coral .ts{fill:#F0997B;}
+
+  .box-teal rect{fill:#04342C;stroke:#5DCAA5;}
+  .box-teal .th{fill:#9FE1CB;}
+  .box-teal .ts{fill:#5DCAA5;}
+
+  .box-purple rect{fill:#26215C;stroke:#AFA9EC;}
+  .box-purple .th{fill:#CECBF6;}
+  .box-purple .ts{fill:#AFA9EC;}
+
+  .box-blue rect{fill:#042C53;stroke:#85B7EB;}
+  .box-blue .th{fill:#B5D4F4;}
+  .box-blue .ts{fill:#85B7EB;}
+
+  .box-amber rect{fill:#412402;stroke:#FAC775;}
+  .box-amber .th{fill:#FAEEDA;}
+  .box-amber .ts{fill:#FAC775;}
+
+  .pill-green{fill:#04342C;stroke:#0F6E56;}
+  .pill-green text{fill:#9FE1CB;}
+  .pill-red{fill:#501313;stroke:#A32D2D;}
+  .pill-red text{fill:#F7C1C1;}
+
+  .arr{stroke:#777;}
+  .bg-rect{fill:#2a2a2a;stroke:#444;}
+  .bg-text{fill:#999;}
+  .bg-th{fill:#ddd;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+<h1>임금계산 핵심 흐름 — 5단계</h1>
+
+<div class="tabs">
+<button class="active" onclick="show(0)">Step 1: 통상임금</button>
+<button onclick="show(1)">Step 2: 가산수당</button>
+<button onclick="show(2)">Step 3: 평균임금</button>
+<button onclick="show(3)">Step 4: 퇴직금</button>
+<button onclick="show(4)">Step 5: 세금·실수령</button>
+</div>
+
+<!-- STEP 0: 통상임금 -->
+<div class="step active" id="s0">
+<div class="info-bar">
+<h2>Step 1. 통상임금 산정 — 모든 수당 계산의 출발점</h2>
+<p>근로기준법 제2조, 대법원 2023다302838</p>
+</div>
+<svg viewBox="0 0 680 520">
+<defs><marker id="a0" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="box-gray">
+<rect x="40" y="20" width="260" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="170" y="48" text-anchor="middle" dominant-baseline="central">1-1. 월 기준시간</text>
+<text class="ts" x="170" y="68" text-anchor="middle" dominant-baseline="central">(주소정 + 주휴) × 4.345</text>
+</g>
+<g class="box-teal">
+<rect x="340" y="20" width="300" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="490" y="40" text-anchor="middle" dominant-baseline="central">예시: 주5일 8시간</text>
+<text class="ts" x="490" y="58" text-anchor="middle" dominant-baseline="central">주소정 40h + 주휴 8h = 48h</text>
+<text class="ts" x="490" y="74" text-anchor="middle" dominant-baseline="central">48h × 4.345 = 208.6시간</text>
+</g>
+
+<line x1="170" y1="100" x2="170" y2="125" class="arr" marker-end="url(#a0)"/>
+
+<g class="box-gray">
+<rect x="40" y="125" width="260" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="170" y="148" text-anchor="middle" dominant-baseline="central">1-2. 기본 월 임금</text>
+<text class="ts" x="170" y="170" text-anchor="middle" dominant-baseline="central">시급: 시급 × 월기준시간</text>
+<text class="ts" x="170" y="186" text-anchor="middle" dominant-baseline="central">월급: 그대로 사용</text>
+<text class="ts" x="170" y="202" text-anchor="middle" dominant-baseline="central">연봉: 연봉 ÷ 12</text>
+</g>
+
+<line x1="170" y1="225" x2="170" y2="250" class="arr" marker-end="url(#a0)"/>
+
+<g class="box-gray">
+<rect x="40" y="250" width="600" height="130" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="274" text-anchor="middle" dominant-baseline="central">1-3. 고정수당 포함 판단 (2023다302838 반영)</text>
+<rect class="pill-green" x="60" y="292" width="120" height="36" rx="6" stroke-width="0.5"/>
+<text x="120" y="314" text-anchor="middle" dominant-baseline="central" fill="#085041" font-size="12">무조건 지급 ✓</text>
+<rect class="pill-green" x="195" y="292" width="120" height="36" rx="6" stroke-width="0.5"/>
+<text x="255" y="314" text-anchor="middle" dominant-baseline="central" fill="#085041" font-size="12">재직조건 ✓</text>
+<rect class="pill-green" x="330" y="292" width="120" height="36" rx="6" stroke-width="0.5"/>
+<text x="390" y="314" text-anchor="middle" dominant-baseline="central" fill="#085041" font-size="12">근무일수 ✓</text>
+<rect class="pill-red" x="465" y="292" width="155" height="36" rx="6" stroke-width="0.5"/>
+<text x="542" y="314" text-anchor="middle" dominant-baseline="central" fill="#791F1F" font-size="12">성과조건 ✗</text>
+<text class="ts" x="340" y="358" text-anchor="middle">지급주기 환산: 연간÷12, 분기÷3, 반기÷6</text>
+</g>
+
+<line x1="170" y1="380" x2="170" y2="410" class="arr" marker-end="url(#a0)"/>
+
+<g class="box-coral">
+<rect x="40" y="410" width="600" height="90" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="436" text-anchor="middle" dominant-baseline="central">최종: 통상임금 산출</text>
+<text class="ts" x="340" y="458" text-anchor="middle" dominant-baseline="central">월 통상임금 = 기본 월 임금 + 포함 수당 합계</text>
+<text class="ts" x="340" y="476" text-anchor="middle" dominant-baseline="central">통상시급 = 월 통상임금 ÷ 월 기준시간</text>
+<text class="ts" x="340" y="494" text-anchor="middle" dominant-baseline="central">1일 통상임금 = 통상시급 × 1일 소정근로시간</text>
+</g>
+</svg>
+</div>
+
+<!-- STEP 1: 가산수당 -->
+<div class="step" id="s1">
+<div class="info-bar">
+<h2>Step 2. 가산수당 — 통상시급에 배율을 곱한다</h2>
+<p>근로기준법 제56조 (5인 이상 사업장)</p>
+</div>
+<svg viewBox="0 0 680 480">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="box-coral">
+<rect x="240" y="20" width="200" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">통상시급 (Step 1)</text>
+</g>
+
+<line x1="280" y1="64" x2="115" y2="100" class="arr" marker-end="url(#a1)"/>
+<line x1="340" y1="64" x2="340" y2="100" class="arr" marker-end="url(#a1)"/>
+<line x1="400" y1="64" x2="565" y2="100" class="arr" marker-end="url(#a1)"/>
+
+<g class="box-teal">
+<rect x="40" y="100" width="150" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="115" y="122" text-anchor="middle" dominant-baseline="central">연장수당</text>
+<text class="ts" x="115" y="140" text-anchor="middle" dominant-baseline="central">시급 × 시간 × 1.5</text>
+<text class="ts" x="115" y="156" text-anchor="middle" dominant-baseline="central">(+50% 가산)</text>
+</g>
+<g class="box-teal">
+<rect x="240" y="100" width="200" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="122" text-anchor="middle" dominant-baseline="central">야간수당 (22~06시)</text>
+<text class="ts" x="340" y="140" text-anchor="middle" dominant-baseline="central">시급 × 시간 × 0.5</text>
+<text class="ts" x="340" y="156" text-anchor="middle" dominant-baseline="central">(중복가산분만)</text>
+</g>
+<g class="box-teal">
+<rect x="490" y="100" width="150" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="565" y="122" text-anchor="middle" dominant-baseline="central">휴일수당</text>
+<text class="ts" x="565" y="140" text-anchor="middle" dominant-baseline="central">8h이내 × 1.5</text>
+<text class="ts" x="565" y="156" text-anchor="middle" dominant-baseline="central">8h초과 × 2.0</text>
+</g>
+
+<line x1="115" y1="176" x2="115" y2="210" class="arr" marker-end="url(#a1)"/>
+<line x1="340" y1="176" x2="340" y2="210" class="arr" marker-end="url(#a1)"/>
+<line x1="565" y1="176" x2="565" y2="210" class="arr" marker-end="url(#a1)"/>
+
+<g class="box-purple">
+<rect x="40" y="210" width="600" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="230" text-anchor="middle" dominant-baseline="central">중복 가산 규칙</text>
+<text class="ts" x="340" y="248" text-anchor="middle" dominant-baseline="central">연장+야간: 2.0배 | 휴일+연장+야간: 2.5배</text>
+</g>
+
+<line x1="340" y1="266" x2="340" y2="296" class="arr" marker-end="url(#a1)"/>
+
+<g class="box-gray">
+<rect x="120" y="296" width="440" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="318" text-anchor="middle" dominant-baseline="central">월 합계 = (연장+야간+휴일) × 4.345</text>
+</g>
+
+<rect class="bg-rect" x="40" y="370" width="600" height="90" rx="8" stroke-width="0.5"/>
+<text class="bg-th" x="340" y="392" text-anchor="middle">5인 미만 사업장은 가산 없음</text>
+<text class="bg-text" x="340" y="414" text-anchor="middle">연장수당 = 시급 × 시간 × 1.0 (가산 0%)</text>
+<text class="bg-text" x="340" y="432" text-anchor="middle">야간수당 = 0원 | 휴일수당 = 시급 × 시간 × 1.0</text>
+</svg>
+</div>
+
+<!-- STEP 2: 평균임금 -->
+<div class="step" id="s2">
+<div class="info-bar">
+<h2>Step 3. 평균임금 — 퇴직금·휴업수당·실업급여의 기초</h2>
+<p>근로기준법 제2조, 시행령 제2조</p>
+</div>
+<svg viewBox="0 0 680 460">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="box-teal">
+<rect x="40" y="20" width="185" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="132" y="42" text-anchor="middle" dominant-baseline="central">A. 3개월 평균임금</text>
+<text class="ts" x="132" y="60" text-anchor="middle" dominant-baseline="central">3개월 임금총액</text>
+<text class="ts" x="132" y="76" text-anchor="middle" dominant-baseline="central">÷ 산정일수(92일)</text>
+</g>
+<g class="box-teal">
+<rect x="247" y="20" width="186" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">B. 1년 평균임금</text>
+<text class="ts" x="340" y="60" text-anchor="middle" dominant-baseline="central">12개월 임금합계</text>
+<text class="ts" x="340" y="76" text-anchor="middle" dominant-baseline="central">÷ 365일</text>
+</g>
+<g class="box-teal">
+<rect x="455" y="20" width="185" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="547" y="42" text-anchor="middle" dominant-baseline="central">C. 통상임금 환산</text>
+<text class="ts" x="547" y="60" text-anchor="middle" dominant-baseline="central">통상시급</text>
+<text class="ts" x="547" y="76" text-anchor="middle" dominant-baseline="central">× 1일 소정시간</text>
+</g>
+
+<line x1="132" y1="96" x2="280" y2="130" class="arr" marker-end="url(#a2)"/>
+<line x1="340" y1="96" x2="340" y2="130" class="arr" marker-end="url(#a2)"/>
+<line x1="547" y1="96" x2="400" y2="130" class="arr" marker-end="url(#a2)"/>
+
+<g class="box-coral">
+<rect x="180" y="130" width="320" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="150" text-anchor="middle" dominant-baseline="central">유리한 원칙</text>
+<text class="ts" x="340" y="168" text-anchor="middle" dominant-baseline="central">적용 평균임금 = max(A, B, C)</text>
+</g>
+
+<text class="bg-text" x="340" y="216" text-anchor="middle" font-size="12">3개월 임금총액에 포함되는 항목:</text>
+
+<rect class="bg-rect" x="60" y="230" width="560" height="90" rx="8" stroke-width="0.5"/>
+<text class="bg-text" x="340" y="252" text-anchor="middle">최근 3개월 임금 합계</text>
+<text class="bg-text" x="340" y="272" text-anchor="middle">+ 연간 상여금 × 3/12 (3개월분 안분)</text>
+<text class="bg-text" x="340" y="292" text-anchor="middle">+ 미사용 연차수당 × 3/12 (3개월분 안분)</text>
+<text class="bg-text" x="340" y="312" text-anchor="middle">- 업무상 부상, 출산휴가, 사용자귀책 휴업기간 제외</text>
+
+<text class="bg-th" x="340" y="352" text-anchor="middle">이 평균임금이 아래 계산기들의 입력이 됩니다</text>
+
+<line x1="180" y1="370" x2="115" y2="400" class="arr" marker-end="url(#a2)"/>
+<line x1="340" y1="370" x2="340" y2="400" class="arr" marker-end="url(#a2)"/>
+<line x1="500" y1="370" x2="565" y2="400" class="arr" marker-end="url(#a2)"/>
+
+<g class="box-purple">
+<rect x="55" y="400" width="120" height="40" rx="8" stroke-width="0.5"/>
+<text class="th" x="115" y="420" text-anchor="middle" dominant-baseline="central">퇴직금</text>
+</g>
+<g class="box-purple">
+<rect x="280" y="400" width="120" height="40" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="420" text-anchor="middle" dominant-baseline="central">휴업수당</text>
+</g>
+<g class="box-purple">
+<rect x="505" y="400" width="120" height="40" rx="8" stroke-width="0.5"/>
+<text class="th" x="565" y="420" text-anchor="middle" dominant-baseline="central">실업급여</text>
+</g>
+</svg>
+</div>
+
+<!-- STEP 3: 퇴직금 -->
+<div class="step" id="s3">
+<div class="info-bar">
+<h2>Step 4. 퇴직금 산정</h2>
+<p>근로자퇴직급여보장법 제8조</p>
+</div>
+<svg viewBox="0 0 680 400">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="box-gray">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">발생 조건: 계속근로일수 ≥ 365일</text>
+</g>
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#a3)"/>
+
+<g class="box-coral">
+<rect x="120" y="94" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="114" text-anchor="middle" dominant-baseline="central">적용 평균임금 (Step 3에서 산출)</text>
+<text class="ts" x="340" y="132" text-anchor="middle" dominant-baseline="central">= max(3개월 평균, 1년 평균, 통상임금환산)</text>
+</g>
+<line x1="340" y1="150" x2="340" y2="180" class="arr" marker-end="url(#a3)"/>
+
+<g class="box-purple">
+<rect x="100" y="180" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="204" text-anchor="middle" dominant-baseline="central">퇴직금 = 적용 평균임금 × 30일 × (근속일수 ÷ 365)</text>
+<text class="ts" x="340" y="228" text-anchor="middle" dominant-baseline="central">예: 96,000원/일, 근속 1,096일</text>
+<text class="ts" x="340" y="244" text-anchor="middle" dominant-baseline="central">= 96,000 × 30 × (1096÷365) = 8,647,890원</text>
+</g>
+<line x1="340" y1="256" x2="340" y2="290" class="arr" marker-end="url(#a3)"/>
+
+<g class="box-blue">
+<rect x="140" y="290" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="314" text-anchor="middle" dominant-baseline="central">IRP 이체 (2022.4.14 이후)</text>
+<text class="ts" x="340" y="332" text-anchor="middle" dominant-baseline="central">세전 전액 IRP 계좌로 지급</text>
+<text class="ts" x="340" y="348" text-anchor="middle" dominant-baseline="central">퇴직소득세는 인출 시 원천징수</text>
+</g>
+</svg>
+</div>
+
+<!-- STEP 4: 세금·실수령 -->
+<div class="step" id="s4">
+<div class="info-bar">
+<h2>Step 5. 4대보험·소득세 → 실수령액</h2>
+<p>2026년 기준 요율</p>
+</div>
+<svg viewBox="0 0 680 520">
+<defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="box-gray">
+<rect x="220" y="20" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">월 총 급여</text>
+</g>
+
+<line x1="260" y1="64" x2="160" y2="100" class="arr" marker-end="url(#a4)"/>
+<line x1="420" y1="64" x2="520" y2="100" class="arr" marker-end="url(#a4)"/>
+
+<g class="box-blue">
+<rect x="40" y="100" width="240" height="160" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="124" text-anchor="middle" dominant-baseline="central">4대보험 (근로자)</text>
+<text class="ts" x="160" y="148" text-anchor="middle" dominant-baseline="central">국민연금: 4.75%</text>
+<text class="ts" x="160" y="168" text-anchor="middle" dominant-baseline="central">건강보험: 3.595%</text>
+<text class="ts" x="160" y="188" text-anchor="middle" dominant-baseline="central">장기요양: 건보 × 13.14%</text>
+<text class="ts" x="160" y="208" text-anchor="middle" dominant-baseline="central">고용보험: 0.9%</text>
+<text class="ts" x="160" y="236" text-anchor="middle" dominant-baseline="central">약 9.4% 수준</text>
+</g>
+
+<g class="box-amber">
+<rect x="400" y="100" width="240" height="160" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="124" text-anchor="middle" dominant-baseline="central">근로소득세</text>
+<text class="ts" x="520" y="148" text-anchor="middle" dominant-baseline="central">연간 급여 환산</text>
+<text class="ts" x="520" y="168" text-anchor="middle" dominant-baseline="central">- 근로소득공제</text>
+<text class="ts" x="520" y="188" text-anchor="middle" dominant-baseline="central">- 인적·특별공제</text>
+<text class="ts" x="520" y="208" text-anchor="middle" dominant-baseline="central">누진세율 6~45%</text>
+<text class="ts" x="520" y="236" text-anchor="middle" dominant-baseline="central">+ 지방소득세 10%</text>
+</g>
+
+<line x1="160" y1="260" x2="260" y2="300" class="arr" marker-end="url(#a4)"/>
+<line x1="520" y1="260" x2="420" y2="300" class="arr" marker-end="url(#a4)"/>
+
+<g class="box-coral">
+<rect x="140" y="300" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="320" text-anchor="middle" dominant-baseline="central">총 공제 = 4대보험 + 소득세 + 지방소득세</text>
+<text class="ts" x="340" y="340" text-anchor="middle" dominant-baseline="central">월 실수령액 = 월 총 급여 − 총 공제</text>
+</g>
+
+<line x1="340" y1="356" x2="340" y2="390" class="arr" marker-end="url(#a4)"/>
+
+<rect class="bg-rect" x="100" y="390" width="480" height="110" rx="8" stroke-width="0.5"/>
+<text class="bg-th" x="340" y="414" text-anchor="middle">프리랜서 (3.3% 원천징수)</text>
+<text class="bg-text" x="340" y="438" text-anchor="middle">소득세 3.0% + 지방소득세 0.3% = 3.3%</text>
+<text class="bg-text" x="340" y="458" text-anchor="middle">실수령 = 급여 × 96.7%</text>
+<text class="bg-text" x="340" y="478" text-anchor="middle">4대보험 미적용</text>
+</svg>
+</div>
+
+<script>
+function show(n) {
+  for (var i = 0; i < 5; i++) {
+    document.getElementById('s' + i).classList.toggle('active', i === n);
+    document.querySelectorAll('.tabs button')[i].classList.toggle('active', i === n);
+  }
+}
+</script>
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>
+

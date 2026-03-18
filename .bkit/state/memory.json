@@ -1,0 +1,32 @@
+{
+  "rag-flow-quality-improvement": {
+    "phase": "archived",
+    "matchRate": 99,
+    "iterationCount": 0,
+    "startedAt": "2026-03-18T00:00:00Z",
+    "archivedAt": "2026-03-18T00:00:00Z",
+    "archivedTo": "docs/archive/2026-03/rag-flow-quality-improvement/"
+  },
+  "calculator-flow-menu": {
+    "phase": "archived",
+    "matchRate": 97,
+    "iterationCount": 0,
+    "startedAt": "2026-03-18T00:00:00Z",
+    "archivedAt": "2026-03-18T00:00:00Z",
+    "archivedTo": "docs/archive/2026-03/calculator-flow-menu/"
+  },
+  "chatbot-main-page": {
+    "phase": "archived",
+    "matchRate": 97,
+    "iterationCount": 0,
+    "startedAt": "2026-03-18T00:00:00Z",
+    "archivedAt": "2026-03-18T00:00:00Z",
+    "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
+  },
+  "sessionCount": 2,
+  "lastSession": {
+    "startedAt": "2026-03-18T07:10:42.840Z",
+    "platform": "claude",
+    "level": "Dynamic"
+  }
+}

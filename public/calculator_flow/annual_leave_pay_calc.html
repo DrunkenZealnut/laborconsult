@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">발생일수 산정</button>
+<button onclick="showTab(2)" id="t2">2년차 차감</button>
+<button onclick="showTab(3)" id="t3">단시간·사용촉진</button>
+<button onclick="showTab(4)" id="t4">수당 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">연차수당 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제60조, 제61조, 제18조 제3항</p>
+</div>
+<svg width="100%" viewBox="0 0 680 720">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">연차유급휴가를 쓰지 않으면 수당으로 정산 — 5인 이상 사업장만 적용</text>
+
+<!-- Step 1 -->
+<g class="c-teal">
+<rect x="120" y="72" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 근속연수 확인</text>
+<text class="ts" x="340" y="110" text-anchor="middle" dominant-baseline="central">입사일 기준으로 만 몇 년 근속했는지</text>
+</g>
+<line x1="340" y1="128" x2="340" y2="158" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-purple">
+<rect x="80" y="158" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="180" text-anchor="middle" dominant-baseline="central">Step 2. 연차 발생일수 산정</text>
+<text class="ts" x="340" y="200" text-anchor="middle" dominant-baseline="central">1년 미만: 매월 1일 (최대 11일)</text>
+<text class="ts" x="340" y="218" text-anchor="middle" dominant-baseline="central">1년↑: 15일 + 2년마다 1일 가산 (최대 25일) → "발생일수" 탭</text>
+</g>
+<line x1="340" y1="234" x2="340" y2="264" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-amber">
+<rect x="120" y="264" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="284" text-anchor="middle" dominant-baseline="central">Step 3. 단시간 근로자 비례 (해당시)</text>
+<text class="ts" x="340" y="302" text-anchor="middle" dominant-baseline="central">주 소정 ÷ 40 × 8 ÷ 1일 소정 → "단시간" 탭</text>
+</g>
+<line x1="340" y1="320" x2="340" y2="350" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4 -->
+<g class="c-gray">
+<rect x="120" y="350" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="372" text-anchor="middle" dominant-baseline="central">Step 4. 2년차 차감 적용 (해당시)</text>
+<text class="ts" x="340" y="392" text-anchor="middle" dominant-baseline="central">2년차 연차 = 기본 발생일수 − 1년차 사용일수</text>
+<text class="ts" x="340" y="410" text-anchor="middle" dominant-baseline="central">→ "2년차 차감" 탭에서 상세 확인</text>
+</g>
+<line x1="340" y1="426" x2="340" y2="456" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-coral">
+<rect x="120" y="456" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="476" text-anchor="middle" dominant-baseline="central">Step 5. 사용촉진 절차 확인</text>
+<text class="ts" x="340" y="494" text-anchor="middle" dominant-baseline="central">제61조 절차 완료 시 → 미사용 수당 0원</text>
+</g>
+<line x1="340" y1="512" x2="340" y2="542" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<g class="c-purple">
+<rect x="80" y="542" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="564" text-anchor="middle" dominant-baseline="central">Step 6. 미사용 연차수당 산출</text>
+<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="596" text-anchor="middle" dominant-baseline="central">미사용 연차수당 = 통상시급 × 8시간 × 미사용 일수</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="618" x2="340" y2="648" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="648" width="560" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="670" text-anchor="middle">예시: 시급 12,000원, 미사용 5일</text>
+<text class="ts" x="340" y="690" text-anchor="middle">= 12,000 × 8 × 5 = 480,000원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 발생일수 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">연차 발생일수 — 근속연수별 산정</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제60조 | 입사일 기준</p>
+</div>
+<svg width="100%" viewBox="0 0 680 400">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 1년 미만 -->
+<g class="c-amber">
+<rect x="40" y="20" width="290" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="44" text-anchor="middle" dominant-baseline="central">1년 미만</text>
+<text class="ts" x="185" y="68" text-anchor="middle" dominant-baseline="central">매월 개근 시 1일씩 발생</text>
+<text class="ts" x="185" y="88" text-anchor="middle" dominant-baseline="central">최대 11일 (12개월 − 1)</text>
+<text class="ts" x="185" y="108" text-anchor="middle" dominant-baseline="central">출근율에 비례</text>
+</g>
+
+<!-- 1년 이상 -->
+<g class="c-teal">
+<rect x="350" y="20" width="290" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="44" text-anchor="middle" dominant-baseline="central">1년 이상</text>
+<text class="ts" x="495" y="68" text-anchor="middle" dominant-baseline="central">기본 15일 (출근율 ≥ 80%)</text>
+<text class="ts" x="495" y="88" text-anchor="middle" dominant-baseline="central">2년마다 +1일 가산</text>
+<text class="ts" x="495" y="108" text-anchor="middle" dominant-baseline="central">상한: 25일</text>
+</g>
+
+<!-- 공식 -->
+<rect x="40" y="140" width="600" height="44" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="160" text-anchor="middle">공식: 발생일수 = 15 + min(⌊(근속연수−1) ÷ 2⌋, 10)</text>
+<text class="ts" x="340" y="178" text-anchor="middle">2년마다 1일씩, 최대 +10일까지</text>
+</svg>
+
+<!-- 연수별 테이블 -->
+<div style="overflow-x:auto;margin-top:12px">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead>
+<tr style="border-bottom:1.5px solid var(--color-border-secondary)">
+<th style="text-align:left;padding:8px 6px;color:var(--color-text-secondary);font-weight:500">근속</th>
+<th style="text-align:center;padding:8px 6px;color:var(--color-text-secondary);font-weight:500">발생일수</th>
+<th style="text-align:left;padding:8px 6px;color:var(--color-text-secondary);font-weight:500">산출근거</th>
+</tr>
+</thead>
+<tbody id="yearTable"></tbody>
+</table>
+</div>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-top:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출근율 80% 미만이면?</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">해당 연도의 연차 발생일수가 0일이 됩니다. 단, 1년 미만 기간의 월별 연차는 별도 판단합니다.</p>
+</div>
+</div>
+
+<!-- TAB 2: 2년차 차감 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">2년차 차감 — 가장 혼동되는 규칙</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제60조 제3항 | 1년차에 쓴 연차가 2년차에서 빠진다</p>
+</div>
+<svg width="100%" viewBox="0 0 680 560">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="340" y="24" text-anchor="middle">왜 차감하는가?</text>
+<rect x="40" y="38" width="600" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="58" text-anchor="middle">1년차(매월 1일씩 최대 11일)와 2년차(기본 15일)가 중복 발생하므로</text>
+<text class="ts" x="340" y="78" text-anchor="middle">1년차에 사용한 일수만큼 2년차에서 차감하여 중복 방지</text>
+
+<line x1="340" y1="94" x2="340" y2="124" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-coral">
+<rect x="100" y="124" width="480" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="144" text-anchor="middle" dominant-baseline="central">차감 공식</text>
+<text class="ts" x="340" y="164" text-anchor="middle" dominant-baseline="central">2년차 연차 = max(0, 기본 15일 − 1년차 사용일수)</text>
+</g>
+
+<line x1="340" y1="180" x2="340" y2="210" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-amber">
+<rect x="140" y="210" width="400" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="232" text-anchor="middle" dominant-baseline="central">단, 1년차 사용 최대 11일까지만 차감</text>
+</g>
+
+<!-- 사례 비교 -->
+<rect x="40" y="280" width="290" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="304" text-anchor="middle">사례 A: 1년차 3일 사용</text>
+<text class="ts" x="60" y="330">1년차 발생: 11일, 사용: 3일</text>
+<text class="ts" x="60" y="350">잔여 미사용: 8일 → 수당 정산</text>
+<text class="ts" x="60" y="378">2년차 연차 = 15 − 3 = 12일</text>
+<text style="font-size:12px;fill:var(--color-text-success);font-weight:500" x="60" y="400">총 확보: 8일(수당) + 12일(새연차)</text>
+
+<rect x="350" y="280" width="290" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="304" text-anchor="middle">사례 B: 1년차 11일 전부 사용</text>
+<text class="ts" x="370" y="330">1년차 발생: 11일, 사용: 11일</text>
+<text class="ts" x="370" y="350">잔여 미사용: 0일 → 수당 없음</text>
+<text class="ts" x="370" y="378">2년차 연차 = 15 − 11 = 4일</text>
+<text style="font-size:12px;fill:var(--color-text-warning);font-weight:500" x="370" y="400">총 확보: 0일(수당) + 4일(새연차)</text>
+
+<rect x="40" y="450" width="290" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="474" text-anchor="middle">사례 C: 1년차 0일 사용</text>
+<text class="ts" x="60" y="500">미사용: 11일 → 수당 정산</text>
+<text class="ts" x="60" y="520">2년차 연차 = 15 − 0 = 15일(풀)</text>
+
+<rect x="350" y="450" width="290" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="474" text-anchor="middle">핵심 포인트</text>
+<text class="ts" x="370" y="500">1년차에 많이 쓸수록</text>
+<text class="ts" x="370" y="520">2년차 연차가 줄어드는 구조</text>
+</svg>
+</div>
+
+<!-- TAB 3: 단시간·사용촉진 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">단시간 근로자 비례 & 사용촉진 제도</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">제18조 제3항, 제61조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 540">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 단시간 비례 -->
+<text class="th" x="340" y="24" text-anchor="middle">단시간 근로자 비례 산정 (제18조 제3항)</text>
+
+<g class="c-purple">
+<rect x="60" y="44" width="560" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="66" text-anchor="middle" dominant-baseline="central">비례 계수 = (주 소정근로 ÷ 40) × (8 ÷ 1일 소정근로)</text>
+<text class="ts" x="340" y="88" text-anchor="middle" dominant-baseline="central">발생일수 = 정규직 발생일수 × 비례 계수 (소수점 이하 절사)</text>
+<text class="ts" x="340" y="106" text-anchor="middle" dominant-baseline="central">주 15h 미만: 0일 (연차 미발생)</text>
+</g>
+
+<!-- 예시 -->
+<rect x="40" y="140" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="164" text-anchor="middle">예시: 주 20시간, 1일 4시간, 근속 2년 (정규직 기준 15일)</text>
+<text class="ts" x="340" y="190" text-anchor="middle">비례 계수 = (20 ÷ 40) × (8 ÷ 4) = 0.5 × 2 = 1.0</text>
+<text class="ts" x="340" y="210" text-anchor="middle">발생일수 = 15 × 1.0 = 15일 (동일하게 발생!)</text>
+<text class="ts" x="340" y="230" text-anchor="middle">단, 1일 유급시간은 4시간이므로 수당은 절반</text>
+
+<!-- 구분선 -->
+<line x1="40" y1="266" x2="640" y2="266" stroke="var(--b)" stroke-width="0.5" stroke-dasharray="4 4"/>
+
+<!-- 사용촉진 -->
+<text class="th" x="340" y="294" text-anchor="middle">연차 사용촉진 제도 (제61조)</text>
+
+<g class="c-gray">
+<rect x="200" y="310" width="280" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="332" text-anchor="middle" dominant-baseline="central">사용촉진 절차 완료했는가?</text>
+</g>
+
+<line x1="240" y1="354" x2="160" y2="390" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="186" y="368">미완료</text>
+<line x1="440" y1="354" x2="520" y2="390" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="494" y="368">완료</text>
+
+<g>
+<rect x="60" y="390" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="160" y="410" text-anchor="middle" dominant-baseline="central">수당 지급 의무</text>
+<text style="font-size:12px;fill:#085041" x="160" y="430" text-anchor="middle" dominant-baseline="central">시급 × 8h × 미사용일수</text>
+</g>
+
+<g>
+<rect x="420" y="390" width="200" height="56" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#633806;font-weight:500" x="520" y="410" text-anchor="middle" dominant-baseline="central">수당 지급 면제</text>
+<text style="font-size:12px;fill:#633806" x="520" y="430" text-anchor="middle" dominant-baseline="central">미사용 수당 = 0원</text>
+</g>
+
+<!-- 촉진 절차 요약 -->
+<rect x="40" y="470" width="600" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="490" text-anchor="middle">사용촉진 절차 (2단계)</text>
+<text class="ts" x="340" y="512" text-anchor="middle">① 만료 6개월 전: 미사용일수 통보 + 사용 시기 지정 촉구 → ② 10일 이내 미지정 시: 회사가 사용 시기 지정</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">연차수당 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근속연수와 사용일수를 입력하면 발생·잔여·수당을 실시간 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">통상시급</label>
+<input type="range" min="8000" max="30000" value="12000" step="500" id="wage" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="wageOut">12,000원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">근속연수</label>
+<input type="range" min="0" max="25" value="3" step="1" id="years" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="yearsOut">3년</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">사용일수</label>
+<input type="range" min="0" max="25" value="5" step="1" id="used" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="usedOut">5일</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">사용촉진</label>
+<button id="btnNo" onclick="setPromo(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">미완료 (수당 지급)</button>
+<button id="btnYes" onclick="setPromo(true);calc()">완료 (지급 면제)</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">근로 유형</label>
+<button id="btnFull" onclick="setPartTime(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">정규직 (주40h)</button>
+<button id="btnPart" onclick="setPartTime(true);calc()">단시간</button>
+</div>
+</div>
+
+<!-- 단시간 추가 입력 -->
+<div id="partTimeInputs" style="display:none;margin-bottom:16px">
+<div style="display:flex;flex-direction:column;gap:12px;padding:12px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-primary);margin:0">단시간 근로 조건</p>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">주 소정근로</label>
+<input type="range" min="15" max="39" value="20" step="1" id="ptWeekly" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="ptWeeklyOut">20h</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">1일 소정근로</label>
+<input type="range" min="3" max="8" value="4" step="0.5" id="ptDaily" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="ptDailyOut">4h</span>
+</div>
+</div>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">발생일수</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="genDays">0일</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="genNote"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">사용일수</p>
+<p style="font-size:18px;font-weight:500;margin:0" id="usedDays">0일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">미사용일수</p>
+<p style="font-size:18px;font-weight:500;margin:0;color:var(--color-text-warning)" id="unusedDays">0일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">미사용 수당</p>
+<p style="font-size:18px;font-weight:500;margin:0;color:var(--color-text-info)" id="payAmt">0원</p>
+</div>
+</div>
+
+<!-- 연수별 발생일수 그래프 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">근속연수별 발생일수</p>
+<div style="position:relative;height:160px"><canvas id="chart"></canvas></div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var promo=false, partTime=false, myChart=null;
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setPromo(v){promo=v;setBtn('btnNo',!v);setBtn('btnYes',v);}
+function setPartTime(v){partTime=v;setBtn('btnFull',!v);setBtn('btnPart',v);document.getElementById('partTimeInputs').style.display=v?'block':'none';}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function getDays(y){
+  if(y<1)return Math.min(y*12,11);
+  return Math.min(15+Math.floor((y-1)/2),25);
+}
+
+function buildYearTable(){
+  var tb=document.getElementById('yearTable');
+  var rows='';
+  var data=[
+    ['1년 미만','최대 11일','매월 개근 시 1일 (출근율 비례)'],
+    ['1~2년','15일','기본 발생'],
+    ['3~4년','16일','15 + ⌊(3−1)÷2⌋ = 15+1'],
+    ['5~6년','17일','15 + ⌊(5−1)÷2⌋ = 15+2'],
+    ['7~8년','18일','15 + 3'],
+    ['9~10년','19일','15 + 4'],
+    ['11~12년','20일','15 + 5'],
+    ['13~14년','21일','15 + 6'],
+    ['15~16년','22일','15 + 7'],
+    ['17~18년','23일','15 + 8'],
+    ['19~20년','24일','15 + 9'],
+    ['21년+','25일 (상한)','15 + 10 (최대)']
+  ];
+  data.forEach(function(r,i){
+    var bg=i===data.length-1?'var(--color-background-info)':'transparent';
+    rows+='<tr style="border-bottom:0.5px solid var(--color-border-tertiary);background:'+bg+'"><td style="padding:6px;font-weight:500">'+r[0]+'</td><td style="padding:6px;text-align:center;font-weight:500;color:var(--color-text-info)">'+r[1]+'</td><td style="padding:6px;font-size:12px;color:var(--color-text-secondary)">'+r[2]+'</td></tr>';
+  });
+  tb.innerHTML=rows;
+}
+buildYearTable();
+
+function calc(){
+  var w=parseInt(document.getElementById('wage').value);
+  var y=parseInt(document.getElementById('years').value);
+  var used=parseInt(document.getElementById('used').value);
+  document.getElementById('wageOut').textContent=fmt(w)+'원';
+  document.getElementById('yearsOut').textContent=y+'년';
+  document.getElementById('usedOut').textContent=used+'일';
+
+  // 발생일수
+  var baseDays;
+  if(y<1){baseDays=11;}
+  else{baseDays=Math.min(15+Math.floor((y-1)/2),25);}
+
+  // 단시간 비례
+  var ratio=1;
+  var ratioNote='정규직';
+  var paidH=8;
+  if(partTime){
+    var ptW=parseInt(document.getElementById('ptWeekly').value);
+    var ptD=parseFloat(document.getElementById('ptDaily').value);
+    document.getElementById('ptWeeklyOut').textContent=ptW+'h';
+    document.getElementById('ptDailyOut').textContent=ptD+'h';
+    ratio=(ptW/40)*(8/ptD);
+    ratioNote='비례계수 '+ratio.toFixed(2);
+    paidH=ptD;
+    baseDays=Math.floor(baseDays*ratio);
+  }
+
+  // 사용일수 제한
+  var actualUsed=Math.min(used,baseDays);
+  var unused=Math.max(0,baseDays-actualUsed);
+
+  // 수당
+  var pay=0;
+  if(!promo){pay=w*paidH*unused;}
+
+  document.getElementById('genDays').textContent=baseDays+'일';
+  document.getElementById('genNote').textContent=ratioNote;
+  document.getElementById('usedDays').textContent=actualUsed+'일';
+  document.getElementById('unusedDays').textContent=unused+'일';
+  document.getElementById('payAmt').textContent=fmt(pay)+'원';
+
+  // 산식
+  var fl=['<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>'];
+  if(y<1){
+    fl.push('<p style="margin:2px 0">1년 미만 → 매월 1일, 최대 11일</p>');
+  } else {
+    fl.push('<p style="margin:2px 0">발생일수 = 15 + min(⌊('+y+'−1)÷2⌋, 10) = '+Math.min(15+Math.floor((y-1)/2),25)+'일</p>');
+  }
+  if(partTime){
+    fl.push('<p style="margin:2px 0">단시간 비례: 비례계수 = '+ratio.toFixed(2)+' → '+baseDays+'일</p>');
+  }
+  fl.push('<p style="margin:2px 0">미사용 = '+baseDays+' − '+actualUsed+' = '+unused+'일</p>');
+  if(promo){
+    fl.push('<p style="margin:2px 0;color:var(--color-text-warning)">사용촉진 완료 → 수당 지급 면제 (0원)</p>');
+  } else {
+    fl.push('<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">수당 = '+fmt(w)+'원 × '+paidH+'h × '+unused+'일 = '+fmt(pay)+'원</p>');
+  }
+  document.getElementById('formula').innerHTML=fl.join('');
+
+  // 차트
+  drawChart(y);
+}
+
+function drawChart(currentY){
+  if(myChart){myChart.destroy();}
+  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
+  var txtC=dark?'#9c9a92':'#73726c';
+
+  var labels=[];var data=[];var bgColors=[];
+  for(var i=1;i<=25;i++){
+    labels.push(i+'년');
+    var d=Math.min(15+Math.floor((i-1)/2),25);
+    data.push(d);
+    bgColors.push(i===currentY?'#378ADD':'rgba(55,138,221,0.25)');
+  }
+
+  var ctx=document.getElementById('chart').getContext('2d');
+  myChart=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:'발생일수',data:data,backgroundColor:bgColors,borderRadius:4,barPercentage:0.7}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:9,family:'Anthropic Sans,sans-serif'},color:txtC,maxTicksLimit:13}},
+        y:{grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,stepSize:5},beginAtZero:true,max:28}
+      }
+    }
+  });
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<5;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===4)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

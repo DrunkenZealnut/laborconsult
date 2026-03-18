@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>임금계산기 흐름도 — AI 노동상담</title>
+<style>
+  :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --sidebar-w: 280px; --accent-hover: #eff6ff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent-hover: #1e3a5f; }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Header ── */
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header .back-link { font-size: 13px; color: var(--primary); text-decoration: none; margin-left: auto; }
+  header .back-link:hover { text-decoration: underline; }
+
+  /* ── Main layout ── */
+  .layout { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: var(--sidebar-w); flex-shrink: 0; background: var(--card); border-right: 1px solid var(--border); overflow-y: auto; padding: 12px 0; }
+  .sidebar .cat-label { font-size: 12px; font-weight: 600; color: var(--muted); padding: 12px 16px 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+  .sidebar .cat-label .cat-icon { font-size: 14px; }
+  .sidebar .menu-item { display: block; padding: 8px 16px 8px 28px; font-size: 14px; color: var(--text); text-decoration: none; cursor: pointer; border-left: 3px solid transparent; transition: background 0.15s, border-color 0.15s; }
+  .sidebar .menu-item:hover { background: var(--accent-hover); }
+  .sidebar .menu-item.active { background: var(--accent-hover); border-left-color: var(--primary); font-weight: 600; color: var(--primary); }
+  .sidebar .menu-item .item-desc { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; font-weight: 400; }
+  .sidebar .divider { height: 1px; background: var(--border); margin: 8px 16px; }
+
+  /* ── Viewer ── */
+  .viewer { flex: 1; display: flex; flex-direction: column; }
+  .viewer iframe { flex: 1; border: none; width: 100%; }
+  .viewer .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); gap: 12px; }
+  .viewer .empty-state .empty-icon { font-size: 48px; opacity: 0.4; }
+  .viewer .empty-state p { font-size: 15px; }
+  .viewer .empty-state .empty-sub { font-size: 13px; }
+
+  /* ── Mobile ── */
+  @media (max-width: 768px) {
+    .sidebar { width: 100%; border-right: none; }
+    .layout { flex-direction: column; }
+    .layout.viewing .sidebar { display: none; }
+    .layout.viewing .viewer { display: flex; }
+    .layout:not(.viewing) .viewer { display: none; }
+    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); font-size: 14px; color: var(--primary); cursor: pointer; font-weight: 600; }
+    .mobile-back svg { width: 16px; height: 16px; }
+  }
+  @media (min-width: 769px) {
+    .mobile-back { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>임금계산기 흐름도</h1>
+  <a href="/" class="back-link">← 챗봇으로 돌아가기</a>
+</header>
+
+<div class="layout" id="layout">
+  <!-- Sidebar Menu -->
+  <nav class="sidebar" id="sidebar">
+
+    <div class="cat-label"><span class="cat-icon">📊</span> 전체 구조</div>
+    <a class="menu-item" data-src="calculator_flow/wage_calculator_dependency_map.html">
+      계산기 의존관계 맵
+      <span class="item-desc">25개 계산기 간 연결 구조</span>
+    </a>
+
+    <div class="divider"></div>
+
+    <div class="cat-label"><span class="cat-icon">💰</span> 기본 임금</div>
+    <a class="menu-item" data-src="calculator_flow/ordinary_wage_calculation_flow.html">
+      통상임금 계산
+      <span class="item-desc">모든 수당의 기초 — 핵심 5단계</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/average_wage_calculation_flow.html">
+      평균임금 계산
+      <span class="item-desc">퇴직금·휴업수당 산출 기초</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/minimum_wage_verification_flow.html">
+      최저임금 검증
+      <span class="item-desc">시급 환산 + 위반 여부 판단</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/comprehensive_wage_reverse_calc.html">
+      포괄임금제 역산
+      <span class="item-desc">고정 월급 → 실제 수당 분해</span>
+    </a>
+
+    <div class="divider"></div>
+
+    <div class="cat-label"><span class="cat-icon">⏰</span> 수당 계산</div>
+    <a class="menu-item" data-src="calculator_flow/overtime_night_holiday_pay_calc.html">
+      연장·야간·휴일수당
+      <span class="item-desc">근로기준법 제56조 가산율 적용</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/weekly_holiday_pay_calc.html">
+      주휴수당
+      <span class="item-desc">주 15시간 이상 근로 시 지급</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/annual_leave_pay_calc.html">
+      연차수당
+      <span class="item-desc">미사용 연차 보상 계산</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/compensatory_leave_calc.html">
+      보상휴가
+      <span class="item-desc">연장·휴일근로 대체 휴가 환산</span>
+    </a>
+
+    <div class="divider"></div>
+
+    <div class="cat-label"><span class="cat-icon">🏢</span> 퇴직·해고</div>
+    <a class="menu-item" data-src="calculator_flow/severance_pay_calculation_flow.html">
+      퇴직금 계산
+      <span class="item-desc">1년 이상 근속 시 지급</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/dismissal_notice_pay_calc.html">
+      해고예고수당
+      <span class="item-desc">30일 전 통보 미이행 시</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/shutdown_allowance_calc.html">
+      휴업수당
+      <span class="item-desc">사용자 귀책사유 휴업 시 70%</span>
+    </a>
+
+    <div class="divider"></div>
+
+    <div class="cat-label"><span class="cat-icon">🛡️</span> 보험·세금·연금</div>
+    <a class="menu-item" data-src="calculator_flow/insurance_income_tax_calc.html">
+      4대보험·소득세
+      <span class="item-desc">국민연금·건강·고용·산재 + 소득세</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/employer_insurance_burden_calc.html">
+      사업주 보험부담금
+      <span class="item-desc">고용주가 부담하는 4대보험료</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/retirement_income_tax_calc.html">
+      퇴직소득세
+      <span class="item-desc">근속연수 공제 + 세율 적용</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/eitc_calculation_flow.html">
+      근로장려금(EITC)
+      <span class="item-desc">저소득 근로자 세금 환급</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/retirement_pension_db_dc_calc.html">
+      퇴직연금 DB/DC
+      <span class="item-desc">확정급여 vs 확정기여 비교</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/wage_arrears_interest_calc.html">
+      임금체불 지연이자
+      <span class="item-desc">연 20% 지연이자 산정</span>
+    </a>
+
+    <div class="divider"></div>
+
+    <div class="cat-label"><span class="cat-icon">👶</span> 휴직·급여</div>
+    <a class="menu-item" data-src="calculator_flow/maternity_leave_benefit_flow.html">
+      출산휴가급여
+      <span class="item-desc">90일(다태 120일) 급여 산정</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/parental_leave_benefit_calculator.html">
+      육아휴직급여
+      <span class="item-desc">통상임금 80% (상한 150만원)</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/unemployment_benefit_calc.html">
+      실업급여
+      <span class="item-desc">이직일 전 평균임금 × 60%</span>
+    </a>
+
+    <div class="divider"></div>
+
+    <div class="cat-label"><span class="cat-icon">⚙️</span> 근로조건</div>
+    <a class="menu-item" data-src="calculator_flow/flexible_work_hours_calc.html">
+      탄력근무 시간계산
+      <span class="item-desc">2주/3개월 단위 평균 근로시간</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/mid_month_proration_calc.html">
+      중도입퇴사 일할계산
+      <span class="item-desc">월 중간 입·퇴사 급여 정산</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/business_size_worker_count_v3.html">
+      사업장 규모 판단
+      <span class="item-desc">상시근로자수 산정 기준</span>
+    </a>
+    <a class="menu-item" data-src="calculator_flow/industrial_accident_compensation_calc.html">
+      산업재해 보상
+      <span class="item-desc">요양·휴업·장해·유족급여</span>
+    </a>
+
+  </nav>
+
+  <!-- Viewer -->
+  <div class="viewer" id="viewer">
+    <div class="mobile-back" id="mobileBack" onclick="closeViewer()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      목록으로 돌아가기
+    </div>
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">📐</div>
+      <p>좌측 메뉴에서 계산기를 선택하세요</p>
+      <p class="empty-sub">각 계산기의 단계별 흐름을 시각적으로 확인할 수 있습니다</p>
+    </div>
+    <iframe id="calcFrame" style="display:none;" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+</div>
+
+<script>
+const items = document.querySelectorAll('.menu-item');
+const frame = document.getElementById('calcFrame');
+const empty = document.getElementById('emptyState');
+const layout = document.getElementById('layout');
+
+items.forEach(item => {
+  item.addEventListener('click', () => {
+    const src = item.dataset.src;
+    if (!src) return;
+
+    // Active state
+    items.forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+
+    // Load iframe
+    frame.src = src;
+    frame.style.display = 'block';
+    empty.style.display = 'none';
+
+    // Mobile: switch to viewer
+    layout.classList.add('viewing');
+  });
+});
+
+function closeViewer() {
+  layout.classList.remove('viewing');
+  items.forEach(i => i.classList.remove('active'));
+  frame.style.display = 'none';
+  frame.src = '';
+  empty.style.display = 'flex';
+}
+
+// Handle browser back on mobile
+window.addEventListener('popstate', () => {
+  if (layout.classList.contains('viewing')) {
+    closeViewer();
+  }
+});
+
+// Push state when opening viewer on mobile
+const origClick = items[0]?.click;
+items.forEach(item => {
+  const origHandler = item.onclick;
+  item.addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      history.pushState({ viewing: true }, '');
+    }
+  });
+});
+</script>
+</body>
+</html>
