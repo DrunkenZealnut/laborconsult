@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import re
 import sys
 import time
 import traceback
@@ -385,6 +386,61 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
     )
 
     return {**result.data, "attachments": attachments.data or []}
+
+
+# ── 질문게시판 (공개) ──────────────────────────────────────────────────────────
+
+_ANON_PATTERNS = [
+    (re.compile(r'[가-힣]{2,4}(?=\s*(?:씨|님|사장|대표|과장|부장|팀장|차장|이사))'), 'OOO'),
+    (re.compile(r'(?:주\s*\)?\s*|㈜\s*|(?:주식)?회사\s+)[가-힣A-Za-z]+'), '(주)OOO'),
+    (re.compile(r'\d{2,3}[-.\s]?\d{3,4}[-.\s]?\d{4}'), '***-****-****'),
+    (re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'), '***@***.***'),
+]
+
+
+def _anonymize(text: str) -> str:
+    """개인정보 비식별화"""
+    for pattern, replacement in _ANON_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+@app.get("/api/board/recent")
+def board_recent(page: int = 1, per_page: int = 10):
+    """최근 공개 질문/답변 — 비식별화 처리"""
+    sb = _get_supabase()
+    per_page = min(per_page, 20)
+    offset = (page - 1) * per_page
+
+    result = (
+        sb.table("qa_conversations")
+        .select("id, category, question_text, answer_text, created_at", count="exact")
+        .order("created_at", desc=True)
+        .range(offset, offset + per_page - 1)
+        .execute()
+    )
+
+    items = []
+    for row in result.data or []:
+        q = _anonymize(row.get("question_text", ""))
+        a = row.get("answer_text", "")
+        a_preview = a[:300] + ("..." if len(a) > 300 else "") if a else ""
+        items.append({
+            "id": row["id"],
+            "category": row.get("category", ""),
+            "question": q,
+            "answer_preview": _anonymize(a_preview),
+            "created_at": row.get("created_at", ""),
+        })
+
+    total = result.count or 0
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "has_more": offset + per_page < total,
+    }
 
 
 # ── 정적 파일 서빙 ────────────────────────────────────────────────────────────

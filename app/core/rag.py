@@ -177,6 +177,47 @@ def search_pinecone_multi(
     return all_hits[:top_k * 2]  # 최대 top_k*2건
 
 
+def search_hybrid(
+    queries: list[str],
+    config: "AppConfig",
+    top_k: int = TOP_K,
+    source_type: str | None = None,
+    alpha: float = 0.5,
+) -> list[dict]:
+    """Hybrid Search: Dense (Pinecone) + Sparse (BM25) → RRF 결합.
+
+    BM25 미사용 시 (rank_bm25 미설치 / 코퍼스 미존재) Dense-only 폴백.
+
+    Args:
+        queries: 검색 쿼리 리스트
+        config: AppConfig
+        top_k: 최대 반환 건수
+        source_type: 필터 (None이면 전체)
+        alpha: Dense 가중치 (0.0=BM25 only, 1.0=Dense only, 0.5=균등)
+
+    Returns:
+        RRF 결합된 검색 결과 (또는 Dense-only 폴백)
+    """
+    # Dense 검색
+    dense_hits = search_pinecone_multi(queries, config, top_k=top_k, source_type=source_type)
+
+    # BM25 검색 시도
+    try:
+        from app.core.bm25_search import search_bm25, reciprocal_rank_fusion, load_bm25_corpus
+
+        load_bm25_corpus()
+        combined_query = " ".join(queries)
+        bm25_hits = search_bm25(combined_query, top_k=top_k)
+
+        if bm25_hits:
+            fused = reciprocal_rank_fusion(dense_hits, bm25_hits, alpha=alpha, top_k=top_k)
+            return fused
+    except Exception as e:
+        logger.info("BM25 unavailable, Dense-only: %s", e)
+
+    return dense_hits
+
+
 RERANK_MODEL = "rerank-v3.5"
 RERANK_TOP_N = 5
 
