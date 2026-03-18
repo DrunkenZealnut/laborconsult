@@ -3,63 +3,261 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>AI 노동상담 챗봇</title>
+<title>노동OK — AI 노동상담</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <style>
-  :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --co-legal-bg: #eff6ff; --co-legal-border: #2563eb; --co-legal-icon: #1d4ed8; --co-warn-bg: #fffbeb; --co-warn-border: #d97706; --co-warn-icon: #b45309; --co-danger-bg: #fef2f2; --co-danger-border: #dc2626; --co-danger-icon: #b91c1c; --co-tip-bg: #f0fdf4; --co-tip-border: #16a34a; --co-tip-icon: #15803d; --co-summary-bg: #eff6ff; --co-summary-border: #2563eb; }
+  /* ── Design Tokens ── */
+  :root {
+    --navy: #1B2A4A;
+    --navy-light: #2D4A7A;
+    --navy-deep: #0F1B30;
+    --copper: #C08050;
+    --copper-light: #E6C4A8;
+    --copper-glow: rgba(192,128,80,0.15);
+    --cream: #F7F5F2;
+    --warm-white: #FFFFFF;
+    --text: #1E293B;
+    --text-secondary: #526070;
+    --text-muted: #8B95A5;
+    --border: #E4E1DB;
+    --border-light: #F0EDE8;
+    --shadow-sm: 0 1px 3px rgba(27,42,74,0.06);
+    --shadow-md: 0 4px 16px rgba(27,42,74,0.08);
+    --shadow-lg: 0 8px 32px rgba(27,42,74,0.1);
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-pill: 50px;
+    --font-display: 'Noto Serif KR', 'Georgia', serif;
+    --font-body: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    /* Callout colors (chat rendering) */
+    --co-legal-bg: #eff6ff; --co-legal-border: #2563eb; --co-legal-icon: #1d4ed8;
+    --co-warn-bg: #fffbeb; --co-warn-border: #d97706; --co-warn-icon: #b45309;
+    --co-danger-bg: #fef2f2; --co-danger-border: #dc2626; --co-danger-icon: #b91c1c;
+    --co-tip-bg: #f0fdf4; --co-tip-border: #16a34a; --co-tip-icon: #15803d;
+    --co-summary-bg: #eff6ff; --co-summary-border: #2563eb;
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: flex; flex-direction: column; }
+  html { scroll-behavior: smooth; }
+  body { font-family: var(--font-body); background: var(--cream); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; max-width: 800px; margin: 0 auto; }
 
-  header { background: var(--card); border-bottom: 1px solid var(--border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; }
-  header h1 { font-size: 18px; font-weight: 700; }
-  header span { font-size: 13px; color: var(--muted); }
+  /* ── HEADER ── */
+  #site-header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(247,245,242,0.9);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: max(10px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 10px max(20px, env(safe-area-inset-left));
+  }
+  .header-inner {
+    max-width: 1100px; margin: 0 auto;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .header-logo {
+    font-family: var(--font-display); font-weight: 900; font-size: 22px; color: var(--navy);
+    text-decoration: none; letter-spacing: -0.5px; flex-shrink: 0;
+  }
+  .header-logo span { color: var(--copper); }
+  .header-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .header-nav a, .header-nav button {
+    font-family: var(--font-body); font-size: 13px; color: var(--text-secondary);
+    text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius-pill);
+    padding: 6px 14px; background: transparent; cursor: pointer;
+    transition: all 0.2s; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  }
+  .header-nav a:hover, .header-nav button:hover {
+    border-color: var(--copper); color: var(--copper);
+  }
+  #export-btn.exported { color: #16a34a; border-color: #16a34a; }
 
-  /* ── Main scroll container ── */
-  #main-content { flex: 1; overflow-y: auto; }
+  /* ── HERO ── */
+  #hero {
+    background: var(--navy); color: #fff; position: relative; overflow: hidden;
+    padding: 56px 24px 48px; border-radius: var(--radius-lg);
+  }
+  #hero::before {
+    content: ''; position: absolute;
+    width: 700px; height: 700px; border-radius: 50%;
+    background: radial-gradient(circle, var(--copper-glow) 0%, transparent 70%);
+    top: -250px; right: -150px; pointer-events: none;
+  }
+  #hero::after {
+    content: ''; position: absolute;
+    width: 500px; height: 500px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(45,74,122,0.3) 0%, transparent 70%);
+    bottom: -150px; left: -100px; pointer-events: none;
+  }
+  .hero-inner {
+    max-width: 800px; margin: 0 auto; position: relative; z-index: 1; text-align: center;
+  }
+  .hero-badge {
+    display: inline-block; font-size: 13px; font-weight: 600;
+    color: var(--copper-light); background: rgba(192,128,80,0.12);
+    border: 1px solid rgba(192,128,80,0.25); border-radius: var(--radius-pill);
+    padding: 6px 18px; margin-bottom: 28px; letter-spacing: 0.5px;
+  }
+  .hero-title {
+    font-family: var(--font-display); font-size: 44px; font-weight: 900;
+    line-height: 1.3; margin-bottom: 20px; letter-spacing: -1px;
+  }
+  .hero-title em { font-style: normal; color: var(--copper-light); }
+  .hero-sub {
+    font-size: 17px; line-height: 1.7; color: rgba(255,255,255,0.7);
+    max-width: 540px; margin: 0 auto 36px;
+  }
+  .hero-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--copper); color: #fff; border: none; border-radius: var(--radius-pill);
+    padding: 14px 32px; font-size: 16px; font-weight: 600; cursor: pointer;
+    font-family: var(--font-body); transition: all 0.25s; text-decoration: none;
+  }
+  .hero-cta:hover { background: #a86a3e; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(192,128,80,0.3); }
+  .hero-stats {
+    display: flex; justify-content: center; gap: 16px;
+    margin-top: 48px; flex-wrap: wrap;
+  }
+  .hero-stat {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-md); padding: 16px 24px; min-width: 150px;
+    backdrop-filter: blur(8px);
+  }
+  .hero-stat-num { font-family: var(--font-display); font-size: 26px; font-weight: 900; color: var(--copper-light); }
+  .hero-stat-label { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 4px; }
 
-  /* ── SEC-01: Chat Section ── */
-  #chat-section { height: 80vh; display: flex; flex-direction: column; position: relative; }
-  #chat { flex: 1; overflow-y: auto; padding: 16px max(20px, env(safe-area-inset-right)) 16px max(20px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 12px; }
+  /* ── Quick Calculator Chips (in hero) ── */
+  .hero-calcs {
+    margin-top: 40px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  }
+  .hero-calc-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; font-size: 13px; font-weight: 500;
+    color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: var(--radius-pill);
+    cursor: pointer; transition: all 0.2s; font-family: var(--font-body); white-space: nowrap;
+  }
+  .hero-calc-chip:hover {
+    background: rgba(255,255,255,0.12); border-color: var(--copper-light); color: #fff;
+  }
 
-  .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 15px; line-height: 1.6; word-break: break-word; }
-  .msg.user { align-self: flex-end; background: var(--primary); color: white; border-bottom-right-radius: 4px; }
-  .msg.assistant { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  /* ── MAIN CONTENT ── */
+  #main-content { }
+
+  /* ── CHAT SECTION ── */
+  #chat-section {
+    padding: 64px 20px; background: var(--cream);
+  }
+  .chat-container {
+    max-width: 800px; margin: 0 auto;
+  }
+  .section-label {
+    font-family: var(--font-display); font-size: 12px; font-weight: 700;
+    color: var(--copper); text-transform: uppercase; letter-spacing: 2px;
+    margin-bottom: 10px; text-align: center;
+  }
+  .section-heading {
+    font-family: var(--font-display); font-size: 28px; font-weight: 700;
+    color: var(--navy); text-align: center; margin-bottom: 8px;
+  }
+  .section-desc {
+    text-align: center; color: var(--text-muted); font-size: 15px;
+    margin-bottom: 32px; line-height: 1.6;
+  }
+  .chat-card {
+    background: var(--warm-white); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg); border: 1px solid var(--border-light);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+
+  /* Chat messages area — hidden until first interaction */
+  #chat {
+    height: 0; min-height: 0; max-height: 0; overflow: hidden;
+    padding: 0 20px; display: flex; flex-direction: column; gap: 12px;
+    transition: height 0.4s cubic-bezier(0.25,0.46,0.45,0.94),
+                max-height 0.4s cubic-bezier(0.25,0.46,0.45,0.94),
+                padding 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+  }
+  .chat-card.active #chat {
+    height: 55vh; min-height: 350px; max-height: 600px;
+    overflow-y: auto; padding: 20px;
+  }
+
+  /* Collapsed input — prominent search bar style */
+  .chat-card:not(.active) #input-wrapper { border-top: none; }
+  .chat-card:not(.active) #input-area textarea {
+    font-size: 17px; padding: 14px 20px; min-height: 52px;
+    background: var(--cream); border-radius: var(--radius-lg);
+  }
+  .chat-card:not(.active) #input-area { padding: 16px 20px; }
+
+  /* Suggestion chips below collapsed input */
+  .suggestion-chips {
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    margin-top: 16px; transition: opacity 0.3s, max-height 0.3s;
+    max-height: 200px; overflow: hidden;
+  }
+  .suggestion-chips.hidden { opacity: 0; max-height: 0; pointer-events: none; margin-top: 0; }
+  .suggestion-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 18px; font-size: 14px; font-weight: 500;
+    color: var(--text-secondary); background: var(--warm-white);
+    border: 1px solid var(--border); border-radius: var(--radius-pill);
+    cursor: pointer; transition: all 0.2s; font-family: var(--font-body);
+    white-space: nowrap; box-shadow: var(--shadow-sm);
+  }
+  .suggestion-chip:hover {
+    border-color: var(--copper); color: var(--copper);
+    box-shadow: var(--shadow-md); transform: translateY(-1px);
+  }
+
+  /* Messages */
+  .msg { max-width: 80%; padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.7; word-break: break-word; }
+  .msg.user {
+    align-self: flex-end; background: var(--navy); color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.assistant {
+    align-self: flex-start; background: #f8f7f5; border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
   .msg.assistant :first-child { margin-top: 0; }
+  .msg.status { align-self: center; background: transparent; color: var(--text-muted); font-size: 13px; padding: 4px 8px; }
 
-  .msg.status { align-self: center; background: transparent; color: var(--muted); font-size: 13px; padding: 4px 8px; }
-
-  .sources { font-size: 12px; color: var(--muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
-  .sources a { color: var(--primary); text-decoration: none; }
+  .sources { font-size: 12px; color: var(--text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .sources a { color: var(--navy-light); text-decoration: none; }
   .sources a:hover { text-decoration: underline; }
 
   /* Contact cards */
   .contact-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; max-width: 80%; }
-  .contact-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text); line-height: 1.4; }
+  .contact-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--cream); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text); line-height: 1.4; }
   .contact-chip .cc-name { font-weight: 600; white-space: nowrap; }
-  .contact-chip .cc-phone { color: var(--primary); font-weight: 600; white-space: nowrap; }
-  .contact-chip .cc-desc { color: var(--muted); }
-  .contact-chip a { color: var(--primary); text-decoration: none; }
+  .contact-chip .cc-phone { color: var(--navy-light); font-weight: 600; white-space: nowrap; }
+  .contact-chip .cc-desc { color: var(--text-muted); }
+  .contact-chip a { color: var(--navy-light); text-decoration: none; }
   .contact-chip a:hover { text-decoration: underline; }
 
-  /* Markdown in assistant messages */
+  /* ── Markdown in assistant messages ── */
   .msg.assistant h2 { font-size: 16px; margin: 14px 0 6px; }
   .msg.assistant h3 { font-size: 15px; margin: 10px 0 4px; }
   .msg.assistant p { margin: 6px 0; }
   .msg.assistant ul, .msg.assistant ol { margin: 6px 0 6px 20px; }
   .msg.assistant table { border-collapse: collapse; margin: 10px 0; font-size: 14px; width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--border); }
-  .msg.assistant th { background: var(--primary); color: #fff; font-weight: 600; padding: 8px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid #1d4ed8; }
+  .msg.assistant th { background: var(--navy); color: #fff; font-weight: 600; padding: 8px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--navy-deep); }
   .msg.assistant td { padding: 7px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 1px solid var(--border); }
-  .msg.assistant tr:nth-child(even) td { background: var(--bg); }
+  .msg.assistant tr:nth-child(even) td { background: var(--cream); }
   .msg.assistant tr:last-child td { border-bottom: none; }
-  .msg.assistant tr.total-row td { font-weight: 700; border-top: 2px solid var(--primary); background: var(--co-legal-bg); }
+  .msg.assistant tr.total-row td { font-weight: 700; border-top: 2px solid var(--navy); background: var(--co-legal-bg); }
   .msg.assistant td.num-cell { text-align: right; font-variant-numeric: tabular-nums; }
-  .msg.assistant code { background: var(--bg); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
-  .msg.assistant pre { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; }
+  .msg.assistant code { background: var(--cream); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+  .msg.assistant pre { background: var(--cream); padding: 10px; border-radius: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; }
   .msg.assistant pre code { background: none; padding: 0; }
   .msg.assistant strong { font-weight: 600; }
-  .msg.assistant blockquote { border-left: 3px solid var(--primary); padding-left: 10px; color: var(--muted); margin: 6px 0; }
-  /* ── 콜아웃 박스 ── */
+  .msg.assistant blockquote { border-left: 3px solid var(--copper); padding-left: 10px; color: var(--text-muted); margin: 6px 0; }
   .msg.assistant .callout { border-left: 4px solid var(--border); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 10px 0; font-size: 14px; line-height: 1.6; color: var(--text); }
   .msg.assistant .callout-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
   .msg.assistant .callout-legal  { background: var(--co-legal-bg);  border-left-color: var(--co-legal-border); }
@@ -70,19 +268,15 @@
   .msg.assistant .callout-warn   .callout-title { color: var(--co-warn-icon); }
   .msg.assistant .callout-danger .callout-title { color: var(--co-danger-icon); }
   .msg.assistant .callout-tip    .callout-title { color: var(--co-tip-icon); }
-  /* ── 요약 배지 ── */
   .msg.assistant .summary-badge { background: var(--co-summary-bg); border-left: 5px solid var(--co-summary-border); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 10px 0; font-size: 15px; line-height: 1.7; }
   .msg.assistant .summary-badge h2 { font-size: 16px; margin: 0 0 6px; color: var(--co-legal-icon); }
-  /* ── 스텝 인디케이터 ── */
   .msg.assistant .step-list { list-style: none; margin: 10px 0; padding: 0; counter-reset: step-counter; }
   .msg.assistant .step-list li { counter-increment: step-counter; position: relative; padding: 8px 0 8px 40px; margin: 0; line-height: 1.5; font-size: 14px; }
-  .msg.assistant .step-list li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .msg.assistant .step-list li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
   .msg.assistant .step-list li::after { content: ''; position: absolute; left: 12px; top: 36px; width: 2px; height: calc(100% - 28px); background: var(--border); }
   .msg.assistant .step-list li:last-child::after { display: none; }
-  /* ── 구분선 ── */
   .msg.assistant hr { border: none; height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent); margin: 18px 0; }
-  /* ── 면책 고지 ── */
-  .msg.assistant .disclaimer-notice { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; line-height: 1.5; }
+  .msg.assistant .disclaimer-notice { font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; line-height: 1.5; }
   .msg.assistant .math-display { overflow-x: auto; margin: 10px 0; text-align: center; }
   .msg.assistant .math-inline { display: inline; }
 
@@ -90,96 +284,139 @@
   .msg-wrapper { display: flex; flex-direction: column; }
   .msg-wrapper.user-side { align-items: flex-end; }
   .msg-wrapper.assistant-side { align-items: flex-start; }
-  #export-btn { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0; }
-  #export-btn:hover { border-color: var(--primary); color: var(--primary); }
-  #export-btn.exported { color: #16a34a; border-color: #16a34a; }
-
-  .copy-btn { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; color: var(--muted); font-size: 12px; opacity: 0; transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; align-self: flex-start; }
+  .copy-btn { background: var(--warm-white); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; color: var(--text-muted); font-size: 12px; opacity: 0; transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; align-self: flex-start; }
   .msg-wrapper:hover .copy-btn { opacity: 1; }
-  .copy-btn:hover { color: var(--primary); border-color: var(--primary); }
+  .copy-btn:hover { color: var(--copper); border-color: var(--copper); }
   .copy-btn.copied { color: #16a34a; border-color: #16a34a; }
 
-  /* Input area */
-  #input-wrapper { background: var(--card); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+  /* Chat input area */
+  #input-wrapper { border-top: 1px solid var(--border-light); background: var(--warm-white); padding-bottom: env(safe-area-inset-bottom); }
   #file-preview { display: flex; gap: 6px; padding: 8px 20px 0; flex-wrap: wrap; }
   #file-preview:empty { display: none; }
-  .file-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 16px; font-size: 12px; color: var(--text); }
+  .file-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--cream); border: 1px solid var(--border); border-radius: 16px; font-size: 12px; color: var(--text); }
   .file-chip img { width: 20px; height: 20px; object-fit: cover; border-radius: 3px; }
-  .file-chip .remove { cursor: pointer; color: var(--muted); font-weight: bold; margin-left: 2px; }
+  .file-chip .remove { cursor: pointer; color: var(--text-muted); font-weight: bold; margin-left: 2px; }
   .file-chip .remove:hover { color: #ef4444; }
-  #input-area { padding: 12px 20px; display: flex; gap: 8px; align-items: center; }
-  #attach-btn { background: none; border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; color: var(--muted); display: flex; align-items: center; flex-shrink: 0; }
-  #attach-btn:hover { border-color: var(--primary); color: var(--primary); }
-  #input-area textarea { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 15px; outline: none; resize: none; min-height: 42px; max-height: 150px; line-height: 1.5; font-family: inherit; overflow-y: auto; }
-  #input-area textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
-  #send-btn { background: var(--primary); color: white; border: none; border-radius: 8px; padding: 10px 20px; font-size: 15px; cursor: pointer; white-space: nowrap; }
-  #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  #input-area { padding: 14px 20px; display: flex; gap: 8px; align-items: center; }
+  #attach-btn {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 9px; cursor: pointer; color: var(--text-muted);
+    display: flex; align-items: center; flex-shrink: 0; transition: all 0.2s;
+  }
+  #attach-btn:hover { border-color: var(--copper); color: var(--copper); }
+  #input-area textarea {
+    flex: 1; border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: 10px 16px; font-size: 15px; outline: none; resize: none;
+    min-height: 42px; max-height: 150px; line-height: 1.5; font-family: var(--font-body);
+    overflow-y: auto; background: var(--cream); transition: border-color 0.2s;
+  }
+  #input-area textarea:focus { border-color: var(--copper); box-shadow: 0 0 0 3px var(--copper-glow); }
+  #send-btn {
+    background: var(--navy); color: white; border: none; border-radius: var(--radius-md);
+    padding: 10px 22px; font-size: 15px; font-weight: 600; cursor: pointer;
+    font-family: var(--font-body); transition: all 0.2s; white-space: nowrap;
+  }
+  #send-btn:hover { background: var(--navy-light); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* Drop overlay */
-  #drop-overlay { display: none; position: fixed; inset: 0; background: rgba(37,99,235,0.08); border: 3px dashed var(--primary); z-index: 100; align-items: center; justify-content: center; font-size: 18px; color: var(--primary); font-weight: 600; pointer-events: none; }
+  #drop-overlay { display: none; position: fixed; inset: 0; background: rgba(192,128,80,0.08); border: 3px dashed var(--copper); z-index: 200; align-items: center; justify-content: center; font-size: 18px; color: var(--copper); font-weight: 600; pointer-events: none; }
   #drop-overlay.active { display: flex; }
 
-  /* ── SEC-02~04: Page Sections ── */
-  .page-section { padding: 48px 20px; max-width: 900px; margin: 0 auto; width: 100%; border-top: 1px solid var(--border); }
-  .section-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; text-align: center; }
-  .section-desc { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 20px; }
-  .section-link-wrap { text-align: center; margin-top: 16px; }
-  .section-link { color: var(--primary); text-decoration: none; font-size: 14px; font-weight: 600; }
-  .section-link:hover { text-decoration: underline; }
-
-  /* FAQ tabs */
-  #faq-tabs { display: flex; gap: 8px; padding-bottom: 16px; justify-content: center; flex-wrap: wrap; }
-  .faq-tab { padding: 8px 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--card); cursor: pointer; font-size: 14px; white-space: nowrap; transition: all 0.15s; font-family: inherit; color: var(--text); }
-  .faq-tab:hover { border-color: var(--primary); color: var(--primary); }
-  .faq-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+  /* ── FAQ SECTION ── */
+  #faq-section { padding: 80px 20px; background: var(--warm-white); }
+  .faq-container { max-width: 800px; margin: 0 auto; }
+  #faq-tabs { display: flex; gap: 8px; padding-bottom: 24px; justify-content: center; flex-wrap: wrap; }
+  .faq-tab {
+    padding: 8px 18px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+    background: transparent; cursor: pointer; font-size: 14px; font-weight: 500;
+    white-space: nowrap; transition: all 0.2s; font-family: var(--font-body); color: var(--text-secondary);
+  }
+  .faq-tab:hover { border-color: var(--copper); color: var(--copper); }
+  .faq-tab.active { background: var(--navy); color: white; border-color: var(--navy); }
   #faq-list { display: flex; flex-direction: column; gap: 8px; }
-  .faq-item { padding: 12px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 14px; text-align: left; transition: all 0.15s; display: flex; align-items: center; gap: 8px; font-family: inherit; color: var(--text); width: 100%; }
-  .faq-item:hover { border-color: var(--primary); background: var(--co-legal-bg); }
+  .faq-item {
+    padding: 14px 18px; background: var(--cream); border: 1px solid transparent;
+    border-radius: var(--radius-md); cursor: pointer; font-size: 15px; text-align: left;
+    transition: all 0.2s; display: flex; align-items: center; gap: 10px;
+    font-family: var(--font-body); color: var(--text); width: 100%;
+  }
+  .faq-item:hover { border-color: var(--copper); background: var(--warm-white); box-shadow: var(--shadow-sm); transform: translateX(4px); }
   .faq-item::before { content: "\1F4AC"; font-size: 16px; flex-shrink: 0; }
+  .faq-item::after {
+    content: '\2192'; margin-left: auto; color: var(--text-muted); font-size: 16px;
+    opacity: 0; transition: opacity 0.2s; flex-shrink: 0;
+  }
+  .faq-item:hover::after { opacity: 1; color: var(--copper); }
 
-  /* Calculator grid */
-  #calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .calc-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; }
-  .calc-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(37,99,235,0.1); transform: translateY(-2px); }
-  .calc-card .calc-icon { font-size: 28px; margin-bottom: 8px; }
-  .calc-card .calc-name { font-size: 14px; font-weight: 600; }
-  .calc-card .calc-desc { font-size: 11px; color: var(--muted); margin-top: 4px; }
-
-  /* Board */
-  .board-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; transition: border-color 0.15s; }
-  .board-item:hover { border-color: var(--primary); }
-  .board-q { padding: 12px 16px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; }
-  .board-q .board-cat { background: var(--co-legal-bg); color: var(--primary); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
+  /* ── BOARD SECTION ── */
+  #board-section { padding: 80px 20px; background: var(--cream); }
+  .board-container { max-width: 800px; margin: 0 auto; }
+  .board-item { background: var(--warm-white); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 8px; overflow: hidden; transition: all 0.2s; }
+  .board-item:hover { border-color: var(--copper); box-shadow: var(--shadow-sm); }
+  .board-q { padding: 14px 18px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .board-q .board-cat { background: rgba(192,128,80,0.1); color: var(--copper); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-pill); white-space: nowrap; flex-shrink: 0; }
   .board-q .board-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .board-q .board-time { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
-  .board-q .board-chevron { color: var(--muted); transition: transform 0.2s; flex-shrink: 0; font-size: 12px; }
+  .board-q .board-time { color: var(--text-muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+  .board-q .board-chevron { color: var(--text-muted); transition: transform 0.25s; flex-shrink: 0; font-size: 12px; }
   .board-item.open .board-chevron { transform: rotate(180deg); }
-  .board-a { display: none; padding: 0 16px 12px; font-size: 13px; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 12px; }
+  .board-a { display: none; padding: 0 18px 14px; font-size: 13px; color: var(--text-secondary); line-height: 1.7; border-top: 1px solid var(--border-light); padding-top: 14px; }
   .board-item.open .board-a { display: block; }
-  .board-ask-btn { display: inline-block; margin-top: 8px; color: var(--primary); font-size: 12px; font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; }
+  .board-ask-btn { display: inline-block; margin-top: 8px; color: var(--copper); font-size: 12px; font-weight: 600; cursor: pointer; background: none; border: none; font-family: var(--font-body); }
   .board-ask-btn:hover { text-decoration: underline; }
-  #board-more-btn { border: none; background: none; cursor: pointer; color: var(--primary); font-size: 14px; font-weight: 600; font-family: inherit; padding: 8px 16px; }
+  #board-more-btn { border: none; background: none; cursor: pointer; color: var(--copper); font-size: 14px; font-weight: 600; font-family: var(--font-body); padding: 8px 16px; }
   #board-more-btn:hover { text-decoration: underline; }
+  .section-link-wrap { text-align: center; margin-top: 20px; }
 
-  /* ── SEC-05: Footer ── */
-  #site-footer { background: var(--text); color: #94a3b8; padding: 40px 20px 24px; font-size: 13px; line-height: 1.6; }
-  .footer-inner { max-width: 900px; margin: 0 auto; text-align: center; }
-  .footer-org { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
-  .footer-org strong { color: #e2e8f0; font-size: 15px; }
-  .footer-org a { color: var(--primary); text-decoration: none; }
+  /* ── FOOTER ── */
+  #site-footer {
+    background: var(--navy-deep); color: rgba(255,255,255,0.5); padding: 12px 24px;
+    font-size: 13px; line-height: 1.7; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .footer-inner { max-width: 800px; margin: 0 auto; text-align: center; }
+  .footer-org { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+  .footer-org strong { color: rgba(255,255,255,0.85); font-family: var(--font-display); font-size: 17px; }
+  .footer-org a { color: var(--copper-light); text-decoration: none; }
   .footer-org a:hover { text-decoration: underline; }
-  .footer-links { margin-bottom: 16px; display: flex; gap: 8px; justify-content: center; }
-  .footer-links a { color: #94a3b8; text-decoration: none; }
-  .footer-links a:hover { color: #e2e8f0; }
-  .footer-disclaimer { color: #64748b; font-size: 12px; margin-bottom: 8px; }
-  .footer-copyright { color: #475569; font-size: 11px; }
+  .footer-links { margin-bottom: 0; display: flex; gap: 8px; justify-content: center; }
+  .footer-links a { color: rgba(255,255,255,0.5); text-decoration: none; }
+  .footer-links a:hover { color: rgba(255,255,255,0.8); }
+  .footer-disclaimer { color: rgba(255,255,255,0.35); font-size: 12px; margin-bottom: 8px; }
+  .footer-copyright { color: rgba(255,255,255,0.25); font-size: 11px; }
 
-  /* ── Mobile responsive ── */
+  /* ── Scroll Reveal Animation ── */
+  .reveal {
+    opacity: 0; transform: translateY(24px);
+    transition: opacity 0.7s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.7s cubic-bezier(0.25,0.46,0.45,0.94);
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ── Back to Top ── */
+  #back-to-top {
+    position: fixed; bottom: 24px; right: 24px; z-index: 90;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--navy); color: #fff; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-md); opacity: 0; pointer-events: none;
+    transition: all 0.3s;
+  }
+  #back-to-top.visible { opacity: 1; pointer-events: auto; }
+  #back-to-top:hover { background: var(--copper); transform: translateY(-2px); }
+
+  /* ── MOBILE RESPONSIVE ── */
   @media (max-width: 768px) {
-    #calc-grid { grid-template-columns: repeat(2, 1fr); }
+    #hero { padding: 56px 20px 44px; }
+    .hero-title { font-size: 30px; letter-spacing: -0.5px; }
+    .hero-sub { font-size: 15px; }
+    .hero-stats { gap: 10px; }
+    .hero-stat { padding: 12px 16px; min-width: 100px; }
+    .hero-stat-num { font-size: 20px; }
+    .hero-calcs { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
   }
 
   @media (max-width: 600px) {
+    .header-logo { font-size: 19px; }
+    .header-nav a, .header-nav button { font-size: 12px; padding: 5px 10px; }
     .copy-btn { opacity: 0.7; }
     .msg { max-width: 92%; }
     #input-area { padding: 10px; }
@@ -189,104 +426,107 @@
     .file-chip .remove { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; font-size: 18px; }
     .contact-bar { max-width: 100%; }
     .contact-chip { flex: 1 1 100%; min-width: 0; }
-    header h1 { font-size: 16px; }
-    header span { font-size: 11px; }
-    #export-btn { padding: 6px 8px; font-size: 12px; min-height: 36px; }
+    #chat-section, #faq-section, #board-section { padding: 48px 16px; }
+    .section-heading { font-size: 22px; }
+    #faq-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .chat-card.active #chat { height: 50vh; min-height: 300px; }
+    .footer-org { font-size: 12px; }
     .msg.assistant .callout { padding: 8px 10px; margin: 8px 0; }
     .msg.assistant .summary-badge { padding: 10px 12px; }
     .msg.assistant .step-list li { padding-left: 34px; }
     .msg.assistant .step-list li::before { width: 22px; height: 22px; font-size: 11px; }
     .msg.assistant .step-list li::after { left: 10px; top: 32px; }
-
-    /* Sections mobile */
-    .page-section { padding: 32px 16px; }
-    .section-title { font-size: 18px; }
-    #faq-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    #calc-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .calc-card { padding: 12px; }
-    .calc-card .calc-icon { font-size: 24px; margin-bottom: 6px; }
-    .calc-card .calc-name { font-size: 13px; }
-    .footer-org { font-size: 12px; }
-    #chat-section { height: 75vh; }
   }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>AI 노동상담 챗봇</h1>
-  <span>nodong.kr BEST Q&A 기반</span>
-  <button id="export-btn" title="대화 내용을 마크다운 파일로 저장">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-    저장
-  </button>
-  <a href="/calculators" style="font-size:13px;color:var(--primary);text-decoration:none;" title="계산기별 계산 흐름도 보기">📊 흐름도</a>
+<!-- ═══ HEADER ═══ -->
+<header id="site-header">
+  <div class="header-inner">
+    <a href="/" class="header-logo">노동<span>OK</span></a>
+    <nav class="header-nav">
+      <a href="/calculators" title="계산기별 계산 흐름도 보기">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        흐름도
+      </a>
+      <button id="export-btn" title="대화 내용을 마크다운 파일로 저장">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        저장
+      </button>
+    </nav>
+  </div>
 </header>
 
+<!-- ═══ HERO ═══ -->
+<section id="hero">
+  <div class="hero-inner">
+    <h1 class="hero-title">노동자의 권리,<br><em>AI가 함께</em> 지킵니다</h1>
+  </div>
+</section>
+
+<!-- ═══ MAIN CONTENT ═══ -->
 <main id="main-content">
 
-  <!-- SEC-01: 챗봇 채팅창 -->
+  <!-- ── SEC-01: 채팅 ── -->
   <section id="chat-section">
-    <div id="chat">
-      <div class="msg-wrapper assistant-side">
-        <div class="msg assistant">
-          안녕하세요! 한국 노동법 관련 질문에 답변해 드립니다.<br>
-          임금계산(주휴수당, 연장수당, 퇴직금 등)도 가능합니다.<br>
-          근로계약서, 급여명세서 등 파일을 첨부하면 내용을 읽어 상담에 활용합니다.<br><br>
-          <strong>예시 질문:</strong><br>
-          - 시급 15,000원, 주 4일(3h+5h+5h+4h) 일하면 주휴수당은?<br>
-          - 월급 250만원, 3년 근무 후 퇴직금은 얼마인가요?<br>
-          - 5인 미만 사업장에서도 연장수당을 받을 수 있나요?
+    <div class="chat-container reveal">
+      <div class="section-label">AI Consultation</div>
+      <h2 class="section-heading">무엇이든 물어보세요</h2>
+      <p class="section-desc">노동법, 임금계산, 퇴직금, 해고, 4대보험 등<br>파일(근로계약서, 급여명세서)을 첨부하면 더 정확한 상담이 가능합니다</p>
+      <div class="chat-card" id="chat-card">
+        <div id="chat"></div>
+        <div id="input-wrapper">
+          <div id="file-preview"></div>
+          <div id="input-area">
+            <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
+            <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요... (Shift+Enter: 줄바꿈)" rows="1" autocomplete="off"></textarea>
+            <button id="send-btn">전송</button>
+          </div>
         </div>
       </div>
-    </div>
-
-    <div id="input-wrapper">
-      <div id="file-preview"></div>
-      <div id="input-area">
-        <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-          </svg>
-        </button>
-        <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
-        <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요... (Shift+Enter: 줄바꿈)" rows="1" autocomplete="off"></textarea>
-        <button id="send-btn">전송</button>
+      <div class="suggestion-chips" id="suggestion-chips">
+        <button class="suggestion-chip" onclick="askQuestion('시급 15,000원, 주 4일 근무 시 주휴수당은?')">💰 주휴수당 계산</button>
+        <button class="suggestion-chip" onclick="askQuestion('월급 300만원, 3년 근무 후 퇴직금은 얼마인가요?')">📊 퇴직금 계산</button>
+        <button class="suggestion-chip" onclick="askQuestion('5인 미만 사업장에서도 연장수당을 받을 수 있나요?')">⚖️ 연장수당</button>
+        <button class="suggestion-chip" onclick="askQuestion('2026년 최저임금은 얼마인가요?')">💵 최저임금</button>
+        <button class="suggestion-chip" onclick="askQuestion('육아휴직 급여는 어떻게 계산하나요?')">👶 육아휴직</button>
       </div>
     </div>
   </section>
 
-  <!-- SEC-02: 많이 하는 질문 -->
-  <section id="faq-section" class="page-section">
-    <h2 class="section-title">많이 하는 질문</h2>
-    <p class="section-desc">카테고리를 선택하고, 질문을 클릭하면 바로 상담이 시작됩니다</p>
-    <div id="faq-tabs" role="tablist"></div>
-    <div id="faq-list" role="tabpanel"></div>
-  </section>
-
-  <!-- SEC-03: 임금 계산기 -->
-  <section id="calc-section" class="page-section">
-    <h2 class="section-title">임금 계산기</h2>
-    <p class="section-desc">궁금한 계산기를 선택하면 바로 상담이 시작됩니다</p>
-    <div id="calc-grid"></div>
-    <div class="section-link-wrap">
-      <a href="/calculators" class="section-link">전체 25개 계산기 보기 →</a>
+  <!-- ── SEC-02: 많이 하는 질문 ── -->
+  <section id="faq-section">
+    <div class="faq-container reveal">
+      <div class="section-label">Popular Questions</div>
+      <h2 class="section-heading">많이 하는 질문</h2>
+      <p class="section-desc">카테고리를 선택하고, 질문을 클릭하면 바로 상담이 시작됩니다</p>
+      <div id="faq-tabs" role="tablist"></div>
+      <div id="faq-list" role="tabpanel"></div>
     </div>
   </section>
 
-  <!-- SEC-04: 질문게시판 -->
-  <section id="board-section" class="page-section">
-    <h2 class="section-title">질문게시판</h2>
-    <p class="section-desc">다른 분들이 최근에 물어본 질문들입니다</p>
-    <div id="board-list"></div>
-    <div class="section-link-wrap">
-      <button id="board-more-btn">더 보기 ↓</button>
+  <!-- ── SEC-03: 질문게시판 ── -->
+  <section id="board-section">
+    <div class="board-container reveal">
+      <div class="section-label">Recent Questions</div>
+      <h2 class="section-heading">질문게시판</h2>
+      <p class="section-desc">다른 분들이 최근에 물어본 질문들입니다</p>
+      <div id="board-list"></div>
+      <div class="section-link-wrap">
+        <button id="board-more-btn">더 보기 ↓</button>
+      </div>
     </div>
   </section>
 
 </main>
 
-<!-- SEC-05: Footer -->
+<!-- ═══ FOOTER ═══ -->
 <footer id="site-footer">
   <div class="footer-inner">
     <div class="footer-org">
@@ -296,20 +536,17 @@
     </div>
     <div class="footer-links">
       <a href="#">개인정보처리방침</a>
-      <span>|</span>
+      <span style="color:rgba(255,255,255,0.2)">|</span>
       <a href="#">이용약관</a>
-    </div>
-    <div class="footer-disclaimer">
-      본 답변은 참고용이며 법적 효력이 없습니다.
-      정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요.
-    </div>
-    <div class="footer-copyright">
-      © 2026 청년노동자인권센터. AI 노동상담 챗봇.
     </div>
   </div>
 </footer>
 
+<!-- Overlays -->
 <div id="drop-overlay">파일을 여기에 놓으세요</div>
+<button id="back-to-top" title="맨 위로">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+</button>
 
 <script>
 // ── API 베이스 URL ────────────────────────────────────────────────────────────
@@ -338,7 +575,6 @@ function exportChatMarkdown() {
       pairs.push({ type: 'user', num: questionNum, text: userEl.innerText.trim() });
     }
     if (assistantEl) {
-      // 인사말(첫 번째 assistant, 질문 전)은 제외
       if (questionNum === 0) continue;
       const mdText = assistantEl.dataset.md || assistantEl.innerText;
       pairs.push({ type: 'assistant', num: questionNum, text: mdText.trim() });
@@ -350,7 +586,6 @@ function exportChatMarkdown() {
     return;
   }
 
-  // 마크다운 조합
   const now = new Date();
   const dateStr = now.toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
   const lines = [
@@ -375,8 +610,6 @@ function exportChatMarkdown() {
   lines.push('> 정확한 사항은 고용노동부(1350) 또는 공인노무사에게 확인하시기 바랍니다.');
 
   const md_text = lines.join('\n');
-
-  // 파일 다운로드
   const ts = now.toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const filename = `노동OK_상담_${ts}.md`;
   const blob = new Blob([md_text], { type: 'text/markdown;charset=utf-8' });
@@ -387,7 +620,6 @@ function exportChatMarkdown() {
   a.click();
   URL.revokeObjectURL(url);
 
-  // 피드백
   const exportBtn = document.getElementById('export-btn');
   exportBtn.classList.add('exported');
   exportBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 저장됨';
@@ -396,6 +628,7 @@ function exportChatMarkdown() {
     exportBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 저장';
   }, 2000);
 }
+
 const btn = document.getElementById('send-btn');
 const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
@@ -426,7 +659,6 @@ fileInput.addEventListener('change', e => {
   fileInput.value = '';
 });
 
-// 드래그앤드롭
 let dragCounter = 0;
 document.addEventListener('dragenter', e => { e.preventDefault(); dragCounter++; dropOverlay.classList.add('active'); });
 document.addEventListener('dragleave', e => { e.preventDefault(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove('active'); } });
@@ -494,6 +726,23 @@ function fileToBase64(file) {
   });
 }
 
+// ── 채팅 확장 (첫 상호작용 시) ────────────────────────────────────────────────
+
+let chatExpanded = false;
+
+function expandChat() {
+  if (chatExpanded) return;
+  chatExpanded = true;
+  const card = document.getElementById('chat-card');
+  card.classList.add('active');
+  document.getElementById('suggestion-chips').classList.add('hidden');
+  // 인사 메시지 추가
+  const welcome = document.createElement('div');
+  welcome.className = 'msg-wrapper assistant-side';
+  welcome.innerHTML = '<div class="msg assistant">안녕하세요! <strong>AI 노동상담</strong>입니다.<br>한국 노동법 관련 질문에 답변해 드립니다.</div>';
+  chat.appendChild(welcome);
+}
+
 // ── 메시지 ───────────────────────────────────────────────────────────────────
 
 function addMsg(role, html, rawMarkdown) {
@@ -524,7 +773,6 @@ function ensureCopyBtn(el) {
 
 function copyConversation(wrapper, cbtn) {
   const parts = [];
-  // 바로 위 user 메시지 찾기
   let prev = wrapper.previousElementSibling;
   while (prev && prev.classList.contains('msg-wrapper') && !prev.querySelector('.msg.user')) {
     prev = prev.previousElementSibling;
@@ -533,7 +781,6 @@ function copyConversation(wrapper, cbtn) {
     const userEl = prev.querySelector('.msg.user');
     parts.push('**Q.** ' + userEl.textContent.trim());
   }
-  // assistant 답변
   const assistantEl = wrapper.querySelector('.msg.assistant');
   const mdText = assistantEl.dataset.md || assistantEl.textContent;
   parts.push('**A.**\n' + mdText.trim());
@@ -616,18 +863,14 @@ function md(text) {
   const blocks = [];
   function stash(html) { blocks.push(html); return '\x00B' + (blocks.length - 1) + '\x00'; }
 
-  // Phase 1: 블록 레벨 stash
-  // ① code block
   text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
     stash('<pre><code>' + code.replace(/</g, '&lt;') + '</code></pre>')
   );
-  // ② math
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => stash(renderTex(tex.trim(), true)));
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => stash(renderTex(tex.trim(), true)));
   text = text.replace(/\$([^\$\n]+?)\$/g, (_, tex) => stash(renderTex(tex.trim(), false)));
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => stash(renderTex(tex.trim(), false)));
 
-  // ③ 향상된 테이블 (합계 행, 금액 셀 감지)
   text = text.replace(/((?:^\|.+\|[ \t]*$\n?)+)/gm, block => {
     const rows = block.trim().split('\n');
     let h = '<table>';
@@ -649,13 +892,11 @@ function md(text) {
     return stash(h);
   });
 
-  // ④ ul
   text = text.replace(/((?:^[ \t]*[-*] .+$\n?)+)/gm, block => {
     const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*[-*] /, '') + '</li>');
     return stash('<ul>' + items.join('') + '</ul>');
   });
 
-  // ⑤ ol (스텝 인디케이터 조건부)
   text = text.replace(/((?:^[ \t]*\d+\. .+$\n?)+)/gm, (block, _, offset) => {
     const preceding = text.slice(Math.max(0, offset - 200), offset);
     const isStep = /(?:절차|방법|순서|과정|단계|대응|신청|진행)\s*$/m.test(preceding)
@@ -664,7 +905,6 @@ function md(text) {
     return stash(isStep ? '<ol class="step-list">' + items.join('') + '</ol>' : '<ol>' + items.join('') + '</ol>');
   });
 
-  // ⑥ blockquote 블록 (콜아웃 변환)
   text = text.replace(/((?:^> .+$\n?)+)/gm, block => {
     const lines = block.trim().split('\n').map(l => l.replace(/^> ?/, ''));
     const joined = lines.join('\n');
@@ -679,7 +919,6 @@ function md(text) {
     return stash('<blockquote>' + inlineTransform(joined).replace(/\n/g, '<br>') + '</blockquote>');
   });
 
-  // Phase 2: 인라인 변환
   let html = text
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -696,12 +935,10 @@ function md(text) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
     .replace(/^---$/gm, '<hr>');
 
-  // Phase 3: 후처리
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
   html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
   html = '<p>' + html + '</p>';
   html = html.replace(/<p>\s*<\/p>/g, '');
-  // 면책 고지 감지
   html = html.replace(/(<p>(?:⚠️\s*)?본\s*(?:답변|계산\s*결과|판정\s*결과)은?\s*참고용[\s\S]*?<\/p>)$/, '<div class="disclaimer-notice">$1</div>');
   return html;
 }
@@ -723,7 +960,6 @@ function renderContacts(agencies, afterEl) {
     chip.innerHTML = html;
     bar.appendChild(chip);
   }
-  // 복사 버튼 앞에 삽입
   const copyBtnEl = wrapper.querySelector('.copy-btn');
   if (copyBtnEl) wrapper.insertBefore(bar, copyBtnEl);
   else wrapper.appendChild(bar);
@@ -771,7 +1007,6 @@ async function readSSE(resp) {
       } else if (event.type === 'sources' || event.type === 'meta') {
         // handled in answer
       } else if (event.type === 'replace') {
-        // LLM 교정 결과로 전체 답변 교체 (환각 판례 제거)
         if (assistantEl) {
           fullText = event.text;
           assistantEl.innerHTML = md(fullText);
@@ -790,13 +1025,11 @@ async function readSSE(resp) {
       }
     }
   }
-  // 스트리밍 완료 후 복사 버튼 + 연락처 추가
   if (assistantEl) {
     ensureCopyBtn(assistantEl);
     if (pendingContacts) renderContacts(pendingContacts, assistantEl);
     chat.scrollTop = chat.scrollHeight;
   }
-  // 스트림이 chunk/error/follow_up 없이 종료된 경우 상태 메시지 정리
   if (!assistantEl && !document.querySelector('.msg.status + .msg.assistant')) {
     removeStatus();
     addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
@@ -809,16 +1042,16 @@ async function send() {
   const text = msgInput.value.trim();
   if (!text && pendingFiles.length === 0) return;
 
-  // 사용자 메시지 표시
+  expandChat();
+
   let displayHtml = text ? text.replace(/</g, '&lt;').replace(/\n/g, '<br>') : '';
   if (pendingFiles.length > 0) {
     const names = pendingFiles.map(f => f.name).join(', ');
     if (displayHtml) displayHtml += '<br>';
-    displayHtml += '<span style="font-size:12px;opacity:0.8">📎 ' + names + '</span>';
+    displayHtml += '<span style="font-size:12px;opacity:0.8">\uD83D\uDCCE ' + names + '</span>';
   }
   addMsg('user', displayHtml);
 
-  // 첨부파일 base64 인코딩
   const attachments = [];
   for (const f of pendingFiles) {
     attachments.push({
@@ -861,14 +1094,13 @@ async function send() {
     removeStatus();
     addMsg('assistant', '오류가 발생했습니다: ' + e.message);
   } finally {
-    // 어떤 경로로든 남아있는 상태 메시지 정리
     removeStatus();
     btn.disabled = false;
     msgInput.focus();
   }
 }
 
-// ── SEC-02: FAQ ──────────────────────────────────────────────────────────────
+// ── FAQ ──────────────────────────────────────────────────────────────────────
 
 const FAQ_DATA = {
   "임금/수당": {
@@ -961,34 +1193,31 @@ function askQuestion(text) {
   setTimeout(() => send(), 300);
 }
 
-// ── SEC-03: Calculator Shortcuts ─────────────────────────────────────────────
+// ── Calculator Shortcuts (Hero Chips) ────────────────────────────────────────
 
 const CALC_SHORTCUTS = [
-  { icon: "\uD83D\uDCB0", name: "\uC8FC\uD734\uC218\uB2F9", desc: "\uC8FC 15\uC2DC\uAC04 \uC774\uC0C1 \uADFC\uBB34 \uC2DC", query: "\uC2DC\uAE09 10,000\uC6D0, \uC8FC 40\uC2DC\uAC04 \uADFC\uBB34\uD560 \uB54C \uC8FC\uD734\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83D\uDCCA", name: "\uD1F4\uC9C1\uAE08", desc: "1\uB144 \uC774\uC0C1 \uADFC\uBB34 \uC2DC", query: "\uC6D4\uAE09 300\uB9CC\uC6D0, 3\uB144 \uADFC\uBB34 \uD6C4 \uD1F4\uC9C1\uAE08\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83C\uDFD6\uFE0F", name: "\uC5F0\uCC28\uC218\uB2F9", desc: "\uBBF8\uC0AC\uC6A9 \uC5F0\uCC28 \uC815\uC0B0", query: "\uC6D4\uAE09 250\uB9CC\uC6D0, \uBBF8\uC0AC\uC6A9 \uC5F0\uCC28 5\uC77C\uC758 \uC5F0\uCC28\uC218\uB2F9\uC740?" },
-  { icon: "\u2696\uFE0F", name: "\uCD5C\uC800\uC784\uAE08 \uAC80\uC99D", desc: "2026\uB144 \uAE30\uC900 \uD655\uC778", query: "\uC2DC\uAE09 10,030\uC6D0\uC774 \uCD5C\uC800\uC784\uAE08 \uC774\uC0C1\uC778\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694" },
-  { icon: "\uD83D\uDCCB", name: "\uC2E4\uC5C5\uAE09\uC5EC", desc: "\uC218\uAE09 \uC790\uACA9/\uAE08\uC561", query: "\uC6D4\uAE09 280\uB9CC\uC6D0, 2\uB144 \uADFC\uBB34 \uD6C4 \uC2E4\uC5C5\uAE09\uC5EC\uB294 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83C\uDFE5", name: "4\uB300\uBCF4\uD5D8\uB8CC", desc: "\uADFC\uB85C\uC790/\uC0AC\uC5C5\uC8FC \uBD80\uB2F4", query: "\uC6D4\uAE09 300\uB9CC\uC6D0\uC77C \uB54C 4\uB300\uBCF4\uD5D8\uB8CC\uB294 \uAC01\uAC01 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83D\uDCBC", name: "\uC5F0\uC7A5/\uC57C\uAC04/\uD734\uC77C\uC218\uB2F9", desc: "\uD560\uC99D\uB960 \uC801\uC6A9 \uACC4\uC0B0", query: "\uC2DC\uAE09 12,000\uC6D0, \uC5F0\uC7A5\uADFC\uB85C 10\uC2DC\uAC04\uC758 \uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83D\uDEAB", name: "\uD574\uACE0\uC608\uACE0\uC218\uB2F9", desc: "30\uC77C\uBD84 \uD1B5\uC0C1\uC784\uAE08", query: "\uC6D4\uAE09 250\uB9CC\uC6D0\uC77C \uB54C \uD574\uACE0\uC608\uACE0\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDCB0", name: "\uC8FC\uD734\uC218\uB2F9", query: "\uC2DC\uAE09 10,000\uC6D0, \uC8FC 40\uC2DC\uAC04 \uADFC\uBB34\uD560 \uB54C \uC8FC\uD734\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDCCA", name: "\uD1F4\uC9C1\uAE08", query: "\uC6D4\uAE09 300\uB9CC\uC6D0, 3\uB144 \uADFC\uBB34 \uD6C4 \uD1F4\uC9C1\uAE08\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83C\uDFD6\uFE0F", name: "\uC5F0\uCC28\uC218\uB2F9", query: "\uC6D4\uAE09 250\uB9CC\uC6D0, \uBBF8\uC0AC\uC6A9 \uC5F0\uCC28 5\uC77C\uC758 \uC5F0\uCC28\uC218\uB2F9\uC740?" },
+  { icon: "\u2696\uFE0F", name: "\uCD5C\uC800\uC784\uAE08", query: "\uC2DC\uAE09 10,030\uC6D0\uC774 \uCD5C\uC800\uC784\uAE08 \uC774\uC0C1\uC778\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694" },
+  { icon: "\uD83D\uDCCB", name: "\uC2E4\uC5C5\uAE09\uC5EC", query: "\uC6D4\uAE09 280\uB9CC\uC6D0, 2\uB144 \uADFC\uBB34 \uD6C4 \uC2E4\uC5C5\uAE09\uC5EC\uB294 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83C\uDFE5", name: "4\uB300\uBCF4\uD5D8\uB8CC", query: "\uC6D4\uAE09 300\uB9CC\uC6D0\uC77C \uB54C 4\uB300\uBCF4\uD5D8\uB8CC\uB294 \uAC01\uAC01 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDCBC", name: "\uC5F0\uC7A5\uC218\uB2F9", query: "\uC2DC\uAE09 12,000\uC6D0, \uC5F0\uC7A5\uADFC\uB85C 10\uC2DC\uAC04\uC758 \uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
+  { icon: "\uD83D\uDEAB", name: "\uD574\uACE0\uC608\uACE0", query: "\uC6D4\uAE09 250\uB9CC\uC6D0\uC77C \uB54C \uD574\uACE0\uC608\uACE0\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
 ];
 
-function initCalcGrid() {
-  const grid = document.getElementById('calc-grid');
-  CALC_SHORTCUTS.forEach(calc => {
-    const card = document.createElement('div');
-    card.className = 'calc-card';
-    card.innerHTML =
-      '<div class="calc-icon">' + calc.icon + '</div>' +
-      '<div class="calc-name">' + calc.name + '</div>' +
-      '<div class="calc-desc">' + calc.desc + '</div>';
-    card.onclick = () => askQuestion(calc.query);
-    grid.appendChild(card);
+function initHeroCalcs() {
+  const container = document.getElementById('hero-calcs');
+  CALC_SHORTCUTS.forEach(c => {
+    const chip = document.createElement('button');
+    chip.className = 'hero-calc-chip';
+    chip.innerHTML = c.icon + ' ' + c.name;
+    chip.onclick = () => askQuestion(c.query);
+    container.appendChild(chip);
   });
 }
 
-// ── SEC-04: Board ────────────────────────────────────────────────────────────
+// ── Board ────────────────────────────────────────────────────────────────────
 
 let boardPage = 1;
 let boardLoading = false;
@@ -1050,7 +1279,7 @@ async function loadBoard(append) {
     console.error('Board load error:', e);
     if (!append) {
       document.getElementById('board-list').innerHTML =
-        '<p style="text-align:center;color:var(--muted);padding:20px;">질문을 불러올 수 없습니다.</p>';
+        '<p style="text-align:center;color:var(--text-muted);padding:20px;">질문을 불러올 수 없습니다.</p>';
     }
     moreBtn.style.display = 'none';
   } finally {
@@ -1063,7 +1292,6 @@ document.getElementById('board-more-btn').addEventListener('click', () => {
   loadBoard(true);
 });
 
-// Lazy load board when scrolled into view
 const boardObserver = new IntersectionObserver(entries => {
   if (entries[0].isIntersecting && !boardLoading) {
     loadBoard(false);
@@ -1072,10 +1300,29 @@ const boardObserver = new IntersectionObserver(entries => {
 }, { rootMargin: '200px' });
 boardObserver.observe(document.getElementById('board-section'));
 
+// ── Scroll Reveal ────────────────────────────────────────────────────────────
+
+const revealObserver = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.08 });
+
+document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+// ── Back to Top ──────────────────────────────────────────────────────────────
+
+const backBtn = document.getElementById('back-to-top');
+window.addEventListener('scroll', () => {
+  backBtn.classList.toggle('visible', window.scrollY > 600);
+}, { passive: true });
+backBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 initFAQ();
-initCalcGrid();
 </script>
 </body>
 </html>
