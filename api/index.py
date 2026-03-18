@@ -466,7 +466,12 @@ def serve_calculators():
 
 @app.get("/calculator_flow/{filename:path}")
 def serve_calculator_flow(filename: str):
-    file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "calculator_flow", filename)
+    base_dir = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "calculator_flow")
+    )
+    file_path = os.path.abspath(os.path.join(base_dir, filename))
+    if os.path.commonpath([base_dir, file_path]) != base_dir or not file_path.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Not Found")
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(file_path, media_type="text/html")

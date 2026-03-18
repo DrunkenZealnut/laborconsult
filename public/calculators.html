@@ -46,7 +46,7 @@
     .layout.viewing .sidebar { display: none; }
     .layout.viewing .viewer { display: flex; }
     .layout:not(.viewing) .viewer { display: none; }
-    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); font-size: 14px; color: var(--primary); cursor: pointer; font-weight: 600; }
+    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px 16px; background: var(--card); border: none; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--primary); cursor: pointer; font-weight: 600; width: 100%; font-family: inherit; }
     .mobile-back svg { width: 16px; height: 16px; }
   }
   @media (min-width: 769px) {
@@ -195,10 +195,10 @@
 
   <!-- Viewer -->
   <div class="viewer" id="viewer">
-    <div class="mobile-back" id="mobileBack" onclick="closeViewer()">
+    <button class="mobile-back" id="mobileBack" onclick="mobileBack()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
       목록으로 돌아가기
-    </div>
+    </button>
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">📐</div>
       <p>좌측 메뉴에서 계산기를 선택하세요</p>
@@ -213,25 +213,25 @@ const items = document.querySelectorAll('.menu-item');
 const frame = document.getElementById('calcFrame');
 const empty = document.getElementById('emptyState');
 const layout = document.getElementById('layout');
+let viewerOpen = false;
 
-items.forEach(item => {
-  item.addEventListener('click', () => {
-    const src = item.dataset.src;
-    if (!src) return;
+function openViewer(src) {
+  if (!src) return;
 
-    // Active state
-    items.forEach(i => i.classList.remove('active'));
-    item.classList.add('active');
+  items.forEach(i => i.classList.remove('active'));
+  event?.target?.closest?.('.menu-item')?.classList.add('active');
 
-    // Load iframe
-    frame.src = src;
-    frame.style.display = 'block';
-    empty.style.display = 'none';
+  frame.src = src;
+  frame.style.display = 'block';
+  empty.style.display = 'none';
+  layout.classList.add('viewing');
 
-    // Mobile: switch to viewer
-    layout.classList.add('viewing');
-  });
-});
+  // 모바일: 첫 진입 시에만 pushState (중복 방지)
+  if (window.innerWidth <= 768 && !viewerOpen) {
+    history.pushState({ viewing: true }, '');
+  }
+  viewerOpen = true;
+}
 
 function closeViewer() {
   layout.classList.remove('viewing');
@@ -239,24 +239,34 @@ function closeViewer() {
   frame.style.display = 'none';
   frame.src = '';
   empty.style.display = 'flex';
+  viewerOpen = false;
 }
 
-// Handle browser back on mobile
+function mobileBack() {
+  if (viewerOpen) {
+    history.back();  // popstate가 closeViewer() 호출
+  }
+}
+
+// 클릭 + 키보드(Enter/Space) 지원
+items.forEach(item => {
+  item.setAttribute('tabindex', '0');
+  item.setAttribute('role', 'button');
+
+  item.addEventListener('click', () => openViewer(item.dataset.src));
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openViewer(item.dataset.src);
+    }
+  });
+});
+
+// 브라우저 뒤로가기
 window.addEventListener('popstate', () => {
   if (layout.classList.contains('viewing')) {
     closeViewer();
   }
-});
-
-// Push state when opening viewer on mobile
-const origClick = items[0]?.click;
-items.forEach(item => {
-  const origHandler = item.onclick;
-  item.addEventListener('click', () => {
-    if (window.innerWidth <= 768) {
-      history.pushState({ viewing: true }, '');
-    }
-  });
 });
 </script>
 </body>

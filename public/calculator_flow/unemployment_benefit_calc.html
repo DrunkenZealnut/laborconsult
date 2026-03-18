@@ -496,7 +496,7 @@ function calc(){
     var remain=sDays-reDay;
     var halfDays=Math.floor(sDays/2);
     if(remain>=halfDays&&remain>0){
-      var earlyAmt=Math.round(clamped*(remain/2)*0.5);
+      var earlyAmt=Math.round(clamped*(remain/2));
       earlyEl.textContent=fmt(earlyAmt)+'원';
       earlyEl.style.color='var(--color-text-success)';
       earlyNote.textContent='잔여 '+remain+'일 ≥ '+halfDays+'일 → 발생 ✓';
