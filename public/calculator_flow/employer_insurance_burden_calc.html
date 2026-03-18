@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">근로자 vs 사업주</button>
+<button onclick="showTab(2)" id="t2">산재보험</button>
+<button onclick="showTab(3)" id="t3">총 인건비 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 계산 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">사업주 4대보험 부담분 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">각 보험법 | 2026년 기준 | 근로자가 모르는 "보이지 않는 인건비"</p>
+</div>
+<svg width="100%" viewBox="0 0 680 800">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="56" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="34" text-anchor="middle">사업주는 근로자 급여 외에 추가로 보험료를 부담합니다</text>
+<text class="ts" x="340" y="54" text-anchor="middle">이 금액이 "총 인건비"를 구성하며, 근로자 급여명세서에는 보이지 않습니다</text>
+
+<!-- 월 급여 -->
+<g class="c-gray">
+<rect x="220" y="92" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="114" text-anchor="middle" dominant-baseline="central">월 급여</text>
+</g>
+
+<!-- 5개 보험 분기 -->
+<line x1="160" y1="136" x2="80" y2="172" class="arr" marker-end="url(#ar)"/>
+<line x1="260" y1="136" x2="215" y2="172" class="arr" marker-end="url(#ar)"/>
+<line x1="340" y1="136" x2="340" y2="172" class="arr" marker-end="url(#ar)"/>
+<line x1="420" y1="136" x2="465" y2="172" class="arr" marker-end="url(#ar)"/>
+<line x1="520" y1="136" x2="580" y2="172" class="arr" marker-end="url(#ar)"/>
+
+<!-- 국민연금 -->
+<g class="c-teal">
+<rect x="40" y="172" width="120" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="100" y="194" text-anchor="middle" dominant-baseline="central">국민연금</text>
+<text class="ts" x="100" y="218" text-anchor="middle" dominant-baseline="central">4.75%</text>
+<text class="ts" x="100" y="238" text-anchor="middle" dominant-baseline="central">근로자와</text>
+<text class="ts" x="100" y="254" text-anchor="middle" dominant-baseline="central">동일</text>
+</g>
+
+<!-- 건강보험 -->
+<g class="c-blue">
+<rect x="170" y="172" width="120" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="230" y="194" text-anchor="middle" dominant-baseline="central">건강보험</text>
+<text class="ts" x="230" y="218" text-anchor="middle" dominant-baseline="central">3.595%</text>
+<text class="ts" x="230" y="238" text-anchor="middle" dominant-baseline="central">근로자와</text>
+<text class="ts" x="230" y="254" text-anchor="middle" dominant-baseline="central">동일</text>
+</g>
+
+<!-- 장기요양 -->
+<g class="c-purple">
+<rect x="300" y="172" width="120" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="360" y="194" text-anchor="middle" dominant-baseline="central">장기요양</text>
+<text class="ts" x="360" y="218" text-anchor="middle" dominant-baseline="central">건보×13.14%</text>
+<text class="ts" x="360" y="238" text-anchor="middle" dominant-baseline="central">근로자와</text>
+<text class="ts" x="360" y="254" text-anchor="middle" dominant-baseline="central">동일</text>
+</g>
+
+<!-- 고용보험 (다름!) -->
+<g class="c-amber">
+<rect x="430" y="172" width="120" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="490" y="194" text-anchor="middle" dominant-baseline="central">고용보험</text>
+<text class="ts" x="490" y="218" text-anchor="middle" dominant-baseline="central">0.9%</text>
+<text style="font-size:11px;fill:#854F0B;font-weight:500" x="490" y="238" text-anchor="middle" dominant-baseline="central">+ 직능개발</text>
+<text style="font-size:11px;fill:#854F0B" x="490" y="254" text-anchor="middle" dominant-baseline="central">0.25~0.85%</text>
+</g>
+
+<!-- 산재보험 (사업주 전액!) -->
+<g class="c-coral">
+<rect x="560" y="172" width="100" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="610" y="194" text-anchor="middle" dominant-baseline="central">산재보험</text>
+<text style="font-size:11px;fill:#993C1D;font-weight:500" x="610" y="218" text-anchor="middle" dominant-baseline="central">사업주</text>
+<text style="font-size:11px;fill:#993C1D;font-weight:500" x="610" y="234" text-anchor="middle" dominant-baseline="central">전액 부담</text>
+<text class="ts" x="610" y="256" text-anchor="middle" dominant-baseline="central">업종별 요율</text>
+</g>
+
+<!-- 합산 -->
+<line x1="100" y1="272" x2="260" y2="310" class="arr" marker-end="url(#ar)"/>
+<line x1="230" y1="272" x2="290" y2="310" class="arr" marker-end="url(#ar)"/>
+<line x1="360" y1="272" x2="340" y2="310" class="arr" marker-end="url(#ar)"/>
+<line x1="490" y1="272" x2="390" y2="310" class="arr" marker-end="url(#ar)"/>
+<line x1="610" y1="272" x2="420" y2="310" class="arr" marker-end="url(#ar)"/>
+
+<g class="c-coral">
+<rect x="120" y="310" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="330" text-anchor="middle" dominant-baseline="central">사업주 4대보험 합계</text>
+<text class="ts" x="340" y="350" text-anchor="middle" dominant-baseline="central">= 국민연금 + 건강 + 장기요양 + 고용(+직능) + 산재</text>
+</g>
+<line x1="340" y1="366" x2="340" y2="396" class="arr" marker-end="url(#ar)"/>
+
+<!-- 총 인건비 -->
+<g class="c-gray">
+<rect x="100" y="396" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="418" text-anchor="middle" dominant-baseline="central">총 인건비</text>
+<text style="font-size:16px;fill:#2C2C2A;font-weight:500" x="340" y="452" text-anchor="middle" dominant-baseline="central">= 월 급여 + 사업주 4대보험 합계</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="472" x2="340" y2="502" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="502" width="560" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="524" text-anchor="middle">예시: 월급 300만원 (150인 미만, 제조업)</text>
+<text class="ts" x="340" y="548" text-anchor="middle">사업주 4대보험: 약 350,000~380,000원 (산재 포함)</text>
+<text class="ts" x="340" y="568" text-anchor="middle">총 인건비: 약 3,350,000~3,380,000원</text>
+<text class="ts" x="340" y="588" text-anchor="middle">→ 근로자에게 300만원을 주려면 사업주는 약 338만원을 지출</text>
+
+<!-- 핵심 메시지 -->
+<rect x="40" y="624" width="600" height="76" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="648" text-anchor="middle">반도체고 졸업생이 알아야 할 것</text>
+<text class="ts" x="340" y="672" text-anchor="middle">사업주가 "4대보험 안 해줄게" 또는 "3.3% 프리랜서로 하자"고 할 때</text>
+<text class="ts" x="340" y="692" text-anchor="middle">→ 사업주의 부담금(약 12~15%)을 회피하려는 것 = 불법 가능성 높음</text>
+
+<!-- 근로자 vs 사업주 공제율 비교 -->
+<rect x="40" y="720" width="600" height="60" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="742" text-anchor="middle">사업주 부담률 합계: 약 12~15% (산재 업종에 따라 변동)</text>
+<text class="ts" x="340" y="764" text-anchor="middle">근로자 부담 약 9.4% + 사업주 부담 약 12~15% = 급여 대비 총 21~24%가 보험료</text>
+</svg>
+</div>
+
+<!-- TAB 1: 근로자 vs 사업주 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">근로자 vs 사업주 — 항목별 비교</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">동일한 요율(4종) + 사업주만 부담하는 추가분(2종)</p>
+</div>
+
+<div style="overflow-x:auto;margin-bottom:16px">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead>
+<tr style="border-bottom:1.5px solid var(--color-border-secondary)">
+<th style="text-align:left;padding:8px;color:var(--color-text-secondary);font-weight:500">보험</th>
+<th style="text-align:center;padding:8px;color:var(--color-text-secondary);font-weight:500">근로자</th>
+<th style="text-align:center;padding:8px;color:var(--color-text-secondary);font-weight:500">사업주</th>
+<th style="text-align:left;padding:8px;color:var(--color-text-secondary);font-weight:500">차이</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">국민연금</td><td style="padding:8px;text-align:center">4.75%</td><td style="padding:8px;text-align:center">4.75%</td><td style="padding:8px;color:var(--color-text-secondary)">동일 (반반)</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">건강보험</td><td style="padding:8px;text-align:center">3.595%</td><td style="padding:8px;text-align:center">3.595%</td><td style="padding:8px;color:var(--color-text-secondary)">동일 (반반)</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">장기요양</td><td style="padding:8px;text-align:center">건보×13.14%</td><td style="padding:8px;text-align:center">건보×13.14%</td><td style="padding:8px;color:var(--color-text-secondary)">동일 (반반)</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary)"><td style="padding:8px;font-weight:500">고용보험 (실업급여)</td><td style="padding:8px;text-align:center">0.9%</td><td style="padding:8px;text-align:center">0.9%</td><td style="padding:8px;color:var(--color-text-secondary)">동일</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-warning)"><td style="padding:8px;font-weight:500">직업능력개발</td><td style="padding:8px;text-align:center">-</td><td style="padding:8px;text-align:center;font-weight:500;color:var(--color-text-warning)">0.25~0.85%</td><td style="padding:8px;font-weight:500;color:var(--color-text-warning)">사업주만 부담</td></tr>
+<tr style="border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-danger)"><td style="padding:8px;font-weight:500">산재보험</td><td style="padding:8px;text-align:center">-</td><td style="padding:8px;text-align:center;font-weight:500;color:var(--color-text-danger)">업종별 요율</td><td style="padding:8px;font-weight:500;color:var(--color-text-danger)">사업주 전액<br><span style="font-size:11px;font-weight:400;color:var(--color-text-warning)">※ 특수고용직: 사업주 50% + 노무제공자 50% (산재법 §126조의2)</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- 직업능력개발 상세 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">직업능력개발 부담금 — 규모별 요율</p>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">150인 미만</p>
+<p style="font-size:18px;font-weight:500;margin:0">0.25%</p>
+</div>
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">150~999인</p>
+<p style="font-size:18px;font-weight:500;margin:0">0.45%</p>
+</div>
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">1,000인 이상</p>
+<p style="font-size:18px;font-weight:500;margin:0">0.85%</p>
+</div>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0">사업주의 고용보험 = 실업급여 0.9% + 직능개발 부담금 = 총 1.15~1.75%</p>
+</div>
+
+<!-- 합산 요율 비교 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">합산 요율 비교 (산재 제외)</p>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+<div style="border-radius:6px;padding:12px;background:var(--color-background-info)">
+<p style="font-size:12px;color:var(--color-text-info);margin:0 0 4px">근로자 부담 합계</p>
+<p style="font-size:20px;font-weight:500;color:var(--color-text-info);margin:0">약 9.4%</p>
+</div>
+<div style="border-radius:6px;padding:12px;background:var(--color-background-warning)">
+<p style="font-size:12px;color:var(--color-text-warning);margin:0 0 4px">사업주 부담 합계 (산재 별도)</p>
+<p style="font-size:20px;font-weight:500;color:var(--color-text-warning);margin:0">약 9.7~10.2%</p>
+</div>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0">사업주가 직능개발과 산재보험을 추가로 부담하므로, 근로자보다 항상 더 많이 냅니다</p>
+</div>
+</div>
+
+<!-- TAB 2: 산재보험 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">산재보험 — 사업주 전액 부담</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로자는 1원도 내지 않지만, 산재 발생 시 보상을 받을 수 있는 보험</p>
+</div>
+<svg width="100%" viewBox="0 0 680 520">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">월 급여</text>
+</g>
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-coral">
+<rect x="60" y="94" width="560" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="116" text-anchor="middle" dominant-baseline="central">산재보험료 = 월급 × (업종별 요율 + 기타 부담금)</text>
+<text class="ts" x="340" y="144" text-anchor="middle" dominant-baseline="central">업종별 요율: 업종 위험도에 따라 0.7% ~ 34% (편차 큼)</text>
+<text class="ts" x="340" y="164" text-anchor="middle" dominant-baseline="central">+ 출퇴근 재해 0.6% + 임금채권 0.9% + 석면 0.03%</text>
+<text class="ts" x="340" y="184" text-anchor="middle" dominant-baseline="central">기타 부담금 합계: 약 1.53% 고정</text>
+</g>
+
+<!-- 업종별 예시 -->
+<rect x="40" y="218" width="600" height="170" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="242" text-anchor="middle">주요 업종별 산재보험 요율 예시</text>
+
+<rect x="70" y="260" width="160" height="56" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="150" y="280" text-anchor="middle" dominant-baseline="central">사무직 (금융·IT)</text>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="150" y="302" text-anchor="middle" dominant-baseline="central">0.7%</text>
+
+<rect x="250" y="260" width="160" height="56" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="330" y="280" text-anchor="middle" dominant-baseline="central">제조업 (반도체)</text>
+<text style="font-size:14px;fill:#633806;font-weight:500" x="330" y="302" text-anchor="middle" dominant-baseline="central">1.0~2.0%</text>
+
+<rect x="430" y="260" width="180" height="56" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="520" y="280" text-anchor="middle" dominant-baseline="central">건설업·광업</text>
+<text style="font-size:14px;fill:#791F1F;font-weight:500" x="520" y="302" text-anchor="middle" dominant-baseline="central">3.5~34%</text>
+
+<text class="ts" x="340" y="340" text-anchor="middle">반도체 제조: 화학물질·설비 위험이 있어 일반 사무직보다 높은 요율 적용</text>
+<text class="ts" x="340" y="360" text-anchor="middle">산재보험 요율이 높을수록 사업주의 총 인건비 부담이 크게 증가</text>
+<text class="ts" x="340" y="380" text-anchor="middle">산재 발생 이력이 많으면 "개별실적 요율"로 할증될 수 있음</text>
+
+<!-- 핵심 -->
+<rect x="40" y="410" width="600" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="434" text-anchor="middle">산재보험의 의미</text>
+<text class="ts" x="340" y="458" text-anchor="middle">근로자는 보험료를 내지 않지만, 산업재해 시 휴업급여·장해급여·유족급여를 받을 수 있음</text>
+<text class="ts" x="340" y="478" text-anchor="middle">사업주가 산재보험 미가입 시 → 보험급여의 50%를 사업주가 직접 부담 (징수법)</text>
+<text class="ts" x="340" y="498" text-anchor="middle">반도체고 졸업생: 산재보험 가입 여부 반드시 확인 (급여명세서에 안 보이는 항목)</text>
+</svg>
+</div>
+
+<!-- TAB 3: 총 인건비 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">총 인건비 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">월급과 사업장 규모·업종을 선택하면 사업주 부담분과 총 인건비를 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">월 급여</label>
+<input type="range" min="100" max="800" value="300" step="10" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salOut">300만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">사업장 규모</label>
+<button id="btnS" onclick="setSize('s');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">150인 미만</button>
+<button id="btnM" onclick="setSize('m');calc()">150~999인</button>
+<button id="btnL" onclick="setSize('l');calc()">1,000인 이상</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">산재보험 요율</label>
+<input type="range" min="0.7" max="10" value="1.5" step="0.1" id="indRate" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="indOut">1.5%</span>
+</div>
+</div>
+
+<!-- 근로자 vs 사업주 나란히 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<!-- 근로자 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-info)">근로자 부담</p>
+<div style="font-size:13px;color:var(--color-text-secondary)" id="workerItems"></div>
+<div style="border-top:0.5px solid var(--color-border-tertiary);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:500;color:var(--color-text-primary)">
+<span>합계</span><span id="workerTotal">0원</span>
+</div>
+</div>
+<!-- 사업주 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-warning)">사업주 부담</p>
+<div style="font-size:13px;color:var(--color-text-secondary)" id="empItems"></div>
+<div style="border-top:0.5px solid var(--color-border-tertiary);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:500;color:var(--color-text-primary)">
+<span>합계</span><span id="empTotal">0원</span>
+</div>
+</div>
+</div>
+
+<!-- 총 인건비 비주얼 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-primary)">총 인건비 구성</p>
+<div style="display:flex;height:36px;border-radius:6px;overflow:hidden;gap:1px" id="costBar"></div>
+<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11px" id="costLegend"></div>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">월 급여</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="rSal">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">사업주 부담 합계</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-warning)" id="rEmp">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="rEmpRate"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 인건비</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="rTotal">0원</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="rTotalRate"></p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var bizSize='s';
+var SKILL_RATES={s:0.0025,m:0.0045,l:0.0085};
+var SKILL_LABELS={s:'0.25%',m:'0.45%',l:'0.85%'};
+var IND_EXTRA=0.0153; // 출퇴근0.6+임금채권0.9+석면0.03
+
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setSize(s){bizSize=s;setBtn('btnS',s==='s');setBtn('btnM',s==='m');setBtn('btnL',s==='l');}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function calcNP(sal){var b=Math.floor(sal/1000)*1000;b=Math.max(390000,Math.min(b,6170000));return Math.floor(b*0.0475);}
+function calcHI(sal){return Math.floor(sal*0.03595);}
+function calcLTC(hi){return Math.floor(hi*0.1314);}
+function calcEI(sal){return Math.floor(sal*0.009);}
+
+function calc(){
+  var sal=parseInt(document.getElementById('salary').value);
+  var indRate=parseFloat(document.getElementById('indRate').value);
+  document.getElementById('salOut').textContent=sal+'만원';
+  document.getElementById('indOut').textContent=indRate.toFixed(1)+'%';
+
+  var salW=sal*10000;
+  var skillRate=SKILL_RATES[bizSize];
+
+  // 근로자 부담
+  var wNP=calcNP(salW), wHI=calcHI(salW), wLTC=calcLTC(wHI), wEI=calcEI(salW);
+  var wTotal=wNP+wHI+wLTC+wEI;
+
+  // 사업주 부담 (4대 동일 + 직능 + 산재)
+  var eNP=wNP, eHI=wHI, eLTC=wLTC;
+  var eEI=Math.floor(salW*0.009);
+  var eSkill=Math.floor(salW*skillRate);
+  var eInd=Math.floor(salW*(indRate/100+IND_EXTRA));
+  var eTotal=eNP+eHI+eLTC+eEI+eSkill+eInd;
+  var totalCost=salW+eTotal;
+
+  // 근로자 항목
+  var wItems='';
+  wItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>국민연금 4.75%</span><span>'+fmt(wNP)+'원</span></div>';
+  wItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>건강보험 3.595%</span><span>'+fmt(wHI)+'원</span></div>';
+  wItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>장기요양 건보×13.14%</span><span>'+fmt(wLTC)+'원</span></div>';
+  wItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 0.9%</span><span>'+fmt(wEI)+'원</span></div>';
+  document.getElementById('workerItems').innerHTML=wItems;
+  document.getElementById('workerTotal').textContent=fmt(wTotal)+'원';
+
+  // 사업주 항목
+  var eItems='';
+  eItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>국민연금 4.75%</span><span>'+fmt(eNP)+'원</span></div>';
+  eItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>건강보험 3.595%</span><span>'+fmt(eHI)+'원</span></div>';
+  eItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>장기요양 건보×13.14%</span><span>'+fmt(eLTC)+'원</span></div>';
+  eItems+='<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 0.9%</span><span>'+fmt(eEI)+'원</span></div>';
+  eItems+='<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--color-text-warning);font-weight:500"><span>직능개발 '+SKILL_LABELS[bizSize]+'</span><span>'+fmt(eSkill)+'원</span></div>';
+  eItems+='<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--color-text-danger);font-weight:500"><span>산재보험 '+(indRate+1.53).toFixed(2)+'%</span><span>'+fmt(eInd)+'원</span></div>';
+  document.getElementById('empItems').innerHTML=eItems;
+  document.getElementById('empTotal').textContent=fmt(eTotal)+'원';
+
+  // 결과 카드
+  document.getElementById('rSal').textContent=fmt(salW)+'원';
+  document.getElementById('rEmp').textContent=fmt(eTotal)+'원';
+  document.getElementById('rEmpRate').textContent='급여 대비 '+(eTotal/salW*100).toFixed(1)+'%';
+  document.getElementById('rTotal').textContent=fmt(totalCost)+'원';
+  document.getElementById('rTotalRate').textContent='급여의 '+(totalCost/salW*100).toFixed(1)+'%';
+
+  // 비주얼 바
+  var segments=[
+    {v:salW,c:'#378ADD',l:'급여'},
+    {v:eNP+eHI+eLTC,c:'#1D9E75',l:'연금·건강·요양'},
+    {v:eEI+eSkill,c:'#BA7517',l:'고용·직능'},
+    {v:eInd,c:'#D85A30',l:'산재'}
+  ];
+  var barHtml='',legHtml='';
+  segments.forEach(function(s){
+    var pct=s.v/totalCost*100;
+    barHtml+='<div style="width:'+pct+'%;background:'+s.c+'"></div>';
+    legHtml+='<span style="color:var(--color-text-secondary)"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+s.c+';margin-right:4px"></span>'+s.l+' '+fmt(s.v)+'</span>';
+  });
+  document.getElementById('costBar').innerHTML=barHtml;
+  document.getElementById('costLegend').innerHTML=legHtml;
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">사업주 부담 산식</p>',
+    '<p style="margin:2px 0">국민연금: '+fmt(eNP)+'원 (근로자와 동일)</p>',
+    '<p style="margin:2px 0">건강보험: '+fmt(eHI)+'원 (근로자와 동일)</p>',
+    '<p style="margin:2px 0">장기요양: '+fmt(eLTC)+'원 (근로자와 동일)</p>',
+    '<p style="margin:2px 0">고용보험: '+fmt(eEI)+'원 + 직능개발 '+fmt(eSkill)+'원 = '+fmt(eEI+eSkill)+'원</p>',
+    '<p style="margin:2px 0">산재보험: '+fmt(salW)+' × ('+indRate.toFixed(1)+'% + 1.53%) = '+fmt(eInd)+'원</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">사업주 합계: '+fmt(eTotal)+'원 → 총 인건비: '+fmt(totalCost)+'원</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===3)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

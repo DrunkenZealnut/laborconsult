@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">산입범위 판정</button>
+<button onclick="showTab(2)" id="t2">수습 감액</button>
+<button onclick="showTab(3)" id="t3">검증 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">최저임금 검증 전체 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">최저임금법 제6조, 제5조 제2항</p>
+</div>
+<svg width="100%" viewBox="0 0 680 620">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- Step 1 -->
+<g class="c-gray">
+<rect x="140" y="20" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">1. 법정 최저시급 확인</text>
+<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">2026년 기준: 10,320원</text>
+</g>
+
+<line x1="340" y1="76" x2="340" y2="106" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-amber">
+<rect x="100" y="106" width="480" height="68" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="126" text-anchor="middle" dominant-baseline="central">2. 수습 감액 여부 판단 (3요건 모두 충족 시)</text>
+<text class="ts" x="340" y="146" text-anchor="middle" dominant-baseline="central">① 단순노무종사자 아닐 것 ② 1년↑ 계약 ③ 수습 3개월 이내</text>
+<text class="ts" x="340" y="162" text-anchor="middle" dominant-baseline="central">→ "수습 감액" 탭에서 상세 확인</text>
+</g>
+
+<line x1="340" y1="162" x2="340" y2="192" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-purple">
+<rect x="60" y="192" width="560" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="212" text-anchor="middle" dominant-baseline="central">3. 수당별 산입범위 분류 (핵심 단계)</text>
+<text class="ts" x="340" y="232" text-anchor="middle" dominant-baseline="central">각 수당을 4가지 유형으로 판정 → "산입범위" 탭에서 상세 확인</text>
+</g>
+
+<line x1="340" y1="248" x2="340" y2="278" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4 -->
+<g class="c-teal">
+<rect x="100" y="278" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="300" text-anchor="middle" dominant-baseline="central">4. 산입 월 임금 합산</text>
+<text class="ts" x="340" y="320" text-anchor="middle" dominant-baseline="central">= 기본급 + standard 수당</text>
+<text class="ts" x="340" y="338" text-anchor="middle" dominant-baseline="central">+ 정기상여 산입분 + 복리후생 산입분</text>
+</g>
+
+<line x1="340" y1="354" x2="340" y2="384" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-coral">
+<rect x="140" y="384" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="404" text-anchor="middle" dominant-baseline="central">5. 실질 시급 산출</text>
+<text class="ts" x="340" y="422" text-anchor="middle" dominant-baseline="central">= 산입 월 임금 / 월 기준시간</text>
+</g>
+
+<line x1="340" y1="440" x2="340" y2="470" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<rect x="60" y="470" width="560" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="494" text-anchor="middle">6. 판정</text>
+
+<g>
+<rect x="90" y="510" width="240" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;font-weight:500;fill:#085041" x="210" y="530" text-anchor="middle" dominant-baseline="central">충족</text>
+<text style="font-size:12px;fill:#085041" x="210" y="550" text-anchor="middle" dominant-baseline="central">실질 시급 ≥ 법정 최저시급</text>
+</g>
+
+<g>
+<rect x="350" y="510" width="240" height="56" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:14px;font-weight:500;fill:#791F1F" x="470" y="530" text-anchor="middle" dominant-baseline="central">미달</text>
+<text style="font-size:12px;fill:#791F1F" x="470" y="550" text-anchor="middle" dominant-baseline="central">부족분 = (최저-실질) x 월시간</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 1: 산입범위 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">산입범위 판정 — AllowanceClassifier</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">각 수당이 최저임금 비교에 포함되는지 결정하는 핵심 로직</p>
+</div>
+<svg width="100%" viewBox="0 0 680 660">
+<defs><marker id="ar1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="220" y="20" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">수당 1건 입력</text>
+</g>
+
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#ar1)"/>
+
+<!-- 분기 1 -->
+<g class="c-amber">
+<rect x="140" y="94" width="400" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="116" text-anchor="middle" dominant-baseline="central">시간외수당·비과세 항목인가?</text>
+</g>
+
+<line x1="440" y1="138" x2="560" y2="168" class="arr" marker-end="url(#ar1)"/>
+<text class="ts" x="510" y="148">예</text>
+<line x1="340" y1="138" x2="340" y2="178" class="arr" marker-end="url(#ar1)"/>
+<text class="ts" x="354" y="158">아니오</text>
+
+<g class="c-red">
+<rect x="480" y="168" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="560" y="188" text-anchor="middle" dominant-baseline="central">excluded</text>
+<text class="ts" x="560" y="208" text-anchor="middle" dominant-baseline="central">산입률 0%</text>
+</g>
+
+<!-- 분기 2 -->
+<g class="c-amber">
+<rect x="140" y="178" width="300" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="290" y="200" text-anchor="middle" dominant-baseline="central">정기상여금인가?</text>
+</g>
+
+<line x1="380" y1="222" x2="560" y2="252" class="arr" marker-end="url(#ar1)"/>
+<text class="ts" x="476" y="234">예</text>
+<line x1="290" y1="222" x2="290" y2="262" class="arr" marker-end="url(#ar1)"/>
+<text class="ts" x="304" y="242">아니오</text>
+
+<g class="c-teal">
+<rect x="480" y="252" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="560" y="272" text-anchor="middle" dominant-baseline="central">regular_bonus</text>
+<text class="ts" x="560" y="292" text-anchor="middle" dominant-baseline="central">100% (2024+)</text>
+</g>
+
+<!-- 분기 3 -->
+<g class="c-amber">
+<rect x="100" y="262" width="300" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="250" y="284" text-anchor="middle" dominant-baseline="central">복리후생비인가?</text>
+</g>
+
+<line x1="340" y1="306" x2="560" y2="336" class="arr" marker-end="url(#ar1)"/>
+<text class="ts" x="458" y="318">예</text>
+<line x1="250" y1="306" x2="250" y2="346" class="arr" marker-end="url(#ar1)"/>
+<text class="ts" x="264" y="326">아니오</text>
+
+<g class="c-teal">
+<rect x="480" y="336" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="560" y="356" text-anchor="middle" dominant-baseline="central">welfare</text>
+<text class="ts" x="560" y="376" text-anchor="middle" dominant-baseline="central">100% (2024+)</text>
+</g>
+
+<!-- 기본 -->
+<g class="c-teal">
+<rect x="170" y="346" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="250" y="366" text-anchor="middle" dominant-baseline="central">standard</text>
+<text class="ts" x="250" y="386" text-anchor="middle" dominant-baseline="central">100% 전액 산입</text>
+</g>
+
+<!-- 요약 박스 -->
+<rect x="40" y="430" width="600" height="210" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="456" text-anchor="middle">4가지 유형 정리</text>
+
+<rect x="70" y="474" width="120" height="36" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="130" y="496" text-anchor="middle" dominant-baseline="central">standard</text>
+<text class="ts" x="220" y="496" text-anchor="start">기본급, 직무수당 → 전액 산입</text>
+
+<rect x="70" y="518" width="120" height="36" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="130" y="540" text-anchor="middle" dominant-baseline="central">regular_bonus</text>
+<text class="ts" x="220" y="540" text-anchor="start">정기상여금 → 2024년부터 전액 산입</text>
+
+<rect x="70" y="562" width="120" height="36" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="130" y="584" text-anchor="middle" dominant-baseline="central">welfare</text>
+<text class="ts" x="220" y="584" text-anchor="start">복리후생비 → 2024년부터 전액 산입</text>
+
+<rect x="70" y="606" width="120" height="36" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="130" y="628" text-anchor="middle" dominant-baseline="central">excluded</text>
+<text class="ts" x="220" y="628" text-anchor="start">시간외수당, 비과세 → 제외</text>
+</svg>
+</div>
+
+<!-- TAB 2: 수습 감액 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">수습기간 감액 — 3요건 판별</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">최저임금법 제5조 제2항, 시행령 제3조 (단순노무종사자 감액 제외)</p>
+</div>
+<svg width="100%" viewBox="0 0 680 620">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- Q1: 수습인가 -->
+<g class="c-gray">
+<rect x="200" y="16" width="280" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="38" text-anchor="middle" dominant-baseline="central">수습기간인가?</text>
+</g>
+<line x1="440" y1="60" x2="560" y2="90" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="512" y="70">아니오</text>
+<line x1="240" y1="60" x2="160" y2="90" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="188" y="70">예</text>
+
+<g class="c-teal">
+<rect x="480" y="90" width="170" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="565" y="112" text-anchor="middle" dominant-baseline="central">감액 불가 (100%)</text>
+</g>
+
+<!-- Q2: 단순노무종사자인가 (NEW) -->
+<g class="c-coral">
+<rect x="30" y="90" width="260" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="110" text-anchor="middle" dominant-baseline="central">① 단순노무종사자인가?</text>
+<text class="ts" x="160" y="130" text-anchor="middle" dominant-baseline="central">한국표준직업분류 대분류 9</text>
+</g>
+<line x1="250" y1="146" x2="490" y2="146" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="380" y="140">예 → 감액 불가</text>
+<line x1="160" y1="146" x2="160" y2="186" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="174" y="168">아니오</text>
+
+<!-- Q3: 1년 이상 계약인가 -->
+<g class="c-amber">
+<rect x="40" y="186" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="208" text-anchor="middle" dominant-baseline="central">② 1년 이상 근로계약인가?</text>
+</g>
+<line x1="240" y1="230" x2="490" y2="200" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="380" y="208">아니오 → 감액 불가</text>
+<line x1="160" y1="230" x2="160" y2="270" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="174" y="252">예</text>
+
+<!-- Q4: 수습 3개월 이내 -->
+<g class="c-amber">
+<rect x="40" y="270" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="292" text-anchor="middle" dominant-baseline="central">③ 수습 시작 3개월 이내인가?</text>
+</g>
+<line x1="240" y1="314" x2="490" y2="284" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="380" y="292">아니오 → 감액 불가</text>
+<line x1="160" y1="314" x2="160" y2="354" class="arr" marker-end="url(#ar2)"/>
+<text class="ts" x="174" y="336">예 (3요건 모두 충족)</text>
+
+<!-- 결과: 90% 감액 -->
+<g class="c-purple">
+<rect x="30" y="354" width="300" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="180" y="378" text-anchor="middle" dominant-baseline="central">90% 감액 적용</text>
+<text class="ts" x="180" y="398" text-anchor="middle" dominant-baseline="central">2026년: 10,320 × 90% = 9,288원</text>
+<text class="ts" x="180" y="416" text-anchor="middle" dominant-baseline="central">이 금액이 적용 최저시급</text>
+</g>
+
+<!-- 단순노무종사자 직종 목록 -->
+<rect x="30" y="452" width="620" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="476" text-anchor="middle">단순노무종사자 (대분류 9) — 감액 제외 직종 예시</text>
+<text class="ts" x="50" y="500">91. 건설 단순: 건설노무자, 광업노무자</text>
+<text class="ts" x="50" y="518">92. 운송 단순: 택배원, 음식배달원, 우편집배원, 이삿짐운반원</text>
+<text class="ts" x="50" y="536">93. 제조 단순: 포장원, 상표부착원, 선별원</text>
+<text class="ts" x="50" y="554">94. 청소·경비: 청소원, 환경미화원, 경비원, 건물관리원</text>
+<text class="ts" x="50" y="572">95. 가사·음식·판매: 가사도우미, 주방보조, 주유원, 매장정리원</text>
+<text class="ts" x="50" y="590">99. 기타: 검침원, 주차관리원, 세탁단순종사원</text>
+</svg>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">최저임금 검증 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">입력값을 조정하며 실시간으로 충족 여부를 확인하세요</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">기본급</label>
+<input type="range" min="100" max="400" value="200" step="5" id="base" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="baseOut">200만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">직무수당</label>
+<input type="range" min="0" max="50" value="10" step="1" id="duty" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="dutyOut">10만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">정기상여금</label>
+<input type="range" min="0" max="100" value="0" step="5" id="bonus" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="bonusOut">0만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">복리후생비</label>
+<input type="range" min="0" max="50" value="0" step="1" id="welfare" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="welfareOut">0만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">시간외수당</label>
+<input type="range" min="0" max="100" value="20" step="5" id="overtime" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="overtimeOut">20만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">월 기준시간</label>
+<input type="range" min="100" max="240" value="209" step="1" id="hours" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="hoursOut">209시간</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">직종 분류</label>
+<button id="btnGeneral" onclick="setOccupation(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">일반 직종 (1~8)</button>
+<button id="btnElementary" onclick="setOccupation(true);calc()">단순노무직 (9)</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">수습 여부</label>
+<button id="btnNo" onclick="setProbation(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">수습 아님</button>
+<button id="btnYes" onclick="setProbation(true);calc()">수습 중</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">계약 기간</label>
+<button id="btnLong" onclick="setContract(true);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">1년↑ / 정규직</button>
+<button id="btnShort" onclick="setContract(false);calc()">1년 미만</button>
+</div>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">산입 월 임금</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="inclWage">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">실질 시급</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="realWage">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">적용 최저시급</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="minWage">0원</p>
+</div>
+</div>
+
+<div id="result" style="border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
+
+<div id="detail" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var probation = false, elementary = false, longContract = true;
+
+function toggleBtn(onId, offId, isOn) {
+  var on = document.getElementById(onId), off = document.getElementById(offId);
+  var active = isOn ? on : off, inactive = isOn ? off : on;
+  active.style.fontWeight='500'; active.style.background='var(--color-background-info)';
+  active.style.color='var(--color-text-info)'; active.style.borderColor='var(--color-border-info)';
+  inactive.style.fontWeight=''; inactive.style.background='';
+  inactive.style.color=''; inactive.style.borderColor='';
+}
+function setProbation(v) { probation = v; toggleBtn('btnYes','btnNo',v); }
+function setOccupation(v) { elementary = v; toggleBtn('btnElementary','btnGeneral',v); }
+function setContract(v) { longContract = v; toggleBtn('btnLong','btnShort',v); }
+
+function fmt(n) { return Math.round(n).toLocaleString('ko-KR'); }
+
+function calc() {
+  var base = parseInt(document.getElementById('base').value);
+  var duty = parseInt(document.getElementById('duty').value);
+  var bonus = parseInt(document.getElementById('bonus').value);
+  var welf = parseInt(document.getElementById('welfare').value);
+  var ot = parseInt(document.getElementById('overtime').value);
+  var hrs = parseInt(document.getElementById('hours').value);
+
+  document.getElementById('baseOut').textContent = base + '만원';
+  document.getElementById('dutyOut').textContent = duty + '만원';
+  document.getElementById('bonusOut').textContent = bonus + '만원';
+  document.getElementById('welfareOut').textContent = welf + '만원';
+  document.getElementById('overtimeOut').textContent = ot + '만원';
+  document.getElementById('hoursOut').textContent = hrs + '시간';
+
+  var inclTotal = (base + duty + bonus + welf) * 10000;
+  var realHourly = Math.round(inclTotal / hrs);
+
+  // 3요건 판별: ① 단순노무X ② 1년↑계약 ③ 수습 중 → 모두 충족 시 90%
+  var canDiscount = probation && !elementary && longContract;
+  var minHourly = canDiscount ? Math.round(10320 * 0.9) : 10320;
+  var discountReason = '';
+  if (probation && elementary) discountReason = '단순노무종사자 → 감액 불가 (시행령 제3조)';
+  else if (probation && !longContract) discountReason = '1년 미만 계약 → 감액 불가';
+  else if (canDiscount) discountReason = '3요건 충족 → 90% 감액 적용 (9,288원)';
+
+  document.getElementById('inclWage').textContent = fmt(inclTotal) + '원';
+  document.getElementById('realWage').textContent = fmt(realHourly) + '원';
+  document.getElementById('minWage').textContent = fmt(minHourly) + '원';
+
+  var el = document.getElementById('result');
+  if (realHourly >= minHourly) {
+    el.style.background = 'var(--color-background-success)';
+    el.style.color = 'var(--color-text-success)';
+    el.innerHTML = '<p style="font-weight:500;margin:0 0 4px;font-size:16px">✓ 최저임금 충족</p>'
+      + '<p style="margin:0;font-size:13px">실질 시급 ' + fmt(realHourly) + '원 ≥ 적용 최저시급 ' + fmt(minHourly) + '원 (초과: ' + fmt(realHourly - minHourly) + '원)</p>'
+      + (discountReason ? '<p style="margin:4px 0 0;font-size:12px;opacity:0.8">' + discountReason + '</p>' : '');
+  } else {
+    var shortage = (minHourly - realHourly) * hrs;
+    el.style.background = 'var(--color-background-danger)';
+    el.style.color = 'var(--color-text-danger)';
+    el.innerHTML = '<p style="font-weight:500;margin:0 0 4px;font-size:16px">✗ 최저임금 미달</p>'
+      + '<p style="margin:0;font-size:13px">부족 시급 ' + fmt(minHourly - realHourly) + '원 × ' + hrs + 'h = 월 ' + fmt(shortage) + '원 부족</p>'
+      + (discountReason ? '<p style="margin:4px 0 0;font-size:12px;opacity:0.8">' + discountReason + '</p>' : '');
+  }
+
+  var lines = [
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">산입 내역</p>',
+    '<p style="margin:2px 0">기본급: ' + fmt(base*10000) + '원 <span style="color:var(--color-text-success)">(standard, 100%)</span></p>',
+    '<p style="margin:2px 0">직무수당: ' + fmt(duty*10000) + '원 <span style="color:var(--color-text-success)">(standard, 100%)</span></p>',
+    '<p style="margin:2px 0">정기상여금: ' + fmt(bonus*10000) + '원 <span style="color:var(--color-text-success)">(regular_bonus, 100%)</span></p>',
+    '<p style="margin:2px 0">복리후생비: ' + fmt(welf*10000) + '원 <span style="color:var(--color-text-success)">(welfare, 100%)</span></p>',
+    '<p style="margin:2px 0">시간외수당: ' + fmt(ot*10000) + '원 <span style="color:var(--color-text-danger)">(excluded, 제외)</span></p>',
+    '<p style="margin:8px 0 0;font-weight:500;color:var(--color-text-primary)">산입 합계: ' + fmt(inclTotal) + '원 / ' + hrs + 'h = 시급 ' + fmt(realHourly) + '원</p>'
+  ];
+
+  // 수습 감액 판별 과정 표시
+  if (probation) {
+    lines.push('<p style="margin:10px 0 0;padding-top:8px;border-top:1px solid var(--color-border-tertiary);font-weight:500;color:var(--color-text-primary)">수습 감액 3요건 판별</p>');
+    lines.push('<p style="margin:2px 0">' + (elementary ? '❌' : '✅') + ' ① 단순노무종사자 아닐 것: ' + (elementary ? '해당 (감액 불가)' : '해당 안 함') + '</p>');
+    lines.push('<p style="margin:2px 0">' + (longContract ? '✅' : '❌') + ' ② 1년 이상 근로계약: ' + (longContract ? '충족' : '미충족 (감액 불가)') + '</p>');
+    lines.push('<p style="margin:2px 0">✅ ③ 수습 3개월 이내: 충족</p>');
+    lines.push('<p style="margin:4px 0 0;font-weight:500;color:' + (canDiscount ? 'var(--color-text-info)' : 'var(--color-text-danger)') + '">→ ' + (canDiscount ? '감액 적용 (90%)' : '감액 불가 (100% 적용)') + '</p>');
+  }
+
+  document.getElementById('detail').innerHTML = lines.join('');
+}
+calc();
+
+function showTab(n) {
+  for (var i = 0; i < 4; i++) {
+    document.getElementById('tab'+i).style.display = i===n?'block':'none';
+    var b = document.getElementById('t'+i);
+    if (i===n) {
+      b.style.fontWeight='500';b.style.background='var(--color-background-info)';b.style.color='var(--color-text-info)';b.style.borderColor='var(--color-border-info)';
+    } else {
+      b.style.fontWeight='';b.style.background='';b.style.color='';b.style.borderColor='';
+    }
+  }
+  if (n===3) calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

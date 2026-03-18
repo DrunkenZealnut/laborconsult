@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>보상휴가 계산과정</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#fafaf7;--bg2:#f1f0eb;--card:#fff;--border:#e2e0d8;
+  --text:#1a1a18;--sub:#6b6a65;--hint:#9c9a92;
+  --blue:#2563eb;--blue-bg:#eff6ff;--blue-t:#1e40af;
+  --green:#059669;--green-bg:#ecfdf5;--green-t:#065f46;
+  --red:#dc2626;--red-bg:#fef2f2;--red-t:#991b1b;
+  --amber:#d97706;--amber-bg:#fffbeb;--amber-t:#92400e;
+  --purple:#7c3aed;--purple-bg:#f5f3ff;--purple-t:#5b21b6;
+  --teal:#0d9488;--teal-bg:#f0fdfa;--teal-t:#134e4a;
+  --coral:#ea580c;--coral-bg:#fff7ed;--coral-t:#9a3412;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#111110;--bg2:#1c1c1a;--card:#222220;--border:#333330;
+    --text:#e8e6de;--sub:#a8a69e;--hint:#777570;
+    --blue:#60a5fa;--blue-bg:#1e293b;--blue-t:#93c5fd;
+    --green:#34d399;--green-bg:#064e3b;--green-t:#6ee7b7;
+    --red:#f87171;--red-bg:#450a0a;--red-t:#fca5a5;
+    --amber:#fbbf24;--amber-bg:#451a03;--amber-t:#fde68a;
+    --purple:#a78bfa;--purple-bg:#2e1065;--purple-t:#c4b5fd;
+    --teal:#2dd4bf;--teal-bg:#042f2e;--teal-t:#5eead4;
+    --coral:#fb923c;--coral-bg:#431407;--coral-t:#fdba74;
+  }
+}
+body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);padding:1.5rem;max-width:760px;margin:0 auto;line-height:1.6;}
+h1{font-size:20px;font-weight:700;text-align:center;margin-bottom:4px;letter-spacing:-0.5px;}
+.subtitle{font-size:13px;color:var(--sub);text-align:center;margin-bottom:20px;}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
+.tabs button{padding:7px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--sub);font-size:13px;cursor:pointer;font-family:inherit;font-weight:500;transition:all .15s;}
+.tabs button:hover{border-color:var(--blue);color:var(--blue);}
+.tabs button.on{background:var(--blue-bg);color:var(--blue-t);border-color:var(--blue);font-weight:600;}
+.step{display:none;animation:fadeIn .25s ease;}
+.step.on{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.info{background:var(--bg2);border-radius:12px;padding:14px 18px;margin-bottom:14px;}
+.info h2{font-size:14px;font-weight:600;margin-bottom:3px;}
+.info p{font-size:13px;color:var(--sub);}
+svg{display:block;width:100%;margin:0 auto;}
+/* SVG classes */
+.box{rx:8;stroke-width:.5;}
+.th{font-family:'Noto Sans KR',sans-serif;font-size:14px;font-weight:600;text-anchor:middle;dominant-baseline:central;}
+.ts{font-family:'Noto Sans KR',sans-serif;font-size:12px;text-anchor:middle;dominant-baseline:central;}
+.arr{stroke:var(--hint);stroke-width:1.5;fill:none;}
+/* color fills for SVG */
+.f-teal rect{fill:var(--teal-bg);stroke:var(--teal);}.f-teal .th{fill:var(--teal-t);}.f-teal .ts{fill:var(--teal);}
+.f-purple rect{fill:var(--purple-bg);stroke:var(--purple);}.f-purple .th{fill:var(--purple-t);}.f-purple .ts{fill:var(--purple);}
+.f-coral rect{fill:var(--coral-bg);stroke:var(--coral);}.f-coral .th{fill:var(--coral-t);}.f-coral .ts{fill:var(--coral);}
+.f-amber rect{fill:var(--amber-bg);stroke:var(--amber);}.f-amber .th{fill:var(--amber-t);}.f-amber .ts{fill:var(--amber);}
+.f-blue rect{fill:var(--blue-bg);stroke:var(--blue);}.f-blue .th{fill:var(--blue-t);}.f-blue .ts{fill:var(--blue);}
+.f-gray rect{fill:var(--bg2);stroke:var(--border);}.f-gray .th{fill:var(--text);}.f-gray .ts{fill:var(--sub);}
+.f-green rect{fill:var(--green-bg);stroke:var(--green);}.f-green .th{fill:var(--green-t);}.f-green .ts{fill:var(--green);}
+.f-red rect{fill:var(--red-bg);stroke:var(--red);}.f-red .th{fill:var(--red-t);}.f-red .ts{fill:var(--red);}
+.bg-box{fill:var(--bg2);stroke:var(--border);stroke-width:.5;rx:8;}.bg-th{fill:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:14px;font-weight:600;text-anchor:middle;}.bg-ts{fill:var(--sub);font-family:'Noto Sans KR',sans-serif;font-size:12px;text-anchor:middle;}
+/* sim styles */
+.sim-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+.sim-label{font-size:13px;color:var(--sub);min-width:100px;font-weight:500;}
+.sim-val{font-size:14px;font-weight:600;min-width:70px;text-align:right;color:var(--text);}
+input[type=range]{flex:1;height:6px;-webkit-appearance:none;appearance:none;background:var(--border);border-radius:3px;outline:none;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--blue);cursor:pointer;border:2px solid var(--card);}
+.card-grid{display:grid;gap:10px;margin-bottom:14px;}
+.g2{grid-template-columns:repeat(2,1fr);}
+.g3{grid-template-columns:repeat(3,1fr);}
+.g4{grid-template-columns:repeat(4,1fr);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;}
+.card .lbl{font-size:12px;color:var(--sub);margin-bottom:4px;font-weight:500;}
+.card .val{font-size:18px;font-weight:700;color:var(--text);}
+.card .val-blue{font-size:18px;font-weight:700;color:var(--blue);}
+.card .val-sm{font-size:15px;font-weight:600;color:var(--text);}
+.card .note{font-size:11px;color:var(--hint);margin-top:4px;}
+.result-box{border-radius:10px;padding:14px;margin-bottom:14px;}
+.result-ok{background:var(--green-bg);color:var(--green-t);}
+.result-warn{background:var(--amber-bg);color:var(--amber-t);}
+.formula{font-size:13px;color:var(--sub);background:var(--bg2);border-radius:10px;padding:14px;line-height:1.8;}
+.formula b{color:var(--text);font-weight:600;}
+.pill{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;}
+.pill-teal{background:var(--teal-bg);color:var(--teal-t);}
+.pill-purple{background:var(--purple-bg);color:var(--purple-t);}
+.pill-coral{background:var(--coral-bg);color:var(--coral-t);}
+.pill-amber{background:var(--amber-bg);color:var(--amber-t);}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;}
+th{text-align:left;padding:8px;color:var(--sub);font-weight:500;border-bottom:2px solid var(--border);}
+td{padding:8px;border-bottom:1px solid var(--border);}
+td.fw{font-weight:600;}
+td.rate{font-weight:700;color:var(--blue);}
+/* ── Responsive ── */
+@media(max-width:720px){body{padding:1rem 0.75rem;}svg{max-width:100%;}}
+@media(max-width:480px){body{padding:0.75rem 0.5rem;font-size:14px;}button{padding:5px 10px;font-size:12px;}div[style*="grid-template-columns"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}input[type="range"]{min-width:0;}table{font-size:12px!important;}th,td{padding:4px 6px!important;}}
+</style>
+</head>
+<body>
+<h1>보상휴가 계산과정</h1>
+<p class="subtitle">근로기준법 제57조 | 초과근로를 수당 대신 유급휴가로 전환하는 제도</p>
+
+<div class="tabs">
+<button class="on" onclick="go(0)">계산 흐름</button>
+<button onclick="go(1)">보상휴가 시간</button>
+<button onclick="go(2)">미사용 수당</button>
+<button onclick="go(3)">시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 계산 흐름 -->
+<div class="step on" id="s0">
+<div class="info"><h2>보상휴가 — 전체 계산 흐름</h2><p>초과근로(연장·야간·휴일)에 대해 수당 대신 유급휴가를 부여하는 제도. 노사 서면 합의가 전제.</p></div>
+<svg viewBox="0 0 680 780">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect class="bg-box" x="40" y="16" width="600" height="56" rx="8"/>
+<text class="bg-th" x="340" y="36">핵심 원리: 가산율까지 포함한 시간을 휴가로 전환</text>
+<text class="bg-ts" x="340" y="56">예: 연장 2시간 → 보상휴가 3시간 (2h × 1.5배)</text>
+
+<g class="f-amber"><rect x="140" y="92" width="400" height="56" class="box"/><text class="th" x="340" y="112">Step 1. 노사 서면 합의 확인</text><text class="ts" x="340" y="132">근기법 제57조 — 서면 합의 없으면 수당으로 지급해야</text></g>
+<line x1="340" y1="148" x2="340" y2="178" class="arr" marker-end="url(#ar)"/>
+
+<g class="f-coral"><rect x="140" y="178" width="400" height="56" class="box"/><text class="th" x="340" y="198">Step 2. 통상시급 확인</text><text class="ts" x="340" y="218">통상임금 계산기에서 산출된 시급</text></g>
+<line x1="340" y1="234" x2="340" y2="264" class="arr" marker-end="url(#ar)"/>
+
+<g class="f-teal"><rect x="60" y="264" width="560" height="76" class="box"/><text class="th" x="340" y="286">Step 3. 유형별 보상휴가 시간 산정</text><text class="ts" x="340" y="308">각 초과근로 유형에 가산율을 곱해서 시간으로 환산</text><text class="ts" x="340" y="326">→ "보상휴가 시간" 탭에서 상세 확인</text></g>
+<line x1="340" y1="340" x2="340" y2="370" class="arr" marker-end="url(#ar)"/>
+
+<g class="f-purple"><rect x="100" y="370" width="480" height="76" class="box"/><text class="th" x="340" y="392">Step 4. 총 보상휴가 합산</text><text x="340" y="420" style="font-size:16px;fill:var(--purple-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central">총 보상휴가(주) = 연장분 + 야간분 + 휴일분 + 휴일초과분</text></g>
+<line x1="340" y1="446" x2="340" y2="476" class="arr" marker-end="url(#ar)"/>
+
+<g class="f-gray"><rect x="140" y="476" width="400" height="56" class="box"/><text class="th" x="340" y="496">Step 5. 보상휴가 사용</text><text class="ts" x="340" y="516">산정된 시간만큼 유급휴가 부여</text></g>
+<line x1="340" y1="532" x2="340" y2="562" class="arr" marker-end="url(#ar)"/>
+
+<g class="f-blue"><rect x="100" y="562" width="480" height="76" class="box"/><text class="th" x="340" y="584">Step 6. 미사용분 → 수당 정산</text><text class="ts" x="340" y="604">사용하지 않은 보상휴가는 통상시급으로 수당 지급</text><text class="ts" x="340" y="622">→ "미사용 수당" 탭에서 상세 확인</text></g>
+
+<!-- 예시 -->
+<rect class="bg-box" x="60" y="660" width="560" height="100" rx="8"/>
+<text class="bg-th" x="340" y="684">예시: 시급 12,000원, 주 연장 10h + 야간 5h</text>
+<text class="bg-ts" x="340" y="708">보상휴가 = 10×1.5 + 5×0.5 = 17.5시간/주</text>
+<text class="bg-ts" x="340" y="728">미사용 수당 = 12,000 × 17.5 = 210,000원/주</text>
+<text class="bg-ts" x="340" y="748">월 환산 = 210,000 × 4.345 = 912,450원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 보상휴가 시간 -->
+<div class="step" id="s1">
+<div class="info"><h2>보상휴가 시간 산정 — 가산율이 핵심</h2><p>수당으로 받을 때의 가산율이 그대로 시간에 반영됩니다. 연장 2시간 일하면 3시간 쉴 수 있는 구조.</p></div>
+
+<table>
+<thead><tr><th>유형</th><th>실제 시간</th><th>가산 배율</th><th>보상휴가 시간</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td class="fw">연장근로</td><td>주 연장시간</td><td class="rate">× 1.5</td><td>연장 × 1.5</td><td>기본 1.0 + 가산 0.5</td></tr>
+<tr><td class="fw">야간근로 (22~06시)</td><td>주 야간시간</td><td class="rate">× 0.5</td><td>야간 × 0.5</td><td>중복 가산분만</td></tr>
+<tr><td class="fw">휴일근로 (8h 이내)</td><td>주 휴일시간</td><td class="rate">× 1.5</td><td>휴일 × 1.5</td><td>기본 1.0 + 가산 0.5</td></tr>
+<tr><td class="fw">휴일근로 (8h 초과)</td><td>주 휴일초과</td><td class="rate">× 2.0</td><td>초과 × 2.0</td><td>기본 1.0 + 가산 0.5 + 추가 0.5</td></tr>
+</tbody>
+</table>
+
+<svg viewBox="0 0 680 360">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="bg-th" x="340" y="24">왜 가산율까지 포함하는가?</text>
+
+<rect class="bg-box" x="40" y="38" width="600" height="76" rx="8"/>
+<text class="bg-ts" x="340" y="60">보상휴가는 수당의 "대체"이므로, 수당에 포함되는 가산율이</text>
+<text class="bg-ts" x="340" y="80">그대로 시간으로 전환되어야 공정합니다</text>
+<text class="bg-ts" x="340" y="100">연장 2시간의 수당 = 시급 × 2h × 1.5 → 보상휴가 = 2h × 1.5 = 3시간</text>
+
+<text class="bg-th" x="340" y="142">구체적 계산 예시</text>
+
+<g class="f-teal"><rect x="40" y="158" width="145" height="76" class="box"/><text class="th" x="112" y="178">연장 10h</text><text class="ts" x="112" y="200">× 1.5</text><text style="font-size:15px;fill:var(--teal-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="112" y="222">= 15h</text></g>
+
+<text style="font-size:18px;fill:var(--sub);text-anchor:middle;dominant-baseline:central" x="200" y="196">+</text>
+
+<g class="f-purple"><rect x="215" y="158" width="120" height="76" class="box"/><text class="th" x="275" y="178">야간 5h</text><text class="ts" x="275" y="200">× 0.5</text><text style="font-size:15px;fill:var(--purple-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="275" y="222">= 2.5h</text></g>
+
+<text style="font-size:18px;fill:var(--sub);text-anchor:middle;dominant-baseline:central" x="350" y="196">+</text>
+
+<g class="f-coral"><rect x="365" y="158" width="120" height="76" class="box"/><text class="th" x="425" y="178">휴일 8h</text><text class="ts" x="425" y="200">× 1.5</text><text style="font-size:15px;fill:var(--coral-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="425" y="222">= 12h</text></g>
+
+<text style="font-size:18px;fill:var(--sub);text-anchor:middle;dominant-baseline:central" x="500" y="196">+</text>
+
+<g class="f-amber"><rect x="515" y="158" width="125" height="76" class="box"/><text class="th" x="577" y="178">휴일초과 2h</text><text class="ts" x="577" y="200">× 2.0</text><text style="font-size:15px;fill:var(--amber-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="577" y="222">= 4h</text></g>
+
+<line x1="112" y1="234" x2="280" y2="278" class="arr" marker-end="url(#a1)"/>
+<line x1="275" y1="234" x2="310" y2="278" class="arr" marker-end="url(#a1)"/>
+<line x1="425" y1="234" x2="370" y2="278" class="arr" marker-end="url(#a1)"/>
+<line x1="577" y1="234" x2="400" y2="278" class="arr" marker-end="url(#a1)"/>
+
+<g class="f-blue"><rect x="140" y="278" width="400" height="56" class="box"/><text class="th" x="340" y="298">총 보상휴가(주)</text><text style="font-size:16px;fill:var(--blue-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="340" y="322">= 15 + 2.5 + 12 + 4 = 33.5시간</text></g>
+</svg>
+</div>
+
+<!-- TAB 2: 미사용 수당 -->
+<div class="step" id="s2">
+<div class="info"><h2>미사용 보상휴가 수당 — 안 쓰면 돈으로</h2><p>부여받은 보상휴가를 사용하지 않으면 통상시급으로 수당 정산</p></div>
+
+<svg viewBox="0 0 680 480">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="f-gray"><rect x="180" y="20" width="320" height="56" class="box"/><text class="th" x="340" y="40">총 보상휴가(주) 확정</text><text class="ts" x="340" y="60">예: 17.5시간</text></g>
+<line x1="340" y1="76" x2="340" y2="106" class="arr" marker-end="url(#a2)"/>
+
+<g class="f-amber"><rect x="160" y="106" width="360" height="44" class="box"/><text class="th" x="340" y="128">보상휴가를 모두 사용했는가?</text></g>
+
+<line x1="230" y1="150" x2="140" y2="186" class="arr" marker-end="url(#a2)"/>
+<text class="bg-ts" x="172" y="164">예</text>
+<line x1="450" y1="150" x2="540" y2="186" class="arr" marker-end="url(#a2)"/>
+<text class="bg-ts" x="508" y="164">아니오</text>
+
+<g class="f-green"><rect x="40" y="186" width="200" height="44" class="box"/><text class="th" x="140" y="208">수당 없음 (0원)</text></g>
+
+<g class="f-red"><rect x="440" y="186" width="200" height="44" class="box"/><text class="th" x="540" y="208">미사용분 수당 정산</text></g>
+<line x1="540" y1="230" x2="340" y2="270" class="arr" marker-end="url(#a2)"/>
+
+<g class="f-purple"><rect x="80" y="270" width="520" height="76" class="box"/><text class="th" x="340" y="292">미사용 수당 공식</text><text style="font-size:16px;fill:var(--purple-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="340" y="324">미사용 수당 = 통상시급 × 미사용 보상휴가(주)</text></g>
+<line x1="340" y1="346" x2="340" y2="376" class="arr" marker-end="url(#a2)"/>
+
+<g class="f-blue"><rect x="140" y="376" width="400" height="56" class="box"/><text class="th" x="340" y="396">월 환산</text><text style="font-size:15px;fill:var(--blue-t);font-weight:700;font-family:'Noto Sans KR';text-anchor:middle;dominant-baseline:central" x="340" y="420">= 미사용 수당(주) × 4.345</text></g>
+</svg>
+
+<div class="card" style="margin-bottom:14px">
+<p class="lbl">보상휴가 vs 수당 — 근로자 관점</p>
+<p style="font-size:13px;color:var(--sub);margin:6px 0">보상휴가를 받으면 쉬는 시간이 가산율만큼 늘어나는 이점이 있지만, 현금이 필요하면 수당이 유리합니다. 미사용분은 어차피 수당으로 정산되므로 손해 보지는 않습니다.</p>
+</div>
+
+<div class="card">
+<p class="lbl">사용자(사업주) 관점</p>
+<p style="font-size:13px;color:var(--sub);margin:6px 0">보상휴가 제도를 도입하면 수당 지급 시기를 유연하게 관리할 수 있지만, 반드시 노사 서면 합의가 필요하고 미사용분은 결국 수당으로 정산해야 합니다.</p>
+</div>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div class="step" id="s3">
+<div class="info"><h2>보상휴가 시뮬레이션</h2><p>통상시급과 초과근로시간을 입력하면 보상휴가 시간·미사용 수당을 실시간 계산합니다</p></div>
+
+<div class="sim-row"><span class="sim-label">통상시급</span><input type="range" min="8000" max="30000" value="12000" step="500" id="wage" oninput="calc()"><span class="sim-val" id="wageO">12,000원</span></div>
+<div class="sim-row"><span class="sim-label">주 연장근로</span><input type="range" min="0" max="12" value="10" step="1" id="ot" oninput="calc()"><span class="sim-val" id="otO">10시간</span></div>
+<div class="sim-row"><span class="sim-label">주 야간근로</span><input type="range" min="0" max="12" value="0" step="1" id="night" oninput="calc()"><span class="sim-val" id="nightO">0시간</span></div>
+<div class="sim-row"><span class="sim-label">주 휴일근로</span><input type="range" min="0" max="12" value="0" step="1" id="hol" oninput="calc()"><span class="sim-val" id="holO">0시간</span></div>
+<div class="sim-row"><span class="sim-label">주 휴일 8h초과</span><input type="range" min="0" max="4" value="0" step="1" id="holOt" oninput="calc()"><span class="sim-val" id="holOtO">0시간</span></div>
+
+<!-- 보상휴가 시간 분해 -->
+<div style="background:var(--bg2);border-radius:10px;padding:14px;margin-bottom:14px">
+<p style="font-size:13px;font-weight:600;margin:0 0 10px;color:var(--text)">보상휴가 시간 분해</p>
+<div id="breakdown" style="font-size:13px;color:var(--sub)"></div>
+</div>
+
+<!-- 결과 카드 -->
+<div class="card-grid g4">
+<div class="card"><p class="lbl">보상휴가(주)</p><p class="val-blue" id="weekH">0h</p></div>
+<div class="card"><p class="lbl">보상휴가(월)</p><p class="val" id="monthH">0h</p><p class="note">× 4.345</p></div>
+<div class="card"><p class="lbl">미사용 수당(주)</p><p class="val-sm" id="weekPay">0원</p></div>
+<div class="card"><p class="lbl">미사용 수당(월)</p><p class="val-blue" id="monthPay">0원</p></div>
+</div>
+
+<!-- 수당 vs 보상휴가 비교 -->
+<div class="card-grid g2">
+<div class="card">
+<p class="lbl">수당으로 받으면</p>
+<p class="val" id="asCash">0원/주</p>
+<p class="note" id="cashNote"></p>
+</div>
+<div class="card">
+<p class="lbl">보상휴가로 받으면</p>
+<p class="val-blue" id="asLeave">0시간/주</p>
+<p class="note" id="leaveNote"></p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div class="formula" id="formula"></div>
+</div>
+
+<script>
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function fmtD(n){return Number(n).toFixed(1);}
+
+function calc(){
+  var w=+document.getElementById('wage').value;
+  var ot=+document.getElementById('ot').value;
+  var night=+document.getElementById('night').value;
+  var hol=+document.getElementById('hol').value;
+  var holOt=+document.getElementById('holOt').value;
+
+  document.getElementById('wageO').textContent=fmt(w)+'원';
+  document.getElementById('otO').textContent=ot+'시간';
+  document.getElementById('nightO').textContent=night+'시간';
+  document.getElementById('holO').textContent=hol+'시간';
+  document.getElementById('holOtO').textContent=holOt+'시간';
+
+  var cOt=ot*1.5;
+  var cNight=night*0.5;
+  var cHol=hol*1.5;
+  var cHolOt=holOt*2.0;
+  var cTotal=cOt+cNight+cHol+cHolOt;
+  var cMonth=cTotal*4.345;
+  var weekPay=w*cTotal;
+  var monthPay=weekPay*4.345;
+
+  document.getElementById('weekH').textContent=fmtD(cTotal)+'h';
+  document.getElementById('monthH').textContent=fmtD(cMonth)+'h';
+  document.getElementById('weekPay').textContent=fmt(weekPay)+'원';
+  document.getElementById('monthPay').textContent=fmt(monthPay)+'원';
+
+  // 분해
+  var lines=[];
+  if(ot>0) lines.push('<div style="display:flex;justify-content:space-between;padding:3px 0"><span>연장: '+ot+'h × 1.5</span><span style="font-weight:600;color:var(--text)">'+fmtD(cOt)+'h</span></div>');
+  if(night>0) lines.push('<div style="display:flex;justify-content:space-between;padding:3px 0"><span>야간: '+night+'h × 0.5</span><span style="font-weight:600;color:var(--text)">'+fmtD(cNight)+'h</span></div>');
+  if(hol>0) lines.push('<div style="display:flex;justify-content:space-between;padding:3px 0"><span>휴일: '+hol+'h × 1.5</span><span style="font-weight:600;color:var(--text)">'+fmtD(cHol)+'h</span></div>');
+  if(holOt>0) lines.push('<div style="display:flex;justify-content:space-between;padding:3px 0"><span>휴일초과: '+holOt+'h × 2.0</span><span style="font-weight:600;color:var(--text)">'+fmtD(cHolOt)+'h</span></div>');
+  if(lines.length===0) lines.push('<div style="padding:3px 0;color:var(--hint)">초과근로 시간을 입력하세요</div>');
+  lines.push('<div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid var(--border);margin-top:4px;font-weight:600;color:var(--text)"><span>총 보상휴가(주)</span><span>'+fmtD(cTotal)+'h</span></div>');
+  document.getElementById('breakdown').innerHTML=lines.join('');
+
+  // 수당 vs 휴가 비교
+  var cashOt=w*ot*1.5;
+  var cashNight=w*night*0.5;
+  var cashHol=w*hol*1.5;
+  var cashHolOt=w*holOt*2.0;
+  var cashTotal=cashOt+cashNight+cashHol+cashHolOt;
+
+  document.getElementById('asCash').textContent=fmt(cashTotal)+'원/주';
+  document.getElementById('cashNote').textContent='현금으로 수령 (월 '+fmt(cashTotal*4.345)+'원)';
+  document.getElementById('asLeave').textContent=fmtD(cTotal)+'시간/주';
+  document.getElementById('leaveNote').textContent='유급휴가로 전환 (월 '+fmtD(cMonth)+'시간)';
+
+  // 산식
+  var fl='<b>계산 산식</b><br>';
+  if(ot>0) fl+='연장분: '+ot+'h × 1.5 = '+fmtD(cOt)+'h<br>';
+  if(night>0) fl+='야간분: '+night+'h × 0.5 = '+fmtD(cNight)+'h (중복가산분만)<br>';
+  if(hol>0) fl+='휴일분: '+hol+'h × 1.5 = '+fmtD(cHol)+'h<br>';
+  if(holOt>0) fl+='휴일초과분: '+holOt+'h × 2.0 = '+fmtD(cHolOt)+'h<br>';
+  fl+='<b>총 보상휴가(주) = '+fmtD(cTotal)+'h</b><br>';
+  fl+='미사용 수당 = '+fmt(w)+'원 × '+fmtD(cTotal)+'h = <b>'+fmt(weekPay)+'원/주</b><br>';
+  fl+='월 환산 = '+fmt(weekPay)+' × 4.345 = <b>'+fmt(monthPay)+'원/월</b>';
+  document.getElementById('formula').innerHTML=fl;
+}
+calc();
+
+function go(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('s'+i).classList.toggle('on',i===n);
+    document.querySelectorAll('.tabs button')[i].classList.toggle('on',i===n);
+  }
+  if(n===3)calc();
+}
+</script>
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">귀책사유 판정</button>
+<button onclick="showTab(2)" id="t2">통상임금 상한</button>
+<button onclick="showTab(3)" id="t3">부분 휴업</button>
+<button onclick="showTab(4)" id="t4">수당 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 계산 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">휴업수당 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제46조 | 사용자 귀책사유로 쉬게 했을 때 지급</p>
+</div>
+<svg width="100%" viewBox="0 0 680 760">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">회사 사정으로 근로자를 쉬게 하면, 쉬는 날에도 임금의 70%를 보장</text>
+
+<!-- Step 1 -->
+<g class="c-amber">
+<rect x="120" y="72" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 귀책사유 판정</text>
+<text class="ts" x="340" y="110" text-anchor="middle" dominant-baseline="central">사용자 귀책인가, 불가항력인가? → "귀책사유" 탭</text>
+</g>
+
+<line x1="240" y1="128" x2="140" y2="162" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="176" y="142">불가항력</text>
+<line x1="340" y1="128" x2="340" y2="172" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="354" y="150">귀책사유</text>
+
+<g>
+<rect x="40" y="162" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="140" y="188" text-anchor="middle" dominant-baseline="central">지급 의무 없음</text>
+</g>
+
+<!-- Step 2 -->
+<g class="c-coral">
+<rect x="140" y="172" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="192" text-anchor="middle" dominant-baseline="central">Step 2. 1일 평균임금 산정</text>
+<text class="ts" x="340" y="210" text-anchor="middle" dominant-baseline="central">= 최근 3개월 임금합계 ÷ 산정일수 (또는 월급 ÷ 30)</text>
+</g>
+<line x1="340" y1="228" x2="340" y2="258" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-purple">
+<rect x="100" y="258" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="280" text-anchor="middle" dominant-baseline="central">Step 3. 기본 휴업수당 산정</text>
+<text style="font-size:16px;fill:#3C3489;font-weight:500" x="340" y="314" text-anchor="middle" dominant-baseline="central">1일 휴업수당 = 1일 평균임금 × 70%</text>
+</g>
+<line x1="340" y1="334" x2="340" y2="364" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4: 상한 비교 -->
+<g class="c-teal">
+<rect x="80" y="364" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="386" text-anchor="middle" dominant-baseline="central">Step 4. 통상임금 상한 비교 (제46조 제2항)</text>
+<text class="ts" x="340" y="408" text-anchor="middle" dominant-baseline="central">평균임금의 70% > 통상임금 일급 → 통상임금 적용</text>
+<text class="ts" x="340" y="426" text-anchor="middle" dominant-baseline="central">→ "통상임금 상한" 탭에서 상세 확인</text>
+</g>
+<line x1="340" y1="440" x2="340" y2="470" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-gray">
+<rect x="140" y="470" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="490" text-anchor="middle" dominant-baseline="central">Step 5. 부분 휴업 시 비례 (해당시)</text>
+<text class="ts" x="340" y="508" text-anchor="middle" dominant-baseline="central">= 1일 수당 × (휴업시간 ÷ 소정시간) → "부분 휴업" 탭</text>
+</g>
+<line x1="340" y1="526" x2="340" y2="556" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<g class="c-gray">
+<rect x="120" y="556" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="578" text-anchor="middle" dominant-baseline="central">Step 6. 총 휴업수당</text>
+<text style="font-size:15px;fill:#2C2C2A;font-weight:500" x="340" y="612" text-anchor="middle" dominant-baseline="central">= 확정 1일 수당 × 휴업일수</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="632" x2="340" y2="662" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="662" width="560" height="80" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="684" text-anchor="middle">예시: 월급 300만원, 30일 전일 휴업</text>
+<text class="ts" x="340" y="706" text-anchor="middle">1일 평균 = 300만 ÷ 30 = 100,000원</text>
+<text class="ts" x="340" y="726" text-anchor="middle">1일 휴업수당 = 100,000 × 70% = 70,000원 → 총 = 70,000 × 30 = 2,100,000원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 귀책사유 판정 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">귀책사유 판정 — 사용자 탓인가, 어쩔 수 없는 상황인가</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">이 판정이 휴업수당 지급 의무의 전제 조건입니다</p>
+</div>
+<svg width="100%" viewBox="0 0 680 600">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">왜 근로자가 쉬게 되었는가?</text>
+</g>
+
+<line x1="230" y1="64" x2="160" y2="104" class="arr" marker-end="url(#a1)"/>
+<line x1="450" y1="64" x2="520" y2="104" class="arr" marker-end="url(#a1)"/>
+
+<!-- 사용자 귀책 -->
+<g class="c-teal">
+<rect x="40" y="104" width="240" height="180" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="128" text-anchor="middle" dominant-baseline="central">사용자 귀책사유</text>
+<text class="ts" x="160" y="156" text-anchor="middle" dominant-baseline="central">경영악화 (주문감소 등)</text>
+<text class="ts" x="160" y="176" text-anchor="middle" dominant-baseline="central">원자재 수급 실패</text>
+<text class="ts" x="160" y="196" text-anchor="middle" dominant-baseline="central">설비 고장 (관리 소홀)</text>
+<text class="ts" x="160" y="216" text-anchor="middle" dominant-baseline="central">판매부진에 의한 감산</text>
+<text class="ts" x="160" y="236" text-anchor="middle" dominant-baseline="central">거래처 부도</text>
+<rect x="70" y="252" width="180" height="24" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="160" y="268" text-anchor="middle" dominant-baseline="central">→ 휴업수당 지급 의무 ✓</text>
+</g>
+
+<!-- 불가항력 -->
+<g class="c-coral">
+<rect x="400" y="104" width="240" height="180" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="128" text-anchor="middle" dominant-baseline="central">불가항력</text>
+<text class="ts" x="520" y="156" text-anchor="middle" dominant-baseline="central">천재지변 (지진, 홍수)</text>
+<text class="ts" x="520" y="176" text-anchor="middle" dominant-baseline="central">전쟁, 내란</text>
+<text class="ts" x="520" y="196" text-anchor="middle" dominant-baseline="central">법령에 의한 조업중지</text>
+<text class="ts" x="520" y="216" text-anchor="middle" dominant-baseline="central">감염병에 의한 행정명령</text>
+<rect x="430" y="252" width="180" height="24" rx="4" fill="#FCEBEB" stroke="none"/>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="520" y="268" text-anchor="middle" dominant-baseline="central">→ 지급 의무 없음 ✗</text>
+</g>
+
+<!-- 핵심 -->
+<rect x="40" y="310" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="334" text-anchor="middle">판례 기준: "넓은 의미의 귀책사유"</text>
+<text class="ts" x="340" y="360" text-anchor="middle">대법원은 사용자의 세력범위 안에서 발생한 경영장애를</text>
+<text class="ts" x="340" y="380" text-anchor="middle">모두 귀책사유로 봅니다 (고의·과실 불문)</text>
+<text class="ts" x="340" y="400" text-anchor="middle">→ 단순한 경기 불황도 귀책사유에 해당</text>
+
+<!-- 반도체 관련 -->
+<rect x="40" y="430" width="600" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="454" text-anchor="middle">반도체 산업 주요 사례</text>
+
+<rect x="70" y="472" width="250" height="44" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="195" y="486" text-anchor="middle" dominant-baseline="central">귀책 → 수당 지급</text>
+<text style="font-size:11px;fill:#085041" x="195" y="506" text-anchor="middle" dominant-baseline="central">반도체 수요 감소로 감산</text>
+
+<rect x="360" y="472" width="250" height="44" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="485" y="486" text-anchor="middle" dominant-baseline="central">불가항력 → 미지급 가능</text>
+<text style="font-size:11px;fill:#791F1F" x="485" y="506" text-anchor="middle" dominant-baseline="central">수출규제 행정명령</text>
+
+<rect x="70" y="524" width="250" height="44" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="195" y="538" text-anchor="middle" dominant-baseline="central">귀책 → 수당 지급</text>
+<text style="font-size:11px;fill:#085041" x="195" y="558" text-anchor="middle" dominant-baseline="central">설비 고장으로 라인 중단</text>
+
+<rect x="360" y="524" width="250" height="44" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="485" y="538" text-anchor="middle" dominant-baseline="central">경계 사례</text>
+<text style="font-size:11px;fill:#633806" x="485" y="558" text-anchor="middle" dominant-baseline="central">원자재 수급난 (해외 공급망)</text>
+</svg>
+</div>
+
+<!-- TAB 2: 통상임금 상한 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">통상임금 상한 비교 — 제46조 제2항</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">평균임금의 70%가 통상임금보다 크면, 통상임금으로 낮춘다</p>
+</div>
+<svg width="100%" viewBox="0 0 680 520">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-coral">
+<rect x="120" y="20" width="200" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="220" y="40" text-anchor="middle" dominant-baseline="central">평균임금 × 70%</text>
+<text class="ts" x="220" y="58" text-anchor="middle" dominant-baseline="central">기본 산정액</text>
+</g>
+
+<text style="font-size:18px;fill:var(--s);font-weight:500" x="340" y="50" text-anchor="middle">vs</text>
+
+<g class="c-teal">
+<rect x="360" y="20" width="200" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="460" y="40" text-anchor="middle" dominant-baseline="central">통상임금 일급</text>
+<text class="ts" x="460" y="58" text-anchor="middle" dominant-baseline="central">시급 × 소정시간</text>
+</g>
+
+<line x1="220" y1="76" x2="280" y2="116" class="arr" marker-end="url(#a2)"/>
+<line x1="460" y1="76" x2="400" y2="116" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-amber">
+<rect x="160" y="116" width="360" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="138" text-anchor="middle" dominant-baseline="central">70%가 통상임금보다 큰가?</text>
+</g>
+
+<line x1="240" y1="160" x2="160" y2="200" class="arr" marker-end="url(#a2)"/>
+<text class="ts" x="186" y="176">아니오</text>
+<line x1="440" y1="160" x2="520" y2="200" class="arr" marker-end="url(#a2)"/>
+<text class="ts" x="494" y="176">예</text>
+
+<g>
+<rect x="60" y="200" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="160" y="220" text-anchor="middle" dominant-baseline="central">70% 적용</text>
+<text style="font-size:12px;fill:#085041" x="160" y="240" text-anchor="middle" dominant-baseline="central">대부분의 일반적인 경우</text>
+</g>
+
+<g>
+<rect x="420" y="200" width="200" height="56" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#633806;font-weight:500" x="520" y="220" text-anchor="middle" dominant-baseline="central">통상임금 적용</text>
+<text style="font-size:12px;fill:#633806" x="520" y="240" text-anchor="middle" dominant-baseline="central">상한으로 낮아짐</text>
+</g>
+
+<!-- 왜? -->
+<rect x="40" y="284" width="600" height="76" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="306" text-anchor="middle">왜 이런 규칙이 있는가?</text>
+<text class="ts" x="340" y="330" text-anchor="middle">잔업이 많았던 근로자의 평균임금이 매우 높을 수 있는데</text>
+<text class="ts" x="340" y="350" text-anchor="middle">그 70%가 정상 근무 시 받는 통상임금보다 크면 → 통상임금으로 상한</text>
+
+<!-- 수치 예시 -->
+<rect x="40" y="384" width="290" height="120" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="406" text-anchor="middle">일반적 경우 (70% 적용)</text>
+<text class="ts" x="60" y="432">평균임금 = 120,000원/일</text>
+<text class="ts" x="60" y="452">70% = 84,000원</text>
+<text class="ts" x="60" y="472">통상임금 = 96,000원/일</text>
+<text style="font-size:12px;fill:var(--color-text-success);font-weight:500" x="60" y="494">84,000 < 96,000 → 84,000원 적용</text>
+
+<rect x="350" y="384" width="290" height="120" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="406" text-anchor="middle">잔업 많았던 경우 (상한 적용)</text>
+<text class="ts" x="370" y="432">평균임금 = 160,000원/일</text>
+<text class="ts" x="370" y="452">70% = 112,000원</text>
+<text class="ts" x="370" y="472">통상임금 = 96,000원/일</text>
+<text style="font-size:12px;fill:var(--color-text-warning);font-weight:500" x="370" y="494">112,000 > 96,000 → 96,000원 적용</text>
+</svg>
+</div>
+
+<!-- TAB 3: 부분 휴업 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">부분 휴업 — 하루 중 일부만 쉬는 경우</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">전일 휴업이 아닌, 하루 중 일부 시간만 조업 중단</p>
+</div>
+<svg width="100%" viewBox="0 0 680 440">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 전일 vs 부분 -->
+<g class="c-teal">
+<rect x="40" y="20" width="290" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="44" text-anchor="middle" dominant-baseline="central">전일 휴업</text>
+<text class="ts" x="185" y="68" text-anchor="middle" dominant-baseline="central">하루 종일 쉼</text>
+<text class="ts" x="185" y="88" text-anchor="middle" dominant-baseline="central">1일 휴업수당 = 평균임금 × 70%</text>
+<text class="ts" x="185" y="108" text-anchor="middle" dominant-baseline="central">그대로 적용</text>
+</g>
+
+<g class="c-purple">
+<rect x="350" y="20" width="290" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="44" text-anchor="middle" dominant-baseline="central">부분 휴업</text>
+<text class="ts" x="495" y="68" text-anchor="middle" dominant-baseline="central">하루 중 일부만 쉼</text>
+<text class="ts" x="495" y="88" text-anchor="middle" dominant-baseline="central">휴업 비율에 따라 비례 산정</text>
+</g>
+
+<line x1="495" y1="120" x2="495" y2="150" class="arr" marker-end="url(#a3)"/>
+
+<!-- 부분 휴업 공식 -->
+<g class="c-coral">
+<rect x="240" y="150" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="440" y="172" text-anchor="middle" dominant-baseline="central">부분 휴업 수당 공식</text>
+<text style="font-size:14px;fill:#993C1D;font-weight:500" x="440" y="204" text-anchor="middle" dominant-baseline="central">= 1일 휴업수당 × (휴업시간 ÷ 소정시간)</text>
+</g>
+
+<!-- 예시 -->
+<rect x="40" y="256" width="600" height="160" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="280" text-anchor="middle">예시: 8시간 근무 중 3시간만 일하고 5시간 휴업</text>
+
+<rect x="70" y="300" width="250" height="90" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="195" y="320" text-anchor="middle" dominant-baseline="central">전일 휴업 수당</text>
+<text style="font-size:12px;fill:#085041" x="195" y="344" text-anchor="middle" dominant-baseline="central">100,000 × 70% = 70,000원</text>
+<text style="font-size:12px;fill:#085041" x="195" y="366" text-anchor="middle" dominant-baseline="central">(이게 기준)</text>
+
+<rect x="360" y="300" width="250" height="90" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#3C3489;font-weight:500" x="485" y="320" text-anchor="middle" dominant-baseline="central">부분 휴업 실제 수당</text>
+<text style="font-size:12px;fill:#3C3489" x="485" y="344" text-anchor="middle" dominant-baseline="central">70,000 × (5h ÷ 8h)</text>
+<text style="font-size:12px;fill:#3C3489;font-weight:500" x="485" y="366" text-anchor="middle" dominant-baseline="central">= 43,750원</text>
+
+<text class="ts" x="340" y="406" text-anchor="middle">+ 실제 근로한 3시간에 대한 임금은 별도 지급</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">휴업수당 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">평균임금·통상임금·휴업조건을 입력하면 상한 비교까지 자동 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">월급</label>
+<input type="range" min="150" max="600" value="300" step="10" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salOut">300만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">통상시급</label>
+<input type="range" min="8000" max="30000" value="12000" step="500" id="ordW" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="ordOut">12,000원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">1일 소정시간</label>
+<input type="range" min="4" max="8" value="8" step="1" id="dailyH" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="dailyOut">8시간</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">휴업일수</label>
+<input type="range" min="1" max="90" value="30" step="1" id="shutDays" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="shutOut">30일</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">휴업 유형</label>
+<button id="btnFull" onclick="setType('full');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">전일 휴업</button>
+<button id="btnPart" onclick="setType('part');calc()">부분 휴업</button>
+</div>
+</div>
+
+<!-- 부분 휴업 추가 -->
+<div id="partInput" style="display:none;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">휴업시간/일</label>
+<input type="range" min="1" max="7" value="5" step="1" id="partH" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="partOut">5시간</span>
+</div>
+</div>
+
+<!-- 상한 비교 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">통상임금 상한 비교</p>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">평균임금 × 70%</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="v70">0원</p>
+</div>
+<div style="font-size:18px;font-weight:500;display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary)">vs</div>
+<div style="border-radius:6px;padding:10px;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">통상임금 일급</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vOrd">0원</p>
+</div>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0" id="capNote"></p>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">확정 1일 수당</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="daily1">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">휴업일수</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="daysR">0일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 휴업수당</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="totalR">0원</p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var shutType='full';
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setType(t){shutType=t;setBtn('btnFull',t==='full');setBtn('btnPart',t==='part');document.getElementById('partInput').style.display=t==='part'?'block':'none';}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function calc(){
+  var sal=parseInt(document.getElementById('salary').value);
+  var ordW=parseInt(document.getElementById('ordW').value);
+  var dH=parseInt(document.getElementById('dailyH').value);
+  var sDays=parseInt(document.getElementById('shutDays').value);
+  var partH=parseInt(document.getElementById('partH').value);
+
+  document.getElementById('salOut').textContent=sal+'만원';
+  document.getElementById('ordOut').textContent=fmt(ordW)+'원';
+  document.getElementById('dailyOut').textContent=dH+'시간';
+  document.getElementById('shutOut').textContent=sDays+'일';
+  document.getElementById('partOut').textContent=partH+'시간';
+
+  var salW=sal*10000;
+  var avgD=Math.round(salW/30);
+  var v70=Math.round(avgD*0.7);
+  var ordD=ordW*dH;
+
+  document.getElementById('v70').textContent=fmt(v70)+'원';
+  document.getElementById('vOrd').textContent=fmt(ordD)+'원';
+
+  // 상한 비교
+  var daily1;
+  var capped=false;
+  if(v70>ordD){
+    daily1=ordD;
+    capped=true;
+    document.getElementById('capNote').textContent='70%('+fmt(v70)+') > 통상('+fmt(ordD)+') → 통상임금으로 상한 적용';
+  } else {
+    daily1=v70;
+    document.getElementById('capNote').textContent='70%('+fmt(v70)+') ≤ 통상('+fmt(ordD)+') → 70% 그대로 적용';
+  }
+
+  // 부분 휴업
+  var actualDaily=daily1;
+  if(shutType==='part'){
+    actualDaily=Math.round(daily1*(partH/dH));
+  }
+
+  var total=actualDaily*sDays;
+
+  document.getElementById('daily1').textContent=fmt(actualDaily)+'원';
+  document.getElementById('daysR').textContent=sDays+'일';
+  document.getElementById('totalR').textContent=fmt(total)+'원';
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>',
+    '<p style="margin:2px 0">1일 평균임금 = '+fmt(salW)+' ÷ 30 = '+fmt(avgD)+'원</p>',
+    '<p style="margin:2px 0">70% = '+fmt(avgD)+' × 0.7 = '+fmt(v70)+'원</p>',
+    '<p style="margin:2px 0">통상임금 일급 = '+fmt(ordW)+' × '+dH+'h = '+fmt(ordD)+'원</p>',
+  ];
+  if(capped){
+    fl.push('<p style="margin:2px 0;color:var(--color-text-warning)">상한 적용: '+fmt(v70)+' > '+fmt(ordD)+' → '+fmt(ordD)+'원으로 제한</p>');
+  } else {
+    fl.push('<p style="margin:2px 0">상한 미적용: '+fmt(v70)+' ≤ '+fmt(ordD)+' → '+fmt(v70)+'원 적용</p>');
+  }
+  if(shutType==='part'){
+    fl.push('<p style="margin:2px 0">부분 휴업: '+fmt(daily1)+' × ('+partH+'h ÷ '+dH+'h) = '+fmt(actualDaily)+'원/일</p>');
+  }
+  fl.push('<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">총 휴업수당 = '+fmt(actualDaily)+' × '+sDays+'일 = '+fmt(total)+'원</p>');
+  document.getElementById('formula').innerHTML=fl.join('');
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<5;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===4)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">3자 비교 (유리한 원칙)</button>
+<button onclick="showTab(2)" id="t2">IRP 이체·세금</button>
+<button onclick="showTab(3)" id="t3">퇴직금 시뮬레이션</button>
+</div>
+
+<!-- TAB 0 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">퇴직금 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로자퇴직급여보장법 제8조, 대법원 2023다302579</p>
+</div>
+<svg width="100%" viewBox="0 0 680 760">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">1년 이상 근무한 근로자가 퇴직하면 받는 법정 급여</text>
+
+<!-- Step 1 -->
+<g class="c-amber">
+<rect x="140" y="72" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 발생 조건 확인</text>
+<text class="ts" x="340" y="110" text-anchor="middle" dominant-baseline="central">계속근로일수 ≥ 365일 (1년)</text>
+</g>
+
+<line x1="240" y1="128" x2="140" y2="162" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="174" y="142">미만</text>
+<line x1="340" y1="128" x2="340" y2="172" class="arr" marker-end="url(#ar)"/>
+<text class="ts" x="354" y="150">이상</text>
+
+<g>
+<rect x="40" y="162" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="140" y="188" text-anchor="middle" dominant-baseline="central">퇴직금 미발생</text>
+</g>
+
+<!-- Step 2 -->
+<g class="c-gray">
+<rect x="80" y="172" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="194" text-anchor="middle" dominant-baseline="central">Step 2. 평균임금 3자 산정</text>
+<text class="ts" x="340" y="214" text-anchor="middle" dominant-baseline="central">A: 3개월 평균 | B: 1년 평균 | C: 통상임금 환산</text>
+<text class="ts" x="340" y="232" text-anchor="middle" dominant-baseline="central">→ "3자 비교" 탭에서 상세 확인</text>
+</g>
+<line x1="340" y1="248" x2="340" y2="278" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3: 유리한 원칙 -->
+<g class="c-coral">
+<rect x="120" y="278" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="300" text-anchor="middle" dominant-baseline="central">Step 3. 유리한 원칙 적용</text>
+<text style="font-size:15px;fill:#993C1D;font-weight:500" x="340" y="332" text-anchor="middle" dominant-baseline="central">적용 평균임금 = max(A, B, C)</text>
+</g>
+<line x1="340" y1="354" x2="340" y2="384" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4: 근속일수 -->
+<g class="c-teal">
+<rect x="140" y="384" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="404" text-anchor="middle" dominant-baseline="central">Step 4. 계속근로일수 산정</text>
+<text class="ts" x="340" y="422" text-anchor="middle" dominant-baseline="central">입사일 ~ 퇴직일까지의 총 일수</text>
+</g>
+<line x1="340" y1="440" x2="340" y2="470" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5: 핵심 공식 -->
+<g class="c-purple">
+<rect x="60" y="470" width="560" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="492" text-anchor="middle" dominant-baseline="central">Step 5. 퇴직금 산출</text>
+<text style="font-size:16px;fill:#3C3489;font-weight:500" x="340" y="524" text-anchor="middle" dominant-baseline="central">퇴직금 = 적용 평균임금 × 30일 × (근속일수 ÷ 365)</text>
+</g>
+<line x1="340" y1="546" x2="340" y2="576" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6: IRP -->
+<g class="c-blue">
+<rect x="140" y="576" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="596" text-anchor="middle" dominant-baseline="central">Step 6. IRP 계좌로 이체</text>
+<text class="ts" x="340" y="614" text-anchor="middle" dominant-baseline="central">2022.4.14 이후 세전 전액 IRP → "IRP" 탭</text>
+</g>
+
+<!-- 예시 -->
+<line x1="340" y1="632" x2="340" y2="662" class="arr" marker-end="url(#ar)"/>
+<rect x="60" y="662" width="560" height="80" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="684" text-anchor="middle">예시: 평균임금 96,000원/일, 근속 3년(1,096일)</text>
+<text class="ts" x="340" y="706" text-anchor="middle">96,000 × 30 × (1,096 ÷ 365) = 8,647,890원</text>
+<text class="ts" x="340" y="726" text-anchor="middle">근속 정확히 1년(365일)이면 → 96,000 × 30 × 1 = 2,880,000원</text>
+</svg>
+</div>
+
+<!-- TAB 1: 3자 비교 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">3자 비교 — 퇴직금 전용 채택 규칙</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">대법원 2023다302579 | B가 A보다 5% 이상 클 때만 B 채택</p>
+</div>
+<svg width="100%" viewBox="0 0 680 640">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 3자 -->
+<g class="c-teal">
+<rect x="40" y="20" width="185" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="132" y="42" text-anchor="middle" dominant-baseline="central">A: 3개월 평균</text>
+<text class="ts" x="132" y="64" text-anchor="middle" dominant-baseline="central">3개월 임금총액</text>
+<text class="ts" x="132" y="80" text-anchor="middle" dominant-baseline="central">÷ 산정일수(~92일)</text>
+<text class="ts" x="132" y="96" text-anchor="middle" dominant-baseline="central">+ 상여·연차 안분</text>
+</g>
+<g class="c-purple">
+<rect x="247" y="20" width="186" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">B: 1년 평균</text>
+<text class="ts" x="340" y="64" text-anchor="middle" dominant-baseline="central">12개월 임금합계</text>
+<text class="ts" x="340" y="80" text-anchor="middle" dominant-baseline="central">÷ 365일</text>
+<text class="ts" x="340" y="96" text-anchor="middle" dominant-baseline="central">상여 포함 그대로</text>
+</g>
+<g class="c-coral">
+<rect x="455" y="20" width="185" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="547" y="42" text-anchor="middle" dominant-baseline="central">C: 통상임금 환산</text>
+<text class="ts" x="547" y="64" text-anchor="middle" dominant-baseline="central">통상시급</text>
+<text class="ts" x="547" y="80" text-anchor="middle" dominant-baseline="central">× 1일 소정시간</text>
+<text class="ts" x="547" y="96" text-anchor="middle" dominant-baseline="central">= 최저 안전망</text>
+</g>
+
+<!-- 퇴직금 전용 규칙 -->
+<line x1="132" y1="106" x2="260" y2="146" class="arr" marker-end="url(#a1)"/>
+<line x1="340" y1="106" x2="340" y2="146" class="arr" marker-end="url(#a1)"/>
+<line x1="547" y1="106" x2="420" y2="146" class="arr" marker-end="url(#a1)"/>
+
+<g class="c-amber">
+<rect x="100" y="146" width="480" height="96" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="170" text-anchor="middle" dominant-baseline="central">퇴직금 전용 채택 규칙</text>
+<text class="ts" x="340" y="196" text-anchor="middle" dominant-baseline="central">B > A × 1.05 (5% 이상 차이) → B 채택</text>
+<text class="ts" x="340" y="216" text-anchor="middle" dominant-baseline="central">그렇지 않으면 → A 유지</text>
+<text class="ts" x="340" y="234" text-anchor="middle" dominant-baseline="central">최종: max(채택된 A or B, C)</text>
+</g>
+
+<!-- 왜 5% 기준? -->
+<rect x="40" y="266" width="600" height="76" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="290" text-anchor="middle">왜 5% 기준이 있는가?</text>
+<text class="ts" x="340" y="314" text-anchor="middle">1년 평균이 근소하게 높은 경우까지 전부 1년 기준을 적용하면</text>
+<text class="ts" x="340" y="332" text-anchor="middle">계산 복잡성만 증가 → 의미 있는 차이(5%↑)가 있을 때만 1년 기준 적용</text>
+
+<!-- 시나리오 비교 -->
+<text class="th" x="340" y="376" text-anchor="middle">시나리오별 채택 결과</text>
+
+<rect x="40" y="394" width="290" height="110" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="416" text-anchor="middle">시나리오 1: 상여금 적음</text>
+<text class="ts" x="60" y="440">A = 100,000원 | B = 102,000원</text>
+<text class="ts" x="60" y="460">B/A = 1.02 (2%) < 1.05</text>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="60" y="484">→ A 채택 (100,000원)</text>
+
+<rect x="350" y="394" width="290" height="110" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="416" text-anchor="middle">시나리오 2: 상여금 큼</text>
+<text class="ts" x="370" y="440">A = 100,000원 | B = 120,000원</text>
+<text class="ts" x="370" y="460">B/A = 1.20 (20%) > 1.05</text>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500" x="370" y="484">→ B 채택 (120,000원)</text>
+
+<rect x="40" y="520" width="290" height="110" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="542" text-anchor="middle">시나리오 3: 무급휴직 있었음</text>
+<text class="ts" x="60" y="566">A = 50,000원 | B = 60,000원</text>
+<text class="ts" x="60" y="586">C = 96,000원 (통상임금)</text>
+<text style="font-size:12px;fill:var(--color-text-danger);font-weight:500" x="60" y="610">→ C 채택 (96,000원) — 안전망</text>
+
+<rect x="350" y="520" width="290" height="110" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="542" text-anchor="middle">핵심 정리</text>
+<text class="ts" x="370" y="568">A vs B: 5% 기준으로 채택 결정</text>
+<text class="ts" x="370" y="590">최종: 채택된 값 vs C 중 큰 것</text>
+<text style="font-size:12px;fill:var(--color-text-primary);font-weight:500" x="370" y="614">C는 아무리 상황이 나빠도 지켜주는 하한</text>
+</svg>
+</div>
+
+<!-- TAB 2: IRP -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">IRP 이체 규칙 & 퇴직소득세</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">2022.4.14 이후 퇴직금은 반드시 IRP로 지급</p>
+</div>
+<svg width="100%" viewBox="0 0 680 560">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-purple">
+<rect x="140" y="20" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">퇴직금 산출 완료</text>
+<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">예: 8,647,890원</text>
+</g>
+<line x1="340" y1="76" x2="340" y2="106" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-blue">
+<rect x="100" y="106" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="128" text-anchor="middle" dominant-baseline="central">세전 전액 IRP 계좌로 이체</text>
+<text class="ts" x="340" y="150" text-anchor="middle" dominant-baseline="central">2022.4.14 이후 의무화 (55세 미만)</text>
+<text class="ts" x="340" y="168" text-anchor="middle" dominant-baseline="central">퇴직소득세를 원천징수하지 않고 전액 입금</text>
+</g>
+<line x1="340" y1="182" x2="340" y2="212" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-amber">
+<rect x="140" y="212" width="400" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="234" text-anchor="middle" dominant-baseline="central">IRP에서 인출할 때 퇴직소득세 원천징수</text>
+</g>
+<line x1="340" y1="256" x2="340" y2="286" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-gray">
+<rect x="60" y="286" width="560" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="308" text-anchor="middle" dominant-baseline="central">퇴직소득세 계산 (소득세법 제48조)</text>
+<text class="ts" x="340" y="332" text-anchor="middle" dominant-baseline="central">① 근속연수공제 → ② 환산급여 → ③ 환산급여공제</text>
+<text class="ts" x="340" y="352" text-anchor="middle" dominant-baseline="central">→ ④ 과세표준에 누진세율(6~45%) → ⑤ 환산산출세액</text>
+<text class="ts" x="340" y="372" text-anchor="middle" dominant-baseline="central">→ ⑥ 퇴직소득세 = 환산산출세액 ÷ 12 × 근속연수</text>
+</g>
+
+<!-- IRP 장점 -->
+<rect x="40" y="410" width="600" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="434" text-anchor="middle">IRP 과세이연의 장점</text>
+
+<rect x="70" y="454" width="250" height="66" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="195" y="474" text-anchor="middle" dominant-baseline="central">연금으로 수령 시</text>
+<text style="font-size:12px;fill:#085041" x="195" y="498" text-anchor="middle" dominant-baseline="central">퇴직소득세의 60~70%만 부과</text>
+
+<rect x="360" y="454" width="250" height="66" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#633806;font-weight:500" x="485" y="474" text-anchor="middle" dominant-baseline="central">일시금으로 수령 시</text>
+<text style="font-size:12px;fill:#633806" x="485" y="498" text-anchor="middle" dominant-baseline="central">퇴직소득세 100% 부과</text>
+
+<text class="ts" x="340" y="534" text-anchor="middle">55세 이후 연금으로 받으면 세금이 30~40% 절감 → 노후 대비 효과</text>
+</svg>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">퇴직금 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">평균임금과 근속기간을 입력하면 퇴직금·연차별 누적액을 실시간 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">월 기본급</label>
+<input type="range" min="100" max="500" value="300" step="10" id="basePay" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="baseOut">300만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">월 수당 평균</label>
+<input type="range" min="0" max="200" value="30" step="5" id="allow" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="allowOut">30만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">연간 상여금</label>
+<input type="range" min="0" max="2000" value="600" step="50" id="bonus" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="bonusOut">600만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">통상시급</label>
+<input type="range" min="8000" max="30000" value="12000" step="500" id="ordW" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="ordOut">12,000원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:110px">근속기간</label>
+<input type="range" min="1" max="25" value="3" step="1" id="years" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="yearsOut">3년</span>
+</div>
+</div>
+
+<!-- 평균임금 3자 비교 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">평균임금 3자 비교</p>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+<div id="cA" style="border-radius:6px;padding:10px;border:2px solid transparent;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">A: 3개월</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vA">0원</p>
+</div>
+<div id="cB" style="border-radius:6px;padding:10px;border:2px solid transparent;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">B: 1년</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vB">0원</p>
+</div>
+<div id="cC" style="border-radius:6px;padding:10px;border:2px solid transparent;background:var(--color-background-primary)">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 2px">C: 통상임금</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="vC">0원</p>
+</div>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0" id="pickNote"></p>
+</div>
+
+<!-- 퇴직금 결과 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">적용 평균임금</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="avgD">0원/일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">근속일수</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="tenDays">0일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">퇴직금</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="sevAmt">0원</p>
+</div>
+</div>
+
+<!-- 근속연수별 차트 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">근속연수별 퇴직금 누적</p>
+<div style="position:relative;height:180px"><canvas id="chart"></canvas></div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var myChart=null;
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+
+function calc(){
+  var base=parseInt(document.getElementById('basePay').value);
+  var allow=parseInt(document.getElementById('allow').value);
+  var bonus=parseInt(document.getElementById('bonus').value);
+  var ordW=parseInt(document.getElementById('ordW').value);
+  var years=parseInt(document.getElementById('years').value);
+
+  document.getElementById('baseOut').textContent=base+'만원';
+  document.getElementById('allowOut').textContent=allow+'만원';
+  document.getElementById('bonusOut').textContent=bonus+'만원';
+  document.getElementById('ordOut').textContent=fmt(ordW)+'원';
+  document.getElementById('yearsOut').textContent=years+'년';
+
+  var bW=base*10000, aW=allow*10000, boW=bonus*10000;
+
+  // A: 3개월
+  var totA=(bW+aW)*3+(boW*3/12);
+  var A=totA/92;
+
+  // B: 1년
+  var totB=(bW+aW)*12+boW;
+  var B=totB/365;
+
+  // C: 통상
+  var C=ordW*8;
+
+  // 퇴직금 전용 5% 규칙
+  var picked;
+  var pickLabel;
+  if(B>A*1.05){
+    picked=Math.max(B,C);
+    pickLabel=B>=C?'B 채택 (1년, A대비 '+Math.round((B/A-1)*100)+'%↑)':'C 채택 (통상, 안전망)';
+  } else {
+    picked=Math.max(A,C);
+    pickLabel=A>=C?'A 채택 (3개월, B와 5%이내)':'C 채택 (통상, 안전망)';
+  }
+
+  document.getElementById('vA').textContent=fmt(A)+'원/일';
+  document.getElementById('vB').textContent=fmt(B)+'원/일';
+  document.getElementById('vC').textContent=fmt(C)+'원/일';
+  document.getElementById('pickNote').textContent=pickLabel;
+
+  ['cA','cB','cC'].forEach(function(id){
+    var el=document.getElementById(id);
+    el.style.borderColor='transparent';el.style.background='var(--color-background-primary)';
+  });
+  var winnerId=picked===A?'cA':(picked===B?'cB':'cC');
+  if(picked===C&&C>A&&C>B)winnerId='cC';
+  else if(picked===B)winnerId='cB';
+  else if(picked===A)winnerId='cA';
+  document.getElementById(winnerId).style.borderColor='var(--color-border-info)';
+  document.getElementById(winnerId).style.background='var(--color-background-info)';
+
+  var tenDays=years*365;
+  var sevAmt=picked*30*(tenDays/365);
+
+  document.getElementById('avgD').textContent=fmt(picked)+'원/일';
+  document.getElementById('tenDays').textContent=fmt(tenDays)+'일';
+  document.getElementById('sevAmt').textContent=fmt(sevAmt)+'원';
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>',
+    '<p style="margin:2px 0">A(3개월): ('+fmt(bW+aW)+'×3 + '+fmt(boW)+'×3/12) ÷ 92 = '+fmt(A)+'원/일</p>',
+    '<p style="margin:2px 0">B(1년): ('+fmt(bW+aW)+'×12 + '+fmt(boW)+') ÷ 365 = '+fmt(B)+'원/일</p>',
+    '<p style="margin:2px 0">C(통상): '+fmt(ordW)+' × 8h = '+fmt(C)+'원/일</p>',
+    '<p style="margin:2px 0">'+pickLabel+'</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">퇴직금 = '+fmt(picked)+' × 30 × ('+fmt(tenDays)+' ÷ 365) = '+fmt(sevAmt)+'원</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+
+  // 차트
+  drawChart(picked,years);
+}
+
+function drawChart(avgD,currentY){
+  if(myChart)myChart.destroy();
+  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
+  var txtC=dark?'#9c9a92':'#73726c';
+
+  var labels=[];var data=[];var bgC=[];
+  for(var y=1;y<=Math.max(currentY,10);y++){
+    labels.push(y+'년');
+    data.push(Math.round(avgD*30*y));
+    bgC.push(y===currentY?'#378ADD':'rgba(55,138,221,0.2)');
+  }
+
+  var ctx=document.getElementById('chart').getContext('2d');
+  myChart=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:'퇴직금',data:data,backgroundColor:bgC,borderRadius:4,barPercentage:0.7}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return fmt(c.raw)+'원'}}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC}},
+        y:{grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,callback:function(v){return (v/10000).toLocaleString('ko-KR')+'만'}},beginAtZero:true}
+      }
+    }
+  });
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===3)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

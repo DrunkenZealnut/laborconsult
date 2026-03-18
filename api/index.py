@@ -401,6 +401,21 @@ def serve_admin():
     return FileResponse(html_path, media_type="text/html")
 
 
+@app.get("/calculators")
+@app.get("/calculators.html")
+def serve_calculators():
+    html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "calculators.html")
+    return FileResponse(html_path, media_type="text/html")
+
+
+@app.get("/calculator_flow/{filename:path}")
+def serve_calculator_flow(filename: str):
+    file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "calculator_flow", filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(file_path, media_type="text/html")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.index:app", host="0.0.0.0", port=5555, reload=True)
