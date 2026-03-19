@@ -110,30 +110,61 @@
   }
   .board-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .board-time { color: var(--text-muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
-  .board-chevron { color: var(--text-muted); transition: transform 0.25s; flex-shrink: 0; font-size: 12px; }
-  .board-item.open .board-chevron { transform: rotate(180deg); }
+  .board-chevron { color: var(--text-muted); flex-shrink: 0; font-size: 12px; }
 
-  /* ── ANSWER AREA ── */
-  .board-a {
-    display: none; padding: 0 18px 18px; border-top: 1px solid var(--border-light);
+  /* ── DETAIL VIEW ── */
+  #detail-view { display: none; padding: 0 20px 32px; }
+  #detail-view.active { display: block; }
+  .detail-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 0; font-size: 14px; color: var(--copper); font-weight: 600;
+    cursor: pointer; background: none; border: none; font-family: var(--font-body);
   }
-  .board-item.open .board-a { display: block; }
-  .board-a-loading { padding: 20px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
-  .md-content { font-size: 14px; line-height: 1.8; color: var(--text); padding-top: 14px; }
-  .md-content h2 { font-size: 16px; font-weight: 700; margin: 20px 0 8px; color: var(--navy); }
-  .md-content h3 { font-size: 15px; font-weight: 600; margin: 16px 0 6px; }
-  .md-content p { margin: 8px 0; }
-  .md-content ul, .md-content ol { padding-left: 20px; margin: 8px 0; }
-  .md-content li { margin: 4px 0; }
-  .md-content table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 12px 0; overflow-x: auto; display: block; }
-  .md-content th, .md-content td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
-  .md-content th { background: var(--cream); font-weight: 600; }
-  .md-content blockquote { border-left: 3px solid var(--copper); padding: 8px 12px; color: var(--text-secondary); margin: 12px 0; background: rgba(192,128,80,0.04); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
-  .md-content strong { color: var(--navy); }
-  .md-content code { background: rgba(27,42,74,0.06); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
-  .md-content hr { border: none; border-top: 1px solid var(--border-light); margin: 16px 0; }
+  .detail-back:hover { text-decoration: underline; }
+  .detail-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 16px; font-size: 13px; color: var(--text-muted);
+  }
+
+  /* Chat bubbles */
+  .chat-area { display: flex; flex-direction: column; gap: 12px; }
+  .msg-wrap { display: flex; flex-direction: column; }
+  .msg-wrap.user-side { align-items: flex-end; }
+  .msg-wrap.bot-side { align-items: flex-start; }
+  .msg-bubble {
+    max-width: 85%; padding: 14px 18px; border-radius: 14px;
+    font-size: 15px; line-height: 1.7; word-break: break-word;
+  }
+  .msg-bubble.user {
+    background: var(--navy); color: #fff; border-bottom-right-radius: 4px;
+  }
+  .msg-bubble.bot {
+    background: #f8f7f5; border: 1px solid var(--border); border-bottom-left-radius: 4px;
+  }
+  .msg-bubble.bot :first-child { margin-top: 0; }
+  .msg-bubble.bot h2 { font-size: 16px; margin: 14px 0 6px; }
+  .msg-bubble.bot h3 { font-size: 15px; margin: 10px 0 4px; }
+  .msg-bubble.bot p { margin: 6px 0; }
+  .msg-bubble.bot ul, .msg-bubble.bot ol { margin: 6px 0 6px 20px; }
+  .msg-bubble.bot table { border-collapse: collapse; margin: 10px 0; font-size: 14px; width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--border); }
+  .msg-bubble.bot th { background: var(--navy); color: #fff; font-weight: 600; padding: 8px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--navy-deep); }
+  .msg-bubble.bot td { padding: 7px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 1px solid var(--border); }
+  .msg-bubble.bot tr:nth-child(even) td { background: var(--cream); }
+  .msg-bubble.bot tr:last-child td { border-bottom: none; }
+  .msg-bubble.bot strong { font-weight: 600; color: var(--navy); }
+  .msg-bubble.bot blockquote { border-left: 3px solid var(--copper); padding-left: 10px; color: var(--text-muted); margin: 6px 0; }
+  .msg-bubble.bot code { background: var(--cream); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+  .msg-bubble.bot pre { background: var(--cream); padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+  .msg-bubble.bot pre code { background: none; padding: 0; }
+  .msg-bubble.bot hr { border: none; border-top: 1px solid var(--border-light); margin: 12px 0; }
+  .msg-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; padding: 0 4px; }
+  .no-answer { color: var(--text-muted); font-size: 14px; padding: 20px 0; text-align: center; }
+
+  .detail-actions {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px;
+  }
   .board-ask-btn {
-    display: inline-flex; align-items: center; gap: 6px; margin-top: 16px;
+    display: inline-flex; align-items: center; gap: 6px;
     color: var(--copper); font-size: 13px; font-weight: 600; cursor: pointer;
     background: rgba(192,128,80,0.08); border: 1px solid rgba(192,128,80,0.2);
     border-radius: var(--radius-pill); padding: 8px 18px;
@@ -375,6 +406,14 @@
   <!-- PAGINATION -->
   <nav id="pagination" aria-label="페이지 탐색"></nav>
 
+  <!-- DETAIL VIEW -->
+  <section id="detail-view">
+    <button class="detail-back" onclick="closeDetail()">&#8592; 목록으로</button>
+    <div id="detail-meta" class="detail-meta"></div>
+    <div id="detail-chat" class="chat-area"></div>
+    <div id="detail-actions" class="detail-actions"></div>
+  </section>
+
 </main>
 
 <!-- ═══ WRITE MODAL ═══ -->
@@ -577,15 +616,12 @@ async function loadBoard() {
         ? '<span class="board-source user">질문</span>'
         : '';
       div.innerHTML =
-        '<div class="board-q" onclick="toggleItem(this.parentElement)">' +
+        '<div class="board-q" onclick="openDetail(\'' + item.id + '\')">' +
           '<span class="board-cat">' + escHtml(item.category || '일반') + '</span>' +
           sourceBadge +
           '<span class="board-text">' + escHtml(item.question) + '</span>' +
           '<span class="board-time">' + timeAgo + '</span>' +
-          '<span class="board-chevron">\u25BC</span>' +
-        '</div>' +
-        '<div class="board-a">' +
-          '<div class="board-a-loading">답변을 불러오는 중...</div>' +
+          '<span class="board-chevron">&#8250;</span>' +
         '</div>';
       list.appendChild(div);
     });
@@ -601,59 +637,115 @@ async function loadBoard() {
   }
 }
 
-// ── Item Toggle + Detail Fetch ──
-async function toggleItem(el) {
-  var wasOpen = el.classList.contains('open');
-  el.classList.toggle('open');
+// ── Detail View ──
+var currentDetailId = null;
 
-  if (wasOpen) return;
+async function openDetail(id) {
+  // 목록 숨기고 상세 표시
+  document.getElementById('board-hero').style.display = 'none';
+  document.querySelector('#search-section').style.display = 'none';
+  document.querySelector('#filter-section').style.display = 'none';
+  document.getElementById('board-section').style.display = 'none';
+  document.getElementById('pagination').style.display = 'none';
+  var detail = document.getElementById('detail-view');
+  detail.classList.add('active');
+  currentDetailId = id;
 
-  var id = el.dataset.id;
-  var answerDiv = el.querySelector('.board-a');
+  var chatArea = document.getElementById('detail-chat');
+  var metaArea = document.getElementById('detail-meta');
+  var actionsArea = document.getElementById('detail-actions');
+  chatArea.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">불러오는 중...</div>';
+  metaArea.innerHTML = '';
+  actionsArea.innerHTML = '';
 
+  // URL 업데이트
+  history.pushState({detail: id}, '', '?id=' + id);
+  window.scrollTo({top: 0});
+
+  // 캐시 확인
   if (answerCache[id]) {
-    answerDiv.innerHTML = answerCache[id];
+    renderDetail(answerCache[id]);
     return;
   }
 
   try {
     var resp = await fetch(API_BASE + '/api/board/' + id);
-    if (!resp.ok) throw new Error('Detail fetch failed');
+    if (!resp.ok) throw new Error('Fetch failed');
     var data = await resp.json();
-
-    var askUrl = '/?q=' + encodeURIComponent(data.question.substring(0, 80));
-    var html = '';
-
-    if (data.source === 'user') {
-      // 사용자 질문 — 답변 없음, 삭제 버튼 표시
-      html =
-        '<div class="md-content" style="padding-top:14px">' +
-          '<p style="color:var(--text-muted)">아직 답변이 없습니다. AI 상담에서 비슷한 질문을 해보세요.</p>' +
-        '</div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap">' +
-          '<a href="' + escHtml(askUrl) + '" class="board-ask-btn">' +
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
-            'AI에게 물어보기' +
-          '</a>' +
-          '<button class="board-delete-btn" onclick="showDeletePrompt(\'' + id + '\',this)">&#128465; 삭제</button>' +
-        '</div>';
-    } else {
-      // AI 답변 — 기존 로직
-      var rendered = DOMPurify.sanitize(marked.parse(data.answer || ''));
-      html =
-        '<div class="md-content">' + rendered + '</div>' +
-        '<a href="' + escHtml(askUrl) + '" class="board-ask-btn">' +
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
-          '비슷한 질문하기' +
-        '</a>';
-    }
-
-    answerDiv.innerHTML = html;
-    answerCache[id] = html;
+    answerCache[id] = data;
+    renderDetail(data);
   } catch (e) {
-    answerDiv.innerHTML = '<div class="board-a-loading" style="color:var(--copper)">답변을 불러올 수 없습니다</div>';
+    chatArea.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--copper)">불러올 수 없습니다</div>';
   }
 }
+
+function renderDetail(data) {
+  var chatArea = document.getElementById('detail-chat');
+  var metaArea = document.getElementById('detail-meta');
+  var actionsArea = document.getElementById('detail-actions');
+
+  // 메타 정보
+  var timeAgo = getTimeAgo(data.created_at);
+  var catHtml = '<span class="board-cat">' + escHtml(data.category || '일반') + '</span>';
+  var nickHtml = data.nickname ? '<span>' + escHtml(data.nickname) + '</span>' : '';
+  metaArea.innerHTML = catHtml + nickHtml + '<span>' + timeAgo + '</span>';
+
+  // 채팅 영역
+  var html = '';
+
+  // 질문 (user 말풍선)
+  html += '<div class="msg-wrap user-side">';
+  html += '<span class="msg-label">질문</span>';
+  html += '<div class="msg-bubble user">' + escHtml(data.question) + '</div>';
+  html += '</div>';
+
+  // 답변 (bot 말풍선) 또는 미답변
+  if (data.source === 'user' || !data.answer) {
+    html += '<div class="no-answer">아직 AI 답변이 없습니다</div>';
+  } else {
+    var rendered = DOMPurify.sanitize(marked.parse(data.answer));
+    html += '<div class="msg-wrap bot-side">';
+    html += '<span class="msg-label">AI 답변</span>';
+    html += '<div class="msg-bubble bot">' + rendered + '</div>';
+    html += '</div>';
+  }
+  chatArea.innerHTML = html;
+
+  // 하단 액션 버튼
+  var askUrl = '/?q=' + encodeURIComponent(data.question.substring(0, 80));
+  var askLabel = (data.source === 'user') ? 'AI에게 물어보기' : '비슷한 질문하기';
+  var actHtml =
+    '<a href="' + escHtml(askUrl) + '" class="board-ask-btn">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+      askLabel +
+    '</a>';
+  if (data.source === 'user') {
+    actHtml += '<button class="board-delete-btn" onclick="showDeletePrompt(\'' + data.id + '\',this)">&#128465; 삭제</button>';
+  }
+  actionsArea.innerHTML = actHtml;
+}
+
+function closeDetail() {
+  document.getElementById('detail-view').classList.remove('active');
+  document.getElementById('board-hero').style.display = '';
+  document.querySelector('#search-section').style.display = '';
+  document.querySelector('#filter-section').style.display = '';
+  document.getElementById('board-section').style.display = '';
+  document.getElementById('pagination').style.display = '';
+  currentDetailId = null;
+  updateUrl();
+  window.scrollTo({top: 0});
+}
+
+// 브라우저 뒤로가기 지원
+window.addEventListener('popstate', function() {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('id')) {
+    openDetail(params.get('id'));
+  } else if (currentDetailId) {
+    closeDetail();
+  }
+});
 
 // ── Pagination ──
 function renderPagination(page, totalPages) {
@@ -790,7 +882,7 @@ async function submitPost(e) {
 
 // ── Delete ──
 function showDeletePrompt(postId, btnEl) {
-  var parent = btnEl.closest('.board-a');
+  var parent = btnEl.closest('.detail-actions') || btnEl.parentElement;
   var existing = parent.querySelector('.delete-prompt');
   if (existing) { existing.remove(); return; }
 
@@ -823,6 +915,9 @@ async function confirmDelete(postId) {
 
     showToast('삭제되었습니다');
     delete answerCache[postId];
+    if (currentDetailId === postId) {
+      closeDetail();
+    }
     loadBoard();
   } catch (e) {
     showToast('네트워크 오류');
@@ -849,6 +944,15 @@ parseUrlParams();
 document.getElementById('search-input').value = boardState.q;
 loadCategories();
 loadBoard();
+
+// URL에 ?id= 있으면 바로 상세 보기
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var detailId = params.get('id');
+  if (detailId) {
+    setTimeout(function() { openDetail(detailId); }, 100);
+  }
+})();
 </script>
 </body>
 </html>
