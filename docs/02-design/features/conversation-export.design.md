@@ -12,8 +12,8 @@
 
 ```html
 <header>
-  <h1>AI 노동상담 챗봇</h1>
-  <span>nodong.kr BEST Q&A 기반</span>
+  <h1>나의 권리를 지키는 첫걸음, 노동상담</h1>
+
   <button id="export-btn" title="대화 저장 (마크다운)">📥 저장</button>
 </header>
 ```

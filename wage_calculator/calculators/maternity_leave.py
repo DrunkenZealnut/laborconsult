@@ -120,14 +120,15 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
             f"출산전후휴가급여: 통상임금 {monthly_ow:,.0f}원 (100%) = {monthly_benefit:,.0f}원/월"
         )
 
-    # 최저임금 하한 체크
-    min_hourly = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[2025])
-    min_monthly = min_hourly * 209
-    if monthly_benefit < min_monthly:
-        monthly_benefit = min_monthly
-        warnings.append(
-            f"출산전후휴가급여가 최저임금 월액({min_monthly:,.0f}원) 미만 → 최저임금 보장"
-        )
+    # 최저임금 하한 체크 (노무제공자는 고용보험 상한만 적용, 근기법 최저임금 보장 대상 아님)
+    if not is_pw:
+        min_hourly = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[2025])
+        min_monthly = min_hourly * 209
+        if monthly_benefit < min_monthly:
+            monthly_benefit = min_monthly
+            warnings.append(
+                f"출산전후휴가급여가 최저임금 월액({min_monthly:,.0f}원) 미만 → 최저임금 보장"
+            )
 
     # ── 기업 유형별 부담 구조 ─────────────────────────────────────────────
     if is_priority:

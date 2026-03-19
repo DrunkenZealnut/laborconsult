@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">가구 유형 판정</button>
+<button onclick="showTab(2)" id="t2">3구간 산정</button>
+<button onclick="showTab(3)" id="t3">재산 감액</button>
+<button onclick="showTab(4)" id="t4">시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">근로장려금(EITC) — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">조세특례제한법 제100조의3, 제100조의5 | WageInput 없이 독립 호출</p>
+</div>
+<svg width="100%" viewBox="0 0 680 680">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">통상임금·평균임금에 의존하지 않는 독립 계산기 (연간 총소득 기준)</text>
+
+<!-- Step 1 -->
+<g class="c-teal">
+<rect x="140" y="72" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 가구 유형 자동 판정</text>
+<text class="ts" x="340" y="110" text-anchor="middle" dominant-baseline="central">단독 / 홑벌이 / 맞벌이 → "가구 유형" 탭 참고</text>
+</g>
+
+<line x1="340" y1="128" x2="340" y2="158" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-purple">
+<rect x="140" y="158" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="178" text-anchor="middle" dominant-baseline="central">Step 2. 소득구간 판정 (3구간)</text>
+<text class="ts" x="340" y="196" text-anchor="middle" dominant-baseline="central">점증 → 평탄 → 점감 → "3구간" 탭 참고</text>
+</g>
+
+<line x1="340" y1="214" x2="340" y2="244" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-coral">
+<rect x="140" y="244" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="264" text-anchor="middle" dominant-baseline="central">Step 3. 기본 장려금 산출</text>
+<text class="ts" x="340" y="282" text-anchor="middle" dominant-baseline="central">가구별 최대금액과 구간 공식으로 계산</text>
+</g>
+
+<line x1="340" y1="300" x2="340" y2="330" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4 -->
+<g class="c-amber">
+<rect x="140" y="330" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="350" text-anchor="middle" dominant-baseline="central">Step 4. 재산 감액 적용</text>
+<text class="ts" x="340" y="368" text-anchor="middle" dominant-baseline="central">재산 1.7억 초과 → 50% 감액 | 2.4억 초과 → 수급 불가</text>
+</g>
+
+<line x1="340" y1="386" x2="340" y2="416" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-gray">
+<rect x="140" y="416" width="400" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="438" text-anchor="middle" dominant-baseline="central">Step 5. 최종 근로장려금 확정</text>
+</g>
+
+<!-- 자녀장려금 별도 -->
+<line x1="340" y1="460" x2="340" y2="494" class="arr" marker-end="url(#ar)"/>
+
+<g class="c-blue">
+<rect x="80" y="494" width="520" height="110" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="518" text-anchor="middle" dominant-baseline="central">별도: 자녀장려금</text>
+
+<rect x="110" y="536" width="230" height="28" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C" x="225" y="554" text-anchor="middle" dominant-baseline="central">자녀 x 100만원/인</text>
+
+<rect x="360" y="536" width="220" height="28" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#633806" x="470" y="554" text-anchor="middle" dominant-baseline="central">소득 4,000만 미만, 단독 제외</text>
+
+<text class="ts" x="340" y="590" text-anchor="middle">재산 1.7억 초과 시 동일하게 50% 감액</text>
+</g>
+
+<!-- 핵심 -->
+<rect x="40" y="626" width="600" height="44" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="644" text-anchor="middle">반도체고 졸업 직후 취업한 청년 노동자 → 단독가구 가능성 높음</text>
+<text class="ts" x="340" y="662" text-anchor="middle">연소득 2,200만원 이하라면 최대 165만원 수급 가능</text>
+</svg>
+</div>
+
+<!-- TAB 1: 가구 유형 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">가구 유형 자동 판정</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">배우자·부양가족 유무와 배우자 소득으로 결정</p>
+</div>
+<svg width="100%" viewBox="0 0 680 500">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="200" y="20" width="280" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">배우자가 있는가?</text>
+</g>
+
+<line x1="240" y1="64" x2="140" y2="100" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="176" y="78">없음</text>
+<line x1="440" y1="64" x2="520" y2="100" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="492" y="78">있음</text>
+
+<!-- 배우자 없음 분기 -->
+<g class="c-amber">
+<rect x="40" y="100" width="200" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="140" y="122" text-anchor="middle" dominant-baseline="central">부양가족이 있는가?</text>
+</g>
+
+<line x1="80" y1="144" x2="80" y2="186" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="66" y="164">없음</text>
+<line x1="200" y1="144" x2="200" y2="186" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="214" y="164">있음</text>
+
+<g class="c-coral">
+<rect x="20" y="186" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="80" y="206" text-anchor="middle" dominant-baseline="central">단독가구</text>
+<text class="ts" x="80" y="226" text-anchor="middle" dominant-baseline="central">최대 165만</text>
+</g>
+
+<g class="c-teal">
+<rect x="160" y="186" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="220" y="206" text-anchor="middle" dominant-baseline="central">홑벌이</text>
+<text class="ts" x="220" y="226" text-anchor="middle" dominant-baseline="central">최대 285만</text>
+</g>
+
+<!-- 배우자 있음 분기 -->
+<g class="c-amber">
+<rect x="400" y="100" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="122" text-anchor="middle" dominant-baseline="central">배우자 소득 ≥ 300만?</text>
+</g>
+
+<line x1="460" y1="144" x2="420" y2="186" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="426" y="164">미만</text>
+<line x1="580" y1="144" x2="580" y2="186" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="594" y="164">이상</text>
+
+<g class="c-teal">
+<rect x="360" y="186" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="420" y="206" text-anchor="middle" dominant-baseline="central">홑벌이</text>
+<text class="ts" x="420" y="226" text-anchor="middle" dominant-baseline="central">최대 285만</text>
+</g>
+
+<g class="c-purple">
+<rect x="520" y="186" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="580" y="206" text-anchor="middle" dominant-baseline="central">맞벌이</text>
+<text class="ts" x="580" y="226" text-anchor="middle" dominant-baseline="central">최대 330만</text>
+</g>
+
+<!-- 요약 테이블 -->
+<rect x="40" y="272" width="600" height="200" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="296" text-anchor="middle">가구 유형별 핵심 파라미터</text>
+
+<text style="font-size:12px;fill:var(--s);font-weight:500" x="80" y="326">구분</text>
+<text style="font-size:12px;fill:var(--s);font-weight:500" x="200" y="326">최대금액</text>
+<text style="font-size:12px;fill:var(--s);font-weight:500" x="310" y="326">점증구간끝</text>
+<text style="font-size:12px;fill:var(--s);font-weight:500" x="430" y="326">평탄구간끝</text>
+<text style="font-size:12px;fill:var(--s);font-weight:500" x="555" y="326">점감구간끝</text>
+
+<line x1="60" y1="336" x2="620" y2="336" stroke="var(--b)" stroke-width="0.5"/>
+
+<text class="ts" x="80" y="358">단독</text>
+<text style="font-size:12px;fill:var(--p);font-weight:500" x="200" y="358">165만</text>
+<text class="ts" x="310" y="358">400만</text>
+<text class="ts" x="430" y="358">900만</text>
+<text class="ts" x="555" y="358">2,200만</text>
+
+<text class="ts" x="80" y="384">홑벌이</text>
+<text style="font-size:12px;fill:var(--p);font-weight:500" x="200" y="384">285만</text>
+<text class="ts" x="310" y="384">700만</text>
+<text class="ts" x="430" y="384">1,400만</text>
+<text class="ts" x="555" y="384">3,200만</text>
+
+<text class="ts" x="80" y="410">맞벌이</text>
+<text style="font-size:12px;fill:var(--p);font-weight:500" x="200" y="410">330만</text>
+<text class="ts" x="310" y="410">800만</text>
+<text class="ts" x="430" y="410">1,700만</text>
+<text class="ts" x="555" y="410">3,800만</text>
+
+<text class="ts" x="340" y="452" text-anchor="middle">점감구간끝을 넘으면 장려금 = 0원 (수급 불가)</text>
+</svg>
+</div>
+
+<!-- TAB 2: 3구간 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">3구간 산정 — 산 모양 곡선</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">소득이 올라가면 장려금이 올라갔다가 → 유지되다가 → 내려갑니다</p>
+</div>
+<svg width="100%" viewBox="0 0 680 400">
+<!-- 축 -->
+<line x1="60" y1="280" x2="640" y2="280" stroke="var(--p)" stroke-width="1"/>
+<line x1="60" y1="280" x2="60" y2="40" stroke="var(--p)" stroke-width="1"/>
+<text class="ts" x="350" y="310" text-anchor="middle">연간 총소득 (만원)</text>
+<text class="ts" x="30" y="160" text-anchor="middle" transform="rotate(-90,30,160)">장려금</text>
+
+<!-- 점증 구간 -->
+<line x1="60" y1="280" x2="180" y2="80" stroke="#1D9E75" stroke-width="2.5"/>
+<rect x="60" y="282" width="120" height="20" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:11px;fill:#0F6E56;font-weight:500" x="120" y="296" text-anchor="middle">점증</text>
+
+<!-- 평탄 구간 -->
+<line x1="180" y1="80" x2="340" y2="80" stroke="#378ADD" stroke-width="2.5"/>
+<rect x="180" y="282" width="160" height="20" rx="4" fill="#E6F1FB" stroke="none"/>
+<text style="font-size:11px;fill:#185FA5;font-weight:500" x="260" y="296" text-anchor="middle">평탄 (최대)</text>
+
+<!-- 점감 구간 -->
+<line x1="340" y1="80" x2="580" y2="280" stroke="#D85A30" stroke-width="2.5"/>
+<rect x="340" y="282" width="240" height="20" rx="4" fill="#FAECE7" stroke="none"/>
+<text style="font-size:11px;fill:#993C1D;font-weight:500" x="460" y="296" text-anchor="middle">점감</text>
+
+<!-- 최대금액 점선 -->
+<line x1="60" y1="80" x2="340" y2="80" stroke="var(--b)" stroke-width="0.5" stroke-dasharray="4 4"/>
+<text class="ts" x="50" y="84" text-anchor="end">최대</text>
+
+<!-- 0원 -->
+<circle cx="580" cy="280" r="4" fill="#D85A30"/>
+<text class="ts" x="590" y="276">0원</text>
+
+<!-- 공식 박스들 -->
+<rect x="40" y="320" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0F6E56;font-weight:500" x="60" y="340">점증:</text>
+<text class="ts" x="100" y="340">소득 x 최대금액 / 점증구간끝</text>
+<text style="font-size:12px;fill:#185FA5;font-weight:500" x="60" y="360">평탄:</text>
+<text class="ts" x="100" y="360">최대금액 그대로</text>
+<text style="font-size:12px;fill:#993C1D;font-weight:500" x="60" y="380">점감:</text>
+<text class="ts" x="100" y="380">최대금액 - (소득-평탄끝) x 최대금액 / (점감끝-평탄끝)</text>
+</svg>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-top:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">예시: 단독가구, 연소득 1,500만원</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">1,500만은 평탄구간끝(900만) 초과 → 점감구간</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">= 165만 - (1,500만-900만) x 165만 / (2,200만-900만)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">= 165만 - 600만 x 165만 / 1,300만 = 165만 - 76.2만</p>
+<p style="font-size:13px;font-weight:500;color:var(--color-text-primary);margin:2px 0">= 약 88.8만원</p>
+</div>
+</div>
+
+<!-- TAB 3: 재산 감액 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">재산 감액 — 마지막 관문</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">3구간 산정 후 재산 기준으로 추가 감액 또는 수급 불가 판정</p>
+</div>
+<svg width="100%" viewBox="0 0 680 420">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">3구간 산정 완료 (기본 장려금)</text>
+</g>
+
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#a3)"/>
+
+<g class="c-amber">
+<rect x="180" y="94" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="116" text-anchor="middle" dominant-baseline="central">총 재산 확인</text>
+</g>
+
+<line x1="180" y1="138" x2="110" y2="174" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="128" y="152">≤ 1.7억</text>
+<line x1="340" y1="138" x2="340" y2="174" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="290" y="156">1.7~2.4억</text>
+<line x1="500" y1="138" x2="570" y2="174" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="548" y="152">> 2.4억</text>
+
+<g>
+<rect x="40" y="174" width="140" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="110" y="194" text-anchor="middle" dominant-baseline="central">감액 없음</text>
+<text style="font-size:12px;fill:#085041" x="110" y="214" text-anchor="middle" dominant-baseline="central">100% 수급</text>
+</g>
+
+<g>
+<rect x="270" y="174" width="140" height="56" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#633806;font-weight:500" x="340" y="194" text-anchor="middle" dominant-baseline="central">50% 감액</text>
+<text style="font-size:12px;fill:#633806" x="340" y="214" text-anchor="middle" dominant-baseline="central">절반만 수급</text>
+</g>
+
+<g>
+<rect x="500" y="174" width="140" height="56" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#791F1F;font-weight:500" x="570" y="194" text-anchor="middle" dominant-baseline="central">수급 불가</text>
+<text style="font-size:12px;fill:#791F1F" x="570" y="214" text-anchor="middle" dominant-baseline="central">0원</text>
+</g>
+
+<!-- 자녀장려금도 동일 -->
+<rect x="40" y="260" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="282" text-anchor="middle">자녀장려금에도 동일한 재산 기준 적용</text>
+<text class="ts" x="340" y="302" text-anchor="middle">재산 1.7억 초과 → 50% 감액 | 재산 2.4억 초과 → 수급 불가</text>
+<text class="ts" x="340" y="318" text-anchor="middle">단, 자녀장려금은 소득 4,000만 미만 + 단독가구 제외</text>
+
+<!-- 재산 범위 -->
+<rect x="40" y="346" width="600" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="366" text-anchor="middle">재산 범위에 포함되는 항목</text>
+<text class="ts" x="340" y="386" text-anchor="middle">토지, 건물, 자동차, 전세보증금, 금융재산 등 (부채 차감 전)</text>
+</svg>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">근로장려금 + 자녀장려금 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">연소득과 조건을 조정하면 3구간 그래프 위에서 현재 위치를 확인합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">연간 총소득</label>
+<input type="range" min="0" max="4500" value="1500" step="50" id="income" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="incomeOut">1,500만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">가구 유형</label>
+<button id="btnS" onclick="setHH('single');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">단독</button>
+<button id="btnO" onclick="setHH('one');calc()">홑벌이</button>
+<button id="btnD" onclick="setHH('dual');calc()">맞벌이</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">총 재산</label>
+<input type="range" min="0" max="30000" value="5000" step="500" id="asset" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:90px;text-align:right" id="assetOut">5,000만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">자녀 수</label>
+<input type="range" min="0" max="5" value="0" step="1" id="children" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="childOut">0명</span>
+</div>
+</div>
+
+<!-- 그래프 -->
+<div style="position:relative;height:200px;margin-bottom:12px">
+<canvas id="chart"></canvas>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">근로장려금</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="eitcAmt">0원</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="eitcPhase"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">자녀장려금</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="childAmt">0원</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="childDetail"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 수령액</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="totalAmt">0원</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="assetNote"></p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var hh='single';
+var PARAMS={
+  single:{max:1650000,p1:4000000,p2:9000000,p3:22000000,label:'단독'},
+  one:{max:2850000,p1:7000000,p2:14000000,p3:32000000,label:'홑벌이'},
+  dual:{max:3300000,p1:8000000,p2:17000000,p3:38000000,label:'맞벌이'}
+};
+var myChart=null;
+
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setHH(h){hh=h;setBtn('btnS',h==='single');setBtn('btnO',h==='one');setBtn('btnD',h==='dual');}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function calcEITC(income,p){
+  if(income<=0)return{amt:0,phase:'소득 없음'};
+  if(income>p.p3)return{amt:0,phase:'점감구간 초과 (수급불가)'};
+  if(income<=p.p1)return{amt:income*p.max/p.p1,phase:'점증구간'};
+  if(income<=p.p2)return{amt:p.max,phase:'평탄구간 (최대)'};
+  var dec=p.max-(income-p.p2)*p.max/(p.p3-p.p2);
+  return{amt:Math.max(0,dec),phase:'점감구간'};
+}
+
+function calc(){
+  var income=parseInt(document.getElementById('income').value);
+  var asset=parseInt(document.getElementById('asset').value);
+  var children=parseInt(document.getElementById('children').value);
+  document.getElementById('incomeOut').textContent=fmt(income)+'만원';
+  document.getElementById('assetOut').textContent=fmt(asset)+'만원';
+  document.getElementById('childOut').textContent=children+'명';
+
+  var incWon=income*10000;
+  var astWon=asset*10000;
+  var p=PARAMS[hh];
+
+  var res=calcEITC(incWon,p);
+  var eitcRaw=res.amt;
+
+  // 재산 감액
+  var assetMult=1;
+  var assetLabel='감액 없음';
+  if(astWon>24000*10000){assetMult=0;assetLabel='2.4억 초과 → 수급불가';}
+  else if(astWon>17000*10000){assetMult=0.5;assetLabel='1.7억 초과 → 50% 감액';}
+
+  var eitcFinal=Math.round(eitcRaw*assetMult);
+
+  // 자녀장려금
+  var childRaw=0;
+  var childLabel='-';
+  if(children>0&&hh!=='single'&&incWon<40000000){
+    childRaw=children*1000000;
+    childLabel=children+'명 x 100만원';
+  } else if(children>0&&hh==='single'){
+    childLabel='단독가구 제외';
+  } else if(children>0&&incWon>=40000000){
+    childLabel='소득 4,000만 이상 제외';
+  }
+  var childFinal=Math.round(childRaw*assetMult);
+
+  var total=eitcFinal+childFinal;
+
+  document.getElementById('eitcAmt').textContent=fmt(eitcFinal)+'원';
+  document.getElementById('eitcPhase').textContent=res.phase;
+  document.getElementById('childAmt').textContent=fmt(childFinal)+'원';
+  document.getElementById('childDetail').textContent=childLabel;
+  document.getElementById('totalAmt').textContent=fmt(total)+'원';
+  document.getElementById('assetNote').textContent=assetLabel;
+
+  // 산식
+  var fl=['<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식 ('+p.label+'가구)</p>'];
+  fl.push('<p style="margin:2px 0">연소득: '+fmt(incWon)+'원 → '+res.phase+'</p>');
+  if(incWon<=p.p1&&incWon>0){
+    fl.push('<p style="margin:2px 0">= '+fmt(incWon)+' x '+fmt(p.max)+' / '+fmt(p.p1)+' = '+fmt(eitcRaw)+'원</p>');
+  } else if(incWon<=p.p2){
+    fl.push('<p style="margin:2px 0">= 최대금액 '+fmt(p.max)+'원</p>');
+  } else if(incWon<=p.p3){
+    fl.push('<p style="margin:2px 0">= '+fmt(p.max)+' - ('+fmt(incWon)+'-'+fmt(p.p2)+') x '+fmt(p.max)+' / ('+fmt(p.p3)+'-'+fmt(p.p2)+')</p>');
+    fl.push('<p style="margin:2px 0">= '+fmt(eitcRaw)+'원</p>');
+  }
+  if(assetMult<1)fl.push('<p style="margin:2px 0;color:var(--color-text-warning)">재산 감액: x'+assetMult+' → '+fmt(eitcFinal)+'원</p>');
+  if(childFinal>0)fl.push('<p style="margin:2px 0">자녀장려금: '+childLabel+(assetMult<1?' x'+assetMult:'')+'= '+fmt(childFinal)+'원</p>');
+  fl.push('<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">총 수령액: '+fmt(total)+'원</p>');
+  document.getElementById('formula').innerHTML=fl.join('');
+
+  // 그래프
+  drawChart(p,incWon);
+}
+
+function drawChart(p,currentInc){
+  if(myChart){myChart.destroy();}
+  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
+  var txtC=dark?'#9c9a92':'#73726c';
+
+  var labels=[];var data=[];
+  var step=Math.round(p.p3/30);
+  for(var i=0;i<=p.p3;i+=step){
+    labels.push(Math.round(i/10000));
+    var r=calcEITC(i,p);
+    data.push(Math.round(r.amt));
+  }
+
+  // 현재 위치
+  var pointLabels=[];var pointData=[];
+  for(var j=0;j<labels.length;j++){
+    if(Math.abs(labels[j]-Math.round(currentInc/10000))<step/10000+1){
+      pointLabels.push(labels[j]);
+      pointData.push(calcEITC(labels[j]*10000,p).amt);
+    } else {
+      pointLabels.push(labels[j]);
+      pointData.push(null);
+    }
+  }
+
+  var ctx=document.getElementById('chart').getContext('2d');
+  myChart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[
+        {label:'근로장려금',data:data,borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.1)',fill:true,tension:0,pointRadius:0,borderWidth:2},
+        {label:'현재 위치',data:pointData,borderColor:'#D85A30',backgroundColor:'#D85A30',pointRadius:6,pointStyle:'circle',showLine:false,borderWidth:0}
+      ]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{font:{size:11,family:'Anthropic Sans,sans-serif'},color:txtC,boxWidth:12,padding:8}}},
+      scales:{
+        x:{title:{display:true,text:'연소득 (만원)',font:{size:11,family:'Anthropic Sans,sans-serif'},color:txtC},grid:{display:false},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,maxTicksLimit:8}},
+        y:{title:{display:true,text:'장려금 (원)',font:{size:11,family:'Anthropic Sans,sans-serif'},color:txtC},grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,callback:function(v){return (v/10000).toLocaleString('ko-KR')+'만'}},beginAtZero:true}
+      },
+      interaction:{mode:'index',intersect:false}
+    }
+  });
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<5;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===4)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

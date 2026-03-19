@@ -10,7 +10,7 @@ load_dotenv()
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index(os.getenv("PINECONE_INDEX_NAME", "nodongok-bestqna"))
+index = pc.Index(os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna"))
 
 # 1. 인덱스 통계
 stats = index.describe_index_stats()

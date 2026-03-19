@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="ko" class="theme-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>노동법 챗봇 파이프라인 시각화</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { interpolate-size: allow-keywords; }
+
+    html.theme-dark {
+      --bg: #0A0A0A; --surface: #141414; --surface-hover: #1C1C1C;
+      --border: rgba(255,255,255,0.06);
+      --text: #EDEDED; --text-secondary: #888;
+      --accent: #3b82f6; --accent-secondary: #8b5cf6;
+      --positive: #10b981; --negative: #f43f5e; --warning: #f59e0b;
+      --blue: #3b82f6; --green: #10b981; --orange: #f59e0b; --purple: #8b5cf6; --red: #f43f5e;
+      --blue-bg: rgba(59,130,246,0.08); --green-bg: rgba(16,185,129,0.08);
+      --orange-bg: rgba(245,158,11,0.08); --purple-bg: rgba(139,92,246,0.08);
+      --red-bg: rgba(244,63,94,0.08); --cyan-bg: rgba(6,182,212,0.08);
+      --connector: rgba(255,255,255,0.08); --flow-particle: rgba(59,130,246,0.6);
+      --glass: rgba(255,255,255,0.03); --glass-border: rgba(255,255,255,0.06);
+    }
+    html.theme-light {
+      --bg: #FAFAF9; --surface: #FFFFFF; --surface-hover: #F5F5F4;
+      --border: rgba(0,0,0,0.06);
+      --text: #0f172a; --text-secondary: #64748b;
+      --accent: #2563eb; --accent-secondary: #7c3aed;
+      --positive: #059669; --negative: #e11d48; --warning: #d97706;
+      --blue: #2563eb; --green: #059669; --orange: #d97706; --purple: #7c3aed; --red: #e11d48;
+      --blue-bg: rgba(37,99,235,0.06); --green-bg: rgba(5,150,105,0.06);
+      --orange-bg: rgba(217,119,6,0.06); --purple-bg: rgba(124,58,237,0.06);
+      --red-bg: rgba(225,29,72,0.06); --cyan-bg: rgba(8,145,178,0.06);
+      --connector: rgba(0,0,0,0.08); --flow-particle: rgba(37,99,235,0.5);
+      --glass: rgba(0,0,0,0.02); --glass-border: rgba(0,0,0,0.06);
+    }
+
+    body {
+      font-family: 'Noto Sans KR', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg); color: var(--text);
+      line-height: 1.6; -webkit-font-smoothing: antialiased;
+      transition: background 0.3s, color 0.3s;
+    }
+    h1,h2,h3,h4 { color: var(--text); letter-spacing: -0.03em; line-height: 1.2; }
+    h1 { font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 700; }
+    h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 600; }
+    h3 { font-size: 1.25rem; font-weight: 600; }
+    .text-secondary { color: var(--text-secondary); }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulseGlow { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    @keyframes flowDown { 0% { transform: translateY(-8px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(8px); opacity: 0; } }
+    @keyframes flowRight { 0% { transform: translateX(-8px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateX(8px); opacity: 0; } }
+    @keyframes slideInLeft { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+
+    .animate { animation: fadeInUp 0.6s ease-out both; }
+    .animate.delay-1 { animation-delay: 0.1s; }
+    .animate.delay-2 { animation-delay: 0.2s; }
+    .animate.delay-3 { animation-delay: 0.3s; }
+    .animate.delay-4 { animation-delay: 0.4s; }
+    .animate.delay-5 { animation-delay: 0.5s; }
+    .animate.delay-6 { animation-delay: 0.6s; }
+
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .reveal { opacity: 1; transform: none; }
+    }
+
+    @media print {
+      body { background: white !important; color: black !important; }
+      .viz-menu { display: none !important; }
+      .reveal { opacity: 1 !important; transform: none !important; }
+      .card { break-inside: avoid; border: 1px solid #ddd; box-shadow: none; }
+      * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .flow-particle, .connector-dot { display: none !important; }
+    }
+    @page { margin: 0.75in; }
+
+    /* Menu */
+    .viz-menu { position: fixed; top: 16px; right: 16px; z-index: 9999; }
+    .viz-menu-toggle {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(12px); transition: all 0.2s;
+    }
+    .viz-menu-toggle:hover { background: var(--surface-hover); }
+    .viz-menu-dropdown {
+      position: absolute; top: 52px; right: 0; min-width: 200px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 8px;
+      opacity: 0; visibility: hidden; transform: translateY(-8px);
+      transition: all 0.2s; backdrop-filter: blur(16px);
+    }
+    .viz-menu-dropdown.open { opacity: 1; visibility: visible; transform: translateY(0); }
+    .viz-menu-dropdown button {
+      width: 100%; padding: 10px 14px; border: none; border-radius: 8px;
+      background: transparent; color: var(--text); font-size: 14px;
+      font-family: inherit; cursor: pointer; text-align: left;
+      display: flex; align-items: center; gap: 10px; transition: background 0.15s;
+    }
+    .viz-menu-dropdown button:hover { background: var(--surface-hover); }
+
+    .skip-to-content {
+      position: absolute; top: -40px; left: 6px; background: var(--accent);
+      color: white; padding: 8px 12px; text-decoration: none;
+      border-radius: 4px; opacity: 0; pointer-events: none;
+      transition: all 0.2s; z-index: 10000;
+    }
+    .skip-to-content:focus { top: 6px; opacity: 1; pointer-events: auto; }
+
+    details { overflow: hidden; }
+    details summary { cursor: pointer; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+
+    /* ===== PIPELINE STYLES ===== */
+
+    .hero {
+      padding: 80px 0 48px;
+      text-align: center;
+      position: relative;
+    }
+    .hero::after {
+      content: '';
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: 120px; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+    .hero .subtitle {
+      font-size: 1.1rem; color: var(--text-secondary);
+      margin-top: 16px; font-weight: 400;
+    }
+    .hero .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 16px; border-radius: 20px; font-size: 0.85rem;
+      background: var(--blue-bg); color: var(--blue);
+      border: 1px solid rgba(59,130,246,0.15); margin-bottom: 24px;
+    }
+
+    /* Pipeline node */
+    .pipeline { padding: 48px 0; }
+
+    .step-section {
+      margin-bottom: 64px;
+      position: relative;
+    }
+    .step-section:last-child { margin-bottom: 0; }
+
+    .step-header {
+      display: flex; align-items: center; gap: 16px;
+      margin-bottom: 24px;
+    }
+    .step-number {
+      width: 40px; height: 40px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1rem; flex-shrink: 0;
+    }
+    .step-number.blue { background: var(--blue-bg); color: var(--blue); }
+    .step-number.green { background: var(--green-bg); color: var(--green); }
+    .step-number.orange { background: var(--orange-bg); color: var(--orange); }
+    .step-number.purple { background: var(--purple-bg); color: var(--purple); }
+    .step-number.red { background: var(--red-bg); color: var(--red); }
+
+    .step-title { font-size: 1.35rem; font-weight: 600; }
+    .step-tag {
+      font-size: 0.75rem; padding: 2px 10px; border-radius: 12px;
+      font-weight: 500; margin-left: 8px; white-space: nowrap;
+    }
+    .tag-sse { background: var(--purple-bg); color: var(--purple); }
+
+    /* Node card */
+    .node {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px 24px;
+      cursor: pointer; transition: all 0.25s ease;
+      position: relative; overflow: hidden;
+    }
+    .node::before {
+      content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%;
+      border-radius: 3px 0 0 3px; transition: opacity 0.2s;
+    }
+    .node.blue::before { background: var(--blue); }
+    .node.green::before { background: var(--green); }
+    .node.orange::before { background: var(--orange); }
+    .node.purple::before { background: var(--purple); }
+    .node.red::before { background: var(--red); }
+    .node.cyan::before { background: #06b6d4; }
+
+    .node:hover {
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+      border-color: var(--border);
+    }
+    .node.active {
+      box-shadow: 0 0 0 2px var(--accent), 0 4px 24px rgba(59,130,246,0.15);
+    }
+
+    .node-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 8px;
+    }
+    .node-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 0.85rem;
+    }
+    .node-icon.blue { background: var(--blue-bg); color: var(--blue); }
+    .node-icon.green { background: var(--green-bg); color: var(--green); }
+    .node-icon.orange { background: var(--orange-bg); color: var(--orange); }
+    .node-icon.purple { background: var(--purple-bg); color: var(--purple); }
+    .node-icon.red { background: var(--red-bg); color: var(--red); }
+    .node-icon.cyan { background: var(--cyan-bg); color: #06b6d4; }
+
+    .node-name { font-weight: 600; font-size: 1rem; }
+    .node-brief { color: var(--text-secondary); font-size: 0.875rem; line-height: 1.5; }
+
+    .node-detail {
+      max-height: 0; overflow: hidden; opacity: 0;
+      transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+    }
+    .node.active .node-detail {
+      max-height: 600px; opacity: 1; margin-top: 16px;
+    }
+    .node-detail-inner {
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .detail-row {
+      display: flex; gap: 8px; margin-bottom: 8px;
+      font-size: 0.85rem; line-height: 1.6;
+    }
+    .detail-label {
+      color: var(--text-secondary); flex-shrink: 0; min-width: 80px;
+      font-weight: 500;
+    }
+    .detail-value { color: var(--text); }
+    .detail-code {
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      font-size: 0.8rem; padding: 2px 8px; border-radius: 4px;
+      background: var(--glass); color: var(--accent);
+    }
+    .detail-tag {
+      display: inline-block; padding: 2px 8px; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 500; margin: 2px 4px 2px 0;
+    }
+    .detail-tag.blue { background: var(--blue-bg); color: var(--blue); }
+    .detail-tag.green { background: var(--green-bg); color: var(--green); }
+    .detail-tag.orange { background: var(--orange-bg); color: var(--orange); }
+    .detail-tag.purple { background: var(--purple-bg); color: var(--purple); }
+    .detail-tag.red { background: var(--red-bg); color: var(--red); }
+
+    /* Branch layout */
+    .branch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .parallel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    /* Connector lines */
+    .connector {
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px 0; position: relative;
+    }
+    .connector-line {
+      width: 2px; height: 32px;
+      background: linear-gradient(to bottom, var(--connector), var(--accent), var(--connector));
+      position: relative;
+    }
+    .connector-line::after {
+      content: '';
+      position: absolute; bottom: -3px; left: 50%; transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 5px solid transparent; border-right: 5px solid transparent;
+      border-top: 6px solid var(--accent);
+    }
+    .connector-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); position: absolute;
+      animation: flowDown 1.5s ease-in-out infinite;
+    }
+
+    /* Branch connector */
+    .branch-label {
+      text-align: center; padding: 8px 0;
+      font-size: 0.85rem; color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .branch-indicator {
+      display: flex; align-items: center; gap: 8px;
+      justify-content: center; padding: 4px 0;
+    }
+    .branch-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+    .branch-line { flex: 1; max-width: 80px; height: 1px; background: var(--connector); }
+
+    /* SSE events bar */
+    .sse-bar {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 16px 20px; border-radius: 10px;
+      background: var(--glass); border: 1px solid var(--glass-border);
+      margin-top: 16px;
+    }
+    .sse-event {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 8px;
+      font-size: 0.78rem; font-weight: 500;
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .sse-event:hover { transform: scale(1.05); }
+    .sse-event .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .sse-session { background: var(--blue-bg); color: var(--blue); }
+    .sse-session .dot { background: var(--blue); }
+    .sse-status { background: var(--orange-bg); color: var(--orange); }
+    .sse-status .dot { background: var(--orange); }
+    .sse-chunk { background: var(--purple-bg); color: var(--purple); }
+    .sse-chunk .dot { background: var(--purple); }
+    .sse-replace { background: var(--red-bg); color: var(--red); }
+    .sse-replace .dot { background: var(--red); }
+    .sse-follow { background: var(--green-bg); color: var(--green); }
+    .sse-follow .dot { background: var(--green); }
+    .sse-contacts { background: var(--cyan-bg); color: #06b6d4; }
+    .sse-contacts .dot { background: #06b6d4; }
+    .sse-meta { background: rgba(168,85,247,0.08); color: #a855f7; }
+    .sse-meta .dot { background: #a855f7; }
+    .sse-error { background: var(--red-bg); color: var(--red); }
+    .sse-error .dot { background: var(--red); }
+
+    /* Fallback chain */
+    .fallback-chain {
+      display: flex; align-items: center; gap: 8px;
+      flex-wrap: wrap;
+    }
+    .fallback-item {
+      padding: 6px 16px; border-radius: 8px;
+      font-size: 0.85rem; font-weight: 500;
+      background: var(--surface); border: 1px solid var(--border);
+    }
+    .fallback-item.primary { border-color: var(--purple); color: var(--purple); }
+    .fallback-arrow { color: var(--text-secondary); font-size: 0.85rem; }
+
+    /* Legend */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 16px;
+      padding: 20px 24px; border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      margin-bottom: 48px;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.85rem;
+    }
+    .legend-color {
+      width: 12px; height: 12px; border-radius: 3px;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px; margin-bottom: 48px;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 20px; text-align: center;
+    }
+    .stat-value {
+      font-size: 2rem; font-weight: 700; line-height: 1.2;
+    }
+    .stat-label {
+      font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;
+    }
+
+    /* Adaptive params table */
+    .params-table {
+      width: 100%; border-collapse: collapse; font-size: 0.85rem;
+      margin-top: 12px;
+    }
+    .params-table th, .params-table td {
+      padding: 8px 12px; text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .params-table th {
+      color: var(--text-secondary); font-weight: 500; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+
+    /* Search filter */
+    .search-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--bg); padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .search-input {
+      width: 100%; padding: 12px 20px 12px 44px;
+      border: 1px solid var(--border); border-radius: 12px;
+      background: var(--surface); color: var(--text);
+      font-family: inherit; font-size: 0.95rem;
+      outline: none; transition: border-color 0.2s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text-secondary); }
+    .search-icon {
+      position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+      color: var(--text-secondary);
+    }
+
+    @media (max-width: 768px) {
+      .branch-grid, .parallel-grid { grid-template-columns: 1fr; }
+      .hero { padding: 60px 0 32px; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .legend { gap: 12px; }
+    }
+    @media (max-width: 375px) {
+      body { overflow-x: hidden; }
+      .container { padding: 0 16px; }
+      .stats-bar { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <a href="#main-content" class="skip-to-content">본문으로 이동</a>
+
+  <!-- MENU -->
+  <div class="viz-menu">
+    <button class="viz-menu-toggle" onclick="toggleMenu()" aria-label="메뉴">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/>
+      </svg>
+    </button>
+    <div class="viz-menu-dropdown" id="vizMenuDropdown">
+      <button onclick="cycleTheme()"><span id="themeIcon">🌙</span><span id="themeLabel">다크</span></button>
+      <button onclick="expandAll()"><span>📂</span><span>모두 펼치기</span></button>
+      <button onclick="collapseAll()"><span>📁</span><span>모두 접기</span></button>
+      <button onclick="downloadImage()"><span>📥</span><span>PNG 다운로드</span></button>
+      <button onclick="window.print()"><span>🖨️</span><span>인쇄 / PDF</span></button>
+    </div>
+  </div>
+
+  <main id="main-content" role="main">
+
+    <!-- HERO -->
+    <section class="hero container animate">
+      <div class="badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        process_question() 파이프라인
+      </div>
+      <h1>노동법 챗봇<br>질문 처리 흐름</h1>
+      <p class="subtitle">사용자 질문이 답변이 되기까지의 전체 과정을 시각화합니다</p>
+    </section>
+
+    <!-- STATS -->
+    <section class="container animate delay-1">
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--blue)" data-count="9">0</div>
+          <div class="stat-label">처리 단계</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--green)" data-count="25">0</div>
+          <div class="stat-label">임금 계산기</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--orange)" data-count="8">0</div>
+          <div class="stat-label">SSE 이벤트 타입</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--purple)" data-count="3">0</div>
+          <div class="stat-label">LLM 폴백 체인</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color: var(--text)" data-count="3">0</div>
+          <div class="stat-label">Pinecone 네임스페이스</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LEGEND -->
+    <section class="container animate delay-2">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-color" style="background: var(--blue)"></div> 분석 (Analysis)</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--green)"></div> 계산 (Calculate)</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--orange)"></div> 검색 (Search)</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--purple)"></div> LLM 생성</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--red)"></div> 검증 (Validate)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #06b6d4"></div> 저장 (Persist)</div>
+      </div>
+    </section>
+
+    <!-- SSE EVENTS -->
+    <section class="container animate delay-3" style="margin-bottom: 48px;">
+      <h2 style="margin-bottom: 16px;">SSE 이벤트 타입</h2>
+      <div class="sse-bar">
+        <div class="sse-event sse-session" title="세션 ID 전달"><span class="dot"></span>session</div>
+        <div class="sse-event sse-status" title="진행 상태 텍스트"><span class="dot"></span>status</div>
+        <div class="sse-event sse-chunk" title="스트리밍 답변"><span class="dot"></span>chunk</div>
+        <div class="sse-event sse-replace" title="인용 교정 후 전체 교체"><span class="dot"></span>replace</div>
+        <div class="sse-event sse-follow" title="후속 질문 제안"><span class="dot"></span>follow_up</div>
+        <div class="sse-event sse-contacts" title="기관 연락처 카드"><span class="dot"></span>contacts</div>
+        <div class="sse-event sse-meta" title="계산 결과 / 출처"><span class="dot"></span>meta</div>
+        <div class="sse-event sse-error" title="오류 메시지"><span class="dot"></span>error</div>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="container">
+      <div class="search-bar" style="position: sticky; top: 0; z-index: 100;">
+        <div style="position: relative;">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" class="search-input" id="searchInput" placeholder="단계 검색... (예: RAG, 계산기, Rerank)" oninput="filterNodes(this.value)">
+        </div>
+      </div>
+    </section>
+
+    <!-- PIPELINE FLOW -->
+    <section class="pipeline container">
+
+      <!-- STEP 1: 사용자 입력 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number blue">1</div>
+          <h2 class="step-title">사용자 질문 입력</h2>
+        </div>
+        <div class="node blue" data-search="사용자 질문 입력 파일 첨부 attachment" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon blue">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div>
+              <div class="node-name">질문 수신 + 첨부파일 파싱</div>
+              <div class="node-brief">GET/POST /api/chat/stream → process_question()</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">엔드포인트</span><span class="detail-value"><span class="detail-code">GET /api/chat/stream?message=...</span> (텍스트) / <span class="detail-code">POST /api/chat/stream</span> (파일 첨부)</span></div>
+              <div class="detail-row"><span class="detail-label">파일 파싱</span><span class="detail-value"><span class="detail-code">file_parser.py</span> — PDF, 이미지(Vision), 텍스트 추출 → <span class="detail-code">ParsedAttachment</span></span></div>
+              <div class="detail-row"><span class="detail-label">세션</span><span class="detail-value">Supabase에서 기존 세션 복원 또는 신규 생성. 최근 6턴 유지, 요약 2KB 캡</span></div>
+              <div class="detail-row"><span class="detail-label">SSE 발행</span><span class="detail-value"><span class="detail-tag blue">session</span> — session_id 전달</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 2: 의도 분석 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number blue">2</div>
+          <h2 class="step-title">의도 분석</h2>
+          <span class="step-tag tag-sse">status: "질문 분석 중..."</span>
+        </div>
+        <div class="node blue" data-search="의도 분석 intent analyze_intent Claude tool_use 파라미터 추출 숫자 범위 검증 날짜 보정" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon blue">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </div>
+            <div>
+              <div class="node-name">analyze_intent() — Claude tool_use</div>
+              <div class="node-brief">질문에서 계산 유형, 파라미터, 관련 법률, 상담 주제 추출</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">모델</span><span class="detail-value"><span class="detail-code">Claude Sonnet</span> (analyzer_model) — tool_use 모드</span></div>
+              <div class="detail-row"><span class="detail-label">도구</span><span class="detail-value"><span class="detail-code">analyze_labor_question</span> — 18개 파라미터 추출</span></div>
+              <div class="detail-row"><span class="detail-label">추출 정보</span><span class="detail-value">wage_type, wage_amount, work_hours, start_date, end_date, business_size, fixed_allowances 등</span></div>
+              <div class="detail-row"><span class="detail-label">검증</span><span class="detail-value">
+                <span class="detail-tag blue">NUMERIC_RANGES</span> 임금 1~1억, 근로시간 1~24h, 연도 2020~2030<br>
+                <span class="detail-tag blue">_correct_date_year</span> LLM 연도 추측 오류 보정 (1년 넘은 과거→올해)<br>
+                <span class="detail-tag blue">_compute_missing_info</span> 코드 기반 누락 정보 판정 (LLM 대체)
+              </span></div>
+              <div class="detail-row"><span class="detail-label">출력</span><span class="detail-value"><span class="detail-code">AnalysisResult</span> — requires_calculation, calculation_types, extracted_info, missing_info, relevant_laws, consultation_type</span></div>
+              <div class="detail-row"><span class="detail-label">폴백</span><span class="detail-value">분석 실패 → <span class="detail-code">_extract_params()</span> 2-tool 방식으로 전환</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 3: 분기 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number green">3</div>
+          <h2 class="step-title">질문 분류 분기</h2>
+        </div>
+        <div class="branch-label">분석 결과에 따라 4가지 경로로 분기</div>
+        <div class="branch-indicator">
+          <div class="branch-line"></div>
+          <div class="branch-dot"></div>
+          <div class="branch-dot"></div>
+          <div class="branch-dot"></div>
+          <div class="branch-dot"></div>
+          <div class="branch-line"></div>
+        </div>
+        <div class="branch-grid" style="margin-top: 16px;">
+          <div class="node green" data-search="임금계산 WageCalculator 25개 계산기 주휴수당 퇴직금 연장수당 최저임금" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon green">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
+              </div>
+              <div>
+                <div class="node-name">A. 임금계산</div>
+                <div class="node-brief">requires_calculation=true → 25개 계산기</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">입력 변환</span><span class="detail-value"><span class="detail-code">_analysis_to_extract_params()</span> → <span class="detail-code">WageInput</span> 데이터클래스</span></div>
+                <div class="detail-row"><span class="detail-label">계산기</span><span class="detail-value"><span class="detail-code">WageCalculator.calculate(inp, targets)</span><br>
+                  <span class="detail-tag green">overtime</span><span class="detail-tag green">minimum_wage</span><span class="detail-tag green">weekly_holiday</span><span class="detail-tag green">severance</span><span class="detail-tag green">annual_leave</span><span class="detail-tag green">dismissal</span><span class="detail-tag green">unemployment</span><span class="detail-tag green">insurance</span><span class="detail-tag green">parental_leave</span><span class="detail-tag green">maternity_leave</span><br>+ 15개 추가
+                </span></div>
+                <div class="detail-row"><span class="detail-label">특수 처리</span><span class="detail-value">
+                  <span class="detail-tag green">use_minimum_wage</span> 최저시급 자동 적용 보정<br>
+                  <span class="detail-tag green">is_platform_worker</span> 특수고용직 근기법 미적용 계산기 제외
+                </span></div>
+                <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag orange">status: "임금계산기 실행 중..."</span> <span class="detail-tag purple">meta: calc_result</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node green" data-search="괴롭힘 판정 harassment 3요소 직장 갑질 폭언 따돌림" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon green">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 17h.01"/></svg>
+              </div>
+              <div>
+                <div class="node-name">B. 괴롭힘 판정</div>
+                <div class="node-brief">harassment → 3요소 판정</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">harassment_assessor/</span></span></div>
+                <div class="detail-row"><span class="detail-label">3요소</span><span class="detail-value">① 우월적 지위 ② 업무상 적정 범위 초과 ③ 신체·정신적 고통</span></div>
+                <div class="detail-row"><span class="detail-label">분석</span><span class="detail-value">관계 유형, 행위 분류 (7종), 빈도/기간/증거 가중치</span></div>
+                <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag orange">status: "괴롭힘 판정 중..."</span> <span class="detail-tag purple">meta: assessment_result</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="법률상담 consultation 주제 법률 매핑 RAG" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              </div>
+              <div>
+                <div class="node-name">C. 법률상담</div>
+                <div class="node-brief">consultation_type → 전용 RAG 경로</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">legal_consultation.py</span> → <span class="detail-code">process_consultation()</span></span></div>
+                <div class="detail-row"><span class="detail-label">로직</span><span class="detail-value">주제→법률 매핑 + 전용 RAG 검색 + 법제처 API</span></div>
+                <div class="detail-row"><span class="detail-label">출력</span><span class="detail-value">consultation_context + consultation_hits (인용 화이트리스트)</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="일반 RAG 검색 벡터 검색" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </div>
+              <div>
+                <div class="node-name">D. 일반 RAG 검색</div>
+                <div class="node-brief">계산·판정 불필요 → RAG 기반 답변</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">경로</span><span class="detail-value">아래 4단계(Adaptive → Hybrid → Rerank → Self-RAG) 진행</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 4: 병렬 데이터 수집 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number orange">4</div>
+          <h2 class="step-title">병렬 데이터 수집</h2>
+          <span class="step-tag tag-sse">status: "관련 판례 검색 중..."</span>
+        </div>
+
+        <!-- 4a: 법령 API -->
+        <div class="parallel-grid">
+          <div class="node orange" data-search="법령 API 법제처 circuit breaker 캐시 L1 L2 L3" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <div>
+                <div class="node-name">법령 API 조문 조회</div>
+                <div class="node-brief">법제처 국가법령정보센터 API</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">legal_api.py</span> → <span class="detail-code">fetch_relevant_articles()</span></span></div>
+                <div class="detail-row"><span class="detail-label">캐시</span><span class="detail-value">L1 인메모리 → L2 Supabase → L3 API 호출</span></div>
+                <div class="detail-row"><span class="detail-label">안전장치</span><span class="detail-value"><span class="detail-tag red">Circuit Breaker</span> 3회 연속 실패 → 30초 쿨다운</span></div>
+                <div class="detail-row"><span class="detail-label">입력</span><span class="detail-value">analysis.relevant_laws (예: ["근로기준법 제56조", "근로기준법 시행령 제6조"])</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="Adaptive Retrieval 복잡도 분류 classify_complexity SIMPLE MODERATE COMPLEX" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </div>
+              <div>
+                <div class="node-name">Adaptive Retrieval</div>
+                <div class="node-brief">질문 복잡도 → 검색 전략 동적 조정</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">query_decomposer.py</span> → <span class="detail-code">classify_complexity()</span></span></div>
+                <div class="detail-row"><span class="detail-label">점수</span><span class="detail-value">길이(80+→3, 40+→2), 법률참조수, 접속사/쉼표수, 계산유형수</span></div>
+                <table class="params-table">
+                  <thead>
+                    <tr><th>복잡도</th><th>top_k</th><th>rerank_n</th><th>max_queries</th><th>self_rag</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><span class="detail-tag green">SIMPLE</span></td><td>8</td><td>3</td><td>1</td><td>OFF</td></tr>
+                    <tr><td><span class="detail-tag orange">MODERATE</span></td><td>15</td><td>5</td><td>3</td><td>OFF</td></tr>
+                    <tr><td><span class="detail-tag red">COMPLEX</span></td><td>20</td><td>7</td><td>4</td><td>ON</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="멀티쿼리 분해 LLM decompose query_decomposer rule-based merge" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
+              </div>
+              <div>
+                <div class="node-name">멀티쿼리 분해</div>
+                <div class="node-brief">LLM 분해 + 규칙 기반 → 병합</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">LLM 분해</span><span class="detail-value"><span class="detail-code">decompose_query()</span> — Claude Haiku, 2~4개 검색 쿼리 생성 (3초 타임아웃)</span></div>
+                <div class="detail-row"><span class="detail-label">규칙 기반</span><span class="detail-value"><span class="detail-code">build_precedent_queries()</span> — 키워드+법률+주제 조합</span></div>
+                <div class="detail-row"><span class="detail-label">병합</span><span class="detail-value"><span class="detail-code">_merge_search_queries()</span> — 중복 제거, 최대 5~6개</span></div>
+                <div class="detail-row"><span class="detail-label">COMPLEX</span><span class="detail-value"><span class="detail-tag red">force=True</span> → 반드시 분해 실행</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="Hybrid Search Dense Pinecone BM25 Mecab RRF 2그룹 병렬 laborlaw counsel qa" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              </div>
+              <div>
+                <div class="node-name">Hybrid Search</div>
+                <div class="node-brief">Dense + BM25 → RRF 융합</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">Dense</span><span class="detail-value"><span class="detail-code">search_pinecone_multi()</span> — OpenAI text-embedding-3-small (1536d)<br>
+                  Pinecone 2그룹 병렬:<br>
+                  <span class="detail-tag orange">Group A</span> laborlaw-v2 (판례·행정해석·훈령)<br>
+                  <span class="detail-tag orange">Group B</span> counsel + qa (상담사례)
+                </span></div>
+                <div class="detail-row"><span class="detail-label">BM25</span><span class="detail-value"><span class="detail-code">bm25_search.py</span> — Mecab 토크나이저 (fallback: regex) + rank_bm25</span></div>
+                <div class="detail-row"><span class="detail-label">RRF</span><span class="detail-value"><span class="detail-code">reciprocal_rank_fusion()</span> — alpha=0.5 (Dense:BM25 균등)</span></div>
+                <div class="detail-row"><span class="detail-label">최소 점수</span><span class="detail-value">0.35 미만 결과 필터링</span></div>
+                <div class="detail-row"><span class="detail-label">폴백</span><span class="detail-value">BM25 미사용 시 Dense-only 자동 전환</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="Cohere Rerank rerank-v3.5 재정렬" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+              </div>
+              <div>
+                <div class="node-name">Cohere Rerank</div>
+                <div class="node-brief">rerank-v3.5로 검색 결과 재정렬</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모델</span><span class="detail-value"><span class="detail-code">rerank-v3.5</span></span></div>
+                <div class="detail-row"><span class="detail-label">입력</span><span class="detail-value">원본 질문 + 검색 결과 (title + section + content)</span></div>
+                <div class="detail-row"><span class="detail-label">top_n</span><span class="detail-value">Adaptive: SIMPLE=3, MODERATE=5, COMPLEX=7</span></div>
+                <div class="detail-row"><span class="detail-label">폴백</span><span class="detail-value">실패 시 cosine 점수 정렬 유지</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node red" data-search="Self-RAG Claude Haiku 관련성 판정 필터링 wider search COMPLEX" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon red">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <div>
+                <div class="node-name">Self-RAG 필터</div>
+                <div class="node-brief">COMPLEX만 — LLM 관련성 판정</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">self_rag.py</span> → <span class="detail-code">filter_by_relevance()</span></span></div>
+                <div class="detail-row"><span class="detail-label">모델</span><span class="detail-value"><span class="detail-code">Claude Haiku</span> — 병렬 5건 동시 판정 (3초 타임아웃)</span></div>
+                <div class="detail-row"><span class="detail-label">판정</span><span class="detail-value">"relevant" / "irrelevant" — 무관한 문서 제거</span></div>
+                <div class="detail-row"><span class="detail-label">Wider</span><span class="detail-value">모든 문서 irrelevant → top_k×2로 재검색</span></div>
+                <div class="detail-row"><span class="detail-label">최소 보장</span><span class="detail-value">최소 2건 유지 (min_hits=2)</span></div>
+                <div class="detail-row"><span class="detail-label">폴백</span><span class="detail-value">실패 시 rerank 결과 그대로 사용</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="중앙노동위원회 NLRC 판정사례 odcloud 공공데이터포털" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4"/><path d="M5 21V10.85"/><path d="M19 21V10.85"/></svg>
+              </div>
+              <div>
+                <div class="node-name">NLRC 판정사례</div>
+                <div class="node-brief">중앙노동위원회 주요판정사례 360건</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">nlrc_cases.py</span> → <span class="detail-code">search_nlrc_with_details()</span></span></div>
+                <div class="detail-row"><span class="detail-label">API</span><span class="detail-value">공공데이터포털 (odcloud) — 360건 캐싱 + 법제처 판례 보강</span></div>
+                <div class="detail-row"><span class="detail-label">검색</span><span class="detail-value">precedent_keywords + consultation_topic → 최대 3건</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node orange" data-search="GraphRAG NetworkX DiGraph 지식그래프 BFS multi-hop" onclick="toggleNode(this)">
+            <div class="node-header">
+              <div class="node-icon orange">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+              </div>
+              <div>
+                <div class="node-name">GraphRAG</div>
+                <div class="node-brief">법률-개념 지식그래프 다중 홉 검색</div>
+              </div>
+            </div>
+            <div class="node-detail">
+              <div class="node-detail-inner">
+                <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">graph.py</span> → <span class="detail-code">graph_search()</span></span></div>
+                <div class="detail-row"><span class="detail-label">그래프</span><span class="detail-value">NetworkX DiGraph — 법률↔개념 관계 (BFS multi-hop)</span></div>
+                <div class="detail-row"><span class="detail-label">구축</span><span class="detail-value"><span class="detail-code">build_graph.py</span> — Vercel warm start용 글로벌 캐싱</span></div>
+                <div class="detail-row"><span class="detail-label">Adaptive</span><span class="detail-value">SIMPLE: 1 hop, MODERATE/COMPLEX: 2 hops</span></div>
+                <div class="detail-row"><span class="detail-label">폴백</span><span class="detail-value">networkx 미설치 시 graceful fallback</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 5: 컨텍스트 조립 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number purple">5</div>
+          <h2 class="step-title">컨텍스트 조립</h2>
+        </div>
+        <div class="node purple" data-search="컨텍스트 조립 판례 법조문 계산결과 인용 화이트리스트 연락처" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon purple">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            </div>
+            <div>
+              <div class="node-name">LLM 컨텍스트 구성</div>
+              <div class="node-brief">모든 데이터를 하나의 프롬프트로 조합</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">구성 요소</span><span class="detail-value">
+                <span class="detail-tag orange">판례/행정해석</span> Pinecone 또는 법제처 API<br>
+                <span class="detail-tag orange">현행 법조문</span> 법제처 국가법령정보센터<br>
+                <span class="detail-tag green">임금계산 결과</span> "정확한 계산 — 이 수치를 사용하세요"<br>
+                <span class="detail-tag green">괴롭힘 판정</span> "판정기 분석 — 이 결과를 사용하세요"<br>
+                <span class="detail-tag orange">NLRC 판정사례</span> 공공데이터포털<br>
+                <span class="detail-tag orange">GraphRAG</span> 법령 관계 분석<br>
+                <span class="detail-tag red">인용 가능 목록</span> 환각 방지용 화이트리스트<br>
+                <span class="detail-tag blue">누락 정보 안내</span> 추가 정보 요청 가이드<br>
+                <span class="detail-tag blue">기관 연락처</span> 노동위원회·고용센터·근로복지공단
+              </span></div>
+              <div class="detail-row"><span class="detail-label">연락처 키워드</span><span class="detail-value">해고→노동위원회, 실업급여→고용센터, 산재→근로복지공단, 체불→고용노동부+근로복지공단</span></div>
+              <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag orange">contacts: agencies[]</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 6: LLM 스트리밍 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number purple">6</div>
+          <h2 class="step-title">LLM 스트리밍 답변</h2>
+          <span class="step-tag tag-sse">chunk: 스트리밍 텍스트</span>
+        </div>
+        <div class="node purple" data-search="LLM 스트리밍 Claude OpenAI Gemini 폴백 fallback _stream_answer" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon purple">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/></svg>
+            </div>
+            <div>
+              <div class="node-name">_stream_answer() — 3단 폴백</div>
+              <div class="node-brief">Claude → OpenAI o3 → Gemini 순차 시도</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">폴백 체인</span><span class="detail-value">
+                <div class="fallback-chain">
+                  <span class="fallback-item primary">Claude Sonnet 4.6</span>
+                  <span class="fallback-arrow">→</span>
+                  <span class="fallback-item">OpenAI o3</span>
+                  <span class="fallback-arrow">→</span>
+                  <span class="fallback-item">Gemini 2.5 Pro</span>
+                </div>
+              </span></div>
+              <div class="detail-row"><span class="detail-label">시스템</span><span class="detail-value"><span class="detail-code">SYSTEM_PROMPT_TEMPLATE</span> — 14개 답변 원칙 + 시각화 규칙</span></div>
+              <div class="detail-row"><span class="detail-label">특수 룰</span><span class="detail-value">부분 응답 수신 후 실패 → 재시도 없이 유지 (partial response kept)</span></div>
+              <div class="detail-row"><span class="detail-label">Vision</span><span class="detail-value">이미지 첨부 시 content blocks에 vision_block 포함</span></div>
+              <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag purple">chunk: text</span> 스트리밍 + <span class="detail-tag orange">status: "{provider}로 답변 생성 중..."</span> (폴백 시)</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 7: Citation Validation -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number red">7</div>
+          <h2 class="step-title">인용 검증</h2>
+          <span class="step-tag tag-sse">replace: 교정된 답변</span>
+        </div>
+        <div class="node red" data-search="Citation Validation 인용 검증 환각 판례번호 citation_validator hallucination" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon red">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div>
+              <div class="node-name">Citation Validation</div>
+              <div class="node-brief">환각 판례번호 감지 → 자동 교정</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">citation_validator.py</span></span></div>
+              <div class="detail-row"><span class="detail-label">1단계</span><span class="detail-value"><span class="detail-code">validate_response_citations()</span> — 답변 내 인용 추출 + 화이트리스트 대조</span></div>
+              <div class="detail-row"><span class="detail-label">2단계</span><span class="detail-value"><span class="detail-code">correct_hallucinated_citations()</span> — 환각 번호 제거/교정</span></div>
+              <div class="detail-row"><span class="detail-label">패턴</span><span class="detail-value">
+                판례: <span class="detail-code">대법원 YYYY[가-힣]NNNN</span><br>
+                행정해석: <span class="detail-code">[부서명]과-NNNN</span>
+              </span></div>
+              <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag red">replace: 전체 답변 교체</span> (환각 감지 시)</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 8: 후속질문 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number purple">8</div>
+          <h2 class="step-title">후속질문 생성</h2>
+          <span class="step-tag tag-sse">follow_up: 제안 질문</span>
+        </div>
+        <div class="node purple" data-search="후속질문 follow_up 추가 질문 제안" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon purple">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            </div>
+            <div>
+              <div class="node-name">후속질문 생성 + SSE 전송</div>
+              <div class="node-brief">맥락에 맞는 추가 질문 제안</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">로직</span><span class="detail-value">답변 내용 + 분석 결과 기반 후속질문 생성</span></div>
+              <div class="detail-row"><span class="detail-label">렌더링</span><span class="detail-value">클라이언트에서 별도 메시지 버블로 표시</span></div>
+              <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag green">follow_up: 질문 텍스트</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"><div class="connector-line"><div class="connector-dot"></div></div></div>
+
+      <!-- STEP 9: 저장 -->
+      <div class="step-section" data-reveal>
+        <div class="step-header">
+          <div class="step-number" style="background: var(--cyan-bg); color: #06b6d4;">9</div>
+          <h2 class="step-title">대화 저장</h2>
+        </div>
+        <div class="node cyan" data-search="대화 저장 Supabase session 세션 persistence" onclick="toggleNode(this)">
+          <div class="node-header">
+            <div class="node-icon cyan">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <div>
+              <div class="node-name">Supabase 대화 저장</div>
+              <div class="node-brief">대화 이력 + 세션 스냅샷 영속화</div>
+            </div>
+          </div>
+          <div class="node-detail">
+            <div class="node-detail-inner">
+              <div class="detail-row"><span class="detail-label">모듈</span><span class="detail-value"><span class="detail-code">storage.py</span> → <span class="detail-code">save_conversation()</span> + <span class="detail-code">save_session_data()</span></span></div>
+              <div class="detail-row"><span class="detail-label">세션</span><span class="detail-value"><span class="detail-code">Session</span> — 최근 6턴 유지, 이전 대화는 summary로 압축 (2KB 캡)</span></div>
+              <div class="detail-row"><span class="detail-label">저장 항목</span><span class="detail-value">질문, 답변, 사용 제공자(LLM), 카테고리, 계산 유형, 세션 스냅샷</span></div>
+              <div class="detail-row"><span class="detail-label">첨부파일</span><span class="detail-value"><span class="detail-code">upload_attachment()</span> — Supabase Storage에 파일 업로드</span></div>
+              <div class="detail-row"><span class="detail-label">SSE</span><span class="detail-value"><span class="detail-tag blue">done</span> — 파이프라인 완료 신호</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- GRACEFUL DEGRADATION -->
+    <section class="container" style="margin-top: 64px; margin-bottom: 80px;" data-reveal>
+      <h2 style="margin-bottom: 24px;">Graceful Degradation 원칙</h2>
+      <div class="parallel-grid">
+        <div class="node orange" style="cursor: default;">
+          <div class="node-header">
+            <div class="node-icon orange">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <div class="node-name" style="font-size: 0.9rem;">BM25 미설치 → Dense-only</div>
+            </div>
+          </div>
+        </div>
+        <div class="node red" style="cursor: default;">
+          <div class="node-header">
+            <div class="node-icon red">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <div class="node-name" style="font-size: 0.9rem;">Self-RAG 실패 → Rerank 유지</div>
+            </div>
+          </div>
+        </div>
+        <div class="node blue" style="cursor: default;">
+          <div class="node-header">
+            <div class="node-icon blue">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <div class="node-name" style="font-size: 0.9rem;">classify_complexity 실패 → MODERATE</div>
+            </div>
+          </div>
+        </div>
+        <div class="node purple" style="cursor: default;">
+          <div class="node-header">
+            <div class="node-icon purple">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <div class="node-name" style="font-size: 0.9rem;">Claude 실패 → OpenAI → Gemini</div>
+            </div>
+          </div>
+        </div>
+        <div class="node orange" style="cursor: default;">
+          <div class="node-header">
+            <div class="node-icon orange">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <div class="node-name" style="font-size: 0.9rem;">GraphRAG 미설치 → graceful skip</div>
+            </div>
+          </div>
+        </div>
+        <div class="node orange" style="cursor: default;">
+          <div class="node-header">
+            <div class="node-icon orange">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <div class="node-name" style="font-size: 0.9rem;">법제처 API 실패 → Pinecone 폴백</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // === Menu ===
+    function toggleMenu() {
+      var dropdown = document.getElementById('vizMenuDropdown');
+      if (dropdown) dropdown.classList.toggle('open');
+    }
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.viz-menu')) {
+        var dropdown = document.getElementById('vizMenuDropdown');
+        if (dropdown) dropdown.classList.remove('open');
+      }
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        var dropdown = document.getElementById('vizMenuDropdown');
+        if (dropdown) dropdown.classList.remove('open');
+      }
+    });
+
+    // === Theme ===
+    var savedTheme = localStorage.getItem('viz-theme');
+    var currentTheme = savedTheme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    function applyTheme(t) {
+      document.documentElement.className = 'theme-' + t;
+      document.getElementById('themeIcon').textContent = t === 'dark' ? '🌙' : '☀️';
+      document.getElementById('themeLabel').textContent = t === 'dark' ? '다크' : '라이트';
+      localStorage.setItem('viz-theme', t);
+      currentTheme = t;
+      if (typeof onThemeChange === 'function') onThemeChange();
+    }
+    function cycleTheme() { applyTheme(currentTheme === 'dark' ? 'light' : 'dark'); }
+    applyTheme(currentTheme);
+
+    function onThemeChange() {}
+
+    // === Scroll Reveal ===
+    document.querySelectorAll('[data-reveal]').forEach(function(el) { el.classList.add('reveal'); });
+    var revealObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) { e.target.classList.add('visible'); revealObserver.unobserve(e.target); }
+      });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.reveal').forEach(function(el) { revealObserver.observe(el); });
+
+    // === Number Counter ===
+    function animateCounters() {
+      document.querySelectorAll('[data-count]').forEach(function(el) {
+        if (el.dataset.counted) return;
+        el.dataset.counted = '1';
+        var target = parseFloat(el.dataset.count);
+        var prefix = el.dataset.prefix || '';
+        var suffix = el.dataset.suffix || '';
+        var start = performance.now();
+        var duration = 1200;
+        (function tick(now) {
+          var p = Math.min((now - start) / duration, 1);
+          var eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = prefix + Math.round(target * eased).toLocaleString() + suffix;
+          if (p < 1) requestAnimationFrame(tick);
+        })(start);
+      });
+    }
+    var counterEl = document.querySelector('[data-count]');
+    if (counterEl) {
+      var cObs = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) { if (e.isIntersecting) { animateCounters(); cObs.disconnect(); } });
+      }, { threshold: 0.3 });
+      cObs.observe(counterEl);
+    }
+
+    // === Download PNG ===
+    async function downloadImage() {
+      var menu = document.querySelector('.viz-menu');
+      menu.style.display = 'none';
+      try {
+        var url = await htmlToImage.toPng(document.body, { quality: 1, pixelRatio: 2, filter: function(n) { return !n.classList || !n.classList.contains('viz-menu'); } });
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'pipeline-visualization.png';
+        a.click();
+      } catch(e) { console.error('Download failed:', e); }
+      menu.style.display = '';
+    }
+
+    // === Node Toggle ===
+    function toggleNode(el) {
+      var wasActive = el.classList.contains('active');
+      // close others
+      document.querySelectorAll('.node.active').forEach(function(n) {
+        if (n !== el) n.classList.remove('active');
+      });
+      el.classList.toggle('active', !wasActive);
+    }
+
+    // === Expand / Collapse All ===
+    function expandAll() {
+      document.querySelectorAll('.node[onclick]').forEach(function(n) { n.classList.add('active'); });
+    }
+    function collapseAll() {
+      document.querySelectorAll('.node.active').forEach(function(n) { n.classList.remove('active'); });
+    }
+
+    // === Search Filter ===
+    function filterNodes(query) {
+      var q = query.toLowerCase().trim();
+      var nodes = document.querySelectorAll('.node[data-search]');
+      var sections = document.querySelectorAll('.step-section');
+
+      if (!q) {
+        nodes.forEach(function(n) { n.style.display = ''; });
+        sections.forEach(function(s) { s.style.display = ''; });
+        document.querySelectorAll('.connector').forEach(function(c) { c.style.display = ''; });
+        return;
+      }
+
+      var visibleSections = new Set();
+      nodes.forEach(function(n) {
+        var searchText = (n.getAttribute('data-search') || '').toLowerCase();
+        var nameEl = n.querySelector('.node-name');
+        var name = nameEl ? nameEl.textContent.toLowerCase() : '';
+        var briefEl = n.querySelector('.node-brief');
+        var brief = briefEl ? briefEl.textContent.toLowerCase() : '';
+
+        var matches = searchText.indexOf(q) !== -1 || name.indexOf(q) !== -1 || brief.indexOf(q) !== -1;
+        n.style.display = matches ? '' : 'none';
+
+        if (matches) {
+          var section = n.closest('.step-section');
+          if (section) visibleSections.add(section);
+        }
+      });
+
+      sections.forEach(function(s) {
+        s.style.display = visibleSections.has(s) ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

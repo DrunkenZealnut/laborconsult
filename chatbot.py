@@ -32,7 +32,7 @@ load_dotenv()
 EMBED_MODEL   = "text-embedding-3-small"
 CLAUDE_MODEL  = "claude-opus-4-6"
 EXTRACT_MODEL = "claude-haiku-4-5-20251001"
-INDEX_NAME    = os.getenv("PINECONE_INDEX_NAME", "nodongok-bestqna")
+INDEX_NAME    = os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna")
 WRAP_WIDTH    = 80
 
 

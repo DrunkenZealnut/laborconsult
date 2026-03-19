@@ -282,7 +282,7 @@ def main():
     # API 키 확인
     openai_key   = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
-    index_name   = os.getenv("PINECONE_INDEX_NAME", "nodongok-bestqna")
+    index_name   = os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna")
 
     if not openai_key:
         sys.exit("[오류] OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")

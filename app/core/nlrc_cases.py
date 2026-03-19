@@ -70,7 +70,7 @@ def _fetch_all_cases(api_key: str) -> list[dict]:
         )
         try:
             req = urllib.request.Request(url, headers={
-                "User-Agent": "nodongok-chatbot/1.0",
+                "User-Agent": "laborconsult/1.0",
             })
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read())

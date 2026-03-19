@@ -35,9 +35,65 @@ from app.core.citation_validator import (
     extract_precedents_from_hits,
     extract_admin_refs_from_hits,
     validate_response_citations,
+    micro_polish,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ── 특수 근로자 그룹별 법적 컨텍스트 ──────────────────────────────────────────
+
+_WORKER_GROUP_CONTEXTS: dict[str, str] = {
+    "youth": (
+        "[특수 적용: 청소년 근로자 (18세 미만)]\n"
+        "이 질문은 청소년(18세 미만) 근로자에 관한 것입니다. 반드시 아래 특칙을 우선 적용하세요:\n"
+        "- 근로기준법 제64조: 15세 미만 취업 원칙 금지 (취직인허증 예외)\n"
+        "- 근로기준법 제66조: 18세 미만 야간근로(22시~06시) 및 휴일근로 원칙 금지 "
+        "(본인 동의 + 고용노동부장관 인가 시 예외)\n"
+        "- 근로기준법 제67조: 근로시간 상한 1일 7시간, 1주 35시간 "
+        "(당사자 합의 시 1일 1시간, 1주 5시간 한도 연장 가능)\n"
+        "- 근로기준법 제66조: 도덕·보건상 유해위험 사업장 사용 금지\n"
+        "- 근로기준법 제67조: 친권자 또는 후견인의 근로계약 동의 필요\n"
+        "- 근로기준법 제68조: 임금은 미성년자 본인에게 직접 지급\n"
+        "⚠️ 일반 성인 기준(1일 8시간, 주 40시간)을 절대 적용하지 마세요."
+    ),
+    "foreign": (
+        "[특수 적용: 외국인 근로자]\n"
+        "이 질문은 외국인 근로자에 관한 것입니다. 참고 법령:\n"
+        "- 외국인근로자의 고용 등에 관한 법률 (고용허가제)\n"
+        "- 근로기준법은 국적과 무관하게 동일 적용 (제6조 균등처우)\n"
+        "- 퇴직금·4대보험·최저임금 모두 내국인과 동일 기준 적용\n"
+        "- 사업장 변경 제한 (원칙 3회), 체류기간 등 출입국관리법 관련 사항 안내\n"
+        "- 불법체류 외국인도 근로기준법상 권리(임금청구 등) 보호됨"
+    ),
+    "disabled": (
+        "[특수 적용: 장애인 근로자]\n"
+        "이 질문은 장애인 근로자에 관한 것입니다. 참고:\n"
+        "- 장애인고용촉진 및 직업재활법\n"
+        "- 최저임금 적용 제외 인가제도 (최저임금법 제7조): "
+        "고용노동부장관 인가 시 최저임금 감액 적용 가능\n"
+        "- 장애인 의무고용률 (2026년: 민간 3.1%, 공공 3.6%)\n"
+        "- 근로기준법은 장애 유무와 무관하게 동일 적용"
+    ),
+    "industrial_accident": (
+        "[특수 적용: 산업재해]\n"
+        "이 질문은 산업재해에 관한 것입니다. 참고 법령:\n"
+        "- 산업재해보상보험법 (산재보험법)\n"
+        "- 업무상 재해 인정 기준: 업무수행성 + 업무기인성\n"
+        "- 급여 종류: 요양급여, 휴업급여(평균임금 70%), 장해급여, 유족급여, 상병보상연금\n"
+        "- 요양급여 신청: 4일 이상 요양 시 근로복지공단(1588-0075)에 신청\n"
+        "- 산재 인정 절차: 요양급여신청서 → 근로복지공단 심사 → 승인/불승인\n"
+        "- 불승인 시 심사청구(90일 이내) → 재심사청구(90일 이내) → 행정소송\n"
+        "- 산재보험은 근로자 수와 무관하게 1인 이상 사업장 당연가입"
+    ),
+}
+
+
+def _build_worker_group_context(worker_group: str | None) -> str | None:
+    """특수 근로자 그룹에 해당하는 법적 컨텍스트 반환."""
+    if not worker_group or worker_group == "general":
+        return None
+    return _WORKER_GROUP_CONTEXTS.get(worker_group)
 
 
 # ── 멀티쿼리 병합 헬퍼 ──────────────────────────────────────────────────────
@@ -1025,6 +1081,18 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     has_attachments = attachments and len(attachments) > 0
 
+    # ── 정보 충돌 해결: 동일 법 조항 소스 간 우선순위 안내 ──
+    conflict_note = None
+    try:
+        from app.core.conflict_resolver import annotate_source_priority
+        conflict_note = annotate_source_priority(
+            precedent_text=precedent_text,
+            legal_articles_text=legal_articles_text,
+            nlrc_text=nlrc_text,
+        )
+    except Exception as e:
+        logger.debug("충돌 해결 모듈 실패 (무시): %s", e)
+
     # 3. 컨텍스트 구성
     if consultation_context:
         # 법률상담 경로: 전용 컨텍스트 사용
@@ -1056,6 +1124,19 @@ def process_question(query: str, session: Session, config: AppConfig,
         parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{legal_articles_text}")
     if attachment_text:
         parts.append(f"첨부된 문서 내용:\n\n{attachment_text}")
+
+    # ── FR-01: 정보 충돌 우선순위 안내 (최상단 배치) ──
+    if conflict_note:
+        parts.insert(0, conflict_note)
+
+    # ── FR-02: 특수 근로자 그룹 법적 컨텍스트 주입 ──
+    worker_ctx = _build_worker_group_context(
+        getattr(analysis, "worker_group", None) if analysis else None
+    )
+    if worker_ctx:
+        # 충돌 메모 다음, 나머지 컨텍스트 앞에 배치
+        insert_pos = 1 if conflict_note else 0
+        parts.insert(insert_pos, worker_ctx)
 
     # 누락 정보 안내 (계산 시도 후에도 부족한 정보가 있을 때)
     if analysis and analysis.missing_info:
@@ -1220,8 +1301,14 @@ def process_question(query: str, session: Session, config: AppConfig,
             openai_client=config.openai_client,
         )
         if corrected:
-            full_text = corrected
-            yield {"type": "replace", "text": corrected}
+            # FR-03: 환각 3건+ 시 마이크로 퇴고로 문맥 자연스러움 보정
+            polished = micro_polish(
+                corrected_text=corrected,
+                hallucinated_count=len(citation_check["hallucinated"]),
+                anthropic_client=config.claude_client,
+            )
+            full_text = polished or corrected
+            yield {"type": "replace", "text": full_text}
             logger.info("환각 판례 교정 완료 — replace 이벤트 전송")
 
     # 7. 세션에 이력 저장

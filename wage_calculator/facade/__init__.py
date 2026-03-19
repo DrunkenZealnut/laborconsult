@@ -158,43 +158,52 @@ class WageCalculator:
 
     def _auto_detect_targets(self, inp: WageInput) -> list[str]:
         """입력 정보를 보고 필요한 계산 유형 자동 결정"""
+        is_pw = getattr(inp, "is_platform_worker", False)
+
         targets = ["minimum_wage"]   # 항상 최저임금 검증
 
         # 상시근로자 수 산정 입력이 있으면 맨 앞에 삽입 (최우선 실행)
         if inp.business_size_input is not None:
             targets.insert(0, "business_size")
 
-        if inp.wage_type == WageType.COMPREHENSIVE:
-            targets.append("comprehensive")
+        # 특수고용직: 근로기준법상 근로자 아님 → overtime/weekly_holiday/annual_leave/
+        #   dismissal/severance/comprehensive/prorated/public_holiday/shutdown 미적용
+        if not is_pw:
+            if inp.wage_type == WageType.COMPREHENSIVE:
+                targets.append("comprehensive")
 
-        s = inp.schedule
-        if s.weekly_overtime_hours > 0 or s.weekly_night_hours > 0 or s.weekly_holiday_hours > 0:
-            targets.append("overtime")
+            s = inp.schedule
+            if s.weekly_overtime_hours > 0 or s.weekly_night_hours > 0 or s.weekly_holiday_hours > 0:
+                targets.append("overtime")
 
-        if s.weekly_work_days > 0:
-            targets.append("weekly_holiday")
+            if s.weekly_work_days > 0:
+                targets.append("weekly_holiday")
 
-        if inp.start_date:
-            targets.append("annual_leave")
-            targets.append("severance")
+            if inp.start_date:
+                targets.append("annual_leave")
+                targets.append("severance")
 
-        if inp.notice_days_given >= 0 and inp.dismissal_date:
-            targets.append("dismissal")
+            if inp.notice_days_given >= 0 and inp.dismissal_date:
+                targets.append("dismissal")
 
-        if inp.shutdown_days > 0:
-            targets.append("shutdown_allowance")
+            if inp.shutdown_days > 0:
+                targets.append("shutdown_allowance")
 
-        if inp.join_date:
-            targets.append("prorated")
+            if inp.join_date:
+                targets.append("prorated")
 
-        if inp.public_holiday_days > 0:
-            targets.append("public_holiday")
+            if inp.public_holiday_days > 0:
+                targets.append("public_holiday")
 
         # 조건부 수당이 있으면 자동으로 법률 힌트 생성
         if any(
             (a.get("condition") if isinstance(a, dict) else getattr(a, "condition", "없음")) != "없음"
             for a in inp.fixed_allowances
         ):
+            targets.append("legal_hints")
+
+        # 특수고용직: 법률 힌트 항상 포함 (노동3권, 산재, 프리랜서 구분 안내)
+        if is_pw and "legal_hints" not in targets:
             targets.append("legal_hints")
 
         # 4대보험/소득세: 항상 자동 포함
@@ -217,26 +226,27 @@ class WageCalculator:
             targets.append("eitc")
 
         # 퇴직소득세: 퇴직금 계산이 포함되면 자동 추가, 또는 직접 지정 시
-        if "severance" in targets or inp.retirement_pay_amount > 0:
+        if not is_pw and ("severance" in targets or inp.retirement_pay_amount > 0):
             targets.append("retirement_tax")
 
         # 퇴직연금: pension_type 지정 시 자동 추가
-        if inp.pension_type:
+        if not is_pw and inp.pension_type:
             targets.append("retirement_pension")
 
-        # 산재보상금: 산재 관련 필드 존재 시 자동 감지
+        # 산재보상금: 산재 관련 필드 존재 시 자동 감지 (특수고용직도 해당)
         if inp.sick_leave_days > 0 or inp.disability_grade > 0 or inp.is_deceased:
             targets.append("industrial_accident")
             if "average_wage" not in targets:
                 targets.append("average_wage")
 
-        # 연장근로 있으면 주 52시간 체크도 자동 포함
-        s = inp.schedule
-        total_weekly = (s.daily_work_hours * s.weekly_work_days
-                        + s.weekly_overtime_hours
-                        + s.weekly_holiday_hours + s.weekly_holiday_overtime_hours)
-        if total_weekly > 40:
-            targets.append("weekly_hours_check")
+        # 연장근로 있으면 주 52시간 체크도 자동 포함 (근기법 대상만)
+        if not is_pw:
+            s = inp.schedule
+            total_weekly = (s.daily_work_hours * s.weekly_work_days
+                            + s.weekly_overtime_hours
+                            + s.weekly_holiday_hours + s.weekly_holiday_overtime_hours)
+            if total_weekly > 40:
+                targets.append("weekly_hours_check")
 
         return targets
 

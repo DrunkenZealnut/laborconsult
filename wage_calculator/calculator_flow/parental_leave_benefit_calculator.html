@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">일반 육아휴직</button>
+<button onclick="showTab(1)" id="t1">아빠 보너스</button>
+<button onclick="showTab(2)" id="t2">근로시간 단축</button>
+<button onclick="showTab(3)" id="t3">총 수령액 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 일반 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">일반 육아휴직급여</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용보험법 제70~73조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 560">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- Step 1 -->
+<g class="c-coral">
+<rect x="180" y="20" width="320" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">월 통상임금</text>
+<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">통상임금 계산기에서 산출된 값</text>
+</g>
+
+<line x1="340" y1="76" x2="340" y2="106" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-teal">
+<rect x="180" y="106" width="320" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="126" text-anchor="middle" dominant-baseline="central">월 급여 = 통상임금 x 80%</text>
+<text class="ts" x="340" y="144" text-anchor="middle" dominant-baseline="central">통상임금의 80%를 기준으로 산정</text>
+</g>
+
+<line x1="340" y1="162" x2="340" y2="192" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3: 상하한 -->
+<g class="c-purple">
+<rect x="100" y="192" width="480" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="216" text-anchor="middle" dominant-baseline="central">상한·하한 적용</text>
+
+<rect x="130" y="236" width="180" height="28" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#791F1F" x="220" y="254" text-anchor="middle" dominant-baseline="central">상한: 150만원/월</text>
+
+<rect x="370" y="236" width="180" height="28" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041" x="460" y="254" text-anchor="middle" dominant-baseline="central">하한: 70만원/월</text>
+</g>
+
+<line x1="340" y1="272" x2="340" y2="306" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4: 분할 -->
+<rect x="60" y="306" width="560" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="330" text-anchor="middle">75% / 25% 분할 지급</text>
+
+<g class="c-teal">
+<rect x="90" y="348" width="240" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="210" y="368" text-anchor="middle" dominant-baseline="central">매월 수령분: 75%</text>
+<text class="ts" x="210" y="386" text-anchor="middle" dominant-baseline="central">= 월 급여 x 75%</text>
+</g>
+
+<g class="c-amber">
+<rect x="350" y="348" width="240" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="470" y="368" text-anchor="middle" dominant-baseline="central">사후지급금: 25%</text>
+<text class="ts" x="470" y="386" text-anchor="middle" dominant-baseline="central">복직 후 6개월 뒤 일괄</text>
+</g>
+
+<line x1="340" y1="436" x2="340" y2="466" class="arr" marker-end="url(#ar)"/>
+
+<!-- 예시 -->
+<g class="c-gray">
+<rect x="100" y="466" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="488" text-anchor="middle" dominant-baseline="central">예시: 통상임금 250만원</text>
+<text class="ts" x="340" y="508" text-anchor="middle" dominant-baseline="central">월 급여 = 250만 x 80% = 200만 → 상한 150만 적용</text>
+<text class="ts" x="340" y="526" text-anchor="middle" dominant-baseline="central">매월 수령 112.5만 + 사후지급 37.5만/월분</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 1: 아빠보너스 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">아빠 보너스 (두 번째 부모 육아휴직)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">같은 자녀에 대해 두 번째로 육아휴직하는 부모에게 적용</p>
+</div>
+<svg width="100%" viewBox="0 0 680 500">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-coral">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">월 통상임금</text>
+</g>
+
+<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#ar2)"/>
+
+<!-- 분기 -->
+<text class="th" x="340" y="110" text-anchor="middle">기간에 따라 요율이 다릅니다</text>
+
+<line x1="240" y1="120" x2="170" y2="150" class="arr" marker-end="url(#ar2)"/>
+<line x1="440" y1="120" x2="510" y2="150" class="arr" marker-end="url(#ar2)"/>
+
+<!-- 첫 3개월 -->
+<g class="c-purple">
+<rect x="60" y="150" width="220" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="170" y="174" text-anchor="middle" dominant-baseline="central">첫 3개월</text>
+<text class="ts" x="170" y="196" text-anchor="middle" dominant-baseline="central">통상임금 x 100%</text>
+<text class="ts" x="170" y="216" text-anchor="middle" dominant-baseline="central">상한: 250만원/월</text>
+<rect x="90" y="226" width="160" height="18" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:11px;fill:#085041" x="170" y="238" text-anchor="middle" dominant-baseline="central">일반 대비 상한 100만원 ↑</text>
+</g>
+
+<!-- 4개월~ -->
+<g class="c-teal">
+<rect x="400" y="150" width="220" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="510" y="174" text-anchor="middle" dominant-baseline="central">4개월째부터</text>
+<text class="ts" x="510" y="196" text-anchor="middle" dominant-baseline="central">통상임금 x 80%</text>
+<text class="ts" x="510" y="216" text-anchor="middle" dominant-baseline="central">상한: 150만원/월</text>
+<rect x="430" y="226" width="160" height="18" rx="4" fill="var(--bg2)" stroke="none"/>
+<text style="font-size:11px;fill:var(--s)" x="510" y="238" text-anchor="middle" dominant-baseline="central">일반 육아휴직과 동일</text>
+</g>
+
+<line x1="170" y1="250" x2="280" y2="290" class="arr" marker-end="url(#ar2)"/>
+<line x1="510" y1="250" x2="400" y2="290" class="arr" marker-end="url(#ar2)"/>
+
+<!-- 합산 -->
+<g class="c-gray">
+<rect x="140" y="290" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="310" text-anchor="middle" dominant-baseline="central">동일하게 75%/25% 분할 지급</text>
+<text class="ts" x="340" y="330" text-anchor="middle" dominant-baseline="central">사후지급금은 복직 6개월 후 일괄</text>
+</g>
+
+<line x1="340" y1="346" x2="340" y2="380" class="arr" marker-end="url(#ar2)"/>
+
+<g class="c-gray">
+<rect x="80" y="380" width="520" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="404" text-anchor="middle" dominant-baseline="central">예시: 통상임금 300만원, 12개월 사용</text>
+<text class="ts" x="340" y="426" text-anchor="middle" dominant-baseline="central">첫 3개월: 300만 x 100% = 300만 → 상한 250만 적용</text>
+<text class="ts" x="340" y="446" text-anchor="middle" dominant-baseline="central">나머지 9개월: 300만 x 80% = 240만 → 상한 150만 적용</text>
+<text class="ts" x="340" y="466" text-anchor="middle" dominant-baseline="central">총 = (250만 x 3) + (150만 x 9) = 2,100만원</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 2: 근로시간단축 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">육아기 근로시간 단축 급여</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">휴직 대신 근로시간을 줄이고 차액을 보전받는 방식</p>
+</div>
+<svg width="100%" viewBox="0 0 680 440">
+<defs><marker id="ar3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-coral">
+<rect x="60" y="20" width="260" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="190" y="40" text-anchor="middle" dominant-baseline="central">월 통상임금</text>
+<text class="ts" x="190" y="58" text-anchor="middle" dominant-baseline="central">예: 300만원</text>
+</g>
+
+<g class="c-gray">
+<rect x="360" y="20" width="260" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="490" y="40" text-anchor="middle" dominant-baseline="central">단축 후 소정근로시간</text>
+<text class="ts" x="490" y="58" text-anchor="middle" dominant-baseline="central">예: 주 25시간 (기존 40시간)</text>
+</g>
+
+<line x1="190" y1="76" x2="260" y2="110" class="arr" marker-end="url(#ar3)"/>
+<line x1="490" y1="76" x2="420" y2="110" class="arr" marker-end="url(#ar3)"/>
+
+<!-- 단축 후 임금 -->
+<g class="c-teal">
+<rect x="140" y="110" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="132" text-anchor="middle" dominant-baseline="central">단축 후 임금 산정</text>
+<text class="ts" x="340" y="152" text-anchor="middle" dominant-baseline="central">= 통상임금 x (단축 후 시간 / 소정근로시간)</text>
+<text class="ts" x="340" y="170" text-anchor="middle" dominant-baseline="central">= 300만 x (25h / 40h) = 187.5만원</text>
+</g>
+
+<line x1="340" y1="186" x2="340" y2="220" class="arr" marker-end="url(#ar3)"/>
+
+<!-- 차액 -->
+<g class="c-purple">
+<rect x="140" y="220" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="244" text-anchor="middle" dominant-baseline="central">단축 급여 = (통상임금 - 단축 후 임금) x 80%</text>
+<text class="ts" x="340" y="264" text-anchor="middle" dominant-baseline="central">= (300만 - 187.5만) x 80%</text>
+<text class="ts" x="340" y="282" text-anchor="middle" dominant-baseline="central">= 112.5만 x 80% = 90만원</text>
+</g>
+
+<line x1="340" y1="296" x2="340" y2="330" class="arr" marker-end="url(#ar3)"/>
+
+<!-- 총 수령 -->
+<g class="c-amber">
+<rect x="100" y="330" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="354" text-anchor="middle" dominant-baseline="central">실제 월 수령액</text>
+<text class="ts" x="340" y="374" text-anchor="middle" dominant-baseline="central">= 단축 후 임금(사업주) + 단축 급여(고용보험)</text>
+<text class="ts" x="340" y="394" text-anchor="middle" dominant-baseline="central">= 187.5만 + 90만 = 277.5만원</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">총 수령액 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">통상임금과 기간을 조정해 보세요</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">통상임금</label>
+<input type="range" min="70" max="500" value="250" step="10" id="wage" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="wageOut">250만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">휴직 기간</label>
+<input type="range" min="1" max="12" value="12" step="1" id="months" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="monthsOut">12개월</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">유형</label>
+<button id="btnGen" onclick="setType('general');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">일반</button>
+<button id="btnDad" onclick="setType('dad');calc()">아빠 보너스</button>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">매월 수령분 합계</p>
+<p style="font-size:22px;font-weight:500;margin:0" id="monthly">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">사후지급금 합계</p>
+<p style="font-size:22px;font-weight:500;margin:0" id="deferred">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 수령액</p>
+<p style="font-size:22px;font-weight:500;margin:0;color:var(--color-text-info)" id="total">0원</p>
+</div>
+</div>
+
+<div id="breakdown" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script>
+var ptype = 'general';
+function setType(t) {
+  ptype = t;
+  document.getElementById('btnGen').style.fontWeight = t==='general'?'500':'';
+  document.getElementById('btnGen').style.background = t==='general'?'var(--color-background-info)':'';
+  document.getElementById('btnGen').style.color = t==='general'?'var(--color-text-info)':'';
+  document.getElementById('btnGen').style.borderColor = t==='general'?'var(--color-border-info)':'';
+  document.getElementById('btnDad').style.fontWeight = t==='dad'?'500':'';
+  document.getElementById('btnDad').style.background = t==='dad'?'var(--color-background-info)':'';
+  document.getElementById('btnDad').style.color = t==='dad'?'var(--color-text-info)':'';
+  document.getElementById('btnDad').style.borderColor = t==='dad'?'var(--color-border-info)':'';
+}
+function fmt(n) { return Math.round(n).toLocaleString('ko-KR') + '원'; }
+
+function calc() {
+  var w = parseInt(document.getElementById('wage').value);
+  var m = parseInt(document.getElementById('months').value);
+  document.getElementById('wageOut').textContent = w + '만원';
+  document.getElementById('monthsOut').textContent = m + '개월';
+
+  var ww = w * 10000;
+  var totalPay = 0;
+  var lines = [];
+
+  for (var i = 1; i <= m; i++) {
+    var rate, cap;
+    if (ptype === 'dad' && i <= 3) {
+      rate = 1.0; cap = 2500000;
+    } else {
+      rate = 0.8; cap = 1500000;
+    }
+    var raw = ww * rate;
+    var capped = Math.min(raw, cap);
+    capped = Math.max(capped, 700000);
+    totalPay += capped;
+
+    var label = (ptype === 'dad' && i <= 3) ? '보너스' : '일반';
+    if (i <= 3 || i === m) {
+      lines.push(i + '개월차(' + label + '): ' + fmt(capped));
+    } else if (i === 4) {
+      lines.push('...');
+    }
+  }
+
+  var monthlyTotal = Math.round(totalPay * 0.75);
+  var deferredTotal = totalPay - monthlyTotal;
+
+  document.getElementById('monthly').textContent = fmt(monthlyTotal);
+  document.getElementById('deferred').textContent = fmt(deferredTotal);
+  document.getElementById('total').textContent = fmt(totalPay);
+  document.getElementById('breakdown').innerHTML = '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">월별 산정 내역</p>' + lines.map(function(l){return '<p style="margin:2px 0">'+l+'</p>'}).join('');
+}
+calc();
+
+function showTab(n) {
+  for (var i = 0; i < 4; i++) {
+    document.getElementById('tab'+i).style.display = i===n?'block':'none';
+    var b = document.getElementById('t'+i);
+    if (i===n) {
+      b.style.fontWeight='500';b.style.background='var(--color-background-info)';b.style.color='var(--color-text-info)';b.style.borderColor='var(--color-border-info)';
+    } else {
+      b.style.fontWeight='';b.style.background='';b.style.color='';b.style.borderColor='';
+    }
+  }
+  if (n===3) calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 > **Analysis Type**: Gap Analysis (Design vs Implementation)
 >
-> **Project**: nodongokboardcrawl
+> **Project**: laborconsult
 > **Analyst**: gap-detector
 > **Date**: 2026-03-16
 > **Design Doc**: [rerank.design.md](../02-design/features/rerank.design.md)

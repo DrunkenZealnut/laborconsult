@@ -16,10 +16,11 @@ import time
 import os
 import re
 import random
+from pathlib import Path
 
 BASE_URL = "https://www.nodong.kr"
 LIST_URL = "https://www.nodong.kr/qna"
-DEFAULT_OUTPUT_DIR = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_qna"
+DEFAULT_OUTPUT_DIR = str(Path(__file__).parent / "output_qna")
 DEFAULT_START_PAGE = 1
 DEFAULT_MAX_PAGES = 500
 

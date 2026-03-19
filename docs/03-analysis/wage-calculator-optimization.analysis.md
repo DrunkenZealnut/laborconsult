@@ -2,7 +2,7 @@
 
 > **Analysis Type**: Gap Analysis (PDCA Check Phase)
 >
-> **Project**: nodongokboardcrawl / wage_calculator
+> **Project**: laborconsult / wage_calculator
 > **Analyst**: gap-detector agent
 > **Date**: 2026-03-06
 > **Design Doc**: [wage-calculator-optimization.design.md](../02-design/features/wage-calculator-optimization.design.md)

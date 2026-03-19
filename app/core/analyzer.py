@@ -177,6 +177,7 @@ def analyze_intent(
                 consultation_type=inp.get("consultation_type"),
                 consultation_topic=inp.get("consultation_topic"),
                 precedent_keywords=inp.get("precedent_keywords", []),
+                worker_group=inp.get("worker_group"),
             )
 
     return AnalysisResult(question_summary=question)

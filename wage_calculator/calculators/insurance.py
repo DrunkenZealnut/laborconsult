@@ -52,6 +52,7 @@ from ..constants import (
     PLATFORM_EMP_INSURANCE_BIZ,
     PLATFORM_MIN_MONTHLY_INCOME,
     PLATFORM_INDUSTRIAL_SPLIT,
+    get_platform_emp_insurance_rate,
 )
 
 # 실질 근로자 판단 체크리스트 (대법원 2006다49653 등)
@@ -377,13 +378,16 @@ def _calc_platform_worker(
     health_insurance = 0
     long_term_care = 0
 
+    # 연도별 고용보험 요율 적용
+    pw_rate = get_platform_emp_insurance_rate(year)
+
     # 고용보험 (월 보수 최소 기준 이상 시 가입)
     pw_income = getattr(inp, "platform_monthly_income", None) or gross
     if pw_income >= PLATFORM_MIN_MONTHLY_INCOME:
-        employment_insurance = int(pw_income * PLATFORM_EMP_INSURANCE_RATE)
+        employment_insurance = int(pw_income * pw_rate)
         formulas.append(
-            f"고용보험(노무제공자): {pw_income:,.0f}원 × {PLATFORM_EMP_INSURANCE_RATE:.1%} "
-            f"= {employment_insurance:,.0f}원"
+            f"고용보험(노무제공자): {pw_income:,.0f}원 × {pw_rate:.1%} "
+            f"= {employment_insurance:,.0f}원 ({year}년)"
         )
     else:
         employment_insurance = 0
@@ -417,7 +421,7 @@ def _calc_platform_worker(
     breakdown = {
         "근로자 유형":        "특수고용직(노무제공자)",
         "지급액 (세전)":     f"{pw_income:,.0f}원",
-        f"고용보험 ({PLATFORM_EMP_INSURANCE_RATE*100:.1f}%)": f"{employment_insurance:,.0f}원",
+        f"고용보험 ({pw_rate*100:.1f}%)": f"{employment_insurance:,.0f}원",
         "국민연금":          "지역가입자 (별도)",
         "건강보험":          "지역가입자 (별도)",
         "장기요양":          "지역가입자 (별도)",
@@ -556,15 +560,16 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     total_accident_rate = industry_rate + commute_rate + wage_claim_rate + asbestos_rate
     is_pw = getattr(inp, "is_platform_worker", False)
     if is_pw:
-        # 노무제공자: 국민연금/건보/장기요양/직능개발 없음, 고용보험 0.8%
+        # 노무제공자: 국민연금/건보/장기요양/직능개발 없음, 고용보험 연도별 요율
+        pw_biz_rate = get_platform_emp_insurance_rate(year)
         employer_pension = 0
         employer_health = 0
         employer_ltc = 0
         employer_vocational = 0
-        employer_employment = int(gross * PLATFORM_EMP_INSURANCE_BIZ)
+        employer_employment = int(gross * pw_biz_rate)
         formulas.append(
-            f"고용보험(노무제공자-사업주): {gross:,.0f}원 × {PLATFORM_EMP_INSURANCE_BIZ:.1%} "
-            f"= {employer_employment:,.0f}원"
+            f"고용보험(노무제공자-사업주): {gross:,.0f}원 × {pw_biz_rate:.1%} "
+            f"= {employer_employment:,.0f}원 ({year}년)"
         )
         employer_share = 1 - PLATFORM_INDUSTRIAL_SPLIT
         employer_accident = int(gross * total_accident_rate * employer_share)

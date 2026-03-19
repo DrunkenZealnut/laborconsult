@@ -6,7 +6,7 @@
   1. metadata_imgum.json 로드 (없으면 generate_metadata_imgum.py 자동 실행)
   2. 각 markdown 파일을 섹션 단위로 청킹
   3. OpenAI text-embedding-3-small 로 임베딩 생성
-  4. Pinecone에 배치 upsert (인덱스: nodongok-imgum)
+  4. Pinecone에 배치 upsert (인덱스: laborconsult-imgum)
   5. metadata_imgum.json의 chunk_count, upload_status 갱신
 
 사용법:
@@ -250,7 +250,7 @@ def main():
 
     openai_key   = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
-    index_name   = os.getenv("PINECONE_INDEX_NAME_IMGUM", "nodongok-imgum")
+    index_name   = os.getenv("PINECONE_INDEX_NAME_IMGUM", "laborconsult-imgum")
 
     if not openai_key:
         sys.exit("[오류] OPENAI_API_KEY가 설정되지 않았습니다.")

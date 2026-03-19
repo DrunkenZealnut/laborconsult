@@ -35,3 +35,5 @@ class AnalysisResult(BaseModel):
     consultation_topic: str | None = None
     # 판례 검색용 법적 쟁점 키워드 (맥락 기반 검색)
     precedent_keywords: list[str] = []
+    # 특수 근로자 그룹 (청소년, 외국인, 장애인, 산재)
+    worker_group: str | None = None
