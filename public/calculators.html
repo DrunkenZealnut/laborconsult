@@ -268,6 +268,16 @@ window.addEventListener('popstate', () => {
     closeViewer();
   }
 });
+
+// 초기 진입 시 의존관계 맵 표시
+(function() {
+  var defaultSrc = 'calculator_flow/wage_calculator_dependency_map.html';
+  var firstItem = document.querySelector('.menu-item[data-src="' + defaultSrc + '"]');
+  if (firstItem) firstItem.classList.add('active');
+  frame.src = defaultSrc;
+  frame.style.display = 'block';
+  empty.style.display = 'none';
+})();
 </script>
 </body>
 </html>
