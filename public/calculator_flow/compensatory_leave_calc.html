@@ -94,6 +94,15 @@ td.rate{font-weight:700;color:var(--blue);}
 /* ── Responsive ── */
 @media(max-width:720px){body{padding:1rem 0.75rem;}svg{max-width:100%;}}
 @media(max-width:480px){body{padding:0.75rem 0.5rem;font-size:14px;}button{padding:5px 10px;font-size:12px;}div[style*="grid-template-columns"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}input[type="range"]{min-width:0;}table{font-size:12px!important;}th,td{padding:4px 6px!important;}}
+
+/* ── Mobile SVG Scroll ── */
+@media(max-width:680px){
+  .svg-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -0.5rem;padding:0 0.5rem;position:relative;}
+  .svg-scroll-wrap svg{min-width:600px;}
+  .scroll-hint{text-align:center;font-size:12px;color:#999;padding:6px 0 2px;display:block;}
+  .scroll-hint::before{content:'\2194  ';}
+}
+@media(min-width:681px){.scroll-hint{display:none;}}
 </style>
 </head>
 <body>
@@ -348,5 +357,26 @@ function go(n){
 }
 </script>
 <nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+<script>
+// Mobile: wrap SVGs in scrollable containers
+(function(){
+  if(window.innerWidth>680)return;
+  var svgs=document.querySelectorAll('svg[viewBox]');
+  if(!svgs.length)return;
+  // Add hint once
+  var hint=document.createElement('span');
+  hint.className='scroll-hint';
+  hint.textContent='좌우로 스크롤하세요';
+  svgs[0].parentNode.insertBefore(hint,svgs[0]);
+  // Wrap each SVG
+  svgs.forEach(function(svg){
+    if(svg.closest('.svg-scroll-wrap'))return;
+    var w=document.createElement('div');
+    w.className='svg-scroll-wrap';
+    svg.parentNode.insertBefore(w,svg);
+    w.appendChild(svg);
+  });
+})();
+</script>
 </body>
 </html>

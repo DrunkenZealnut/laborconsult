@@ -1,9 +1,12 @@
 """FastAPI 앱 — Vercel 서버리스 함수 진입점"""
 
 import base64
+import hashlib
+import hmac as _hmac
 import json
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -388,6 +391,211 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
     return {**result.data, "attachments": attachments.data or []}
 
 
+# ── 게시판 글쓰기 (CAPTCHA + 비밀번호) ─────────────────────────────────────────
+
+import bcrypt
+
+
+class BoardWriteRequest(BaseModel):
+    nickname: str
+    password: str
+    category: str = "일반상담"
+    question: str
+    captcha_token: str
+    captcha_answer: int
+
+
+class BoardDeleteRequest(BaseModel):
+    password: str
+
+
+# CAPTCHA 헬퍼 ─────────────────────────────────────────────────────────────────
+
+def _generate_captcha():
+    """수학 CAPTCHA 생성 → (question_text, token)"""
+    ops = [
+        ("+", lambda a, b: a + b),
+        ("-", lambda a, b: a - b),
+        ("×", lambda a, b: a * b),
+    ]
+    op_symbol, op_func = random.choice(ops)
+
+    if op_symbol == "×":
+        a, b = random.randint(2, 9), random.randint(2, 9)
+    elif op_symbol == "-":
+        a = random.randint(10, 50)
+        b = random.randint(1, a)
+    else:
+        a, b = random.randint(10, 50), random.randint(1, 30)
+
+    answer = op_func(a, b)
+    question = f"{a} {op_symbol} {b} = ?"
+
+    expires = int(time.time()) + 300  # 5분
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"a": answer, "e": expires}).encode()
+    ).decode().rstrip("=")
+    sig = _hmac.new(
+        JWT_SECRET.encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
+
+    return question, f"{payload}.{sig}"
+
+
+def _verify_captcha(token: str, user_answer: int) -> bool:
+    """CAPTCHA 토큰 검증 → True/False"""
+    try:
+        payload_b64, sig = token.rsplit(".", 1)
+        expected_sig = _hmac.new(
+            JWT_SECRET.encode(), payload_b64.encode(), hashlib.sha256
+        ).hexdigest()
+        if not _hmac.compare_digest(sig, expected_sig):
+            return False
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        data = json.loads(base64.urlsafe_b64decode(padded))
+        if time.time() > data["e"]:
+            return False
+        return int(user_answer) == int(data["a"])
+    except Exception:
+        return False
+
+
+# Rate Limit (인메모리, Vercel 인스턴스별) ──────────────────────────────────────
+
+_write_rate: dict[str, list[float]] = {}
+
+
+def _check_rate_limit(ip: str, max_count: int = 3, window: int = 60) -> bool:
+    """IP당 window초 내 max_count건 초과 시 False"""
+    ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
+    now = time.time()
+    times = _write_rate.get(ip_hash, [])
+    times = [t for t in times if now - t < window]
+    if len(times) >= max_count:
+        return False
+    times.append(now)
+    _write_rate[ip_hash] = times
+    return True
+
+
+# 금칙어 필터 ──────────────────────────────────────────────────────────────────
+
+_BAD_WORDS = re.compile(
+    r"(시발|씨발|개새끼|병신|ㅅㅂ|ㅂㅅ|https?://\S+|bit\.ly|광고|홍보|대출|카지노)",
+    re.IGNORECASE,
+)
+
+
+@app.get("/api/captcha")
+def captcha_generate():
+    """수학 CAPTCHA 문제 + HMAC 서명 토큰 발급"""
+    if not JWT_SECRET:
+        raise HTTPException(503, "서버 설정 오류")
+    question, token = _generate_captcha()
+    return {"question": question, "token": token}
+
+
+@app.post("/api/board/write")
+def board_write(body: BoardWriteRequest, request: Request):
+    """게시판 글 작성 — CAPTCHA + 비밀번호 해싱"""
+    # 1. CAPTCHA 검증
+    if not _verify_captcha(body.captcha_token, body.captcha_answer):
+        return JSONResponse(
+            status_code=403, content={"error": "보안문자가 올바르지 않습니다"}
+        )
+
+    # 2. Rate Limit
+    client_ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        return JSONResponse(
+            status_code=429, content={"error": "잠시 후 다시 시도해주세요"}
+        )
+
+    # 3. 입력값 검증
+    nickname = body.nickname.strip()
+    question = body.question.strip()
+    if not (2 <= len(nickname) <= 10):
+        return JSONResponse(
+            status_code=400, content={"error": "닉네임은 2~10자여야 합니다"}
+        )
+    if not (4 <= len(body.password) <= 20):
+        return JSONResponse(
+            status_code=400, content={"error": "비밀번호는 4~20자여야 합니다"}
+        )
+    if not (10 <= len(question) <= 2000):
+        return JSONResponse(
+            status_code=400, content={"error": "질문은 10~2000자여야 합니다"}
+        )
+    if _BAD_WORDS.search(nickname + " " + question):
+        return JSONResponse(
+            status_code=400, content={"error": "부적절한 내용이 포함되어 있습니다"}
+        )
+
+    # 4. bcrypt 해싱
+    pw_hash = bcrypt.hashpw(
+        body.password.encode("utf-8"), bcrypt.gensalt(rounds=12)
+    ).decode("utf-8")
+
+    # 5. Supabase INSERT
+    ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
+    sb = _get_supabase()
+    result = (
+        sb.table("board_posts")
+        .insert(
+            {
+                "nickname": nickname,
+                "password_hash": pw_hash,
+                "category": body.category.strip() or "일반상담",
+                "question_text": question,
+                "ip_hash": ip_hash,
+            }
+        )
+        .execute()
+    )
+
+    post_id = result.data[0]["id"] if result.data else None
+    return JSONResponse(
+        status_code=201,
+        content={"id": post_id, "message": "질문이 등록되었습니다"},
+    )
+
+
+@app.post("/api/board/{post_id}/delete")
+def board_post_delete(post_id: str, body: BoardDeleteRequest):
+    """게시판 글 삭제 — 비밀번호 확인 후 soft delete"""
+    import uuid as _uuid
+
+    try:
+        _uuid.UUID(post_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid ID"})
+
+    sb = _get_supabase()
+    result = (
+        sb.table("board_posts")
+        .select("id, password_hash")
+        .eq("id", post_id)
+        .eq("status", "active")
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        return JSONResponse(
+            status_code=404, content={"error": "글을 찾을 수 없습니다"}
+        )
+
+    stored_hash = result.data["password_hash"].encode("utf-8")
+    if not bcrypt.checkpw(body.password.encode("utf-8"), stored_hash):
+        return JSONResponse(
+            status_code=403, content={"error": "비밀번호가 올바르지 않습니다"}
+        )
+
+    sb.table("board_posts").update({"status": "deleted"}).eq("id", post_id).execute()
+    return {"message": "삭제되었습니다"}
+
+
 # ── 질문게시판 (공개) ──────────────────────────────────────────────────────────
 
 _ANON_PATTERNS = [
@@ -441,6 +649,157 @@ def board_recent(page: int = 1, per_page: int = 10):
         "per_page": per_page,
         "has_more": offset + per_page < total,
     }
+
+
+@app.get("/api/board/categories")
+def board_categories():
+    """사용 가능한 카테고리 목록 (건수 포함)"""
+    sb = _get_supabase()
+    result = (
+        sb.table("qa_conversations")
+        .select("category")
+        .execute()
+    )
+
+    counts: dict[str, int] = {}
+    for row in result.data or []:
+        cat = row.get("category", "일반상담") or "일반상담"
+        counts[cat] = counts.get(cat, 0) + 1
+
+    categories = [
+        {"name": cat, "count": count}
+        for cat, count in sorted(counts.items(), key=lambda x: -x[1])
+    ]
+    total = sum(c["count"] for c in categories)
+    return {"categories": categories, "total": total}
+
+
+@app.get("/api/board/search")
+def board_search(q: str = "", category: str = "", page: int = 1, per_page: int = 15):
+    """질문게시판 검색 — qa_conversations + board_posts 통합"""
+    sb = _get_supabase()
+    per_page = min(per_page, 30)
+
+    # --- qa_conversations 조회 ---
+    qa_qb = sb.table("qa_conversations").select(
+        "id, category, question_text, answer_text, created_at", count="exact"
+    )
+    if category:
+        qa_qb = qa_qb.eq("category", category)
+    if q:
+        qa_qb = qa_qb.ilike("question_text", f"%{q}%")
+    qa_result = qa_qb.order("created_at", desc=True).execute()
+
+    all_items = []
+    for row in qa_result.data or []:
+        question = _anonymize(row.get("question_text", ""))
+        answer = row.get("answer_text", "")
+        answer_preview = answer[:300] + ("..." if len(answer) > 300 else "") if answer else ""
+        all_items.append({
+            "id": row["id"],
+            "category": row.get("category", ""),
+            "question": question,
+            "answer_preview": _anonymize(answer_preview),
+            "created_at": row.get("created_at", ""),
+            "source": "ai",
+        })
+
+    # --- board_posts 조회 (active만) ---
+    try:
+        bp_qb = sb.table("board_posts").select(
+            "id, nickname, category, question_text, created_at", count="exact"
+        ).eq("status", "active")
+        if category:
+            bp_qb = bp_qb.eq("category", category)
+        if q:
+            bp_qb = bp_qb.ilike("question_text", f"%{q}%")
+        bp_result = bp_qb.order("created_at", desc=True).execute()
+
+        for row in bp_result.data or []:
+            all_items.append({
+                "id": row["id"],
+                "category": row.get("category", ""),
+                "question": row.get("question_text", ""),
+                "answer_preview": "",
+                "created_at": row.get("created_at", ""),
+                "source": "user",
+                "nickname": row.get("nickname", ""),
+            })
+    except Exception:
+        pass  # board_posts 테이블 미생성 시 graceful fallback
+
+    # --- 병합 + 정렬 + 페이지네이션 ---
+    all_items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    total = len(all_items)
+    offset = (page - 1) * per_page
+    items = all_items[offset : offset + per_page]
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "has_more": offset + per_page < total,
+    }
+
+
+@app.get("/api/board/{item_id}")
+def board_detail(item_id: str):
+    """질문게시판 상세 — qa_conversations 또는 board_posts (비식별화)"""
+    import uuid as _uuid
+    try:
+        _uuid.UUID(item_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid ID"})
+
+    sb = _get_supabase()
+
+    # 1) qa_conversations에서 먼저 조회
+    result = (
+        sb.table("qa_conversations")
+        .select("id, category, question_text, answer_text, created_at")
+        .eq("id", item_id)
+        .maybe_single()
+        .execute()
+    )
+    if result.data:
+        row = result.data
+        return {
+            "id": row["id"],
+            "category": row.get("category", ""),
+            "question": _anonymize(row.get("question_text", "")),
+            "answer": _anonymize(row.get("answer_text", "")),
+            "created_at": row.get("created_at", ""),
+            "source": "ai",
+        }
+
+    # 2) board_posts에서 조회
+    try:
+        bp_result = (
+            sb.table("board_posts")
+            .select("id, nickname, category, question_text, created_at")
+            .eq("id", item_id)
+            .eq("status", "active")
+            .maybe_single()
+            .execute()
+        )
+        if bp_result.data:
+            row = bp_result.data
+            return {
+                "id": row["id"],
+                "category": row.get("category", ""),
+                "question": row.get("question_text", ""),
+                "answer": "",
+                "created_at": row.get("created_at", ""),
+                "source": "user",
+                "nickname": row.get("nickname", ""),
+            }
+    except Exception:
+        pass
+
+    return JSONResponse(status_code=404, content={"error": "Not found"})
 
 
 # ── 정적 파일 서빙 ────────────────────────────────────────────────────────────
