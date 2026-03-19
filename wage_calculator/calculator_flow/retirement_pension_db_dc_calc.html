@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">DB vs DC 구조</button>
+<button onclick="showTab(1)" id="t1">DB형 산정</button>
+<button onclick="showTab(2)" id="t2">DC형 산정</button>
+<button onclick="showTab(3)" id="t3">수령 비교 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: DB vs DC 구조 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">퇴직연금 DB vs DC — 완전히 다른 구조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로자퇴직급여보장법 제15조(DB), 제17조(DC) | 퇴직금의 "운용 방식" 차이</p>
+</div>
+<svg width="100%" viewBox="0 0 680 780">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="56" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="34" text-anchor="middle">퇴직금을 어떻게 쌓고 운용하느냐의 차이</text>
+<text class="ts" x="340" y="54" text-anchor="middle">DB: 회사가 운용 → 퇴직 시 확정된 급여 | DC: 근로자가 운용 → 수익에 따라 변동</text>
+
+<!-- 공통 출발 -->
+<g class="c-gray">
+<rect x="220" y="92" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="114" text-anchor="middle" dominant-baseline="central">사업주: 매년 부담금 납입</text>
+</g>
+
+<line x1="230" y1="136" x2="160" y2="176" class="arr" marker-end="url(#ar)"/>
+<line x1="450" y1="136" x2="520" y2="176" class="arr" marker-end="url(#ar)"/>
+
+<!-- DB -->
+<g class="c-blue">
+<rect x="40" y="176" width="260" height="300" rx="8" stroke-width="0.5"/>
+<text style="font-size:16px;fill:var(--color-text-info);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="170" y="200">DB형 (확정급여형)</text>
+
+<text class="ts" x="170" y="232" text-anchor="middle">급여가 확정됨</text>
+<text class="ts" x="170" y="252" text-anchor="middle">= 퇴직금과 동일한 금액 보장</text>
+
+<rect x="60" y="272" width="220" height="28" rx="4" fill="var(--color-background-info)" stroke="none"/>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="170" y="290">운용 주체: 사업주 (회사)</text>
+
+<rect x="60" y="308" width="220" height="28" rx="4" fill="var(--color-background-info)" stroke="none"/>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="170" y="326">운용 위험: 사업주 부담</text>
+
+<rect x="60" y="344" width="220" height="28" rx="4" fill="var(--color-background-info)" stroke="none"/>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="170" y="362">임금 상승 → 급여 증가 ✓</text>
+
+<rect x="60" y="380" width="220" height="28" rx="4" fill="var(--color-background-info)" stroke="none"/>
+<text style="font-size:12px;fill:var(--color-text-info);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="170" y="398">수익률 무관 (확정 금액)</text>
+
+<text class="ts" x="170" y="438" text-anchor="middle">근속 길고 임금상승 큰 경우</text>
+<text style="font-size:13px;fill:var(--color-text-info);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="170" y="460">DB가 유리</text>
+</g>
+
+<!-- DC -->
+<g class="c-teal">
+<rect x="380" y="176" width="260" height="300" rx="8" stroke-width="0.5"/>
+<text style="font-size:16px;fill:var(--color-text-success);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="510" y="200">DC형 (확정기여형)</text>
+
+<text class="ts" x="510" y="232" text-anchor="middle">부담금이 확정됨</text>
+<text class="ts" x="510" y="252" text-anchor="middle">= 매년 연봉/12, 운용 결과에 따라 변동</text>
+
+<rect x="400" y="272" width="220" height="28" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041;font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="510" y="290">운용 주체: 근로자 본인</text>
+
+<rect x="400" y="308" width="220" height="28" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041;font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="510" y="326">운용 위험: 근로자 부담</text>
+
+<rect x="400" y="344" width="220" height="28" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041;font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="510" y="362">임금 상승 → 당해 부담금만 ↑</text>
+
+<rect x="400" y="380" width="220" height="28" rx="4" fill="#E1F5EE" stroke="none"/>
+<text style="font-size:12px;fill:#085041;font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="510" y="398">수익률 높으면 퇴직금 초과 가능</text>
+
+<text class="ts" x="510" y="438" text-anchor="middle">이직 잦고 투자 자신 있으면</text>
+<text style="font-size:13px;fill:var(--color-text-success);font-weight:500;font-family:'Anthropic Sans',sans-serif;text-anchor:middle;dominant-baseline:central" x="510" y="460">DC가 유리</text>
+</g>
+
+<!-- 공통 수령 -->
+<line x1="170" y1="476" x2="280" y2="516" class="arr" marker-end="url(#ar)"/>
+<line x1="510" y1="476" x2="400" y2="516" class="arr" marker-end="url(#ar)"/>
+
+<g class="c-amber">
+<rect x="140" y="516" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="536" text-anchor="middle" dominant-baseline="central">퇴직 시 수령 (IRP로 이체)</text>
+<text class="ts" x="340" y="556" text-anchor="middle" dominant-baseline="central">55세 이후 연금 수령 or 일시금 수령</text>
+</g>
+
+<!-- 반도체고 관련 -->
+<rect x="40" y="596" width="600" height="160" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="620" text-anchor="middle">반도체고 졸업생에게 중요한 점</text>
+<text class="ts" x="340" y="648" text-anchor="middle">대기업(삼성·SK): 대부분 DB형 → 임금 꾸준히 오르면 퇴직금이 커짐</text>
+<text class="ts" x="340" y="668" text-anchor="middle">중소 협력업체: DC형이 많음 → 본인이 운용 선택을 해야 함</text>
+<text class="ts" x="340" y="696" text-anchor="middle">DC형인데 운용을 안 하면(방치) → 원리금보장 상품(연 1~2%)에 자동 배치</text>
+<text class="ts" x="340" y="716" text-anchor="middle">→ 10년 후 물가상승률(3%)을 고려하면 실질 손해</text>
+<text class="ts" x="340" y="740" text-anchor="middle">입사 시 DB/DC 유형을 반드시 확인하고, DC라면 운용 방법을 배워야 합니다</text>
+</svg>
+</div>
+
+<!-- TAB 1: DB형 산정 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">DB형 — 퇴직금과 동일한 산정</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">확정급여형: 급여가 확정, 부족분은 사업주가 추가 적립해야</p>
+</div>
+<svg width="100%" viewBox="0 0 680 520">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-blue">
+<rect x="80" y="20" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">DB 퇴직급여 공식</text>
+<text style="font-size:16px;fill:var(--color-text-info);font-weight:500" x="340" y="76" text-anchor="middle" dominant-baseline="central">= 적용 평균임금 × 30일 × (근속일수 ÷ 365)</text>
+</g>
+
+<line x1="340" y1="96" x2="340" y2="126" class="arr" marker-end="url(#a1)"/>
+
+<g class="c-gray">
+<rect x="60" y="126" width="560" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="146" text-anchor="middle" dominant-baseline="central">퇴직금 계산기와 100% 동일</text>
+<text class="ts" x="340" y="166" text-anchor="middle" dominant-baseline="central">평균임금 3자 비교(A·B·C) → 유리한 원칙 → 근속 비례</text>
+</g>
+
+<!-- DB의 특징 -->
+<rect x="40" y="206" width="600" height="290" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="230" text-anchor="middle">DB형의 작동 원리</text>
+
+<g class="c-teal">
+<rect x="70" y="250" width="250" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="195" y="270" text-anchor="middle" dominant-baseline="central">사업주의 의무</text>
+<text class="ts" x="195" y="292" text-anchor="middle" dominant-baseline="central">매년 퇴직급여 예상액의</text>
+<text class="ts" x="195" y="310" text-anchor="middle" dominant-baseline="central">60% 이상을 사외 적립</text>
+</g>
+
+<g class="c-purple">
+<rect x="360" y="250" width="250" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="485" y="270" text-anchor="middle" dominant-baseline="central">운용 책임</text>
+<text class="ts" x="485" y="292" text-anchor="middle" dominant-baseline="central">적립금 운용은 사업주가</text>
+<text class="ts" x="485" y="310" text-anchor="middle" dominant-baseline="central">수익률 낮아도 급여는 확정</text>
+</g>
+
+<text class="ts" x="340" y="356" text-anchor="middle">근로자 입장: 내가 할 일이 없음 → 그냥 퇴직할 때 확정된 금액 수령</text>
+
+<g class="c-coral">
+<rect x="70" y="374" width="250" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="195" y="394" text-anchor="middle" dominant-baseline="central">장점</text>
+<text class="ts" x="195" y="414" text-anchor="middle" dominant-baseline="central">임금 꾸준히 오르면 퇴직금 ↑</text>
+</g>
+
+<g class="c-amber">
+<rect x="360" y="374" width="250" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="485" y="394" text-anchor="middle" dominant-baseline="central">단점</text>
+<text class="ts" x="485" y="414" text-anchor="middle" dominant-baseline="central">회사 부도 시 적립 부족 위험</text>
+</g>
+
+<text class="ts" x="340" y="462" text-anchor="middle">DB형에서 근로자가 받는 금액 = 퇴직금 계산기에서 산출한 그 금액</text>
+<text class="ts" x="340" y="482" text-anchor="middle">→ 별도의 "퇴직연금 계산"이 불필요 (퇴직금 = DB 퇴직급여)</text>
+</svg>
+</div>
+
+<!-- TAB 2: DC형 산정 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">DC형 — 부담금 + 투자수익 = 내 퇴직금</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">확정기여형: 매년 부담금(연봉÷12)이 확정, 운용 결과에 따라 수령액 변동</p>
+</div>
+<svg width="100%" viewBox="0 0 680 620">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 부담금 -->
+<g class="c-teal">
+<rect x="80" y="20" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">Step 1. 연간 부담금 (사업주가 납입)</text>
+<text style="font-size:16px;fill:#0F6E56;font-weight:500" x="340" y="76" text-anchor="middle" dominant-baseline="central">연간 부담금 = 연간 임금총액 ÷ 12</text>
+</g>
+<line x1="340" y1="96" x2="340" y2="126" class="arr" marker-end="url(#a2)"/>
+
+<!-- 적립 -->
+<g class="c-purple">
+<rect x="60" y="126" width="560" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="148" text-anchor="middle" dominant-baseline="central">Step 2. 적립금 = 매년 부담금의 복리 합산</text>
+<text style="font-size:14px;fill:#3C3489;font-weight:500" x="340" y="180" text-anchor="middle" dominant-baseline="central">적립금 = Σ (매년 부담금 × (1 + 수익률)^(잔여연수))</text>
+</g>
+<line x1="340" y1="202" x2="340" y2="232" class="arr" marker-end="url(#a2)"/>
+
+<!-- 투자수익 -->
+<g class="c-amber">
+<rect x="120" y="232" width="440" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="252" text-anchor="middle" dominant-baseline="central">Step 3. 투자수익 산출</text>
+<text class="ts" x="340" y="272" text-anchor="middle" dominant-baseline="central">투자수익 = 적립금 − 부담금 합계</text>
+</g>
+<line x1="340" y1="288" x2="340" y2="318" class="arr" marker-end="url(#a2)"/>
+
+<!-- 최종 수령 -->
+<g class="c-coral">
+<rect x="80" y="318" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="340" text-anchor="middle" dominant-baseline="central">퇴직 시 수령액</text>
+<text style="font-size:16px;fill:#993C1D;font-weight:500" x="340" y="374" text-anchor="middle" dominant-baseline="central">= 부담금 합계 + 투자수익 (또는 − 투자손실)</text>
+</g>
+
+<!-- 수익률별 시나리오 -->
+<rect x="40" y="418" width="600" height="180" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="442" text-anchor="middle">수익률이 얼마나 중요한가? (연봉 3,600만, 10년 근속)</text>
+
+<rect x="70" y="462" width="160" height="56" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#791F1F;font-weight:500" x="150" y="482" text-anchor="middle" dominant-baseline="central">수익률 1%</text>
+<text style="font-size:12px;fill:#791F1F" x="150" y="504" text-anchor="middle" dominant-baseline="central">약 3,140만원</text>
+
+<rect x="260" y="462" width="160" height="56" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#633806;font-weight:500" x="340" y="482" text-anchor="middle" dominant-baseline="central">수익률 3%</text>
+<text style="font-size:12px;fill:#633806" x="340" y="504" text-anchor="middle" dominant-baseline="central">약 3,440만원</text>
+
+<rect x="450" y="462" width="160" height="56" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:13px;fill:#085041;font-weight:500" x="530" y="482" text-anchor="middle" dominant-baseline="central">수익률 5%</text>
+<text style="font-size:12px;fill:#085041" x="530" y="504" text-anchor="middle" dominant-baseline="central">약 3,770만원</text>
+
+<text class="ts" x="340" y="540" text-anchor="middle">부담금 합계(동일): 3,000만원 | 수익률 차이만으로 630만원 차이</text>
+<text class="ts" x="340" y="560" text-anchor="middle">원리금보장(1%) 방치 vs 적극운용(5%) → 10년이면 20% 이상 차이</text>
+<text class="ts" x="340" y="586" text-anchor="middle">수익률 0%(방치)이면 정확히 퇴직금과 같고, 그 이상이면 퇴직금보다 많아짐</text>
+</svg>
+</div>
+
+<!-- TAB 3: 비교 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">DB vs DC 수령액 비교 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">동일 조건에서 DB와 DC의 수령액 차이를 실시간 비교합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">초년도 연봉</label>
+<input type="range" min="2400" max="8000" value="3600" step="100" id="salary" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="salOut">3,600만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">연 임금상승률</label>
+<input type="range" min="0" max="8" value="3" step="0.5" id="raiseRate" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="raiseOut">3.0%</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">근속연수</label>
+<input type="range" min="1" max="30" value="10" step="1" id="years" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="yearsOut">10년</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">DC 수익률</label>
+<input type="range" min="-2" max="10" value="3" step="0.5" id="dcReturn" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="dcOut">3.0%</span>
+</div>
+</div>
+
+<!-- DB vs DC 카드 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div id="dbCard" style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;border-top:3px solid var(--color-text-info)">
+<p style="font-size:14px;font-weight:500;margin:0 0 8px;color:var(--color-text-info)">DB형 (확정급여)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">퇴직 시 평균임금 기준</p>
+<p style="font-size:24px;font-weight:500;margin:0;color:var(--color-text-info)" id="dbAmt">0원</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="dbNote"></p>
+</div>
+<div id="dcCard" style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;border-top:3px solid var(--color-text-success)">
+<p style="font-size:14px;font-weight:500;margin:0 0 8px;color:var(--color-text-success)">DC형 (확정기여)</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">부담금 + 복리수익</p>
+<p style="font-size:24px;font-weight:500;margin:0;color:var(--color-text-success)" id="dcAmt">0원</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0" id="dcNote"></p>
+</div>
+</div>
+
+<!-- 판정 -->
+<div id="result" style="border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
+
+<!-- 연도별 누적 차트 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">연도별 누적 비교</p>
+<div style="position:relative;height:200px"><canvas id="chart"></canvas></div>
+</div>
+
+<!-- 분해 카드 -->
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">퇴직시 월급</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="lastSal">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">DC 부담금 합계</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="dcContrib">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">DC 투자수익</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="dcProfit">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
+<p style="font-size:11px;color:var(--color-text-secondary);margin:0 0 4px">DB−DC 차이</p>
+<p style="font-size:16px;font-weight:500;margin:0" id="diffAmt">0원</p>
+</div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var myChart=null;
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+
+function calc(){
+  var sal=+document.getElementById('salary').value;
+  var raise=+document.getElementById('raiseRate').value;
+  var years=+document.getElementById('years').value;
+  var dcR=+document.getElementById('dcReturn').value;
+
+  document.getElementById('salOut').textContent=fmt(sal)+'만원';
+  document.getElementById('raiseOut').textContent=raise.toFixed(1)+'%';
+  document.getElementById('yearsOut').textContent=years+'년';
+  document.getElementById('dcOut').textContent=dcR.toFixed(1)+'%';
+
+  var salW=sal*10000; // 초년도 연봉
+
+  // DB: 퇴직 시 평균임금(최종연봉 기준) × 30일 × 근속연수
+  var lastAnnual=salW*Math.pow(1+raise/100,years-1);
+  var lastMonthly=lastAnnual/12;
+  var avgDaily=lastMonthly/30;
+  var dbTotal=Math.round(avgDaily*30*years);
+
+  // DC: 매년 부담금(연봉÷12)을 복리로 적립
+  var dcTotal=0;
+  var contribTotal=0;
+  var dbByYear=[];
+  var dcByYear=[];
+
+  for(var y=1;y<=years;y++){
+    var annY=salW*Math.pow(1+raise/100,y-1);
+    var contrib=annY/12;
+    contribTotal+=contrib;
+    // 이 해의 부담금은 (years-y)년 동안 복리
+    dcTotal+=contrib*Math.pow(1+dcR/100,years-y);
+
+    // DB 해당 연차 기준 (퇴직 시 기준이므로 최종 연봉으로)
+    var dbY=Math.round((salW*Math.pow(1+raise/100,y-1)/12/30)*30*y);
+    dbByYear.push(dbY);
+    dcByYear.push(Math.round(dcTotal));
+  }
+  dcTotal=Math.round(dcTotal);
+  contribTotal=Math.round(contribTotal);
+  var dcProfit=dcTotal-contribTotal;
+
+  document.getElementById('dbAmt').textContent=fmt(dbTotal)+'원';
+  document.getElementById('dbNote').textContent='평균임금 '+fmt(avgDaily)+'원/일 × 30일 × '+years+'년';
+  document.getElementById('dcAmt').textContent=fmt(dcTotal)+'원';
+  document.getElementById('dcNote').textContent='부담금 '+fmt(contribTotal)+' + 수익 '+fmt(dcProfit);
+  document.getElementById('lastSal').textContent=fmt(Math.round(lastMonthly))+'원';
+  document.getElementById('dcContrib').textContent=fmt(contribTotal)+'원';
+  document.getElementById('dcProfit').textContent=fmt(dcProfit)+'원';
+
+  var diff=dbTotal-dcTotal;
+  document.getElementById('diffAmt').textContent=(diff>0?'+':'')+fmt(diff)+'원';
+  document.getElementById('diffAmt').style.color=diff>0?'var(--color-text-info)':'var(--color-text-success)';
+
+  // 판정
+  var rEl=document.getElementById('result');
+  if(diff>0){
+    rEl.style.background='var(--color-background-info)';rEl.style.color='var(--color-text-info)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">DB형이 '+fmt(diff)+'원 더 유리</p><p style="margin:0;font-size:13px">임금상승률('+raise.toFixed(1)+'%)이 DC 수익률('+dcR.toFixed(1)+'%)보다 영향력이 큰 구조입니다. 임금이 꾸준히 오르는 대기업에서 DB형이 유리합니다.</p>';
+  } else if(diff<0){
+    rEl.style.background='var(--color-background-success)';rEl.style.color='var(--color-text-success)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">DC형이 '+fmt(-diff)+'원 더 유리</p><p style="margin:0;font-size:13px">DC 수익률('+dcR.toFixed(1)+'%)이 임금상승률('+raise.toFixed(1)+'%)을 충분히 상회하여, 복리 효과로 DC가 앞섭니다.</p>';
+  } else {
+    rEl.style.background='var(--color-background-secondary)';rEl.style.color='var(--color-text-secondary)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0;font-size:16px">DB와 DC가 동일합니다</p>';
+  }
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>',
+    '<p style="margin:2px 0"><b>DB형:</b> 퇴직시 월급 '+fmt(Math.round(lastMonthly))+'원 ÷ 30 × 30 × '+years+' = '+fmt(dbTotal)+'원</p>',
+    '<p style="margin:2px 0"><b>DC형:</b> 매년 부담금(연봉÷12)을 수익률 '+dcR.toFixed(1)+'%로 복리 운용</p>',
+    '<p style="margin:2px 0">부담금 합계: '+fmt(contribTotal)+'원 + 투자수익: '+fmt(dcProfit)+'원 = '+fmt(dcTotal)+'원</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">차이: '+(diff>0?'DB':'DC')+' 유리 '+fmt(Math.abs(diff))+'원</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+
+  drawChart(dbByYear,dcByYear,years);
+}
+
+function drawChart(dbData,dcData,years){
+  if(myChart)myChart.destroy();
+  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
+  var txtC=dark?'#9c9a92':'#73726c';
+
+  var labels=[];
+  for(var i=1;i<=years;i++)labels.push(i+'년');
+
+  var ctx=document.getElementById('chart').getContext('2d');
+  myChart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[
+        {label:'DB형',data:dbData,borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.1)',borderWidth:2.5,fill:true,tension:0.3,pointRadius:years<=15?3:0},
+        {label:'DC형',data:dcData,borderColor:'#059669',backgroundColor:'rgba(5,150,105,0.1)',borderWidth:2.5,fill:true,tension:0.3,pointRadius:years<=15?3:0}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,position:'top',labels:{font:{size:11,family:'Anthropic Sans,sans-serif'},color:txtC,boxWidth:12,padding:8}},tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+fmt(c.raw)+'원'}}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,maxTicksLimit:12}},
+        y:{grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,callback:function(v){return (v/10000000).toFixed(0)+'천만'}},beginAtZero:true}
+      }
+    }
+  });
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===3)calc();
+}
+</script>
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

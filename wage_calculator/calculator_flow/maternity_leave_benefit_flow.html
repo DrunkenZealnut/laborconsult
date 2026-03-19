@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">지급 주체 분기</button>
+<button onclick="showTab(2)" id="t2">배우자 출산휴가</button>
+<button onclick="showTab(3)" id="t3">급여 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 전체 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출산전후휴가급여 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제74조, 고용보험법 제75조</p>
+</div>
+<svg width="100%" viewBox="0 0 680 740">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- Step 1: 휴가 기간 -->
+<g class="c-gray">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">Step 1. 휴가 기간 결정</text>
+</g>
+
+<line x1="260" y1="64" x2="160" y2="100" class="arr" marker-end="url(#ar)"/>
+<line x1="420" y1="64" x2="520" y2="100" class="arr" marker-end="url(#ar)"/>
+
+<g class="c-teal">
+<rect x="60" y="100" width="200" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="122" text-anchor="middle" dominant-baseline="central">단태아</text>
+<text class="ts" x="160" y="142" text-anchor="middle" dominant-baseline="central">총 90일</text>
+<text class="ts" x="160" y="160" text-anchor="middle" dominant-baseline="central">출산 후 45일 보장</text>
+</g>
+
+<g class="c-purple">
+<rect x="420" y="100" width="200" height="80" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="122" text-anchor="middle" dominant-baseline="central">다태아</text>
+<text class="ts" x="520" y="142" text-anchor="middle" dominant-baseline="central">총 120일</text>
+<text class="ts" x="520" y="160" text-anchor="middle" dominant-baseline="central">출산 후 60일 보장</text>
+</g>
+
+<line x1="160" y1="180" x2="280" y2="214" class="arr" marker-end="url(#ar)"/>
+<line x1="520" y1="180" x2="400" y2="214" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2: 통상임금 -->
+<g class="c-coral">
+<rect x="160" y="214" width="360" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="234" text-anchor="middle" dominant-baseline="central">Step 2. 월 통상임금 확인</text>
+<text class="ts" x="340" y="252" text-anchor="middle" dominant-baseline="central">통상임금 계산기에서 산출된 값</text>
+</g>
+
+<line x1="340" y1="270" x2="340" y2="304" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3: 상하한 -->
+<g class="c-amber">
+<rect x="80" y="304" width="520" height="110" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="328" text-anchor="middle" dominant-baseline="central">Step 3. 상한·하한 적용 (2026년)</text>
+
+<rect x="110" y="346" width="230" height="68" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="225" y="362" text-anchor="middle" dominant-baseline="central">상한 (일반): 2,156,880원/월</text>
+<text style="font-size:11px;fill:#791F1F" x="225" y="380" text-anchor="middle" dominant-baseline="central">= 최저시급 10,320 × 209h</text>
+<text style="font-size:11px;fill:#854F0B;font-weight:500" x="225" y="400" text-anchor="middle" dominant-baseline="central">노무제공자: 2,000,000원/월</text>
+
+<rect x="360" y="346" width="220" height="56" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="470" y="366" text-anchor="middle" dominant-baseline="central">하한: 최저시급 x 209h</text>
+<text style="font-size:11px;fill:#085041" x="470" y="386" text-anchor="middle" dominant-baseline="central">= 2,156,880원 (상한=하한)</text>
+</g>
+
+<line x1="340" y1="414" x2="340" y2="448" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4: 월 급여 -->
+<g class="c-teal">
+<rect x="140" y="448" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="468" text-anchor="middle" dominant-baseline="central">Step 4. 월 급여 산정</text>
+<text class="ts" x="340" y="488" text-anchor="middle" dominant-baseline="central">= min(월 통상임금, 상한액)</text>
+</g>
+
+<line x1="340" y1="504" x2="340" y2="538" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5: 지급주체 -->
+<g class="c-purple">
+<rect x="100" y="538" width="480" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="558" text-anchor="middle" dominant-baseline="central">Step 5. 지급 주체 결정</text>
+<text class="ts" x="340" y="578" text-anchor="middle" dominant-baseline="central">사업장 규모에 따라 사업주/고용보험 분담 → "지급 주체" 탭 참고</text>
+</g>
+
+<line x1="340" y1="594" x2="340" y2="628" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6: 총액 -->
+<g class="c-gray">
+<rect x="80" y="628" width="520" height="90" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="652" text-anchor="middle" dominant-baseline="central">Step 6. 총 급여 산출</text>
+<text class="ts" x="340" y="674" text-anchor="middle" dominant-baseline="central">단태아: 월 급여 x 3개월 (= 90일)</text>
+<text class="ts" x="340" y="694" text-anchor="middle" dominant-baseline="central">다태아: 월 급여 x 4개월 (= 120일)</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 1: 지급 주체 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">지급 주체 분기 — 사업장 규모가 핵심</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">우선지원대상기업(중소)과 대규모 사업장의 부담 구조가 완전히 다릅니다</p>
+</div>
+<svg width="100%" viewBox="0 0 680 700">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 분기점 -->
+<g class="c-gray">
+<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">사업장 규모 확인</text>
+</g>
+
+<line x1="230" y1="64" x2="160" y2="100" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="178" y="78">중소</text>
+<line x1="450" y1="64" x2="520" y2="100" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="498" y="78">대규모</text>
+
+<!-- 중소기업 (우선지원) -->
+<g class="c-teal">
+<rect x="40" y="100" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="160" y="122" text-anchor="middle" dominant-baseline="central">우선지원대상기업</text>
+</g>
+
+<g class="c-coral">
+<rect x="400" y="100" width="240" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="520" y="122" text-anchor="middle" dominant-baseline="central">대규모 사업장</text>
+</g>
+
+<!-- 단태아 - 중소 -->
+<line x1="160" y1="144" x2="160" y2="180" class="arr" marker-end="url(#a1)"/>
+
+<text class="th" x="160" y="196" text-anchor="middle">단태아 (90일)</text>
+
+<rect x="40" y="210" width="240" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<rect x="60" y="224" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="160" y="240" text-anchor="middle" dominant-baseline="central">처음 60일</text>
+<text style="font-size:11px;fill:#0C447C" x="160" y="258" text-anchor="middle" dominant-baseline="central">고용보험 전액 지급</text>
+
+<rect x="60" y="278" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="160" y="294" text-anchor="middle" dominant-baseline="central">나머지 30일</text>
+<text style="font-size:11px;fill:#0C447C" x="160" y="312" text-anchor="middle" dominant-baseline="central">고용보험 전액 지급</text>
+
+<!-- 단태아 - 대규모 -->
+<line x1="520" y1="144" x2="520" y2="180" class="arr" marker-end="url(#a1)"/>
+
+<text class="th" x="520" y="196" text-anchor="middle">단태아 (90일)</text>
+
+<rect x="400" y="210" width="240" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<rect x="420" y="224" width="200" height="44" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="520" y="240" text-anchor="middle" dominant-baseline="central">처음 60일</text>
+<text style="font-size:11px;fill:#633806" x="520" y="258" text-anchor="middle" dominant-baseline="central">사업주 부담</text>
+
+<rect x="420" y="278" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="520" y="294" text-anchor="middle" dominant-baseline="central">나머지 30일</text>
+<text style="font-size:11px;fill:#0C447C" x="520" y="312" text-anchor="middle" dominant-baseline="central">고용보험 지급</text>
+
+<!-- 다태아 -->
+<text class="th" x="160" y="372" text-anchor="middle">다태아 (120일)</text>
+
+<rect x="40" y="386" width="240" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<rect x="60" y="400" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="160" y="416" text-anchor="middle" dominant-baseline="central">처음 60일</text>
+<text style="font-size:11px;fill:#0C447C" x="160" y="434" text-anchor="middle" dominant-baseline="central">고용보험 전액 지급</text>
+
+<rect x="60" y="454" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="160" y="470" text-anchor="middle" dominant-baseline="central">나머지 60일</text>
+<text style="font-size:11px;fill:#0C447C" x="160" y="488" text-anchor="middle" dominant-baseline="central">고용보험 전액 지급</text>
+
+<text class="th" x="520" y="372" text-anchor="middle">다태아 (120일)</text>
+
+<rect x="400" y="386" width="240" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<rect x="420" y="400" width="200" height="44" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="520" y="416" text-anchor="middle" dominant-baseline="central">처음 60일</text>
+<text style="font-size:11px;fill:#633806" x="520" y="434" text-anchor="middle" dominant-baseline="central">사업주 부담</text>
+
+<rect x="420" y="454" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="520" y="470" text-anchor="middle" dominant-baseline="central">나머지 60일</text>
+<text style="font-size:11px;fill:#0C447C" x="520" y="488" text-anchor="middle" dominant-baseline="central">고용보험 지급</text>
+
+<!-- 범례 -->
+<rect x="40" y="544" width="600" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<rect x="70" y="558" width="14" height="14" rx="3" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text class="ts" x="92" y="569">고용보험 지급</text>
+<rect x="280" y="558" width="14" height="14" rx="3" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text class="ts" x="302" y="569">사업주 부담</text>
+
+<text class="ts" x="340" y="582" text-anchor="middle">대규모 사업장의 사업주 부담분: 통상임금 전액 (상한 없음)</text>
+
+<!-- 핵심 차이 -->
+<rect x="40" y="618" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="640" text-anchor="middle">핵심 차이</text>
+<text class="ts" x="340" y="662" text-anchor="middle">중소기업: 전 기간 고용보험이 부담 → 상한 2,156,880원 적용</text>
+<text class="ts" x="340" y="678" text-anchor="middle">대규모: 처음 60일은 사업주가 통상임금 전액(상한 없음) 부담</text>
+</svg>
+</div>
+
+<!-- TAB 2: 배우자 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">배우자 출산휴가 (10일)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">출산전후휴가와 별개로 배우자에게 주어지는 유급 휴가</p>
+</div>
+<svg width="100%" viewBox="0 0 680 420">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-gray">
+<rect x="160" y="20" width="360" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">배우자 출산휴가</text>
+<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">출산일로부터 90일 이내 사용</text>
+</g>
+
+<line x1="340" y1="76" x2="340" y2="110" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-teal">
+<rect x="160" y="110" width="360" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="130" text-anchor="middle" dominant-baseline="central">유급 10일</text>
+<text class="ts" x="340" y="148" text-anchor="middle" dominant-baseline="central">연속 또는 분할(1회) 사용 가능</text>
+</g>
+
+<line x1="340" y1="166" x2="340" y2="200" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-coral">
+<rect x="120" y="200" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="224" text-anchor="middle" dominant-baseline="central">수당 계산</text>
+<text class="ts" x="340" y="244" text-anchor="middle" dominant-baseline="central">배우자 출산휴가 수당 = 1일 통상임금 x 10일</text>
+<text class="ts" x="340" y="262" text-anchor="middle" dominant-baseline="central">= 통상시급 x 1일 소정근로시간 x 10</text>
+</g>
+
+<line x1="340" y1="276" x2="340" y2="310" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-gray">
+<rect x="100" y="310" width="480" height="86" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="332" text-anchor="middle" dominant-baseline="central">예시: 통상시급 15,000원, 8시간 근무</text>
+<text class="ts" x="340" y="354" text-anchor="middle" dominant-baseline="central">1일 통상임금 = 15,000 x 8 = 120,000원</text>
+<text class="ts" x="340" y="374" text-anchor="middle" dominant-baseline="central">배우자 수당 = 120,000 x 10 = 1,200,000원</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출산전후휴가급여 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">조건을 선택하면 지급 주체별 금액이 자동 계산됩니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">월 통상임금</label>
+<input type="range" min="100" max="500" value="250" step="10" id="wage" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="wageOut">250만원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">태아 유형</label>
+<button id="btnSingle" onclick="setType('single');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">단태아 (90일)</button>
+<button id="btnMulti" onclick="setType('multi');calc()">다태아 (120일)</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">사업장 규모</label>
+<button id="btnSmall" onclick="setSize('small');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">우선지원(중소)</button>
+<button id="btnLarge" onclick="setSize('large');calc()">대규모</button>
+</div>
+</div>
+
+<!-- 타임라인 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-primary)">휴가 기간 타임라인</p>
+<div id="timeline" style="display:flex;gap:4px;height:36px;border-radius:var(--border-radius-md);overflow:hidden"></div>
+<div id="timeLabels" style="display:flex;gap:4px;margin-top:4px;font-size:11px"></div>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">월 급여 (고용보험 기준)</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="monthlyPay">0원</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 수령액</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="totalPay">0원</p>
+</div>
+</div>
+
+<div id="detail" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
+
+<!-- 배우자 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">배우자 출산휴가 (별도)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0" id="spouse">0원</p>
+</div>
+</div>
+</div>
+
+<script>
+var babyType='single', bizSize='small';
+var CAP=2156880;
+
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setType(t){babyType=t;setBtn('btnSingle',t==='single');setBtn('btnMulti',t==='multi');}
+function setSize(s){bizSize=s;setBtn('btnSmall',s==='small');setBtn('btnLarge',s==='large');}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function calc(){
+  var w=parseInt(document.getElementById('wage').value);
+  document.getElementById('wageOut').textContent=w+'만원';
+  var ww=w*10000;
+
+  var totalDays=babyType==='single'?90:120;
+  var empDays=60;
+  var insDays=totalDays-empDays;
+  var months=totalDays/30;
+
+  var insMonthly=Math.min(ww,CAP);
+  var insMonthlyFinal=Math.max(insMonthly,CAP);
+  insMonthlyFinal=Math.min(ww,CAP);
+
+  var empMonthly, empTotal, insTotal, totalAll;
+  var lines=[];
+
+  if(bizSize==='small'){
+    empTotal=0;
+    insTotal=insMonthlyFinal*months;
+    totalAll=insTotal;
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>처음 60일 (고용보험)</span><span style="font-weight:500">'+fmt(insMonthlyFinal*2)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>나머지 '+(totalDays-60)+'일 (고용보험)</span><span style="font-weight:500">'+fmt(insMonthlyFinal*(months-2))+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px"><span>사업주 부담</span><span style="font-weight:500">0원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 부담</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
+  } else {
+    empMonthly=ww;
+    empTotal=empMonthly*2;
+    insTotal=insMonthlyFinal*(months-2);
+    totalAll=empTotal+insTotal;
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>처음 60일 (사업주: 통상임금 전액)</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>나머지 '+(totalDays-60)+'일 (고용보험)</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px"><span>사업주 부담</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 부담</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
+  }
+
+  lines.push('<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px;font-weight:500;color:var(--color-text-primary)"><span>총 수령액</span><span>'+fmt(totalAll)+'원</span></div>');
+  if(ww>CAP){
+    lines.push('<div style="padding:6px 0 0;color:var(--color-text-warning)">통상임금 '+fmt(ww)+'원 > 상한 '+fmt(CAP)+'원 → 고용보험분은 상한 적용</div>');
+  }
+
+  document.getElementById('monthlyPay').textContent=fmt(insMonthlyFinal)+'원';
+  document.getElementById('totalPay').textContent=fmt(totalAll)+'원';
+  document.getElementById('detail').innerHTML=lines.join('');
+
+  var dailyOrd=ww/30;
+  var spouseAmt=Math.round(dailyOrd*10);
+  document.getElementById('spouse').textContent='1일 통상임금 '+fmt(Math.round(dailyOrd))+'원 x 10일 = '+fmt(spouseAmt)+'원';
+
+  // Timeline
+  var tl=document.getElementById('timeline');
+  var lb=document.getElementById('timeLabels');
+  if(bizSize==='small'){
+    var p1=60/totalDays*100;
+    var p2=(totalDays-60)/totalDays*100;
+    tl.innerHTML='<div style="width:'+p1+'%;background:#85B7EB;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:#85B7EB;border-radius:0 4px 4px 0"></div>';
+    lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-info);text-align:center">60일 고용보험</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+(totalDays-60)+'일 고용보험</div>';
+  } else {
+    var p1=60/totalDays*100;
+    var p2=(totalDays-60)/totalDays*100;
+    tl.innerHTML='<div style="width:'+p1+'%;background:#FAC775;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:#85B7EB;border-radius:0 4px 4px 0"></div>';
+    lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-warning);text-align:center">60일 사업주</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+(totalDays-60)+'일 고용보험</div>';
+  }
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===3)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

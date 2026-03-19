@@ -14,12 +14,14 @@ Q&A 분석 결과 집계 & 계산기 설계 문서 생성
 
 import json
 import os
+from pathlib import Path
 from collections import Counter, defaultdict
 
-INPUT_JSONL     = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/analysis_qna.jsonl"
-OUT_TYPE_STATS  = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/question_type_stats.json"
-OUT_FIELDS      = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/info_fields_by_type.json"
-OUT_DESIGN_MD   = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/calculator_design.md"
+_PROJECT_DIR = Path(__file__).parent
+INPUT_JSONL     = str(_PROJECT_DIR / "analysis_qna.jsonl")
+OUT_TYPE_STATS  = str(_PROJECT_DIR / "question_type_stats.json")
+OUT_FIELDS      = str(_PROJECT_DIR / "info_fields_by_type.json")
+OUT_DESIGN_MD   = str(_PROJECT_DIR / "calculator_design.md")
 
 # 계산기 설계 상세 정보 (예상 + 분석 기반)
 CALCULATOR_SPECS = {

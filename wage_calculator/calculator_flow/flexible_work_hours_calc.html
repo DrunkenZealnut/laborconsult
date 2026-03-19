@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
+<button onclick="showTab(1)" id="t1">단위기간별 한도</button>
+<button onclick="showTab(2)" id="t2">정산 연장시간</button>
+<button onclick="showTab(3)" id="t3">정산 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 계산 흐름 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">탄력적 근로시간제 — 전체 계산 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제51조~제51조의3 | 바쁜 주에 더 일하고, 한가한 주에 덜 일하는 제도</p>
+</div>
+<svg width="100%" viewBox="0 0 680 780">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="56" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="34" text-anchor="middle">핵심 원리: 단위기간 평균 주 40시간이면 OK</text>
+<text class="ts" x="340" y="54" text-anchor="middle">어떤 주에 48시간 일해도, 다른 주에 32시간이면 평균 40h → 연장수당 없음</text>
+
+<!-- Step 1 -->
+<g class="c-amber">
+<rect x="120" y="92" width="440" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="114" text-anchor="middle" dominant-baseline="central">Step 1. 단위기간 확인</text>
+<text class="ts" x="340" y="134" text-anchor="middle" dominant-baseline="central">2주 / 3개월 / 6개월 중 어느 유형인지</text>
+<text class="ts" x="340" y="152" text-anchor="middle" dominant-baseline="central">→ "단위기간별 한도" 탭에서 상세</text>
+</g>
+<line x1="340" y1="168" x2="340" y2="198" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-teal">
+<rect x="100" y="198" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="220" text-anchor="middle" dominant-baseline="central">Step 2. 법정 총 근로시간 산정</text>
+<text style="font-size:15px;fill:#0F6E56;font-weight:500" x="340" y="252" text-anchor="middle" dominant-baseline="central">법정 총 시간 = 40h × 단위기간(주)</text>
+</g>
+<line x1="340" y1="274" x2="340" y2="304" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-purple">
+<rect x="100" y="304" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="326" text-anchor="middle" dominant-baseline="central">Step 3. 실제 총 근로시간 합산</text>
+<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="358" text-anchor="middle" dominant-baseline="central">실제 총 시간 = Σ(주별 근로시간)</text>
+</g>
+<line x1="340" y1="380" x2="340" y2="410" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4 -->
+<g class="c-coral">
+<rect x="80" y="410" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="432" text-anchor="middle" dominant-baseline="central">Step 4. 정산 연장시간</text>
+<text style="font-size:15px;fill:#993C1D;font-weight:500" x="340" y="464" text-anchor="middle" dominant-baseline="central">정산 연장 = max(0, 실제 총 − 법정 총)</text>
+</g>
+<line x1="340" y1="486" x2="340" y2="516" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-gray">
+<rect x="100" y="516" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="538" text-anchor="middle" dominant-baseline="central">Step 5. 주별 한도 초과 체크 (추가 가산)</text>
+<text class="ts" x="340" y="558" text-anchor="middle" dominant-baseline="central">개별 주가 주 최대 한도를 넘으면 추가 0.5배 가산</text>
+<text class="ts" x="340" y="576" text-anchor="middle" dominant-baseline="central">→ "정산 연장시간" 탭에서 상세</text>
+</g>
+<line x1="340" y1="592" x2="340" y2="622" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<g class="c-blue">
+<rect x="80" y="622" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="644" text-anchor="middle" dominant-baseline="central">Step 6. 수당 산출</text>
+<text class="ts" x="340" y="666" text-anchor="middle" dominant-baseline="central">연장수당 = 통상시급 × 정산 연장시간 × 1.5 (5인 이상)</text>
+<text class="ts" x="340" y="684" text-anchor="middle" dominant-baseline="central">월 환산 = 총 수당 ÷ (단위기간 주 ÷ 4.345)</text>
+</g>
+
+<!-- 예시 -->
+<rect x="60" y="720" width="560" height="44" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="746" text-anchor="middle">예: 2주 단위, 1주차 48h + 2주차 36h = 실제 84h, 법정 80h → 연장 4h</text>
+</svg>
+</div>
+
+<!-- TAB 1: 단위기간별 한도 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">단위기간별 한도 — 3가지 유형</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">단위기간이 길수록 요건이 까다로워지고, 주별 한도가 다릅니다</p>
+</div>
+
+<!-- 3 카드 비교 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem;border-top:3px solid var(--color-text-info)">
+<p style="font-size:16px;font-weight:500;margin:0 0 8px;color:var(--color-text-info)">2주 단위</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 평균: 40h</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 최대: <span style="font-weight:500;color:var(--color-text-primary)">48h</span></p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0;padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)">취업규칙으로 가능</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">노사 합의 불필요</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem;border-top:3px solid var(--color-text-warning)">
+<p style="font-size:16px;font-weight:500;margin:0 0 8px;color:var(--color-text-warning)">3개월 단위</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 평균: 40h</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 최대: <span style="font-weight:500;color:var(--color-text-primary)">52h</span></p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0;padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)">노사 서면 합의 필요</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">근로일별 시간 사전 특정</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem;border-top:3px solid var(--color-text-danger)">
+<p style="font-size:16px;font-weight:500;margin:0 0 8px;color:var(--color-text-danger)">6개월 단위</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 평균: 40h</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 최대: <span style="font-weight:500;color:var(--color-text-primary)">52h</span></p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0;padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)">노사 서면 합의 필요</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:2px 0">근로자 대표와 합의 필수</p>
+</div>
+</div>
+
+<svg width="100%" viewBox="0 0 680 300">
+<rect x="40" y="10" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="34" text-anchor="middle">핵심 차이: 주 최대 한도</text>
+<text class="ts" x="340" y="58" text-anchor="middle">2주 단위는 개별 주가 최대 48h → 그 이상이면 연장수당 발생</text>
+<text class="ts" x="340" y="78" text-anchor="middle">3개월·6개월은 개별 주가 최대 52h → 그 이상이면 추가 가산</text>
+<text class="ts" x="340" y="98" text-anchor="middle">모든 유형 공통: 단위기간 전체의 평균이 주 40h을 넘으면 정산 연장 발생</text>
+
+<rect x="40" y="130" width="600" height="80" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="152" text-anchor="middle">반도체 공장에서의 활용</text>
+<text class="ts" x="340" y="176" text-anchor="middle">반도체 생산라인은 수요 변동이 크므로 탄력근로제를 많이 활용합니다</text>
+<text class="ts" x="340" y="196" text-anchor="middle">바쁜 시기에 주 48~52시간 일하고, 한가한 시기에 주 32~36시간으로 조절</text>
+
+<rect x="40" y="230" width="600" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="250" text-anchor="middle">일반 초과근로와의 차이</text>
+<text class="ts" x="340" y="272" text-anchor="middle">일반: 주 40h 초과 시 즉시 연장수당 | 탄력: 단위기간 평균 40h 초과 시에만 연장수당</text>
+</svg>
+</div>
+
+<!-- TAB 2: 정산 연장시간 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">정산 연장시간 — 2단계 판정</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">① 단위기간 전체 정산 + ② 주별 한도 초과 추가 가산</p>
+</div>
+<svg width="100%" viewBox="0 0 680 640">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- 1단계: 전체 정산 -->
+<text class="th" x="340" y="24" text-anchor="middle">1단계: 단위기간 전체 정산</text>
+
+<g class="c-teal">
+<rect x="40" y="40" width="290" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="185" y="62" text-anchor="middle" dominant-baseline="central">법정 총 시간</text>
+<text class="ts" x="185" y="84" text-anchor="middle" dominant-baseline="central">= 40h × 단위기간(주)</text>
+<text class="ts" x="185" y="102" text-anchor="middle" dominant-baseline="central">예: 40 × 4주 = 160h</text>
+</g>
+
+<g class="c-purple">
+<rect x="350" y="40" width="290" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="495" y="62" text-anchor="middle" dominant-baseline="central">실제 총 시간</text>
+<text class="ts" x="495" y="84" text-anchor="middle" dominant-baseline="central">= Σ(주별 근로시간)</text>
+<text class="ts" x="495" y="102" text-anchor="middle" dominant-baseline="central">예: 48+36+50+34 = 168h</text>
+</g>
+
+<line x1="185" y1="116" x2="280" y2="150" class="arr" marker-end="url(#a2)"/>
+<line x1="495" y1="116" x2="400" y2="150" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-coral">
+<rect x="140" y="150" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="170" text-anchor="middle" dominant-baseline="central">정산 연장 = max(0, 168 − 160) = 8h</text>
+<text class="ts" x="340" y="190" text-anchor="middle" dominant-baseline="central">이 8시간에 대해 1.5배 수당</text>
+</g>
+
+<!-- 구분선 -->
+<line x1="40" y1="230" x2="640" y2="230" stroke="var(--b)" stroke-width="0.5" stroke-dasharray="4 4"/>
+
+<!-- 2단계: 주별 한도 -->
+<text class="th" x="340" y="256" text-anchor="middle">2단계: 주별 한도 초과 체크 (추가 가산)</text>
+
+<rect x="40" y="272" width="600" height="220" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="296" text-anchor="middle">예: 3개월 단위 (주 최대 52h), 4주 중 3주차가 54h였다면</text>
+
+<!-- 주별 바 -->
+<text class="ts" x="70" y="328">1주차</text>
+<rect x="120" y="316" width="240" height="20" rx="4" fill="#85B7EB" opacity="0.4"/>
+<text class="ts" x="370" y="330">48h ✓</text>
+
+<text class="ts" x="70" y="358">2주차</text>
+<rect x="120" y="346" width="180" height="20" rx="4" fill="#85B7EB" opacity="0.4"/>
+<text class="ts" x="310" y="360">36h ✓</text>
+
+<text class="ts" x="70" y="388">3주차</text>
+<rect x="120" y="376" width="260" height="20" rx="4" fill="#85B7EB" opacity="0.4"/>
+<rect x="370" y="376" width="10" height="20" rx="2" fill="#E24B4A" opacity="0.6"/>
+<text style="font-size:12px;fill:#A32D2D;font-weight:500" x="396" y="390" text-anchor="start">54h — 2h 초과!</text>
+
+<text class="ts" x="70" y="418">4주차</text>
+<rect x="120" y="406" width="170" height="20" rx="4" fill="#85B7EB" opacity="0.4"/>
+<text class="ts" x="300" y="420">34h ✓</text>
+
+<!-- 52h 기준선 -->
+<line x1="380" y1="310" x2="380" y2="432" stroke="#A32D2D" stroke-width="1" stroke-dasharray="4 4"/>
+<text style="font-size:11px;fill:#A32D2D;font-weight:500" x="384" y="444">52h 한도</text>
+
+<text class="ts" x="340" y="470" text-anchor="middle">3주차의 초과 2시간: 추가 0.5배 가산 (한도 초과분)</text>
+<text class="ts" x="340" y="486" text-anchor="middle">+ 전체 정산 연장 8시간: 1.5배 수당</text>
+
+<!-- 최종 수당 구조 -->
+<g class="c-blue">
+<rect x="60" y="516" width="560" height="100" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="538" text-anchor="middle" dominant-baseline="central">최종 수당 구조</text>
+<text class="ts" x="340" y="564" text-anchor="middle" dominant-baseline="central">정산 연장수당 = 통상시급 × 정산 연장시간 × 1.5</text>
+<text class="ts" x="340" y="584" text-anchor="middle" dominant-baseline="central">+ 주별 한도 초과분 = 통상시급 × 초과시간 × 추가 0.5</text>
+<text class="ts" x="340" y="604" text-anchor="middle" dominant-baseline="central">월 환산 = 총 수당 ÷ (단위기간 주 ÷ 4.345)</text>
+</g>
+</svg>
+</div>
+
+<!-- TAB 3: 시뮬레이션 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">탄력근로시간제 정산 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">주별 근로시간을 입력하면 정산 연장·한도 초과·수당을 실시간 계산합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">통상시급</label>
+<input type="range" min="8000" max="30000" value="12000" step="500" id="wage" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="wageOut">12,000원</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">단위기간</label>
+<button id="btn2w" onclick="setPeriod(2);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">2주</button>
+<button id="btn4w" onclick="setPeriod(4);calc()">4주(≈1개월)</button>
+<button id="btn8w" onclick="setPeriod(8);calc()">8주(≈2개월)</button>
+<button id="btn12w" onclick="setPeriod(12);calc()">12주(3개월)</button>
+</div>
+</div>
+
+<!-- 주별 입력 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 10px;color:var(--color-text-primary)">주별 근로시간 입력</p>
+<div id="weekInputs" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
+<!-- 주별 분포 차트 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">주별 근로시간 분포</p>
+<div style="position:relative;height:160px"><canvas id="chart"></canvas></div>
+</div>
+
+<!-- 정산 결과 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">법정 총 시간</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="legalH">0h</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="legalNote"></p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">실제 총 시간</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="actualH">0h</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0" id="actualNote"></p>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">정산 연장시간</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-warning)" id="overH">0h</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">주별 한도 초과</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-danger)" id="weekOver">0h</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">연장수당 합계</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="totalPay">0원</p>
+</div>
+</div>
+
+<!-- 판정 -->
+<div id="result" style="border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
+
+<!-- 일반 초과근로와 비교 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">탄력근로 vs 일반 초과근로 비교</p>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:8px">
+<div style="border-radius:var(--border-radius-md);padding:10px;background:var(--color-background-info)">
+<p style="font-size:12px;color:var(--color-text-info);margin:0 0 4px">탄력근로제 적용 시</p>
+<p style="font-size:16px;font-weight:500;color:var(--color-text-info);margin:0" id="flexPay">0원</p>
+</div>
+<div style="border-radius:var(--border-radius-md);padding:10px;background:var(--color-background-warning)">
+<p style="font-size:12px;color:var(--color-text-warning);margin:0 0 4px">일반 초과근로였다면</p>
+<p style="font-size:16px;font-weight:500;color:var(--color-text-warning);margin:0" id="normalPay">0원</p>
+</div>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0" id="savingNote"></p>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var period=2, myChart=null;
+var MAX_WEEKLY={2:48,4:52,8:52,12:52};
+function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+function setPeriod(p){period=p;setBtn('btn2w',p===2);setBtn('btn4w',p===4);setBtn('btn8w',p===8);setBtn('btn12w',p===12);buildInputs();}
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+
+function buildInputs(){
+  var container=document.getElementById('weekInputs');
+  var defaults=[48,36,50,34,44,38,46,32,48,36,42,38];
+  var html='';
+  for(var i=0;i<period;i++){
+    var def=i<defaults.length?defaults[i]:40;
+    html+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;color:var(--color-text-secondary);min-width:44px">'+(i+1)+'주차</span><input type="range" min="20" max="60" value="'+def+'" step="1" id="w'+i+'" oninput="calc()" style="flex:1"><span style="font-size:13px;font-weight:500;min-width:44px;text-align:right" id="wo'+i+'">'+def+'h</span></div>';
+  }
+  container.innerHTML=html;
+  calc();
+}
+
+function calc(){
+  var w=+document.getElementById('wage').value;
+  document.getElementById('wageOut').textContent=fmt(w)+'원';
+
+  var legalTotal=40*period;
+  var maxWeekly=MAX_WEEKLY[period]||52;
+  var weeks=[];
+  var actualTotal=0;
+  var weeklyOverTotal=0;
+
+  for(var i=0;i<period;i++){
+    var el=document.getElementById('w'+i);
+    if(!el)continue;
+    var v=+el.value;
+    document.getElementById('wo'+i).textContent=v+'h';
+    weeks.push(v);
+    actualTotal+=v;
+    if(v>maxWeekly)weeklyOverTotal+=(v-maxWeekly);
+  }
+
+  var settleOver=Math.max(0,actualTotal-legalTotal);
+  var avg=period>0?actualTotal/period:0;
+
+  document.getElementById('legalH').textContent=legalTotal+'h';
+  document.getElementById('legalNote').textContent='40h × '+period+'주';
+  document.getElementById('actualH').textContent=actualTotal+'h';
+  document.getElementById('actualNote').textContent='평균 주 '+avg.toFixed(1)+'h';
+  document.getElementById('overH').textContent=settleOver+'h';
+  document.getElementById('weekOver').textContent=weeklyOverTotal+'h';
+
+  var settlePay=w*settleOver*1.5;
+  var weeklyOverPay=w*weeklyOverTotal*0.5;
+  var totalPay=settlePay+weeklyOverPay;
+  document.getElementById('totalPay').textContent=fmt(totalPay)+'원';
+
+  // 판정
+  var rEl=document.getElementById('result');
+  if(settleOver===0&&weeklyOverTotal===0){
+    rEl.style.background='var(--color-background-success)';rEl.style.color='var(--color-text-success)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">✓ 법정 범위 내 — 연장수당 없음</p><p style="margin:0;font-size:13px">실제 '+actualTotal+'h ≤ 법정 '+legalTotal+'h, 모든 주가 '+maxWeekly+'h 이내</p>';
+  } else if(weeklyOverTotal>0){
+    rEl.style.background='var(--color-background-danger)';rEl.style.color='var(--color-text-danger)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">⚠ 주별 한도 초과 발생</p><p style="margin:0;font-size:13px">정산 연장 '+settleOver+'h (×1.5) + 주별 한도 초과 '+weeklyOverTotal+'h (추가 ×0.5) = '+fmt(totalPay)+'원</p>';
+  } else {
+    rEl.style.background='var(--color-background-warning)';rEl.style.color='var(--color-text-warning)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">정산 연장 발생</p><p style="margin:0;font-size:13px">실제 '+actualTotal+'h − 법정 '+legalTotal+'h = '+settleOver+'h 연장 → '+fmt(settlePay)+'원</p>';
+  }
+
+  // 일반 초과근로 비교
+  var normalOver=0;
+  for(var j=0;j<weeks.length;j++){if(weeks[j]>40)normalOver+=(weeks[j]-40);}
+  var normalPay=w*normalOver*1.5;
+  document.getElementById('flexPay').textContent=fmt(totalPay)+'원';
+  document.getElementById('normalPay').textContent=fmt(normalPay)+'원';
+  var diff=normalPay-totalPay;
+  document.getElementById('savingNote').textContent=diff>0?'탄력근로제로 사업주 수당 절감: '+fmt(diff)+'원 (근로자 입장에서는 그만큼 덜 받음)':diff<0?'이 배분에서는 탄력근로가 오히려 수당이 더 많음 (주별 한도 초과 때문)':'동일한 수당';
+
+  // 산식
+  var fl=['<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>'];
+  fl.push('<p style="margin:2px 0">법정: 40h × '+period+'주 = '+legalTotal+'h</p>');
+  fl.push('<p style="margin:2px 0">실제: '+weeks.join('h + ')+'h = '+actualTotal+'h</p>');
+  fl.push('<p style="margin:2px 0">정산 연장: max(0, '+actualTotal+' − '+legalTotal+') = '+settleOver+'h → '+fmt(w)+' × '+settleOver+' × 1.5 = '+fmt(settlePay)+'원</p>');
+  if(weeklyOverTotal>0)fl.push('<p style="margin:2px 0;color:var(--color-text-danger)">주별 한도('+maxWeekly+'h) 초과: '+weeklyOverTotal+'h → '+fmt(w)+' × '+weeklyOverTotal+' × 0.5 = '+fmt(weeklyOverPay)+'원</p>');
+  fl.push('<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">총 수당: '+fmt(totalPay)+'원</p>');
+  document.getElementById('formula').innerHTML=fl.join('');
+
+  drawChart(weeks,maxWeekly);
+}
+
+function drawChart(weeks,maxW){
+  if(myChart)myChart.destroy();
+  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
+  var txtC=dark?'#9c9a92':'#73726c';
+
+  var labels=[],bgC=[];
+  for(var i=0;i<weeks.length;i++){
+    labels.push((i+1)+'주');
+    bgC.push(weeks[i]>maxW?'rgba(226,75,74,0.5)':weeks[i]>40?'rgba(251,191,36,0.4)':'rgba(55,138,221,0.4)');
+  }
+
+  var ctx=document.getElementById('chart').getContext('2d');
+  myChart=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[
+      {label:'주별 근로시간',data:weeks,backgroundColor:bgC,borderRadius:3,barPercentage:0.7},
+      {label:'40h 기준',data:Array(weeks.length).fill(40),type:'line',borderColor:'#378ADD',borderWidth:1.5,borderDash:[4,4],pointRadius:0,fill:false},
+      {label:maxW+'h 한도',data:Array(weeks.length).fill(maxW),type:'line',borderColor:'#A32D2D',borderWidth:1.5,borderDash:[4,4],pointRadius:0,fill:false}
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,boxWidth:10,padding:6}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC}},
+        y:{grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,stepSize:10},min:20,max:60}
+      }
+    }
+  });
+}
+buildInputs();
+
+function showTab(n){
+  for(var i=0;i<4;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===3){buildInputs();}
+}
+</script>
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

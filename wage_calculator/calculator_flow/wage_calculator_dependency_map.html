@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>임금계산기 의존관계 전체 구조</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #fff; padding: 2rem; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a1a; color: #e0e0e0; }
+    .legend-box { background: #2a2a2a !important; border-color: #444 !important; }
+  }
+  h1 { font-size: 20px; font-weight: 600; text-align: center; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; text-align: center; margin-bottom: 24px; }
+  svg { display: block; margin: 0 auto; max-width: 720px; }
+  .node { cursor: pointer; }
+  .node:hover rect { opacity: 0.85; }
+  /* Color classes for light mode */
+  .fill-coral rect { fill: #FAECE7; stroke: #993C1D; }
+  .fill-coral .title { fill: #712B13; }
+  .fill-coral .sub { fill: #993C1D; }
+  .fill-teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+  .fill-teal .title { fill: #085041; }
+  .fill-teal .sub { fill: #0F6E56; }
+  .fill-purple rect { fill: #EEEDFE; stroke: #534AB7; }
+  .fill-purple .title { fill: #3C3489; }
+  .fill-purple .sub { fill: #534AB7; }
+  .fill-blue rect { fill: #E6F1FB; stroke: #185FA5; }
+  .fill-blue .title { fill: #0C447C; }
+  .fill-blue .sub { fill: #185FA5; }
+  .fill-amber rect { fill: #FAEEDA; stroke: #854F0B; }
+  .fill-amber .title { fill: #633806; }
+  .fill-amber .sub { fill: #854F0B; }
+  .fill-gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+  .fill-gray .title { fill: #2C2C2A; }
+  .fill-gray .sub { fill: #5F5E5A; }
+  .arr { stroke: #888; stroke-width: 1.5; fill: none; }
+  .tier-label { font-size: 12px; fill: #999; font-weight: 500; }
+  .tier-line { stroke: #ddd; stroke-width: 1; }
+  .legend-box { fill: #f5f5f0; stroke: #ddd; }
+  .legend-text { font-size: 12px; fill: #666; }
+  .heading { font-size: 14px; font-weight: 600; text-anchor: middle; }
+  .sub-heading { font-size: 12px; text-anchor: middle; }
+  @media (prefers-color-scheme: dark) {
+    .fill-coral rect { fill: #4A1B0C; stroke: #F0997B; }
+    .fill-coral .title { fill: #F5C4B3; }
+    .fill-coral .sub { fill: #F0997B; }
+    .fill-teal rect { fill: #04342C; stroke: #5DCAA5; }
+    .fill-teal .title { fill: #9FE1CB; }
+    .fill-teal .sub { fill: #5DCAA5; }
+    .fill-purple rect { fill: #26215C; stroke: #AFA9EC; }
+    .fill-purple .title { fill: #CECBF6; }
+    .fill-purple .sub { fill: #AFA9EC; }
+    .fill-blue rect { fill: #042C53; stroke: #85B7EB; }
+    .fill-blue .title { fill: #B5D4F4; }
+    .fill-blue .sub { fill: #85B7EB; }
+    .fill-amber rect { fill: #412402; stroke: #FAC775; }
+    .fill-amber .title { fill: #FAEEDA; }
+    .fill-amber .sub { fill: #FAC775; }
+    .fill-gray rect { fill: #2C2C2A; stroke: #B4B2A9; }
+    .fill-gray .title { fill: #D3D1C7; }
+    .fill-gray .sub { fill: #B4B2A9; }
+    .arr { stroke: #777; }
+    .tier-label { fill: #777; }
+    .tier-line { stroke: #444; }
+    .legend-box { fill: #2a2a2a; stroke: #444; }
+    .legend-text { fill: #999; }
+    .heading { fill: #e0e0e0; }
+    .sub-heading { fill: #aaa; }
+  }
+  /* ── Responsive ── */
+  @media(max-width:720px){
+    body{padding:1rem 0.75rem;}
+    svg{max-width:100%;}
+    h1{font-size:17px;}
+    .subtitle{font-size:12px;}
+    nav div{grid-template-columns:repeat(2,1fr)!important;}
+  }
+  @media(max-width:480px){
+    body{padding:0.75rem 0.5rem;}
+    h1{font-size:15px;}
+    nav h2{font-size:14px!important;}
+    nav a{font-size:13px!important;}
+  }
+</style>
+</head>
+<body>
+<h1>임금계산기 의존관계 전체 구조</h1>
+<p class="subtitle">26개 계산기의 의존관계와 계층 구조 — 각 노드를 클릭하면 상세 계산과정으로 이동</p>
+
+<svg width="100%" viewBox="0 0 680 820" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- TIER 0: Foundation -->
+<text class="tier-label" x="46" y="28">기초</text>
+<line class="tier-line" x1="40" y1="32" x2="640" y2="32"/>
+
+<a href="ordinary_wage_calculation_flow.html"><g class="node fill-coral">
+<rect x="230" y="44" width="220" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="340" y="64" dominant-baseline="central">통상임금</text>
+<text class="sub sub-heading" x="340" y="84" dominant-baseline="central">모든 수당의 기초 (시급 환산)</text>
+</g></a>
+
+<!-- TIER 1: Direct dependents -->
+<text class="tier-label" x="46" y="128">수당</text>
+<line class="tier-line" x1="40" y1="132" x2="640" y2="132"/>
+
+<line x1="260" y1="100" x2="105" y2="150" class="arr" marker-end="url(#arrow)"/>
+<line x1="310" y1="100" x2="250" y2="150" class="arr" marker-end="url(#arrow)"/>
+<line x1="370" y1="100" x2="415" y2="150" class="arr" marker-end="url(#arrow)"/>
+<line x1="420" y1="100" x2="560" y2="150" class="arr" marker-end="url(#arrow)"/>
+
+<a href="overtime_night_holiday_pay_calc.html"><g class="node fill-teal">
+<rect x="40" y="150" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="105" y="170" dominant-baseline="central">연장·야간·휴일</text>
+<text class="sub sub-heading" x="105" y="188" dominant-baseline="central">가산수당</text>
+</g></a>
+
+<a href="weekly_holiday_pay_calc.html"><g class="node fill-teal">
+<rect x="185" y="150" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="250" y="170" dominant-baseline="central">주휴수당</text>
+<text class="sub sub-heading" x="250" y="188" dominant-baseline="central">주 15h↑ 개근시</text>
+</g></a>
+
+<a href="annual_leave_pay_calc.html"><g class="node fill-teal">
+<rect x="350" y="150" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="415" y="170" dominant-baseline="central">연차수당</text>
+<text class="sub sub-heading" x="415" y="188" dominant-baseline="central">미사용 연차 정산</text>
+</g></a>
+
+<a href="dismissal_notice_pay_calc.html"><g class="node fill-teal">
+<rect x="495" y="150" width="130" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="560" y="170" dominant-baseline="central">해고예고수당</text>
+<text class="sub sub-heading" x="560" y="188" dominant-baseline="central">30일분 보상</text>
+</g></a>
+
+<!-- TIER 2: 평균임금 -->
+<text class="tier-label" x="46" y="238">평균</text>
+<line class="tier-line" x1="40" y1="242" x2="640" y2="242"/>
+
+<line x1="340" y1="100" x2="340" y2="254" class="arr" marker-end="url(#arrow)"/>
+
+<a href="average_wage_calculation_flow.html"><g class="node fill-coral">
+<rect x="230" y="254" width="220" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="340" y="274" dominant-baseline="central">평균임금</text>
+<text class="sub sub-heading" x="340" y="294" dominant-baseline="central">3개월·1년·통상 중 유리한 것</text>
+</g></a>
+
+<!-- TIER 3: Dependents of 평균임금 -->
+<text class="tier-label" x="46" y="338">퇴직·보상</text>
+<line class="tier-line" x1="40" y1="342" x2="640" y2="342"/>
+
+<line x1="280" y1="310" x2="130" y2="354" class="arr" marker-end="url(#arrow)"/>
+<line x1="340" y1="310" x2="340" y2="354" class="arr" marker-end="url(#arrow)"/>
+<line x1="400" y1="310" x2="540" y2="354" class="arr" marker-end="url(#arrow)"/>
+
+<a href="severance_pay_calculation_flow.html"><g class="node fill-purple">
+<rect x="55" y="354" width="150" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="130" y="374" dominant-baseline="central">퇴직금</text>
+<text class="sub sub-heading" x="130" y="392" dominant-baseline="central">1년↑ 근속시 발생</text>
+</g></a>
+
+<a href="shutdown_allowance_calc.html"><g class="node fill-purple">
+<rect x="265" y="354" width="150" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="340" y="374" dominant-baseline="central">휴업수당</text>
+<text class="sub sub-heading" x="340" y="392" dominant-baseline="central">평균임금의 70%</text>
+</g></a>
+
+<a href="unemployment_benefit_calc.html"><g class="node fill-purple">
+<rect x="465" y="354" width="150" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="540" y="374" dominant-baseline="central">실업급여</text>
+<text class="sub sub-heading" x="540" y="392" dominant-baseline="central">평균임금의 60%</text>
+</g></a>
+
+<!-- TIER 4: Tax & Insurance -->
+<text class="tier-label" x="46" y="438">세금·보험</text>
+<line class="tier-line" x1="40" y1="442" x2="640" y2="442"/>
+
+<line x1="130" y1="410" x2="130" y2="454" class="arr" marker-end="url(#arrow)"/>
+
+<a href="retirement_income_tax_calc.html"><g class="node fill-blue">
+<rect x="40" y="454" width="180" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="130" y="474" dominant-baseline="central">퇴직소득세</text>
+<text class="sub sub-heading" x="130" y="492" dominant-baseline="central">환산급여 → 누진세율</text>
+</g></a>
+
+<a href="insurance_income_tax_calc.html"><g class="node fill-blue">
+<rect x="250" y="454" width="180" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="340" y="474" dominant-baseline="central">4대보험·소득세</text>
+<text class="sub sub-heading" x="340" y="492" dominant-baseline="central">실수령액 산출</text>
+</g></a>
+
+<a href="employer_insurance_burden_calc.html"><g class="node fill-blue">
+<rect x="460" y="454" width="180" height="56" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="550" y="474" dominant-baseline="central">사업주 4대보험</text>
+<text class="sub sub-heading" x="550" y="492" dominant-baseline="central">총 인건비 산출</text>
+</g></a>
+
+<!-- TIER 5: Special -->
+<text class="tier-label" x="46" y="538">특수</text>
+<line class="tier-line" x1="40" y1="542" x2="640" y2="542"/>
+
+<a href="comprehensive_wage_reverse_calc.html"><g class="node fill-amber">
+<rect x="40" y="554" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="105" y="576" dominant-baseline="central">포괄임금 역산</text>
+</g></a>
+
+<a href="minimum_wage_verification_flow.html"><g class="node fill-amber">
+<rect x="185" y="554" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="250" y="576" dominant-baseline="central">최저임금 검증</text>
+</g></a>
+
+<a href="parental_leave_benefit_calculator.html"><g class="node fill-amber">
+<rect x="330" y="554" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="395" y="576" dominant-baseline="central">육아휴직급여</text>
+</g></a>
+
+<a href="maternity_leave_benefit_flow.html"><g class="node fill-amber">
+<rect x="475" y="554" width="155" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="552" y="576" dominant-baseline="central">출산휴가급여</text>
+</g></a>
+
+<a href="wage_arrears_interest_calc.html"><g class="node fill-amber">
+<rect x="40" y="612" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="105" y="634" dominant-baseline="central">임금체불이자</text>
+</g></a>
+
+<a href="industrial_accident_compensation_calc.html"><g class="node fill-amber">
+<rect x="185" y="612" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="250" y="634" dominant-baseline="central">산재보상금</text>
+</g></a>
+
+<a href="eitc_calculation_flow.html"><g class="node fill-amber">
+<rect x="330" y="612" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="395" y="634" dominant-baseline="central">근로장려금</text>
+</g></a>
+
+<g class="node fill-amber">
+<rect x="475" y="612" width="155" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="552" y="634" dominant-baseline="central">상시근로자 수</text>
+</g>
+
+<!-- Remaining special calculators -->
+<a href="compensatory_leave_calc.html"><g class="node fill-gray">
+<rect x="40" y="670" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="105" y="692" dominant-baseline="central">보상휴가</text>
+</g></a>
+
+<a href="flexible_work_hours_calc.html"><g class="node fill-gray">
+<rect x="185" y="670" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="250" y="692" dominant-baseline="central">탄력근로시간</text>
+</g></a>
+
+<a href="retirement_pension_db_dc_calc.html"><g class="node fill-gray">
+<rect x="330" y="670" width="130" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="395" y="692" dominant-baseline="central">퇴직연금</text>
+</g></a>
+
+<a href="mid_month_proration_calc.html"><g class="node fill-gray">
+<rect x="475" y="670" width="155" height="44" rx="8" stroke-width="0.5"/>
+<text class="title heading" x="552" y="692" dominant-baseline="central">중도입사 일할</text>
+</g></a>
+
+<!-- Legend -->
+<rect class="legend-box" x="40" y="740" width="600" height="60" rx="8" stroke-width="0.5"/>
+<circle cx="70" cy="762" r="6" fill="#F0997B"/>
+<text class="legend-text" x="82" y="766">기초 (다른 계산기의 입력)</text>
+<circle cx="70" cy="784" r="6" fill="#5DCAA5"/>
+<text class="legend-text" x="82" y="788">수당 (통상임금 기반)</text>
+<circle cx="300" cy="762" r="6" fill="#AFA9EC"/>
+<text class="legend-text" x="312" y="766">퇴직·보상 (평균임금 기반)</text>
+<circle cx="300" cy="784" r="6" fill="#85B7EB"/>
+<text class="legend-text" x="312" y="788">세금·보험</text>
+<circle cx="510" cy="762" r="6" fill="#FAC775"/>
+<text class="legend-text" x="522" y="766">특수 계산기</text>
+<circle cx="510" cy="784" r="6" fill="#D3D1C7"/>
+<text class="legend-text" x="522" y="788">기타</text>
+</svg>
+
+<nav style="max-width:720px;margin:24px auto 0;border-top:1px solid #ddd;padding-top:20px;">
+<h2 style="font-size:16px;font-weight:600;margin-bottom:12px;">전체 계산기 목록</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;font-size:14px;">
+<a href="ordinary_wage_calculation_flow.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">통상임금 계산과정</a>
+<a href="overtime_night_holiday_pay_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">연장·야간·휴일수당</a>
+<a href="weekly_holiday_pay_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">주휴수당</a>
+<a href="annual_leave_pay_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">연차수당</a>
+<a href="dismissal_notice_pay_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">해고예고수당</a>
+<a href="average_wage_calculation_flow.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">평균임금</a>
+<a href="severance_pay_calculation_flow.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">퇴직금</a>
+<a href="shutdown_allowance_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">휴업수당</a>
+<a href="unemployment_benefit_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">실업급여</a>
+<a href="retirement_income_tax_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">퇴직소득세</a>
+<a href="insurance_income_tax_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">4대보험·소득세</a>
+<a href="employer_insurance_burden_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">사업주 4대보험</a>
+<a href="comprehensive_wage_reverse_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">포괄임금제 역산</a>
+<a href="minimum_wage_verification_flow.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">최저임금 검증</a>
+<a href="parental_leave_benefit_calculator.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">육아휴직급여</a>
+<a href="maternity_leave_benefit_flow.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">출산전후휴가급여</a>
+<a href="wage_arrears_interest_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">임금체불 지연이자</a>
+<a href="industrial_accident_compensation_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">산재보상금</a>
+<a href="eitc_calculation_flow.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">근로장려금(EITC)</a>
+<a href="compensatory_leave_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">보상휴가</a>
+<a href="flexible_work_hours_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">탄력적 근로시간제</a>
+<a href="retirement_pension_db_dc_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">퇴직연금(DB/DC)</a>
+<a href="mid_month_proration_calc.html" style="color:#185FA5;text-decoration:none;padding:4px 0;">중도입사 일할계산</a>
+</div>
+</nav>
+</body>
+</html>

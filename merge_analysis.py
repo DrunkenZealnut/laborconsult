@@ -13,9 +13,10 @@
 import os
 import json
 import argparse
+from pathlib import Path
 from collections import Counter
 
-BASE_DIR = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl"
+BASE_DIR = str(Path(__file__).parent)
 JSONL_1  = os.path.join(BASE_DIR, "analysis_qna.jsonl")
 JSONL_2  = os.path.join(BASE_DIR, "analysis_qna_2.jsonl")
 JSONL_ALL = os.path.join(BASE_DIR, "analysis_qna_all.jsonl")

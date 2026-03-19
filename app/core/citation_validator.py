@@ -266,3 +266,77 @@ def correct_hallucinated_citations(
             logger.warning("OpenAI 판례 교정 실패: %s", e)
 
     return None
+
+
+# ── 마이크로 퇴고: 환각 교정 후 문맥 자연스러움 보정 ─────────────────────────
+
+MICRO_POLISH_MODEL = "claude-haiku-4-5-20251001"
+MICRO_POLISH_TIMEOUT = 2.0  # 초
+MICRO_POLISH_THRESHOLD = 3  # 환각 N건 이상 시 발동
+
+_MICRO_POLISH_SYSTEM = (
+    "당신은 한국어 문장 교정 도우미입니다. "
+    "판례 번호가 제거된 문장의 문맥을 자연스럽게 다듬어주세요.\n\n"
+    "절대 규칙:\n"
+    "1. 사실 정보(법조문, 금액, 날짜, 기준)를 절대 변경하지 마세요.\n"
+    "2. 접속사, 연결어, 지시어만 수정하여 문맥을 매끄럽게 하세요.\n"
+    "3. 마크다운 형식을 유지하세요.\n"
+    "4. 새로운 판례 번호나 출처를 추가하지 마세요.\n"
+    "5. 수정된 전체 텍스트만 출력하세요."
+)
+
+
+def micro_polish(
+    corrected_text: str,
+    hallucinated_count: int,
+    anthropic_client,
+) -> str | None:
+    """환각 교정 후 문맥 자연스러움 보정.
+
+    환각이 MICRO_POLISH_THRESHOLD건 이상일 때만 발동한다.
+    Claude Haiku로 접속사/연결어만 수정하여 문맥을 매끄럽게 보정.
+
+    Args:
+        corrected_text: 환각 판례 제거 후 텍스트
+        hallucinated_count: 제거된 환각 인용 수
+        anthropic_client: Anthropic 클라이언트
+
+    Returns:
+        퇴고된 텍스트. 실패 또는 불필요 시 None.
+    """
+    if hallucinated_count < MICRO_POLISH_THRESHOLD:
+        return None
+
+    if not anthropic_client:
+        return None
+
+    try:
+        resp = anthropic_client.messages.create(
+            model=MICRO_POLISH_MODEL,
+            max_tokens=3000,
+            temperature=0,
+            system=_MICRO_POLISH_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"{hallucinated_count}개의 판례 번호가 제거되어 "
+                    "문맥이 어색할 수 있는 텍스트입니다. "
+                    "접속사와 연결어만 수정하여 자연스럽게 다듬어주세요.\n\n"
+                    f"{corrected_text}"
+                ),
+            }],
+            timeout=MICRO_POLISH_TIMEOUT,
+        )
+        polished = resp.content[0].text.strip()
+        if polished and len(polished) > len(corrected_text) * 0.7:
+            logger.info(
+                "마이크로 퇴고 완료: %d건 환각 교정 후 문맥 보정",
+                hallucinated_count,
+            )
+            return polished
+        logger.warning("마이크로 퇴고 결과 길이 이상 — 원본 유지")
+        return None
+
+    except Exception as e:
+        logger.warning("마이크로 퇴고 실패 (정규식 교정 결과 유지): %s", e)
+        return None

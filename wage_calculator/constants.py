@@ -96,8 +96,24 @@ ELEMENTARY_OCCUPATION_KEYWORDS = [
 ]
 
 # ── 특수고용직(노무제공자) 사회보험 (고용보험법 제77조의6, 산재보험법 제126조의2) ──
-PLATFORM_EMP_INSURANCE_RATE   = 0.008     # 고용보험 노무제공자 부담 0.8%
-PLATFORM_EMP_INSURANCE_BIZ    = 0.008     # 고용보험 사업주 부담 0.8%
+# 연도별 고용보험 요율 (노무제공자 = 사업주 동일, 고용보험법 시행령 개정)
+PLATFORM_EMP_INSURANCE_RATES: dict[int, float] = {
+    2024: 0.008,   # 0.8%
+    2025: 0.009,   # 0.9% (고용보험법 시행령 개정, 일반 근로자와 동일)
+    2026: 0.009,   # 0.9%
+}
+
+
+def get_platform_emp_insurance_rate(year: int) -> float:
+    """연도별 특수고용직 고용보험 요율 반환"""
+    if year in PLATFORM_EMP_INSURANCE_RATES:
+        return PLATFORM_EMP_INSURANCE_RATES[year]
+    return PLATFORM_EMP_INSURANCE_RATES[max(PLATFORM_EMP_INSURANCE_RATES.keys())]
+
+
+# 하위 호환 상수 (최신 연도 기준)
+PLATFORM_EMP_INSURANCE_RATE   = 0.009     # 고용보험 노무제공자 부담 0.9% (2025~)
+PLATFORM_EMP_INSURANCE_BIZ    = 0.009     # 고용보험 사업주 부담 0.9% (2025~)
 PLATFORM_UNEMPLOYMENT_UPPER: dict[int, int] = {
     2024: 66_000, 2025: 66_000, 2026: 66_000,
 }

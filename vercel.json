@@ -16,6 +16,7 @@
       }
     },
     { "src": "/admin", "dest": "/public/admin.html" },
+    { "src": "/board", "dest": "/public/board.html" },
     { "src": "/calculators", "dest": "/public/calculators.html" },
     { "src": "/(.*\\..*)", "dest": "/public/$1" },
     { "src": "/", "dest": "/public/index.html" }

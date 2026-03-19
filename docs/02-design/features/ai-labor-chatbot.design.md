@@ -274,9 +274,9 @@ class AnalysisResult(BaseModel):
 
 | Pinecone 인덱스 | 내용 | 주요 메타데이터 |
 |-----------------|------|----------------|
-| `nodongok-bestqna` | BEST Q&A 274건 | post_id, title, date, date_num, views, url, section, chunk_text |
-| `nodongok-bestqna-2025` | 2025년 Q&A | + year |
-| `nodongok-imgum` | 임금 게시글 (법령/판례 포함) | + board |
+| `laborconsult-bestqna` | BEST Q&A 274건 | post_id, title, date, date_num, views, url, section, chunk_text |
+| `laborconsult-bestqna-2025` | 2025년 Q&A | + year |
+| `laborconsult-imgum` | 임금 게시글 (법령/판례 포함) | + board |
 
 ### 4.2 검색 전략: Q&A 검색 vs 법령/판례 검색
 
@@ -286,7 +286,7 @@ class AnalysisResult(BaseModel):
   ├─ ③ Q&A 검색: 질문 원문 → 임베딩 → Pinecone 유사도 검색
   │     목적: 유사 상담 사례 찾기
   │     쿼리: 사용자 질문 그대로
-  │     인덱스: nodongok-bestqna, nodongok-bestqna-2025
+  │     인덱스: laborconsult-bestqna, laborconsult-bestqna-2025
   │
   └─ ④ 법령/판례 검색: 법조문 키워드 → 임베딩 → Pinecone 유사도 검색
         목적: 관련 법령 조문, 판례 내용 찾기
@@ -428,9 +428,9 @@ class AppConfig:
         pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
         # Pinecone 인덱스 연결
-        idx_bestqna = pc.Index("nodongok-bestqna")
-        idx_bestqna_2025 = pc.Index("nodongok-bestqna-2025")
-        idx_imgum = pc.Index("nodongok-imgum")
+        idx_bestqna = pc.Index("laborconsult-bestqna")
+        idx_bestqna_2025 = pc.Index("laborconsult-bestqna-2025")
+        idx_imgum = pc.Index("laborconsult-imgum")
 
         return cls(
             openai_client=openai_client,

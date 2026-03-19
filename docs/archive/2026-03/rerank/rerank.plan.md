@@ -2,7 +2,7 @@
 
 > **Summary**: Cohere Rerank로 Pinecone 벡터 검색 결과 정밀도(precision) 향상
 >
-> **Project**: nodongokboardcrawl (노동OK 노동법 Q&A 챗봇)
+> **Project**: laborconsult (노동OK 노동법 Q&A 챗봇)
 > **Author**: Claude
 > **Date**: 2026-03-16
 > **Status**: Draft

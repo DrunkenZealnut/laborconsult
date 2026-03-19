@@ -6,7 +6,7 @@
   1. metadata_2025.json 로드 (없으면 generate_metadata_2025.py 자동 실행)
   2. 각 markdown 파일을 섹션 단위로 청킹
   3. OpenAI text-embedding-3-small 로 임베딩 생성
-  4. Pinecone에 배치 upsert (인덱스: nodongok-bestqna-2025)
+  4. Pinecone에 배치 upsert (인덱스: laborconsult-bestqna-2025)
   5. metadata_2025.json의 chunk_count, upload_status 갱신
 
 사용법:
@@ -255,7 +255,7 @@ def main():
 
     openai_key   = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
-    index_name   = os.getenv("PINECONE_INDEX_NAME_2025", "nodongok-bestqna-2025")
+    index_name   = os.getenv("PINECONE_INDEX_NAME_2025", "laborconsult-bestqna-2025")
 
     if not openai_key:
         sys.exit("[오류] OPENAI_API_KEY가 설정되지 않았습니다.")

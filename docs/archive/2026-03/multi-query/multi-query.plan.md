@@ -2,7 +2,7 @@
 
 > **Summary**: LLM 기반 쿼리 분해로 Pinecone RAG 검색 품질 향상
 >
-> **Project**: nodongokboardcrawl (노동OK 노동법 Q&A 챗봇)
+> **Project**: laborconsult (노동OK 노동법 Q&A 챗봇)
 > **Author**: Claude
 > **Date**: 2026-03-16
 > **Status**: Draft

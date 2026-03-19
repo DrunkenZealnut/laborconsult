@@ -2,13 +2,14 @@
 """잔여 56개 파일 처리: 중복 삭제 + 신규 업로드 + 카테고리 이동."""
 
 import os, re, time
+from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 from pinecone import Pinecone
 
 load_dotenv()
 
-base = '/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_법원 노동판례'
+base = str(Path(__file__).parent / 'output_법원 노동판례')
 
 CASE_NO = re.compile(r'(\d{4}[다두도가누마재추허][A-Za-z가-힣]*\d+)')
 
@@ -90,7 +91,7 @@ print(f"기존 사건번호: {len(existing)}개\n")
 # Pinecone + OpenAI
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index(os.getenv("PINECONE_INDEX_NAME", "nodongok-bestqna"))
+index = pc.Index(os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna"))
 
 deleted_dups = 0
 uploaded = 0

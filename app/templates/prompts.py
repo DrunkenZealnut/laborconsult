@@ -86,6 +86,18 @@ ANALYZE_TOOL = {
                     "일반 직장인(근로계약 체결)은 false."
                 ),
             },
+            "worker_group": {
+                "type": "string",
+                "enum": ["general", "youth", "foreign", "disabled", "industrial_accident"],
+                "description": (
+                    "근로자 그룹 분류. 질문에서 파악 가능한 경우에만 설정. "
+                    "youth: 18세 미만 청소년 ('중학생', '고등학생', '미성년자', '15세', '16세', '17세', '만17세', '청소년' 등). "
+                    "foreign: 외국인 근로자 ('E-9 비자', '외국인', '이주노동자', '고용허가제' 등). "
+                    "disabled: 장애인 근로자 ('장애인', '장애 등급', '중증장애' 등). "
+                    "industrial_accident: 산업재해 관련 ('산재', '업무상 재해', '산업재해', '산재보험' 등). "
+                    "general: 위 해당 없는 일반 근로자 (기본값). 확실하지 않으면 general."
+                ),
+            },
             "use_minimum_wage": {
                 "type": "boolean",
                 "description": "사용자가 '최저시급', '최저임금', '최저임금 기준' 등으로 임금을 지정할 때 true. wage_amount 대신 해당 연도 법정 최저시급이 자동 적용됩니다.",

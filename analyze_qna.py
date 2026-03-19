@@ -17,13 +17,15 @@ import re
 import json
 import time
 import argparse
+from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_INPUT_DIR    = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output_qna"
-DEFAULT_OUTPUT_JSONL = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/analysis_qna.jsonl"
+_PROJECT_DIR = Path(__file__).parent
+DEFAULT_INPUT_DIR    = str(_PROJECT_DIR / "output_qna")
+DEFAULT_OUTPUT_JSONL = str(_PROJECT_DIR / "analysis_qna.jsonl")
 MODEL        = "claude-haiku-4-5-20251001"
 BATCH_SIZE   = 5
 MAX_CONTENT_CHARS = 2000  # 질문 본문 최대 길이 (토큰 절감)

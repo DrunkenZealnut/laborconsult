@@ -446,6 +446,7 @@
   <div class="header-inner">
     <a href="/" class="header-logo">노동<span>OK</span></a>
     <nav class="header-nav">
+      <a href="/board" title="질문게시판 보기">게시판</a>
       <a href="/calculators" title="계산기별 계산 흐름도 보기">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         흐름도
@@ -518,8 +519,9 @@
       <h2 class="section-heading">질문게시판</h2>
       <p class="section-desc">다른 분들이 최근에 물어본 질문들입니다</p>
       <div id="board-list"></div>
-      <div class="section-link-wrap">
+      <div class="section-link-wrap" style="display:flex;gap:16px;align-items:center;justify-content:center;">
         <button id="board-more-btn">더 보기 ↓</button>
+        <a href="/board" style="font-size:14px;font-weight:600;color:var(--copper);text-decoration:none;">전체 보기 →</a>
       </div>
     </div>
   </section>

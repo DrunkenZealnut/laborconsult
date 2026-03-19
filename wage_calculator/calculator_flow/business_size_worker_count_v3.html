@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계산과정</title>
+<style>
+:root{
+  --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
+  --color-background-info:#E6F1FB;--color-background-success:#E1F5EE;
+  --color-background-danger:#FCEBEB;
+  --color-text-primary:#222;--color-text-secondary:#888;
+  --color-text-info:#185FA5;--color-text-success:#085041;
+  --color-text-danger:#A32D2D;--color-text-warning:#854F0B;
+  --color-border-info:#185FA5;--color-border-secondary:#ddd;
+  --color-border-tertiary:#eee;
+  --border-radius-lg:10px;--border-radius-md:8px;
+  --bg2:#f5f5f0;--b:#ddd;--p:#185FA5;--s:#888;
+}
+@media(prefers-color-scheme:dark){:root{
+  --color-background-primary:#1a1a1a;--color-background-secondary:#2a2a2a;
+  --color-background-info:#042C53;--color-background-success:#04342C;
+  --color-background-danger:#3D1010;
+  --color-text-primary:#e0e0e0;--color-text-secondary:#999;
+  --color-text-info:#85B7EB;--color-text-success:#5DCAA5;
+  --color-text-danger:#F09090;--color-text-warning:#FAC775;
+  --color-border-info:#85B7EB;--color-border-secondary:#444;
+  --color-border-tertiary:#333;
+  --bg2:#2a2a2a;--b:#444;--p:#85B7EB;--s:#999;
+}}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--color-background-primary);color:var(--color-text-primary);padding:1.5rem;}
+button{padding:6px 14px;border:1px solid var(--color-border-secondary);border-radius:6px;background:transparent;color:var(--color-text-secondary);font-size:13px;cursor:pointer;font-family:inherit;}
+svg{display:block;width:100%;max-width:700px;margin:0 auto;}
+.th{font-weight:600;font-size:14px;}.ts{font-size:12px;}
+.arr{stroke:var(--s);stroke-width:1.5;fill:none;}
+.c-coral rect{fill:#FAECE7;stroke:#993C1D;}.c-coral .th{fill:#712B13;}.c-coral .ts{fill:#993C1D;}
+.c-teal rect{fill:#E1F5EE;stroke:#0F6E56;}.c-teal .th{fill:#085041;}.c-teal .ts{fill:#0F6E56;}
+.c-purple rect{fill:#EEEDFE;stroke:#534AB7;}.c-purple .th{fill:#3C3489;}.c-purple .ts{fill:#534AB7;}
+.c-blue rect{fill:#E6F1FB;stroke:#185FA5;}.c-blue .th{fill:#0C447C;}.c-blue .ts{fill:#185FA5;}
+.c-amber rect{fill:#FAEEDA;stroke:#854F0B;}.c-amber .th{fill:#633806;}.c-amber .ts{fill:#854F0B;}
+.c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;}.c-gray .th{fill:#2C2C2A;}.c-gray .ts{fill:#5F5E5A;}
+@media(prefers-color-scheme:dark){
+  .c-coral rect{fill:#4A1B0C;stroke:#F0997B;}.c-coral .th{fill:#F5C4B3;}.c-coral .ts{fill:#F0997B;}
+  .c-teal rect{fill:#04342C;stroke:#5DCAA5;}.c-teal .th{fill:#9FE1CB;}.c-teal .ts{fill:#5DCAA5;}
+  .c-purple rect{fill:#26215C;stroke:#AFA9EC;}.c-purple .th{fill:#CECBF6;}.c-purple .ts{fill:#AFA9EC;}
+  .c-blue rect{fill:#042C53;stroke:#85B7EB;}.c-blue .th{fill:#B5D4F4;}.c-blue .ts{fill:#85B7EB;}
+  .c-amber rect{fill:#412402;stroke:#FAC775;}.c-amber .th{fill:#FAEEDA;}.c-amber .ts{fill:#FAC775;}
+  .c-gray rect{fill:#2C2C2A;stroke:#B4B2A9;}.c-gray .th{fill:#D3D1C7;}.c-gray .ts{fill:#B4B2A9;}
+}
+/* ── Responsive ── */
+@media(max-width:720px){
+  body{padding:1rem 0.75rem;}
+  svg{max-width:100%;}
+}
+@media(max-width:480px){
+  body{padding:0.75rem 0.5rem;font-size:14px;}
+  button{padding:5px 10px;font-size:12px;}
+  div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="grid-template-columns:repeat(3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+  div[style*="display:flex"][style*="align-items:center"][style*="gap:12px"]{flex-wrap:wrap;}
+  input[type="range"]{min-width:0;}
+  span[style*="min-width:80px"]{min-width:60px!important;}
+  span[style*="min-width:100px"]{min-width:70px!important;}
+  label[style*="min-width:100px"]{min-width:70px!important;font-size:12px!important;}
+  table{font-size:12px!important;}
+  th,td{padding:4px 6px!important;}
+  .th{font-size:12px!important;}
+  .ts{font-size:10px!important;}
+  nav a{font-size:13px!important;}
+}
+</style>
+</head>
+<body>
+
+<div style="padding:1rem 0">
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">산정 공식</button>
+<button onclick="showTab(1)" id="t1">포함·제외 판정</button>
+<button onclick="showTab(2)" id="t2">반수 판정</button>
+<button onclick="showTab(3)" id="t3">규모별 법령</button>
+<button onclick="showTab(4)" id="t4">산정 시뮬레이션</button>
+</div>
+
+<!-- TAB 0: 산정 공식 -->
+<div id="tab0">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">상시근로자 수 산정 — 핵심 공식과 흐름</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제11조, 시행령 제7조의2 | 이 숫자 하나로 적용 법령이 통째로 바뀝니다</p>
+</div>
+<svg width="100%" viewBox="0 0 680 720">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="38" text-anchor="middle">가산수당·해고예고·연차·부당해고 구제 등 적용 여부가 이 숫자로 결정됩니다</text>
+
+<!-- Step 1 -->
+<g class="c-gray">
+<rect x="140" y="72" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 산정 기간 확정</text>
+<text class="ts" x="340" y="110" text-anchor="middle" dominant-baseline="central">사유 발생일 전 1개월 간 (역일 기준)</text>
+</g>
+<line x1="340" y1="128" x2="340" y2="158" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 2 -->
+<g class="c-teal">
+<rect x="140" y="158" width="400" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="180" text-anchor="middle" dominant-baseline="central">Step 2. 가동일수 파악</text>
+<text class="ts" x="340" y="200" text-anchor="middle" dominant-baseline="central">사업장이 실제 운영된 날만 카운트</text>
+<text class="ts" x="340" y="218" text-anchor="middle" dominant-baseline="central">정기휴무·공휴일 등 비가동일은 제외</text>
+</g>
+<line x1="340" y1="234" x2="340" y2="264" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 3 -->
+<g class="c-purple">
+<rect x="80" y="264" width="520" height="96" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="286" text-anchor="middle" dominant-baseline="central">Step 3. 매일 근로자 수 합산 (연인원)</text>
+<text class="ts" x="340" y="308" text-anchor="middle" dominant-baseline="central">가동일마다 근로관계에 있는 근로자를 세서 모두 더함</text>
+<text class="ts" x="340" y="328" text-anchor="middle" dominant-baseline="central">포함·제외 판정이 핵심 → "포함·제외" 탭에서 상세</text>
+<text class="ts" x="340" y="348" text-anchor="middle" dominant-baseline="central">예: 22일 × 매일 5명 = 연인원 110명</text>
+</g>
+<line x1="340" y1="360" x2="340" y2="390" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 4: 핵심 공식 -->
+<g class="c-coral">
+<rect x="80" y="390" width="520" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="412" text-anchor="middle" dominant-baseline="central">Step 4. 핵심 공식</text>
+<text style="font-size:17px;fill:#993C1D;font-weight:500" x="340" y="446" text-anchor="middle" dominant-baseline="central">상시근로자 수 = 연인원 합계 ÷ 가동일수</text>
+</g>
+<line x1="340" y1="466" x2="340" y2="496" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 5 -->
+<g class="c-amber">
+<rect x="100" y="496" width="480" height="76" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="518" text-anchor="middle" dominant-baseline="central">Step 5. 반수 판정 (경계 사업장 보완)</text>
+<text class="ts" x="340" y="538" text-anchor="middle" dominant-baseline="central">평균 5인↑이라도, 5인 미만인 날이 가동일의 ½ 이상이면</text>
+<text class="ts" x="340" y="556" text-anchor="middle" dominant-baseline="central">→ 5인 미만 사업장으로 판정 (뒤집힘)</text>
+</g>
+<line x1="340" y1="572" x2="340" y2="602" class="arr" marker-end="url(#ar)"/>
+
+<!-- Step 6 -->
+<g class="c-blue">
+<rect x="140" y="602" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="622" text-anchor="middle" dominant-baseline="central">Step 6. 규모별 적용 법령 확정</text>
+<text class="ts" x="340" y="640" text-anchor="middle" dominant-baseline="central">5인 / 10인 / 30인 / 50인 / 300인 기준</text>
+</g>
+
+<rect x="80" y="678" width="520" height="28" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="ts" x="340" y="696" text-anchor="middle">예: 연인원 110명 ÷ 22일 = 5.0명 → 5인 이상 사업장</text>
+</svg>
+</div>
+
+<!-- TAB 1: 포함·제외 -->
+<div id="tab1" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">포함·제외 판정 — 누구를 세고 누구를 빼는가</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">이 판정이 결과를 크게 좌우합니다</p>
+</div>
+
+<!-- 포함 -->
+<div style="margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-success);margin:0 0 8px">✓ 포함 (연인원에 산입)</p>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">매일 포함 (출근 여부 무관)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">정규직, 기간제, 단시간, 외국인, 휴직자, 결근자, 교대근무 비번일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출근일만 포함</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">일용직 (실제 출근한 날만 카운트)</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">조건부 포함</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">가족(친인척)도 사업주의 지휘·감독 하에 있으면 포함</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">교대근무 주의</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">4조2교대 비번일도 매일 포함 → 숫자가 크게 올라감</p>
+</div>
+</div>
+</div>
+
+<!-- 제외 -->
+<div style="margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-danger);margin:0 0 8px">✗ 제외 (산입하지 않음)</p>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px;text-align:center">
+<p style="font-size:13px;font-weight:500;margin:0;color:var(--color-text-primary)">대표자</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px;text-align:center">
+<p style="font-size:13px;font-weight:500;margin:0;color:var(--color-text-primary)">파견근로자</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:2px 0 0">파견법 적용</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px;text-align:center">
+<p style="font-size:13px;font-weight:500;margin:0;color:var(--color-text-primary)">외부 용역</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px;text-align:center">
+<p style="font-size:13px;font-weight:500;margin:0;color:var(--color-text-primary)">해외법인 근무자</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px;text-align:center">
+<p style="font-size:13px;font-weight:500;margin:0;color:var(--color-text-primary)">휴직 대체자</p>
+<p style="font-size:11px;color:var(--color-text-secondary);margin:2px 0 0">원래 직원과 중복 방지</p>
+</div>
+</div>
+</div>
+
+<!-- 1일 예시 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">하루 연인원 계산 예시</p>
+<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:var(--color-text-secondary)"><span>정규직 3명 (매일)</span><span style="font-weight:500;color:var(--color-text-primary)">3명</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:var(--color-text-secondary)"><span>기간제 1명 (매일)</span><span style="font-weight:500;color:var(--color-text-primary)">1명</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:var(--color-text-secondary)"><span>일용직 2명 중 1명 출근</span><span style="font-weight:500;color:var(--color-text-primary)">1명</span></div>
+<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:var(--color-text-secondary)"><span>파견 3명</span><span style="font-weight:500;color:var(--color-text-danger)">제외</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px;font-size:13px;font-weight:500;color:var(--color-text-primary)"><span>이 날의 근로자 수</span><span>5명</span></div>
+</div>
+
+<!-- 반도체 실무 -->
+<div style="background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-warning);margin:0 0 4px">반도체 공장 실무 포인트</p>
+<p style="font-size:13px;color:var(--color-text-warning);margin:0">파견근로자는 원청에서 제외되지만, 실질적 지휘감독이 원청이면 직접고용으로 간주될 수 있습니다 (판례). 4조2교대 근무자는 비번일에도 포함되어 상시근로자 수가 크게 올라갑니다.</p>
+</div>
+</div>
+
+<!-- TAB 2: 반수 판정 -->
+<div id="tab2" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">반수 판정 — 평균이 5인↑이어도 뒤집힐 수 있다</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">시행령 제7조의2 제2항 | 일별 분포를 추가 확인하는 보완 규칙</p>
+</div>
+<svg width="100%" viewBox="0 0 680 480">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="16" width="600" height="44" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="32" text-anchor="middle">문제 상황: 평균 5.2명인데, 22일 중 12일이 4명이었다면?</text>
+<text class="ts" x="340" y="50" text-anchor="middle">→ 절반 이상이 5인 미만이면 "사실상 소규모" → 반수 판정으로 보완</text>
+
+<line x1="340" y1="60" x2="340" y2="90" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-gray">
+<rect x="140" y="90" width="400" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="110" text-anchor="middle" dominant-baseline="central">매일 근로자 수에서 5인 미만인 날 = N일</text>
+<text class="ts" x="340" y="130" text-anchor="middle" dominant-baseline="central">가동일 전체를 일별로 체크</text>
+</g>
+<line x1="340" y1="146" x2="340" y2="176" class="arr" marker-end="url(#a2)"/>
+
+<g class="c-amber">
+<rect x="120" y="176" width="440" height="44" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="198" text-anchor="middle" dominant-baseline="central">N < 가동일수 × ½ 인가?</text>
+</g>
+
+<line x1="230" y1="220" x2="150" y2="260" class="arr" marker-end="url(#a2)"/>
+<text class="ts" x="176" y="236">예 (미만)</text>
+<line x1="450" y1="220" x2="530" y2="260" class="arr" marker-end="url(#a2)"/>
+<text class="ts" x="504" y="236">아니오 (이상)</text>
+
+<g>
+<rect x="50" y="260" width="200" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="150" y="280" text-anchor="middle" dominant-baseline="central">5인 이상 확정</text>
+<text style="font-size:12px;fill:#085041" x="150" y="300" text-anchor="middle" dominant-baseline="central">근기법 전면 적용</text>
+</g>
+<g>
+<rect x="430" y="260" width="200" height="56" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#791F1F;font-weight:500" x="530" y="280" text-anchor="middle" dominant-baseline="central">5인 미만 판정</text>
+<text style="font-size:12px;fill:#791F1F" x="530" y="300" text-anchor="middle" dominant-baseline="central">일부 조항만 적용</text>
+</g>
+
+<!-- 사례 비교 -->
+<rect x="40" y="340" width="290" height="120" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="362" text-anchor="middle">사례 A: 5인 이상 유지</text>
+<text class="ts" x="60" y="386">가동일 22일, 5인 미만 일수: 8일</text>
+<text class="ts" x="60" y="406">절반 기준: 22÷2 = 11일</text>
+<text style="font-size:12px;fill:#085041;font-weight:500" x="60" y="434">8 < 11 → 5인 이상 ✓</text>
+<text class="ts" x="60" y="454">평균 5.2명이 그대로 인정</text>
+
+<rect x="350" y="340" width="290" height="120" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="362" text-anchor="middle">사례 B: 5인 미만으로 뒤집힘</text>
+<text class="ts" x="370" y="386">가동일 22일, 5인 미만 일수: 14일</text>
+<text class="ts" x="370" y="406">절반 기준: 22÷2 = 11일</text>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="370" y="434">14 ≥ 11 → 5인 미만 ✗</text>
+<text class="ts" x="370" y="454">평균 5.2명이어도 뒤집힘!</text>
+</svg>
+</div>
+
+<!-- TAB 3: 규모별 법령 -->
+<div id="tab3" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">규모별 적용 법령 — 이 숫자로 권리가 달라진다</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">5인 미만이면 가산수당·부당해고 구제·연차가 모두 미적용</p>
+</div>
+
+<!-- 규모 단계 -->
+<div style="display:flex;gap:6px;margin-bottom:16px">
+<div style="flex:1;border-radius:var(--border-radius-md);padding:10px;background:var(--color-background-danger);color:var(--color-text-danger);text-align:center">
+<p style="font-weight:500;margin:0;font-size:14px">5인 미만</p>
+<p style="margin:2px 0 0;font-size:11px">최소 보호</p>
+</div>
+<div style="flex:1;border-radius:var(--border-radius-md);padding:10px;background:var(--color-background-warning);color:var(--color-text-warning);text-align:center">
+<p style="font-weight:500;margin:0;font-size:14px">5인↑</p>
+<p style="margin:2px 0 0;font-size:11px">핵심 법령</p>
+</div>
+<div style="flex:1;border-radius:var(--border-radius-md);padding:10px;background:var(--color-background-info);color:var(--color-text-info);text-align:center">
+<p style="font-weight:500;margin:0;font-size:14px">30인↑</p>
+<p style="margin:2px 0 0;font-size:11px">협의회</p>
+</div>
+<div style="flex:1;border-radius:var(--border-radius-md);padding:10px;background:var(--color-background-success);color:var(--color-text-success);text-align:center">
+<p style="font-weight:500;margin:0;font-size:14px">300인↑</p>
+<p style="margin:2px 0 0;font-size:11px">고용평가</p>
+</div>
+</div>
+
+<!-- 5인 비교 -->
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-danger);margin:0 0 8px">5인 미만 → 미적용 ✗</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">연장·야간·휴일 가산수당 (50%)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">부당해고 구제신청</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">해고예고수당</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">연차유급휴가</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">유급공휴일</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 52시간제</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-success);margin:0 0 8px">5인 이상 → 적용 ✓</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">연장·야간·휴일 가산수당 (50%)</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">부당해고 구제신청</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">해고예고수당</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">연차유급휴가</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">유급공휴일</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">주 52시간제</p>
+</div>
+</div>
+
+<!-- 추가 규모 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">규모별 추가 적용</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">10인↑: 취업규칙 작성·신고 | 30인↑: 노사협의회, 장애인 의무고용</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:2px 0">50인↑: 산업안전보건위원회 | 300인↑: 고용영향평가, 공정채용</p>
+</div>
+
+<!-- 5인 미만에도 적용 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">5인 미만이라도 적용되는 것</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">최저임금, 퇴직급여, 4대보험, 근로계약서 교부, 출산휴가, 육아휴직, 산재보험</p>
+</div>
+
+<div style="background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;font-weight:500;color:var(--color-text-warning);margin:0 0 4px">반도체고 졸업생에게 가장 중요한 점</p>
+<p style="font-size:13px;color:var(--color-text-warning);margin:0">소규모 협력업체(5인 미만)에 취업하면 가산수당·부당해고 구제를 받을 수 없습니다. 이 차이를 모르면 권리를 주장할 근거 자체가 없어집니다.</p>
+</div>
+</div>
+
+<!-- TAB 4: 시뮬레이션 -->
+<div id="tab4" style="display:none">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">상시근로자 수 산정 시뮬레이션</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로자 구성과 가동일을 조정하면 규모 판정과 적용 법령을 실시간 확인합니다</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">가동일수</label>
+<input type="range" min="10" max="30" value="22" step="1" id="opDays" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="opDaysOut">22일</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">정규직</label>
+<input type="range" min="0" max="20" value="3" step="1" id="ft" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="ftOut">3명</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">기간제</label>
+<input type="range" min="0" max="10" value="1" step="1" id="ct" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="ctOut">1명</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">일용직</label>
+<input type="range" min="0" max="10" value="2" step="1" id="dl" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="dlOut">2명</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">일용직 출근율</label>
+<input type="range" min="10" max="100" value="60" step="5" id="dr" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="drOut">60%</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">교대근무자</label>
+<input type="range" min="0" max="10" value="0" step="1" id="sh" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="shOut">0명</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">파견 (제외)</label>
+<input type="range" min="0" max="10" value="0" step="1" id="dp" oninput="calc()" style="flex:1">
+<span style="font-size:14px;font-weight:500;min-width:60px;text-align:right" id="dpOut">0명</span>
+</div>
+</div>
+
+<!-- 결과 카드 -->
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">연인원 합계</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="totalPerson">0명·일</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">상시근로자 수</p>
+<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="avgW">0.0명</p>
+</div>
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">사업장 규모</p>
+<p style="font-size:20px;font-weight:500;margin:0" id="bSize">-</p>
+</div>
+</div>
+
+<!-- 판정 결과 -->
+<div id="result" style="border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
+
+<!-- 적용 법령 -->
+<div id="laws" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
+
+<!-- 일별 분포 시각화 -->
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">일별 근로자 수 분포 (시뮬레이션)</p>
+<div style="position:relative;height:140px"><canvas id="chart"></canvas></div>
+</div>
+
+<!-- 산식 -->
+<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var myChart=null;
+function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
+function fmtD(n){return n.toFixed(1);}
+function setBtn(id,on){var b=document.getElementById(id);if(!b)return;b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
+
+function calc(){
+  var opDays=+document.getElementById('opDays').value;
+  var ft=+document.getElementById('ft').value;
+  var ct=+document.getElementById('ct').value;
+  var dl=+document.getElementById('dl').value;
+  var dr=+document.getElementById('dr').value;
+  var sh=+document.getElementById('sh').value;
+  var dp=+document.getElementById('dp').value;
+
+  document.getElementById('opDaysOut').textContent=opDays+'일';
+  document.getElementById('ftOut').textContent=ft+'명';
+  document.getElementById('ctOut').textContent=ct+'명';
+  document.getElementById('dlOut').textContent=dl+'명';
+  document.getElementById('drOut').textContent=dr+'%';
+  document.getElementById('shOut').textContent=sh+'명';
+  document.getElementById('dpOut').textContent=dp+'명';
+
+  var fixedPerDay=ft+ct+sh;
+  var dailyAvg=dl*(dr/100);
+  var fixedTotal=fixedPerDay*opDays;
+  var dailyTotal=Math.round(dailyAvg*opDays);
+  var totalPerson=fixedTotal+dailyTotal;
+  var avg=opDays>0?totalPerson/opDays:0;
+
+  document.getElementById('totalPerson').textContent=fmt(totalPerson)+'명·일';
+  document.getElementById('avgW').textContent=fmtD(avg)+'명';
+
+  var size,sColor;
+  if(avg>=300){size='300인 이상';sColor='var(--color-text-success)';}
+  else if(avg>=30){size='30인 이상';sColor='var(--color-text-info)';}
+  else if(avg>=10){size='10인 이상';sColor='var(--color-text-warning)';}
+  else if(avg>=5){size='5인 이상';sColor='var(--color-text-warning)';}
+  else{size='5인 미만';sColor='var(--color-text-danger)';}
+  var bEl=document.getElementById('bSize');
+  bEl.textContent=size;bEl.style.color=sColor;
+
+  // 반수 시뮬 (일용직 확률적 → 일별 시뮬)
+  var dailyCounts=[];
+  var daysUnder5=0;
+  for(var d=0;d<opDays;d++){
+    var dlToday=0;
+    for(var j=0;j<dl;j++){if(Math.random()*100<dr)dlToday++;}
+    var dayCount=fixedPerDay+dlToday;
+    dailyCounts.push(dayCount);
+    if(dayCount<5)daysUnder5++;
+  }
+  var halfDays=Math.floor(opDays/2);
+
+  var rEl=document.getElementById('result');
+  if(avg>=4&&avg<6){
+    if(daysUnder5<halfDays){
+      rEl.style.background='var(--color-background-success)';rEl.style.color='var(--color-text-success)';
+      rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">반수 판정: 5인 이상 ✓</p><p style="margin:0;font-size:13px">5인 미만 일수 '+daysUnder5+'일 < 가동일 절반('+halfDays+'일). 일용직 출근은 확률적이라 매번 약간 다를 수 있습니다.</p>';
+    } else {
+      rEl.style.background='var(--color-background-danger)';rEl.style.color='var(--color-text-danger)';
+      rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">반수 판정: 5인 미만 ✗</p><p style="margin:0;font-size:13px">5인 미만 일수 '+daysUnder5+'일 ≥ 가동일 절반('+halfDays+'일). 평균 '+fmtD(avg)+'명이어도 5인 미만으로 판정됩니다.</p>';
+    }
+  } else if(avg>=5){
+    rEl.style.background='var(--color-background-success)';rEl.style.color='var(--color-text-success)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">'+size+' 사업장 ✓</p><p style="margin:0;font-size:13px">상시근로자 '+fmtD(avg)+'명으로 명확히 5인 이상입니다.</p>';
+  } else {
+    rEl.style.background='var(--color-background-danger)';rEl.style.color='var(--color-text-danger)';
+    rEl.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">5인 미만 사업장 ✗</p><p style="margin:0;font-size:13px">가산수당, 부당해고 구제, 연차유급휴가, 주 52시간제 등이 적용되지 않습니다.</p>';
+  }
+
+  // 법령
+  var lw=['<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">적용 법령 체크리스트</p>'];
+  lw.push('<p style="margin:2px 0;color:var(--color-text-success)">✓ 최저임금, 4대보험, 근로계약서, 출산휴가, 육아휴직 (규모 무관)</p>');
+  if(avg>=5)lw.push('<p style="margin:2px 0;color:var(--color-text-success)">✓ 해고예고수당, 부당해고 구제, 가산수당(50%), 연차, 유급공휴일, 주52시간</p>');
+  else lw.push('<p style="margin:2px 0;color:var(--color-text-danger)">✗ 해고예고수당, 부당해고 구제, 가산수당, 연차, 유급공휴일, 주52시간</p>');
+  if(avg>=10)lw.push('<p style="margin:2px 0;color:var(--color-text-success)">✓ 취업규칙 작성·신고</p>');
+  if(avg>=30)lw.push('<p style="margin:2px 0;color:var(--color-text-success)">✓ 노사협의회 설치, 장애인 의무고용</p>');
+  if(avg>=50)lw.push('<p style="margin:2px 0;color:var(--color-text-success)">✓ 산업안전보건위원회</p>');
+  if(avg>=300)lw.push('<p style="margin:2px 0;color:var(--color-text-success)">✓ 고용영향평가, 공정채용</p>');
+  if(dp>0)lw.push('<p style="margin:6px 0 0;color:var(--color-text-secondary)">파견 '+dp+'명은 파견법 적용으로 산정에서 제외</p>');
+  document.getElementById('laws').innerHTML=lw.join('');
+
+  // 산식
+  var fl=[
+    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>',
+    '<p style="margin:2px 0">정규직('+ft+') + 기간제('+ct+') + 교대('+sh+') = '+fixedPerDay+'명/일 × '+opDays+'일 = '+fmt(fixedTotal)+'명·일</p>',
+    '<p style="margin:2px 0">일용직 '+dl+'명 × 출근율 '+dr+'% × '+opDays+'일 ≈ '+fmt(dailyTotal)+'명·일</p>',
+    '<p style="margin:2px 0">연인원 합계: '+fmt(fixedTotal)+' + '+fmt(dailyTotal)+' = '+fmt(totalPerson)+'명·일</p>',
+    '<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">상시근로자 수 = '+fmt(totalPerson)+' ÷ '+opDays+' = '+fmtD(avg)+'명</p>'
+  ];
+  document.getElementById('formula').innerHTML=fl.join('');
+
+  // 차트
+  drawChart(dailyCounts,opDays);
+}
+
+function drawChart(counts,opDays){
+  if(myChart)myChart.destroy();
+  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
+  var txtC=dark?'#9c9a92':'#73726c';
+
+  var labels=[];var bgC=[];
+  for(var i=0;i<counts.length;i++){
+    labels.push((i+1)+'일');
+    bgC.push(counts[i]<5?'rgba(226,75,74,0.5)':'rgba(55,138,221,0.4)');
+  }
+
+  var ctx=document.getElementById('chart').getContext('2d');
+  myChart=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[
+      {label:'일별 근로자 수',data:counts,backgroundColor:bgC,borderRadius:2,barPercentage:0.8},
+      {label:'5인 기준선',data:Array(opDays).fill(5),type:'line',borderColor:'#A32D2D',borderWidth:1.5,borderDash:[4,4],pointRadius:0,fill:false}
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,boxWidth:10,padding:6}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:9,family:'Anthropic Sans,sans-serif'},color:txtC,maxTicksLimit:12}},
+        y:{grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,stepSize:1},beginAtZero:true}
+      }
+    }
+  });
+}
+calc();
+
+function showTab(n){
+  for(var i=0;i<5;i++){
+    document.getElementById('tab'+i).style.display=i===n?'block':'none';
+    setBtn('t'+i,i===n);
+  }
+  if(n===4)calc();
+}
+</script>
+
+
+<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+</body>
+</html>

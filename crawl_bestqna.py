@@ -11,10 +11,11 @@ from markdownify import markdownify as md
 import time
 import os
 import re
+from pathlib import Path
 
 BASE_URL = "https://www.nodong.kr"
 LIST_URL = "https://www.nodong.kr/bestqna"
-OUTPUT_DIR = "/Users/zealnutkim/Documents/개발/nodongokboardcrawl/output"
+OUTPUT_DIR = str(Path(__file__).parent / "output")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
