@@ -41,7 +41,8 @@ def _pop_weekly_holiday(r, result):
 
 
 def _pop_annual_leave(r, result):
-    """result.summary에 연차수당·미사용일수·차감·비례·정산 추가. 반환: 0."""
+    """result.summary에 연차발생일수·연차수당·미사용일수·차감·비례·정산 추가. 반환: 0."""
+    result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
     result.summary["연차수당"] = f"{r.annual_leave_pay:,.0f}원"
     result.summary["미사용 연차"] = f"{r.remaining_days:.1f}일"
     if r.deducted_days > 0:
@@ -203,6 +204,23 @@ def _pop_eitc(r, result):
             result.summary["재산감액"] = "50% 감액 적용"
     else:
         result.summary["근로장려금"] = f"수급 불가 — {r.ineligible_reason[:50]}"
+    return 0
+
+
+def _pop_ordinary_wage(r, result):
+    """result.summary에 통상시급·월 통상임금 추가. 반환: 0."""
+    result.summary["통상시급"] = r.breakdown.get("통상시급", "계산 불가")
+    result.summary["월 통상임금"] = r.breakdown.get("월 통상임금", "계산 불가")
+    return 0
+
+
+def _pop_working_hours(r, result):
+    """result.summary에 월 소정근로시간·시급·월급 환산 추가. 반환: 0."""
+    result.summary["월 소정근로시간"] = f"{r.monthly_hours}시간"
+    if r.hourly_wage:
+        result.summary["시급"] = f"{r.hourly_wage:,.0f}원"
+    if r.monthly_wage:
+        result.summary["월급 환산"] = f"{r.monthly_wage:,.0f}원"
     return 0
 
 

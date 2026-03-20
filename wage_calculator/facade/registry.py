@@ -25,6 +25,9 @@ from ..calculators.retirement_tax import calc_retirement_tax
 from ..calculators.severance import calc_severance
 from ..calculators.shutdown_allowance import calc_shutdown_allowance
 from ..calculators.unemployment import calc_unemployment
+from ..calculators.working_hours import calc_working_hours
+from ..calculators.ordinary_wage import calc_ordinary_wage as _calc_ow_raw, OrdinaryWageResult
+from ..base import BaseCalculatorResult
 from ..models import WageType
 from .helpers import (
     _pop_overtime, _pop_minimum_wage, _pop_weekly_holiday, _pop_annual_leave,
@@ -33,7 +36,32 @@ from .helpers import (
     _pop_unemployment, _pop_insurance, _pop_employer_insurance,
     _pop_compensatory_leave, _pop_parental_leave, _pop_maternity_leave,
     _pop_flexible_work, _pop_eitc, _pop_industrial_accident,
+    _pop_ordinary_wage, _pop_working_hours,
 )
+
+
+def _calc_ordinary_wage_standalone(inp, ow: OrdinaryWageResult) -> BaseCalculatorResult:
+    """통상임금을 독립 계산기로 노출하는 래퍼."""
+    breakdown = {
+        "통상시급": f"{ow.hourly_ordinary_wage:,.0f}원",
+        "1일 통상임금": f"{ow.daily_ordinary_wage:,.0f}원",
+        "월 통상임금": f"{ow.monthly_ordinary_wage:,.0f}원",
+        "월 기준시간": f"{ow.monthly_base_hours}시간 ({ow.base_hours_detail})",
+    }
+    if ow.included_items:
+        breakdown["포함 항목"] = ", ".join(ow.included_items)
+    if ow.excluded_items:
+        breakdown["제외 항목"] = ", ".join(ow.excluded_items)
+
+    return BaseCalculatorResult(
+        breakdown=breakdown,
+        formulas=[ow.formula],
+        warnings=[],
+        legal_basis=[
+            "대법원 2013다4174 (정기성·일률성)",
+            "대법원 2023다302838 (고정성 요건 폐기)",
+        ],
+    )
 
 # 지원 계산 유형
 CALC_TYPES = {
@@ -63,6 +91,8 @@ CALC_TYPES = {
     "average_wage":        "평균임금",
     "shutdown_allowance":  "휴업수당(근기법 제46조)",
     "industrial_accident": "산재보상금(휴업·장해·유족·장례비)",
+    "ordinary_wage":       "통상임금 산출",
+    "working_hours":       "소정근로시간 산출",
 }
 
 # calculation_type 필드 → 계산기 매핑 (analyze_qna.py 분류값 기준)
@@ -104,7 +134,31 @@ CALC_TYPE_MAP = {
     "휴일근로수당":                   ["overtime", "minimum_wage"],
     "야간근로수당":                   ["overtime", "minimum_wage"],
     "연장근로수당":                   ["overtime", "minimum_wage"],
-    "통상임금":                      ["minimum_wage"],
+    "통상임금":                      ["ordinary_wage"],
+    "통상시급":                      ["ordinary_wage"],
+    # ── Q&A 분석 기반 미매핑 유형 추가 ──────────────────────────────────────
+    "임금":              ["minimum_wage", "overtime"],
+    "임금 계산":          ["minimum_wage", "overtime"],
+    "임금계산 검증":       ["minimum_wage"],
+    "공휴일수당":          ["public_holiday"],
+    "시급환산":            ["ordinary_wage"],
+    "임금체불액":          ["wage_arrears"],
+    "미지급 임금 계산":     ["wage_arrears"],
+    "부당임금삭감액":       ["wage_arrears"],
+    "중도입사 급여":        ["prorated"],
+    "일할계산급여":         ["prorated"],
+    "소정근로시간":         ["working_hours"],
+    "근로시간":             ["working_hours"],
+    "근로시간 계산":        ["working_hours"],
+    "근로시간계산":         ["working_hours"],
+    "근로시간 산정":        ["working_hours"],
+    "근로시간산정":         ["working_hours"],
+    "근로시간산출":         ["working_hours"],
+    "월근로시간":           ["working_hours"],
+    "연차발생":             ["annual_leave"],
+    "연차 발생일수 계산":    ["annual_leave"],
+    "연말정산":             ["insurance"],
+    "휴일근무수당":         ["overtime", "minimum_wage"],
 }
 
 
@@ -138,6 +192,11 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
         (["휴업"],                 ["shutdown_allowance"]),
         (["산재"],                 ["industrial_accident", "average_wage"]),
         (["임금체불"],              ["wage_arrears"]),
+        (["근로시간", "소정근로", "월근로"], ["working_hours"]),
+        (["통상임금", "통상시급"],  ["ordinary_wage"]),
+        (["공휴일"],               ["public_holiday"]),
+        (["일할", "중도입사"],      ["prorated"]),
+        (["연차발생", "발생일수"],   ["annual_leave"]),
     ]
     for keywords, targets in _keyword_map:
         if any(kw in calc_type_str for kw in keywords):
@@ -150,6 +209,8 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
 # (key, func, section_name, populate_fn, precondition)
 
 _STANDARD_CALCS = [
+    ("ordinary_wage",      _calc_ordinary_wage_standalone, "통상임금",        _pop_ordinary_wage,      None),
+    ("working_hours",      calc_working_hours,      "소정근로시간",           _pop_working_hours,      None),
     ("overtime",           calc_overtime,           "연장·야간·휴일수당",     _pop_overtime,           None),
     ("minimum_wage",       calc_minimum_wage,       "최저임금 검증",         _pop_minimum_wage,       None),
     ("weekly_holiday",     calc_weekly_holiday,      "주휴수당",             _pop_weekly_holiday,     None),
