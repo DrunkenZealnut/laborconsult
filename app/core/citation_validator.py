@@ -233,12 +233,13 @@ def correct_hallucinated_citations(
     # 1순위: Claude Haiku (빠른 응답, ~3초)
     if anthropic_client:
         try:
+            import httpx
             resp = anthropic_client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=3000,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=5.0,
+                timeout=httpx.Timeout(5.0),
             )
             text = resp.content[0].text.strip()
             if text and len(text) > len(response_text) * 0.7:

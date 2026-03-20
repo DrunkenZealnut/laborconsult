@@ -119,6 +119,8 @@ def run_test(questions, config):
 
 def verify_quality(results):
     """품질 지표 자동 검증."""
+    if not results:
+        return [("성공률", "100%", "N/A", False)]
     checks = []
 
     # 성공률

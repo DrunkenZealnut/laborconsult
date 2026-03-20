@@ -178,8 +178,16 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
                 if part in CALC_TYPE_MAP:
                     return CALC_TYPE_MAP[part]
 
-    # 키워드 우선순위 fallback
+    # 키워드 우선순위 fallback (구체적 키워드가 앞, generic이 뒤)
     _keyword_map = [
+        # ── 구체적 키워드 (generic 규칙보다 우선) ──
+        (["공휴일"],               ["public_holiday"]),
+        (["소정근로시간", "월근로시간", "월 소정"], ["working_hours"]),
+        (["통상임금", "통상시급"],  ["ordinary_wage"]),
+        (["연차발생", "발생일수"],  ["annual_leave"]),
+        (["일할계산", "중도입사"],  ["prorated"]),
+        (["임금체불"],             ["wage_arrears"]),
+        # ── 일반 키워드 ──
         (["연장", "야간", "휴일"], ["overtime", "minimum_wage"]),
         (["주휴"],                 ["weekly_holiday", "minimum_wage"]),
         (["퇴직"],                 ["severance", "minimum_wage"]),
@@ -191,12 +199,7 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
         (["출산"],                 ["maternity_leave"]),
         (["휴업"],                 ["shutdown_allowance"]),
         (["산재"],                 ["industrial_accident", "average_wage"]),
-        (["임금체불"],              ["wage_arrears"]),
-        (["근로시간", "소정근로", "월근로"], ["working_hours"]),
-        (["통상임금", "통상시급"],  ["ordinary_wage"]),
-        (["공휴일"],               ["public_holiday"]),
-        (["일할", "중도입사"],      ["prorated"]),
-        (["연차발생", "발생일수"],   ["annual_leave"]),
+        (["근로시간"],             ["working_hours"]),
     ]
     for keywords, targets in _keyword_map:
         if any(kw in calc_type_str for kw in keywords):

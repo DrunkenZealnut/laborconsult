@@ -54,10 +54,10 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
         f"= {monthly_hours:.2f}시간"
     )
 
-    # ── 연 소정근로시간 ──
-    annual_hours = round(weekly_hours * 52, 1)
+    # ── 연 소정근로시간 (주휴 제외, 순수 근로시간) ──
+    annual_contractual_hours = round(weekly_hours * 52, 1)
 
-    # ── 시급 ↔ 월급 환산 ──
+    # ── 통상시급 ↔ 월급 환산 ──
     hourly = ow.hourly_ordinary_wage
     monthly_from_hourly = round(hourly * monthly_hours) if hourly else 0
 
@@ -67,22 +67,22 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
         "주 소정근로시간": f"{weekly_hours}시간",
         "유급주휴시간": f"{paid_holiday_hours}시간",
         "주 유급시간 합계": f"{weekly_paid}시간",
-        "월 소정근로시간": f"{monthly_hours}시간",
-        "연 소정근로시간": f"{annual_hours}시간",
+        "월 소정근로시간 (주휴 포함)": f"{monthly_hours}시간",
+        "연 소정근로시간 (주휴 제외)": f"{annual_contractual_hours}시간",
     }
 
     if hourly:
-        breakdown["시급"] = f"{hourly:,.0f}원"
-        breakdown["월급 환산"] = f"{monthly_from_hourly:,.0f}원 (시급 × 월 소정근로시간)"
+        breakdown["통상시급"] = f"{hourly:,.0f}원"
+        breakdown["통상시급 기준 월급 환산"] = f"{monthly_from_hourly:,.0f}원"
         formulas.append(
-            f"월급 환산 = {hourly:,.0f} × {monthly_hours} = {monthly_from_hourly:,.0f}원"
+            f"월급 환산 = 통상시급 {hourly:,.0f} × {monthly_hours}h = {monthly_from_hourly:,.0f}원"
         )
 
     return WorkingHoursResult(
         weekly_hours=weekly_hours,
         weekly_paid_hours=weekly_paid,
         monthly_hours=monthly_hours,
-        annual_hours=annual_hours,
+        annual_hours=annual_contractual_hours,
         hourly_wage=hourly or 0,
         monthly_wage=monthly_from_hourly,
         breakdown=breakdown,
