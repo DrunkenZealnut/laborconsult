@@ -199,13 +199,13 @@ def validate_response_citations(
 def correct_hallucinated_citations(
     response_text: str,
     hallucinated: list[str],
+    anthropic_client=None,
     gemini_api_key: str | None = None,
     openai_client: object | None = None,
 ) -> str | None:
     """다른 LLM을 사용해 환각 판례 번호를 제거한 수정 답변을 생성.
 
-    Gemini(우선) 또는 OpenAI를 사용하여 원본 답변에서
-    환각된 판례 번호를 안전한 표현으로 대체한다.
+    Haiku(1순위) → Gemini(2순위) → OpenAI(3순위) 순서로 시도.
 
     Returns:
         수정된 답변 텍스트. 실패 시 None.
@@ -230,7 +230,27 @@ def correct_hallucinated_citations(
         f"{response_text}"
     )
 
-    # Gemini 우선 시도
+    # 1순위: Claude Haiku (빠른 응답, ~3초)
+    if anthropic_client:
+        try:
+            import httpx
+            resp = anthropic_client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=3000,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=httpx.Timeout(5.0),
+            )
+            text = resp.content[0].text.strip()
+            if text and len(text) > len(response_text) * 0.7:
+                logger.info(
+                    "Haiku 판례 교정 완료: %d개 환각 제거", len(hallucinated),
+                )
+                return text
+        except Exception as e:
+            logger.warning("Haiku 판례 교정 실패: %s", e)
+
+    # 2순위: Gemini
     if gemini_api_key:
         try:
             import google.generativeai as genai
