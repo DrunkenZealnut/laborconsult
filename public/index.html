@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>노동OK — AI 노동상담</title>
+<title>기초 노동상담</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -45,7 +45,7 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { font-family: var(--font-body); background: var(--cream); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; max-width: 800px; margin: 0 auto; }
+  body { font-family: var(--font-body); background: var(--cream); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; }
 
   /* ── HEADER (minimal) ── */
   #site-header {
@@ -78,9 +78,8 @@
     margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
   }
   .menu-logo {
-    font-family: var(--font-display); font-weight: 900; font-size: 20px; color: var(--navy);
+    font-family: var(--font-display); font-weight: 900; font-size: 17px; color: var(--navy);
   }
-  .menu-logo span { color: var(--copper); }
   .menu-close {
     width: 36px; height: 36px; border-radius: 50%; background: var(--cream);
     border: none; cursor: pointer; font-size: 18px; color: var(--text-muted);
@@ -108,15 +107,11 @@
   /* ── LANDING (Google-style center) ── */
   #landing {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-height: calc(100dvh - 80px); padding: 40px 20px 0; text-align: center;
+    min-height: 40vh; padding: 40px 20px 20px; text-align: center;
   }
   .landing-logo {
-    font-family: var(--font-display); font-size: 48px; font-weight: 900;
-    color: var(--navy); margin-bottom: 8px; letter-spacing: -1px;
-  }
-  .landing-logo span { color: var(--copper); }
-  .landing-sub {
-    font-size: 16px; color: var(--text-muted); margin-bottom: 36px; line-height: 1.6;
+    font-family: var(--font-display); font-size: 36px; font-weight: 900;
+    color: var(--navy); margin-bottom: 32px; letter-spacing: -0.5px;
   }
 
   /* ── MAIN CONTENT ── */
@@ -145,45 +140,48 @@
   .chat-card {
     background: var(--warm-white); border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg); border: 1px solid var(--border-light);
-    overflow: hidden; display: flex; flex-direction: column;
+    overflow: visible; display: flex; flex-direction: column;
   }
 
   /* Chat messages area — hidden until first interaction */
   #chat {
     height: 0; min-height: 0; max-height: 0; overflow: hidden;
     padding: 0 20px; display: flex; flex-direction: column; gap: 12px;
-    transition: height 0.4s cubic-bezier(0.25,0.46,0.45,0.94),
-                max-height 0.4s cubic-bezier(0.25,0.46,0.45,0.94),
-                padding 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+    transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
   }
   .chat-card.active #chat {
-    height: 55vh; min-height: 350px; max-height: 600px;
-    overflow-y: auto; padding: 20px;
+    height: auto; min-height: 0; max-height: none;
+    overflow-y: visible; padding: 20px;
   }
 
-  /* 채팅 활성화 시: 랜딩 → 채팅 전환 */
-  body.chatting #landing { display: none; }
-  body.chatting #chat-fullview {
-    display: flex; flex-direction: column;
-    height: 100dvh; padding-top: max(10px, env(safe-area-inset-top));
+  /* Fullview — not used in single Q&A mode */
+  #chat-fullview { display: none; }
+
+  /* ── Answer Action Bar ── */
+  .answer-actions {
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    padding: 16px 20px; border-top: 1px solid var(--border-light);
+    animation: fadeInUp 0.3s ease;
   }
-  body.chatting #chat-fullview .chat-card {
-    flex: 1; display: flex; flex-direction: column; border-radius: 0; box-shadow: none; border: none;
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
   }
-  body.chatting #chat-fullview .chat-card #chat {
-    flex: 1; height: auto; min-height: 0; max-height: none;
-    overflow-y: auto; padding: 20px;
+  .answer-actions button {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 18px; font-size: 14px; font-weight: 500;
+    color: var(--text-secondary); background: var(--warm-white);
+    border: 1px solid var(--border); border-radius: var(--radius-pill);
+    cursor: pointer; transition: all 0.2s; font-family: var(--font-body);
+    white-space: nowrap;
   }
-  body.chatting #site-footer { display: none; }
-  body.chatting .back-to-landing {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 20px; background: var(--cream);
-    border-bottom: 1px solid var(--border); font-size: 14px;
-    color: var(--text-secondary); cursor: pointer;
+  .answer-actions button:hover {
+    border-color: var(--copper); color: var(--copper);
+    box-shadow: var(--shadow-sm); transform: translateY(-1px);
   }
-  body.chatting .back-to-landing:hover { color: var(--copper); }
-  body:not(.chatting) .back-to-landing { display: none; }
-  body:not(.chatting) #chat-fullview { display: none; }
+  .answer-actions button.done {
+    color: #16a34a; border-color: #16a34a;
+  }
 
   /* Collapsed input — prominent search bar style */
   .chat-card:not(.active) #input-wrapper { border-top: none; }
@@ -193,28 +191,9 @@
   }
   .chat-card:not(.active) #input-area { padding: 16px 20px; }
 
-  /* Suggestion chips below collapsed input */
-  .suggestion-chips {
-    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
-    margin-top: 16px; transition: opacity 0.3s, max-height 0.3s;
-    max-height: 200px; overflow: hidden;
-  }
-  .suggestion-chips.hidden { opacity: 0; max-height: 0; pointer-events: none; margin-top: 0; }
-  .suggestion-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 10px 18px; font-size: 14px; font-weight: 500;
-    color: var(--text-secondary); background: var(--warm-white);
-    border: 1px solid var(--border); border-radius: var(--radius-pill);
-    cursor: pointer; transition: all 0.2s; font-family: var(--font-body);
-    white-space: nowrap; box-shadow: var(--shadow-sm);
-  }
-  .suggestion-chip:hover {
-    border-color: var(--copper); color: var(--copper);
-    box-shadow: var(--shadow-md); transform: translateY(-1px);
-  }
 
   /* Messages */
-  .msg { max-width: 80%; padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.7; word-break: break-word; }
+  .msg { max-width: 100%; padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.7; word-break: break-word; }
   .msg.user {
     align-self: flex-end; background: var(--navy); color: white;
     border-bottom-right-radius: 4px;
@@ -305,8 +284,11 @@
   #input-area textarea {
     flex: 1; border: 1px solid var(--border); border-radius: var(--radius-md);
     padding: 10px 16px; font-size: 15px; outline: none; resize: none;
-    min-height: 42px; max-height: 150px; line-height: 1.5; font-family: var(--font-body);
-    overflow-y: auto; background: var(--cream); transition: border-color 0.2s;
+    height: 42px; min-height: 42px; max-height: 42px; line-height: 1.5; font-family: var(--font-body);
+    overflow: hidden; background: var(--cream); transition: border-color 0.2s;
+  }
+  .input-hint {
+    text-align: center; font-size: 12px; color: var(--text-muted); padding: 4px 0 0;
   }
   #input-area textarea:focus { border-color: var(--copper); box-shadow: 0 0 0 3px var(--copper-glow); }
   #send-btn {
@@ -368,21 +350,20 @@
   #board-more-btn:hover { text-decoration: underline; }
   .section-link-wrap { text-align: center; margin-top: 20px; }
 
-  /* ── FOOTER ── */
+  /* ── FOOTER (sticky bottom, 3 lines) ── */
   #site-footer {
     background: var(--navy-deep); color: rgba(255,255,255,0.5); padding: 12px 24px;
-    font-size: 13px; line-height: 1.7; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    font-size: 12px; line-height: 1.6; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    margin-top: auto; text-align: center;
   }
-  .footer-inner { max-width: 800px; margin: 0 auto; text-align: center; }
-  .footer-org { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
-  .footer-org strong { color: rgba(255,255,255,0.85); font-family: var(--font-display); font-size: 17px; }
-  .footer-org a { color: var(--copper-light); text-decoration: none; }
-  .footer-org a:hover { text-decoration: underline; }
-  .footer-links { margin-bottom: 0; display: flex; gap: 8px; justify-content: center; }
-  .footer-links a { color: rgba(255,255,255,0.5); text-decoration: none; }
-  .footer-links a:hover { color: rgba(255,255,255,0.8); }
-  .footer-disclaimer { color: rgba(255,255,255,0.35); font-size: 12px; margin-bottom: 8px; }
-  .footer-copyright { color: rgba(255,255,255,0.25); font-size: 11px; }
+  .footer-inner { max-width: 800px; margin: 0 auto; }
+  .footer-title { color: rgba(255,255,255,0.85); font-family: var(--font-display); font-size: 14px; font-weight: 700; }
+  .footer-info { color: rgba(255,255,255,0.45); margin: 2px 0; }
+  .footer-info a { color: var(--copper-light); text-decoration: none; }
+  .footer-info a:hover { text-decoration: underline; }
+  .footer-links { display: flex; gap: 8px; justify-content: center; }
+  .footer-links a { color: rgba(255,255,255,0.35); text-decoration: none; font-size: 11px; }
+  .footer-links a:hover { color: rgba(255,255,255,0.7); }
 
   /* ── Scroll Reveal Animation ── */
   .reveal {
@@ -405,14 +386,13 @@
 
   /* ── MOBILE RESPONSIVE ── */
   @media (max-width: 768px) {
-    .landing-logo { font-size: 36px; }
-    .landing-sub { font-size: 14px; }
+    .landing-logo { font-size: 28px; }
     .slide-menu { width: 280px; }
   }
 
   @media (max-width: 600px) {
     .copy-btn { opacity: 0.7; }
-    .msg { max-width: 92%; }
+    .msg { max-width: 100%; }
     #input-area { padding: 10px; }
     #file-preview { padding: 8px 10px 0; }
     #send-btn { min-height: 44px; min-width: 44px; padding: 10px 16px; }
@@ -424,7 +404,7 @@
     .section-heading { font-size: 22px; }
     #faq-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .chat-card.active #chat { height: 50vh; min-height: 300px; }
-    .footer-org { font-size: 12px; }
+    .footer-info { font-size: 11px; }
     .msg.assistant .callout { padding: 8px 10px; margin: 8px 0; }
     .msg.assistant .summary-badge { padding: 10px 12px; }
     .msg.assistant .step-list li { padding-left: 34px; }
@@ -448,7 +428,7 @@
 <div class="slide-overlay" id="slide-overlay" onclick="closeMenu()"></div>
 <nav class="slide-menu" id="slide-menu">
   <div class="menu-header">
-    <div class="menu-logo">노동<span>OK</span></div>
+    <div class="menu-logo">기초 노동상담</div>
     <button class="menu-close" onclick="closeMenu()" aria-label="닫기">&times;</button>
   </div>
   <div class="menu-section">
@@ -482,8 +462,7 @@
 
 <!-- ═══ LANDING (Google-style) ═══ -->
 <div id="landing">
-  <div class="landing-logo">노동<span>OK</span></div>
-  <p class="landing-sub">AI 노동상담 — 노동법, 임금계산, 퇴직금, 해고, 4대보험</p>
+  <div class="landing-logo">기초 노동상담</div>
 
   <section id="chat-section">
     <div class="chat-container">
@@ -501,27 +480,13 @@
             <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." rows="1" autocomplete="off"></textarea>
             <button id="send-btn">전송</button>
           </div>
+          <p class="input-hint">Shift + Enter로 줄바꿈</p>
         </div>
-      </div>
-      <div class="suggestion-chips" id="suggestion-chips">
-        <button class="suggestion-chip" onclick="askQuestion('시급 15,000원, 주 4일 근무 시 주휴수당은?')">💰 주휴수당 계산</button>
-        <button class="suggestion-chip" onclick="askQuestion('월급 300만원, 3년 근무 후 퇴직금은 얼마인가요?')">📊 퇴직금 계산</button>
-        <button class="suggestion-chip" onclick="askQuestion('5인 미만 사업장에서도 연장수당을 받을 수 있나요?')">⚖️ 연장수당</button>
-        <button class="suggestion-chip" onclick="askQuestion('2026년 최저임금은 얼마인가요?')">💵 최저임금</button>
-        <button class="suggestion-chip" onclick="askQuestion('육아휴직 급여는 어떻게 계산하나요?')">👶 육아휴직</button>
       </div>
     </div>
   </section>
 </div>
 
-<!-- ═══ CHAT FULLVIEW (채팅 시작 후 전환) ═══ -->
-<div id="chat-fullview">
-  <div class="back-to-landing" onclick="backToLanding()">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
-    노동<strong style="color:var(--copper)">OK</strong>
-  </div>
-  <!-- chat-card가 JS로 여기에 이동됨 -->
-</div>
 
 <!-- ═══ MAIN (FAQ, Board — 메뉴에서 접근) ═══ -->
 <main id="main-content">
@@ -554,16 +519,9 @@
 <!-- ═══ FOOTER ═══ -->
 <footer id="site-footer">
   <div class="footer-inner">
-    <div class="footer-org">
-      <strong>청년노동자인권센터</strong>
-      <span>서울시 종로구 성균관로12 5층</span>
-      <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a>
-    </div>
-    <div class="footer-links">
-      <a href="#">개인정보처리방침</a>
-      <span style="color:rgba(255,255,255,0.2)">|</span>
-      <a href="#">이용약관</a>
-    </div>
+    <div class="footer-title">청년노동자인권센터</div>
+    <div class="footer-info">서울시 종로구 성균관로12 5층 · <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a></div>
+    <div class="footer-links"><a href="#">개인정보처리방침</a> <a href="#">이용약관</a></div>
   </div>
 </footer>
 
@@ -600,23 +558,7 @@ function showSection(id) {
 }
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeMenu(); });
 
-// ── 채팅 시작 시 전체 화면 전환 ──────────────────────────────────────────────
-function expandToChat() {
-  if (document.body.classList.contains('chatting')) return;
-  document.body.classList.add('chatting');
-  // chat-card를 fullview로 이동
-  var card = document.getElementById('chat-card');
-  var fullview = document.getElementById('chat-fullview');
-  fullview.appendChild(card);
-  card.classList.add('active');
-}
-function backToLanding() {
-  document.body.classList.remove('chatting');
-  var card = document.getElementById('chat-card');
-  var container = document.querySelector('#chat-section .chat-container');
-  if (container) container.insertBefore(card, document.getElementById('suggestion-chips'));
-  card.classList.remove('active');
-}
+// ── (single Q&A — no fullscreen transition) ──
 // export 함수 alias (메뉴에서 호출)
 function exportChat() {
   var btn = document.getElementById('export-btn');
@@ -663,7 +605,7 @@ function exportChatMarkdown() {
   const now = new Date();
   const dateStr = now.toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
   const lines = [
-    '# 노동OK 상담 기록\n',
+    '# 기초 노동상담 기록\n',
     `> 날짜: ${dateStr}`,
     '> 출처: nodong.kr AI 노동상담 챗봇\n',
     '---\n',
@@ -685,7 +627,7 @@ function exportChatMarkdown() {
 
   const md_text = lines.join('\n');
   const ts = now.toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  const filename = `노동OK_상담_${ts}.md`;
+  const filename = `기초노동상담_${ts}.md`;
   const blob = new Blob([md_text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -802,18 +744,14 @@ function fileToBase64(file) {
 
 // ── 채팅 확장 (첫 상호작용 시) ────────────────────────────────────────────────
 
-let chatExpanded = false;
-
 function expandChat() {
-  if (chatExpanded) return;
-  chatExpanded = true;
-  expandToChat();
-  document.getElementById('suggestion-chips')?.classList.add('hidden');
-  // 인사 메시지 추가
-  const welcome = document.createElement('div');
-  welcome.className = 'msg-wrapper assistant-side';
-  welcome.innerHTML = '<div class="msg assistant">안녕하세요! <strong>AI 노동상담</strong>입니다.<br>한국 노동법 관련 질문에 답변해 드립니다.</div>';
-  chat.appendChild(welcome);
+  const card = document.getElementById('chat-card');
+  if (!card.classList.contains('active')) {
+    card.classList.add('active');
+  }
+  // 액션바만 제거 (이전 대화는 유지)
+  const oldActions = card.querySelector('.answer-actions');
+  if (oldActions) oldActions.remove();
 }
 
 // ── 메시지 ───────────────────────────────────────────────────────────────────
@@ -1099,14 +1037,138 @@ async function readSSE(resp) {
     }
   }
   if (assistantEl) {
-    ensureCopyBtn(assistantEl);
     if (pendingContacts) renderContacts(pendingContacts, assistantEl);
     chat.scrollTop = chat.scrollHeight;
+    showAnswerActions(assistantEl);
   }
   if (!assistantEl && !document.querySelector('.msg.status + .msg.assistant')) {
     removeStatus();
     addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
   }
+}
+
+// ── 답변 완료 후 액션 바 ─────────────────────────────────────────────────────
+
+function showAnswerActions(el) {
+  const card = document.getElementById('chat-card');
+  const old = card.querySelector('.answer-actions');
+  if (old) old.remove();
+
+  const bar = document.createElement('div');
+  bar.className = 'answer-actions';
+  bar.innerHTML =
+    '<button onclick="actionCopy(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 복사하기</button>' +
+    '<button onclick="actionPDF()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> PDF 저장</button>' +
+    '<button onclick="actionMarkdown()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Markdown 저장</button>' +
+    '<button onclick="actionEmail(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg> 이메일 전송</button>';
+  card.appendChild(bar);
+}
+
+function getQAPair() {
+  // 전체 대화 내용을 수집 (이어지는 질문 포함)
+  const allQ = chat.querySelectorAll('.msg.user');
+  const allA = chat.querySelectorAll('.msg.assistant:not(.status)');
+  // 전체 대화 텍스트
+  let fullMd = '', fullHtml = '', lastQuestion = '';
+  const wrappers = chat.querySelectorAll('.msg-wrapper');
+  wrappers.forEach(function(w) {
+    const q = w.querySelector('.msg.user');
+    const a = w.querySelector('.msg.assistant:not(.status)');
+    if (q) { lastQuestion = q.textContent.trim(); fullMd += '\n\n## 질문\n\n' + lastQuestion; }
+    if (a) {
+      const aMd = a.dataset.md || a.textContent.trim();
+      fullMd += '\n\n## 답변\n\n' + aMd;
+      fullHtml += '<div class="q">' + (lastQuestion || '') + '</div><div class="a">' + a.innerHTML + '</div>';
+    }
+  });
+  return { question: lastQuestion, answerMd: fullMd.trim(), answerHtml: fullHtml };
+}
+
+function actionCopy(btn) {
+  const { answerMd } = getQAPair();
+  const text = answerMd;
+  navigator.clipboard.writeText(text).then(function() {
+    btn.classList.add('done');
+    btn.innerHTML = btn.innerHTML.replace('복사하기', '복사됨');
+    setTimeout(function() {
+      btn.classList.remove('done');
+      btn.innerHTML = btn.innerHTML.replace('복사됨', '복사하기');
+    }, 2000);
+  });
+}
+
+function actionPDF() {
+  const { answerHtml } = getQAPair();
+  const win = window.open('', '_blank');
+  win.document.write(
+    '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<title>기초 노동상담</title>' +
+    '<style>body{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;color:#222;line-height:1.7;}' +
+    'h1{font-size:20px;border-bottom:2px solid #1B2A4A;padding-bottom:8px;margin-bottom:16px;}' +
+    '.q{background:#f0f4f8;padding:12px 16px;border-radius:8px;margin-bottom:12px;font-weight:600;}' +
+    '.a{font-size:15px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #eee;}' +
+    'table{border-collapse:collapse;margin:10px 0;}th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;}th{background:#1B2A4A;color:#fff;}' +
+    '.disclaimer{font-size:12px;color:#888;border-top:1px solid #ddd;margin-top:24px;padding-top:12px;}</style></head><body>' +
+    '<h1>기초 노동상담</h1>' +
+    answerHtml +
+    '<p class="disclaimer">AI가 생성한 답변으로, 법적 효력이 없습니다. 중요한 사안은 전문가 상담을 권장합니다.</p>' +
+    '</body></html>'
+  );
+  win.document.close();
+  setTimeout(function() { win.print(); }, 500);
+}
+
+function actionMarkdown() {
+  const { answerMd } = getQAPair();
+  const ts = new Date().toISOString().slice(0, 10);
+  const content = '# 기초 노동상담\n\n' +
+    '날짜: ' + ts + '\n\n' +
+    answerMd + '\n\n' +
+    '---\n*AI가 생성한 답변으로, 법적 효력이 없습니다.*\n';
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '기초노동상담_' + ts + '.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function actionEmail(btn) {
+  const to = prompt('받는 사람 이메일 주소를 입력하세요:');
+  if (!to || !to.includes('@')) return;
+
+  const { question, answerHtml } = getQAPair();
+  const subject = '[기초 노동상담] ' + question.slice(0, 50);
+
+  btn.disabled = true;
+  btn.innerHTML = btn.innerHTML.replace('이메일 전송', '전송 중...');
+
+  fetch(API_BASE + '/api/send-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to: to, subject: subject, body_html: answerHtml }),
+  })
+  .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+  .then(function(res) {
+    if (res.ok) {
+      btn.classList.add('done');
+      btn.innerHTML = btn.innerHTML.replace('전송 중...', '전송 완료');
+      setTimeout(function() {
+        btn.classList.remove('done');
+        btn.innerHTML = btn.innerHTML.replace('전송 완료', '이메일 전송');
+        btn.disabled = false;
+      }, 2000);
+    } else {
+      alert(res.data.detail || '전송 실패');
+      btn.innerHTML = btn.innerHTML.replace('전송 중...', '이메일 전송');
+      btn.disabled = false;
+    }
+  })
+  .catch(function() {
+    alert('이메일 전송에 실패했습니다.');
+    btn.innerHTML = btn.innerHTML.replace('전송 중...', '이메일 전송');
+    btn.disabled = false;
+  });
 }
 
 // ── 전송 ─────────────────────────────────────────────────────────────────────
