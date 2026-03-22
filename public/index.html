@@ -284,8 +284,8 @@
   #input-area textarea {
     flex: 1; border: 1px solid var(--border); border-radius: var(--radius-md);
     padding: 10px 16px; font-size: 15px; outline: none; resize: none;
-    height: 42px; min-height: 42px; max-height: 42px; line-height: 1.5; font-family: var(--font-body);
-    overflow: hidden; background: var(--cream); transition: border-color 0.2s;
+    min-height: 42px; max-height: 120px; line-height: 1.5; font-family: var(--font-body);
+    overflow-y: auto; background: var(--cream); transition: border-color 0.2s;
   }
   .input-hint {
     text-align: center; font-size: 12px; color: var(--text-muted); padding: 4px 0 0;
@@ -1036,12 +1036,14 @@ async function readSSE(resp) {
       }
     }
   }
-  if (assistantEl) {
-    if (pendingContacts) renderContacts(pendingContacts, assistantEl);
+  // 마지막 assistant 메시지에 액션 바 표시
+  var lastAssistant = assistantEl || chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant');
+  if (lastAssistant) {
+    if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
-    showAnswerActions(assistantEl);
+    showAnswerActions(lastAssistant);
   }
-  if (!assistantEl && !document.querySelector('.msg.status + .msg.assistant')) {
+  if (!assistantEl && !lastAssistant && !document.querySelector('.msg.status + .msg.assistant')) {
     removeStatus();
     addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
   }
@@ -1064,11 +1066,14 @@ function showAnswerActions(el) {
   card.appendChild(bar);
 }
 
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 function getQAPair() {
   // 전체 대화 내용을 수집 (이어지는 질문 포함)
-  const allQ = chat.querySelectorAll('.msg.user');
-  const allA = chat.querySelectorAll('.msg.assistant:not(.status)');
-  // 전체 대화 텍스트
   let fullMd = '', fullHtml = '', lastQuestion = '';
   const wrappers = chat.querySelectorAll('.msg-wrapper');
   wrappers.forEach(function(w) {
@@ -1078,7 +1083,7 @@ function getQAPair() {
     if (a) {
       const aMd = a.dataset.md || a.textContent.trim();
       fullMd += '\n\n## 답변\n\n' + aMd;
-      fullHtml += '<div class="q">' + (lastQuestion || '') + '</div><div class="a">' + a.innerHTML + '</div>';
+      fullHtml += '<div class="q">' + escHtml(lastQuestion || '') + '</div><div class="a">' + a.innerHTML + '</div>';
     }
   });
   return { question: lastQuestion, answerMd: fullMd.trim(), answerHtml: fullHtml };

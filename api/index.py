@@ -838,6 +838,10 @@ def serve_calculator_flow(filename: str):
 
 # ── 이메일 발송 ─────────────────────────────────────────────────────────────
 
+_email_log: list[float] = []  # 레이트 리밋용 타임스탬프
+_EMAIL_RATE_LIMIT = 10  # 분당 최대 발송 수
+_EMAIL_RATE_WINDOW = 60  # 초
+
 
 class EmailRequest(BaseModel):
     to: str
@@ -845,11 +849,25 @@ class EmailRequest(BaseModel):
     body_html: str
 
 
+def _sanitize_html(html: str) -> str:
+    """스크립트 태그 제거 — 허용: 기본 서식 태그만."""
+    html = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", html, flags=re.IGNORECASE)
+    html = re.sub(r"\bon\w+\s*=", "", html, flags=re.IGNORECASE)
+    return html
+
+
 @app.post("/api/send-email")
 async def send_email(req: EmailRequest):
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
+
+    # 레이트 리밋
+    now = time.time()
+    _email_log[:] = [t for t in _email_log if now - t < _EMAIL_RATE_WINDOW]
+    if len(_email_log) >= _EMAIL_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="이메일 발송 한도를 초과했습니다. 잠시 후 다시 시도해주세요.")
+    _email_log.append(now)
 
     smtp_host = os.getenv("MAIL_SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("MAIL_SMTP_PORT", "587"))
@@ -861,9 +879,10 @@ async def send_email(req: EmailRequest):
     if not smtp_user or not smtp_pass:
         raise HTTPException(status_code=500, detail="메일 서버가 설정되지 않았습니다.")
 
-    # 간단한 이메일 유효성 검사
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", req.to):
         raise HTTPException(status_code=400, detail="올바른 이메일 주소를 입력해주세요.")
+
+    safe_html = _sanitize_html(req.body_html)
 
     msg = MIMEMultipart("alternative")
     msg["From"] = f"{from_name} <{from_email}>"
@@ -874,7 +893,7 @@ async def send_email(req: EmailRequest):
         '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
         '<body style="font-family:-apple-system,sans-serif;max-width:700px;margin:0 auto;padding:20px;color:#222;line-height:1.7;">'
         '<h1 style="font-size:20px;border-bottom:2px solid #1B2A4A;padding-bottom:8px;margin-bottom:16px;">기초 노동상담</h1>'
-        + req.body_html
+        + safe_html
         + '<p style="font-size:12px;color:#888;border-top:1px solid #ddd;margin-top:24px;padding-top:12px;">'
         'AI가 생성한 답변으로, 법적 효력이 없습니다. 중요한 사안은 전문가 상담을 권장합니다.</p>'
         '</body></html>'
@@ -888,8 +907,8 @@ async def send_email(req: EmailRequest):
             server.send_message(msg)
         return {"ok": True, "message": "이메일이 전송되었습니다."}
     except Exception as e:
-        logger.error("이메일 전송 실패: %s", e)
-        raise HTTPException(status_code=500, detail="이메일 전송에 실패했습니다.")
+        logging.exception("이메일 전송 실패: %s", e)
+        raise HTTPException(status_code=500, detail="이메일 전송에 실패했습니다.") from e
 
 
 if __name__ == "__main__":
