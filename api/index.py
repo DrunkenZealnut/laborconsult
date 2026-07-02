@@ -33,12 +33,30 @@ from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTA
 
 app = FastAPI(title="AI 노동상담 챗봇")
 
+# CORS 오리진: ALLOWED_ORIGINS(쉼표구분) 설정 시 제한, 미설정 시 "*"(비파괴 기본).
+_allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "*").strip()
+_ALLOWED_ORIGINS = (
+    ["*"] if _allowed_origins_env == "*"
+    else [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    """모든 응답에 기본 보안 헤더 부여 (clickjacking·MIME sniffing 방어)."""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return resp
 
 
 @app.exception_handler(RequestValidationError)
@@ -204,11 +222,39 @@ def chat_stream_with_files(req: ChatWithFilesRequest):
     )
 
 
+# ── 공용 보안 헬퍼 ────────────────────────────────────────────────────────────
+
+def _safe_like(term: str) -> str:
+    """PostgREST ilike/or_ 필터용 검색어 새니타이즈 — 필터 인젝션 방지.
+
+    LIKE 와일드카드(%,_)와 PostgREST 구문 문자(,()\\*)를 공백으로 치환해
+    무력화한다. 검색은 정상 동작하되 구문 조작·와일드카드 남용을 차단한다.
+    """
+    term = (term or "")[:100]
+    for ch in ("\\", "%", "_", ",", "(", ")", "*"):
+        term = term.replace(ch, " ")
+    return " ".join(term.split())
+
+
 # ── 관리자 API ────────────────────────────────────────────────────────────────
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 JWT_SECRET = os.environ.get("ADMIN_JWT_SECRET", ADMIN_PASSWORD)
+# CAPTCHA 서명키는 JWT와 용도 분리(S-1b). 미설정 시 JWT_SECRET로 폴백(비파괴적).
+CAPTCHA_SECRET = os.environ.get("CAPTCHA_HMAC_SECRET") or JWT_SECRET
 JWT_EXPIRY = 86400  # 24시간
+
+# 시크릿 강도 경고(비파괴적 — 기존 배포 유지, 강화만 권고)
+if not os.environ.get("ADMIN_JWT_SECRET"):
+    logging.warning(
+        "보안: ADMIN_JWT_SECRET 미설정 → ADMIN_PASSWORD를 서명키로 재사용 중. "
+        "고엔트로피(≥32자) ADMIN_JWT_SECRET 설정을 권장합니다."
+    )
+elif len(JWT_SECRET) < 32:
+    logging.warning("보안: ADMIN_JWT_SECRET이 32자 미만입니다. 더 긴 랜덤 시크릿을 권장합니다.")
+
+# 관리자 로그인 브루트포스 방어용 IP 버킷(인메모리)
+_login_rate: dict[str, list[float]] = {}
 
 
 class AdminLoginRequest(BaseModel):
@@ -240,10 +286,15 @@ def _get_supabase():
 
 
 @app.post("/api/admin/login")
-def admin_login(body: AdminLoginRequest):
+def admin_login(body: AdminLoginRequest, request: Request):
     if not ADMIN_PASSWORD:
         raise HTTPException(503, "관리자 기능이 설정되지 않았습니다")
-    if body.password != ADMIN_PASSWORD:
+    # 브루트포스 방어: IP당 5회/5분
+    client_ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() \
+        or (request.client.host if request.client else "unknown")
+    if not _check_rate_limit(client_ip, max_count=5, window=300, store=_login_rate):
+        raise HTTPException(429, "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.")
+    if not _hmac.compare_digest(body.password, ADMIN_PASSWORD):  # 상수시간 비교
         raise HTTPException(401, "비밀번호가 올바르지 않습니다")
     token = jwt.encode(
         {"exp": int(time.time()) + JWT_EXPIRY, "role": "admin"},
@@ -332,8 +383,9 @@ def admin_conversations(
     )
 
     if search:
+        safe = _safe_like(search)
         query = query.or_(
-            f"question_text.ilike.%{search}%,answer_text.ilike.%{search}%"
+            f"question_text.ilike.%{safe}%,answer_text.ilike.%{safe}%"
         )
     if category:
         query = query.eq("category", category)
@@ -442,7 +494,7 @@ def _generate_captcha():
         json.dumps({"a": answer, "e": expires}).encode()
     ).decode().rstrip("=")
     sig = _hmac.new(
-        JWT_SECRET.encode(), payload.encode(), hashlib.sha256
+        CAPTCHA_SECRET.encode(), payload.encode(), hashlib.sha256
     ).hexdigest()
 
     return question, f"{payload}.{sig}"
@@ -453,7 +505,7 @@ def _verify_captcha(token: str, user_answer: int) -> bool:
     try:
         payload_b64, sig = token.rsplit(".", 1)
         expected_sig = _hmac.new(
-            JWT_SECRET.encode(), payload_b64.encode(), hashlib.sha256
+            CAPTCHA_SECRET.encode(), payload_b64.encode(), hashlib.sha256
         ).hexdigest()
         if not _hmac.compare_digest(sig, expected_sig):
             return False
@@ -498,7 +550,7 @@ _BAD_WORDS = re.compile(
 @app.get("/api/captcha")
 def captcha_generate():
     """수학 CAPTCHA 문제 + HMAC 서명 토큰 발급"""
-    if not JWT_SECRET:
+    if not CAPTCHA_SECRET:
         raise HTTPException(503, "서버 설정 오류")
     question, token = _generate_captcha()
     return {"question": question, "token": token}
@@ -608,6 +660,8 @@ def board_post_delete(post_id: str, body: BoardDeleteRequest):
 # ── 질문게시판 (공개) ──────────────────────────────────────────────────────────
 
 _ANON_PATTERNS = [
+    # 주민등록번호(6자리-성별1~4+6자리)는 전화번호 패턴보다 먼저 매칭해야 함
+    (re.compile(r'\b\d{6}[-\s]?[1-4]\d{6}\b'), '******-*******'),
     (re.compile(r'[가-힣]{2,4}(?=\s*(?:씨|님|사장|대표|과장|부장|팀장|차장|이사))'), 'OOO'),
     (re.compile(r'(?:주\s*\)?\s*|㈜\s*|(?:주식)?회사\s+)[가-힣A-Za-z]+'), '(주)OOO'),
     (re.compile(r'\d{2,3}[-.\s]?\d{3,4}[-.\s]?\d{4}'), '***-****-****'),
@@ -696,7 +750,7 @@ def board_search(q: str = "", category: str = "", page: int = 1, per_page: int =
     if category:
         qa_qb = qa_qb.eq("category", category)
     if q:
-        qa_qb = qa_qb.ilike("question_text", f"%{q}%")
+        qa_qb = qa_qb.ilike("question_text", f"%{_safe_like(q)}%")
     qa_result = qa_qb.order("created_at", desc=True).execute()
 
     all_items = []
@@ -721,18 +775,18 @@ def board_search(q: str = "", category: str = "", page: int = 1, per_page: int =
         if category:
             bp_qb = bp_qb.eq("category", category)
         if q:
-            bp_qb = bp_qb.ilike("question_text", f"%{q}%")
+            bp_qb = bp_qb.ilike("question_text", f"%{_safe_like(q)}%")
         bp_result = bp_qb.order("created_at", desc=True).execute()
 
         for row in bp_result.data or []:
             all_items.append({
                 "id": row["id"],
                 "category": row.get("category", ""),
-                "question": row.get("question_text", ""),
+                "question": _anonymize(row.get("question_text", "")),
                 "answer_preview": "",
                 "created_at": row.get("created_at", ""),
                 "source": "user",
-                "nickname": row.get("nickname", ""),
+                "nickname": _anonymize(row.get("nickname", "")),
             })
     except Exception:
         pass  # board_posts 테이블 미생성 시 graceful fallback
@@ -799,11 +853,11 @@ def board_detail(item_id: str):
             return {
                 "id": row["id"],
                 "category": row.get("category", ""),
-                "question": row.get("question_text", ""),
+                "question": _anonymize(row.get("question_text", "")),
                 "answer": "",
                 "created_at": row.get("created_at", ""),
                 "source": "user",
-                "nickname": row.get("nickname", ""),
+                "nickname": _anonymize(row.get("nickname", "")),
             }
     except Exception:
         pass
@@ -862,11 +916,33 @@ class EmailRequest(BaseModel):
     captcha_answer: int
 
 
-def _sanitize_html(html: str) -> str:
-    """스크립트 태그 제거 — 허용: 기본 서식 태그만."""
-    html = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", html, flags=re.IGNORECASE)
-    html = re.sub(r"\bon\w+\s*=", "", html, flags=re.IGNORECASE)
-    return html
+try:
+    import nh3
+
+    _SANITIZE_TAGS = {
+        "p", "br", "hr", "strong", "b", "em", "i", "u", "s",
+        "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+        "blockquote", "code", "pre", "table", "thead", "tbody",
+        "tr", "th", "td", "a", "span", "div",
+    }
+    _SANITIZE_ATTRS = {"a": {"href", "title"}, "span": {"style"}, "div": {"style"}}
+
+    def _sanitize_html(html: str) -> str:
+        """allowlist 기반 HTML 새니타이즈 (nh3) — 태그·속성·URL 스킴 화이트리스트."""
+        return nh3.clean(
+            html,
+            tags=_SANITIZE_TAGS,
+            attributes=_SANITIZE_ATTRS,
+            url_schemes={"http", "https", "mailto"},
+        )
+except ImportError:
+    def _sanitize_html(html: str) -> str:
+        """nh3 미설치 폴백 — 정규식 기반(제한적): script/iframe/style/on*/javascript: 제거."""
+        html = re.sub(r"<(script|iframe|object|embed|style|link|meta)\b[^>]*>[\s\S]*?</\1>", "", html, flags=re.IGNORECASE)
+        html = re.sub(r"<(script|iframe|object|embed|style|link|meta)\b[^>]*/?>", "", html, flags=re.IGNORECASE)
+        html = re.sub(r"\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", html, flags=re.IGNORECASE)
+        html = re.sub(r"(href|src)\s*=\s*([\"']?)\s*(?:javascript|data|vbscript):[^\"'>\s]*", r"\1=\2#", html, flags=re.IGNORECASE)
+        return html
 
 
 @app.post("/api/send-email")
