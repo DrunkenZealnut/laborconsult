@@ -108,9 +108,12 @@ def chat_stream(message: str, session_id: str | None = None):
         session, _ = get_or_create_session(session_id, _restore_fn)
     except Exception as e:
         logging.error("SSE 초기화 실패: %s\n%s", e, traceback.format_exc())
+        err_text = "서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요."
 
-        def error_gen():
-            yield f"data: {json.dumps({'type': 'error', 'text': f'서버 초기화 오류: {e}'}, ensure_ascii=False)}\n\n"
+        # 'e'는 except 블록을 벗어나면 자동 삭제됨 → 지연 실행되는 제너레이터가
+        # 직접 참조하면 NameError 발생. 기본 인자로 메시지를 바인딩해 회피한다.
+        def error_gen(msg=err_text):
+            yield f"data: {json.dumps({'type': 'error', 'text': msg}, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(error_gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -144,9 +147,12 @@ def chat_stream_with_files(req: ChatWithFilesRequest):
         session, _ = get_or_create_session(req.session_id, _restore_fn)
     except Exception as e:
         logging.error("SSE(POST) 초기화 실패: %s\n%s", e, traceback.format_exc())
+        err_text = "서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요."
 
-        def error_gen():
-            yield f"data: {json.dumps({'type': 'error', 'text': f'서버 초기화 오류: {e}'}, ensure_ascii=False)}\n\n"
+        # 'e'는 except 블록을 벗어나면 자동 삭제됨 → 지연 실행되는 제너레이터가
+        # 직접 참조하면 NameError 발생. 기본 인자로 메시지를 바인딩해 회피한다.
+        def error_gen(msg=err_text):
+            yield f"data: {json.dumps({'type': 'error', 'text': msg}, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(error_gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -465,16 +471,19 @@ def _verify_captcha(token: str, user_answer: int) -> bool:
 _write_rate: dict[str, list[float]] = {}
 
 
-def _check_rate_limit(ip: str, max_count: int = 3, window: int = 60) -> bool:
-    """IP당 window초 내 max_count건 초과 시 False"""
+def _check_rate_limit(
+    ip: str, max_count: int = 3, window: int = 60, store: dict | None = None
+) -> bool:
+    """IP당 window초 내 max_count건 초과 시 False. store 미지정 시 게시판 버킷 사용."""
+    store = _write_rate if store is None else store
     ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
     now = time.time()
-    times = _write_rate.get(ip_hash, [])
+    times = store.get(ip_hash, [])
     times = [t for t in times if now - t < window]
     if len(times) >= max_count:
         return False
     times.append(now)
-    _write_rate[ip_hash] = times
+    store[ip_hash] = times
     return True
 
 
@@ -838,15 +847,19 @@ def serve_calculator_flow(filename: str):
 
 # ── 이메일 발송 ─────────────────────────────────────────────────────────────
 
-_email_log: list[float] = []  # 레이트 리밋용 타임스탬프
-_EMAIL_RATE_LIMIT = 10  # 분당 최대 발송 수
+_email_rate: dict[str, list[float]] = {}  # IP별 레이트 리밋 버킷
+_EMAIL_RATE_LIMIT = 5  # IP당 분당 최대 발송 수
 _EMAIL_RATE_WINDOW = 60  # 초
+_EMAIL_MAX_SUBJECT = 200  # 제목 최대 길이
+_EMAIL_MAX_BODY = 50_000  # 본문 HTML 최대 길이
 
 
 class EmailRequest(BaseModel):
     to: str
     subject: str
     body_html: str
+    captcha_token: str
+    captcha_answer: int
 
 
 def _sanitize_html(html: str) -> str:
@@ -857,17 +870,27 @@ def _sanitize_html(html: str) -> str:
 
 
 @app.post("/api/send-email")
-async def send_email(req: EmailRequest):
+async def send_email(req: EmailRequest, request: Request):
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
-    # 레이트 리밋
-    now = time.time()
-    _email_log[:] = [t for t in _email_log if now - t < _EMAIL_RATE_WINDOW]
-    if len(_email_log) >= _EMAIL_RATE_LIMIT:
+    # 1. CAPTCHA 검증 — 무인증 오픈 메일 릴레이(브랜드 사칭 피싱) 차단
+    if not _verify_captcha(req.captcha_token, req.captcha_answer):
+        raise HTTPException(status_code=403, detail="보안문자가 올바르지 않습니다.")
+
+    # 2. IP별 레이트 리밋
+    client_ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(
+        client_ip, max_count=_EMAIL_RATE_LIMIT, window=_EMAIL_RATE_WINDOW, store=_email_rate
+    ):
         raise HTTPException(status_code=429, detail="이메일 발송 한도를 초과했습니다. 잠시 후 다시 시도해주세요.")
-    _email_log.append(now)
+
+    # 3. 페이로드 크기 제한
+    if len(req.subject) > _EMAIL_MAX_SUBJECT or len(req.body_html) > _EMAIL_MAX_BODY:
+        raise HTTPException(status_code=400, detail="전송 내용이 너무 깁니다.")
 
     smtp_host = os.getenv("MAIL_SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("MAIL_SMTP_PORT", "587"))
