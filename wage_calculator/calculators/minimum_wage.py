@@ -30,6 +30,7 @@ from .ordinary_wage import OrdinaryWageResult
 from .shared import normalize_allowances, AllowanceClassifier
 from ..constants import (
     MINIMUM_HOURLY_WAGE,
+    MONTHLY_STANDARD_HOURS,
     PROBATION_MIN_WAGE_RATE,
     PROBATION_MIN_CONTRACT_MONTHS,
     ELEMENTARY_OCCUPATION_CODES,
@@ -104,7 +105,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     bonus_excl_rate, welfare_excl_rate = get_min_wage_inclusion_rates(year)
 
     # 법정 최저임금 월액 (제외기준 계산용 — 최저임금법 시행령 제5조의2)
-    legal_monthly_ref = legal_minimum * 209.0
+    legal_monthly_ref = legal_minimum * MONTHLY_STANDARD_HOURS
 
     # ── 1. 기본급 월액 ────────────────────────────────────────────────────────
     base_monthly = _get_base_monthly(inp, monthly_hours)

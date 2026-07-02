@@ -29,9 +29,7 @@ from ..models import WageInput, WageType, WorkType
 from .ordinary_wage import OrdinaryWageResult
 from .shared import MultiplierContext
 from ..constants import MINIMUM_HOURLY_WAGE
-
-# 주 → 월 환산 계수
-WEEKS_PER_MONTH = 365 / 7 / 12  # ≈ 4.345
+from ..utils import WEEKS_PER_MONTH  # 주→월 환산 계수 (중복 정의 제거, 단일 소스)
 
 
 @dataclass

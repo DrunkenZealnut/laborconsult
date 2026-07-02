@@ -24,6 +24,20 @@ from .registry import (
 )
 
 
+def _clamp_negative_inputs(inp: WageInput) -> None:
+    """음수 임금/근로시간 입력을 0으로 보정 — 비현실적 결과·계산오류 방지."""
+    for field in ("hourly_wage", "daily_wage", "monthly_wage", "annual_wage"):
+        v = getattr(inp, field, None)
+        if v is not None and v < 0:
+            setattr(inp, field, 0.0)
+    sch = getattr(inp, "schedule", None)
+    if sch is not None:
+        if getattr(sch, "daily_work_hours", 0) < 0:
+            sch.daily_work_hours = 0.0
+        if getattr(sch, "weekly_work_days", 0) < 0:
+            sch.weekly_work_days = 0.0
+
+
 class WageCalculator:
     """임금계산기 통합 퍼사드"""
 
@@ -42,6 +56,7 @@ class WageCalculator:
         Returns:
             WageResult: 통합 계산 결과
         """
+        _clamp_negative_inputs(inp)
         if targets is None:
             targets = self._auto_detect_targets(inp)
 
@@ -213,8 +228,10 @@ class WageCalculator:
         if inp.parental_leave_months > 0:
             targets.append("parental_leave")
 
-        if getattr(inp, "is_multiple_birth", False) or not getattr(inp, "is_priority_support_company", True) is None:
-            pass
+        # 출산전후휴가: 다태아 등 출산 관련 입력이 명시되면 자동 포함
+        # (단태아 일반 케이스는 from_analysis("출산휴가") 명시 경로로 처리)
+        if getattr(inp, "is_multiple_birth", False):
+            targets.append("maternity_leave")
 
         if inp.arrear_amount > 0 and inp.arrear_due_date:
             targets.append("wage_arrears")

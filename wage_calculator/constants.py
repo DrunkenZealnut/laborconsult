@@ -227,8 +227,9 @@ INSURANCE_RATES: dict[int, dict] = {
         "health_insurance":    0.03595,   # 7.19% × 1/2  (+0.05%p)
         "long_term_care":      0.1314,    # 건강보험료 × 13.14%  (+0.19%p)
         "employment_insurance": 0.009,    # 1.8% × 1/2  (동결)
-        "pension_income_max":  6_170_000, # 2026년 7월 결정 예정 — 잠정 동일
-        "pension_income_min":    390_000,
+        # 국민연금 기준소득월액: 매년 7월 변경(적용기간 7월~익년6월). 2025.7 개정 상·하한 반영.
+        "pension_income_max":  6_370_000, # 2025.7 개정 상한(637만)
+        "pension_income_min":    400_000, # 2025.7 개정 하한(40만)
         "health_premium_max":  4_240_710, # 2026년 확정 시 갱신 — 잠정 동일
         "health_premium_min":      9_890,
     },
