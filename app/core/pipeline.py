@@ -40,6 +40,9 @@ from app.core.citation_validator import (
 
 logger = logging.getLogger(__name__)
 
+# 괴롭힘 판정(_extract_params) 게이팅용 키워드 — 비계산·비괴롭힘 상담에서 Sonnet 재호출 회피(R-2a)
+_HARASS_KEYWORDS = ("괴롭힘", "폭언", "폭행", "따돌림", "모욕", "갑질", "성희롱", "직장 내")
+
 
 # ── 특수 근로자 그룹별 법적 컨텍스트 ──────────────────────────────────────────
 
@@ -885,20 +888,26 @@ def process_question(query: str, session: Session, config: AppConfig,
                     session.cache_calculation(ct, analysis.extracted_info)
                 yield {"type": "meta", "calc_result": calc_result}
     else:
-        # 기존 로직: _extract_params 사용
-        tool_type, params = _extract_params(combined_query, config.claude_client)
+        # 계산/괴롭힘 가능성이 있을 때만 _extract_params(Sonnet) 호출 — 순수 상담 트래픽의
+        # 불필요한 2차 LLM 호출을 회피해 지연·비용 절감(R-2a).
+        analysis_calc = bool(analysis and getattr(analysis, "requires_calculation", False))
+        topic = getattr(analysis, "consultation_topic", "") if analysis else ""
+        harass_likely = (topic == "직장내괴롭힘") or any(kw in query for kw in _HARASS_KEYWORDS)
+        if analysis is None or analysis_calc or harass_likely:
+            tool_type, params = _extract_params(combined_query, config.claude_client)
 
-        if tool_type == "wage" and params and params.get("needs_calculation"):
-            _ensure_minimum_wage_flag(params, query)
-            yield {"type": "status", "text": "임금계산기 실행 중..."}
-            calc_result = _run_calculator(params)
-            if calc_result:
-                yield {"type": "meta", "calc_result": calc_result}
-        elif tool_type == "harassment" and params and params.get("is_harassment_question"):
-            yield {"type": "status", "text": "괴롭힘 판정 중..."}
-            assessment_result = _run_assessor(params)
-            if assessment_result:
-                yield {"type": "meta", "assessment_result": assessment_result}
+            if tool_type == "wage" and params and params.get("needs_calculation"):
+                _ensure_minimum_wage_flag(params, query)
+                yield {"type": "status", "text": "임금계산기 실행 중..."}
+                calc_result = _run_calculator(params)
+                if calc_result:
+                    yield {"type": "meta", "calc_result": calc_result}
+            elif tool_type == "harassment" and params and params.get("is_harassment_question"):
+                yield {"type": "status", "text": "괴롭힘 판정 중..."}
+                assessment_result = _run_assessor(params)
+                if assessment_result:
+                    yield {"type": "meta", "assessment_result": assessment_result}
+        # else: 순수 비계산·비괴롭힘 상담 → _extract_params 생략, RAG/상담 경로로 진행
 
     # 2-1. 법령 API 조문 조회 (선택적 — API 키 있고 relevant_laws 추출 시)
     legal_articles_text = None
@@ -1101,7 +1110,8 @@ def process_question(query: str, session: Session, config: AppConfig,
         parts = [f"참고 자료:\n\n{consultation_context}"]
         # 인용 가능한 판례 목록 명시 (환각 방지)
         citation_list = build_available_citations_text(
-            consultation_hits, legal_precedents=precedent_meta,
+            list(consultation_hits) + (precedent_meta or []),
+            legal_precedents=precedent_meta,
         )
         parts.append(citation_list)
     else:
@@ -1109,7 +1119,7 @@ def process_question(query: str, session: Session, config: AppConfig,
         # 비 consultation 경로에서도 인용 가능 목록 주입 (환각 방지)
         if precedent_meta:
             citation_list = build_available_citations_text(
-                [], legal_precedents=precedent_meta,
+                precedent_meta, legal_precedents=precedent_meta,
             )
             parts.append(citation_list)
     if graph_context:
@@ -1293,7 +1303,7 @@ def process_question(query: str, session: Session, config: AppConfig,
         for m in precedent_meta:
             all_source_hits.append({
                 "title": m.get("case_name", m.get("title", "")),
-                "chunk_text": "",
+                "chunk_text": m.get("chunk_text", ""),
             })
     available_precs = extract_precedents_from_hits(all_source_hits)
     available_admins = extract_admin_refs_from_hits(all_source_hits)
