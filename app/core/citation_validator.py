@@ -115,13 +115,18 @@ def build_available_citations_text(
     else:
         lines.append("판례: (검색 결과에서 판례를 찾지 못했습니다)")
 
-    # 법령 API에서 조회한 판례
+    # 법령 API에서 조회한 판례 (case_name 있는 항목만 — Pinecone 판례는 hits 경로로 파싱됨)
     if legal_precedents:
-        lines.append("\n법령 API 조회 판례:")
+        api_lines = []
         for prec in legal_precedents:
             case_name = prec.get("case_name", "")
+            if not case_name:
+                continue
             date = prec.get("date", "")
-            lines.append(f"  - {case_name} ({date})")
+            api_lines.append(f"  - {case_name} ({date})")
+        if api_lines:
+            lines.append("\n법령 API 조회 판례:")
+            lines.extend(api_lines)
 
     if admin_refs:
         lines.append("\n행정해석:")

@@ -318,6 +318,7 @@ def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
                 "section": h.get("section", ""),
                 "source_type": h["source_type"],
                 "score": h["score"],
+                "chunk_text": content,   # 인용 목록/검증이 본문에서 판례번호를 파싱하도록 동봉(R-1b)
             })
 
     if not parts:

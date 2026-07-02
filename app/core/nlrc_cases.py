@@ -225,13 +225,13 @@ def _search_related_precedent(title: str, law_api_key: str) -> str:
 
         lines = []
         for r in results[:2]:
-            case_name = r.get("사건명", "")
-            case_no = r.get("사건번호", "")
-            court = r.get("법원명", "")
-            date = r.get("선고일자", "")
+            # search_precedent 반환 키는 영문(case_name/court/date). 사건번호 필드는 없음.
+            case_name = r.get("case_name", "")
+            court = r.get("court", "")
+            date = r.get("date", "")
             if case_name:
                 lines.append(
-                    f"    - {case_name} ({case_no}, {court} {date})"
+                    f"    - {case_name} ({court} {date})"
                 )
         return "\n".join(lines)
 
