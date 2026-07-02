@@ -39,6 +39,11 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     4. 월 통상임금 / 기준시간 = 통상시급
     """
     base_hours, base_hours_detail = _get_base_hours(inp)
+    # 방어: 소정근로시간이 0/음수(예: 주 0일·일 0시간 입력)면 법정 기준시간으로 폴백.
+    # 통상임금은 모든 계산의 기반이라 여기서 ZeroDivisionError가 나면 전체 계산기가 마비된다.
+    if not base_hours or base_hours <= 0:
+        base_hours = MONTHLY_STANDARD_HOURS
+        base_hours_detail += f" → 유효하지 않은 근로시간, 기본 {MONTHLY_STANDARD_HOURS:.0f}h로 대체"
     included_items = []
     excluded_items = []
 

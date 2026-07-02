@@ -142,7 +142,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
 
     # ── 5. 총 산입 월 임금 및 실질 시급 ──────────────────────────────────────
     included_monthly = base_monthly + std_included + bonus_included + welfare_included
-    effective_hourly = included_monthly / monthly_hours
+    effective_hourly = included_monthly / monthly_hours if monthly_hours else 0.0
 
     is_compliant    = effective_hourly >= legal_minimum
     shortage_hourly = max(0.0, legal_minimum - effective_hourly)

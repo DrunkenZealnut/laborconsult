@@ -107,7 +107,7 @@
   /* ── LANDING (Google-style center) ── */
   #landing {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-height: 40vh; padding: 40px 20px 20px; text-align: center;
+    flex: 1; padding: 40px 20px 20px; text-align: center;
   }
   .landing-logo {
     font-family: var(--font-display); font-size: 36px; font-weight: 900;
@@ -1138,9 +1138,24 @@ function actionMarkdown() {
   URL.revokeObjectURL(a.href);
 }
 
-function actionEmail(btn) {
+async function actionEmail(btn) {
   const to = prompt('받는 사람 이메일 주소를 입력하세요:');
   if (!to || !to.includes('@')) return;
+
+  // 보안문자 검증 — 무인증 대량 발송(피싱 릴레이) 방지
+  let captchaToken, captchaAnswer;
+  try {
+    const cRes = await fetch(API_BASE + '/api/captcha');
+    const cData = await cRes.json();
+    captchaToken = cData.token;
+    const ans = prompt('보안문자를 입력하세요: ' + cData.question);
+    if (ans === null) return;
+    captchaAnswer = parseInt(ans, 10);
+    if (isNaN(captchaAnswer)) { alert('보안문자는 숫자로 입력해주세요.'); return; }
+  } catch (e) {
+    alert('보안문자 확인에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    return;
+  }
 
   const { question, answerHtml } = getQAPair();
   const subject = '[기초 노동상담] ' + question.slice(0, 50);
@@ -1151,7 +1166,7 @@ function actionEmail(btn) {
   fetch(API_BASE + '/api/send-email', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to: to, subject: subject, body_html: answerHtml }),
+    body: JSON.stringify({ to: to, subject: subject, body_html: answerHtml, captcha_token: captchaToken, captcha_answer: captchaAnswer }),
   })
   .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
   .then(function(res) {

@@ -206,7 +206,7 @@ CACHE_TTL = 86400  # 24시간
 
 ```bash
 # .env
-LAW_API_KEY=a0b5fdbe24bf7f5d77b5c3a807e64aa961735cc7831e6b093614c2c1a440f6af
+LAW_API_KEY=your_law_api_key_here
 
 # 선택적 설정
 LAW_API_CACHE_TTL=86400        # 캐시 유효시간(초), 기본 24시간
