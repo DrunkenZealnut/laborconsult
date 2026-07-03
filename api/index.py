@@ -119,12 +119,6 @@ def chat(req: ChatRequest):
             calc_result = event.get("calc_result")
         elif event["type"] == "chunk":
             full_text += event["text"]
-        elif event["type"] == "follow_up":
-            return {
-                "message": event["text"],
-                "session_id": session.id,
-                "follow_up": True,
-            }
 
     return {
         "message": full_text,

@@ -383,13 +383,6 @@
   .footer-links a { color: rgba(255,255,255,0.35); text-decoration: none; font-size: 11px; }
   .footer-links a:hover { color: rgba(255,255,255,0.7); }
 
-  /* ── Scroll Reveal Animation ── */
-  .reveal {
-    opacity: 0; transform: translateY(24px);
-    transition: opacity 0.7s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.7s cubic-bezier(0.25,0.46,0.45,0.94);
-  }
-  .reveal.visible { opacity: 1; transform: translateY(0); }
-
   /* ── Back to Top ── */
   #back-to-top {
     position: fixed; bottom: 24px; right: 24px; z-index: 90;
@@ -1066,12 +1059,6 @@ async function readSSE(resp) {
         const el = addMsg('assistant', event.text);
         ensureCopyBtn(el);
         if (pendingContacts) renderContacts(pendingContacts, el);
-      } else if (event.type === 'follow_up') {
-        removeStatus();
-        const el = addMsg('assistant', md(event.text), event.text);
-        renderPendingMath(el);
-        ensureCopyBtn(el);
-        if (pendingContacts) renderContacts(pendingContacts, el);
       } else if (event.type === 'sources' || event.type === 'meta') {
         // handled in answer
       } else if (event.type === 'replace') {
@@ -1486,30 +1473,6 @@ function askQuestion(text) {
   setTimeout(() => send(), 300);
 }
 
-// ── Calculator Shortcuts (Hero Chips) ────────────────────────────────────────
-
-const CALC_SHORTCUTS = [
-  { icon: "\uD83D\uDCB0", name: "\uC8FC\uD734\uC218\uB2F9", query: "\uC2DC\uAE09 10,000\uC6D0, \uC8FC 40\uC2DC\uAC04 \uADFC\uBB34\uD560 \uB54C \uC8FC\uD734\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83D\uDCCA", name: "\uD1F4\uC9C1\uAE08", query: "\uC6D4\uAE09 300\uB9CC\uC6D0, 3\uB144 \uADFC\uBB34 \uD6C4 \uD1F4\uC9C1\uAE08\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83C\uDFD6\uFE0F", name: "\uC5F0\uCC28\uC218\uB2F9", query: "\uC6D4\uAE09 250\uB9CC\uC6D0, \uBBF8\uC0AC\uC6A9 \uC5F0\uCC28 5\uC77C\uC758 \uC5F0\uCC28\uC218\uB2F9\uC740?" },
-  { icon: "\u2696\uFE0F", name: "\uCD5C\uC800\uC784\uAE08", query: "\uC2DC\uAE09 10,030\uC6D0\uC774 \uCD5C\uC800\uC784\uAE08 \uC774\uC0C1\uC778\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694" },
-  { icon: "\uD83D\uDCCB", name: "\uC2E4\uC5C5\uAE09\uC5EC", query: "\uC6D4\uAE09 280\uB9CC\uC6D0, 2\uB144 \uADFC\uBB34 \uD6C4 \uC2E4\uC5C5\uAE09\uC5EC\uB294 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83C\uDFE5", name: "4\uB300\uBCF4\uD5D8\uB8CC", query: "\uC6D4\uAE09 300\uB9CC\uC6D0\uC77C \uB54C 4\uB300\uBCF4\uD5D8\uB8CC\uB294 \uAC01\uAC01 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83D\uDCBC", name: "\uC5F0\uC7A5\uC218\uB2F9", query: "\uC2DC\uAE09 12,000\uC6D0, \uC5F0\uC7A5\uADFC\uB85C 10\uC2DC\uAC04\uC758 \uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-  { icon: "\uD83D\uDEAB", name: "\uD574\uACE0\uC608\uACE0", query: "\uC6D4\uAE09 250\uB9CC\uC6D0\uC77C \uB54C \uD574\uACE0\uC608\uACE0\uC218\uB2F9\uC740 \uC5BC\uB9C8\uC778\uAC00\uC694?" },
-];
-
-function initHeroCalcs() {
-  const container = document.getElementById('hero-calcs');
-  CALC_SHORTCUTS.forEach(c => {
-    const chip = document.createElement('button');
-    chip.className = 'hero-calc-chip';
-    chip.innerHTML = c.icon + ' ' + c.name;
-    chip.onclick = () => askQuestion(c.query);
-    container.appendChild(chip);
-  });
-}
-
 // ── Board ────────────────────────────────────────────────────────────────────
 
 let boardPage = 1;
@@ -1600,18 +1563,6 @@ const boardObserver = new IntersectionObserver(entries => {
   }
 }, { rootMargin: '200px' });
 boardObserver.observe(document.getElementById('board-section'));
-
-// ── Scroll Reveal ────────────────────────────────────────────────────────────
-
-const revealObserver = new IntersectionObserver(entries => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('visible');
-    }
-  });
-}, { threshold: 0.08 });
-
-document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
 
 // ── Back to Top ──────────────────────────────────────────────────────────────
 
