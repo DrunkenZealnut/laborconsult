@@ -66,6 +66,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": "입력 데이터가 올바르지 않습니다. 메시지를 확인해주세요."},
     )
 
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """DB/외부 API 등에서 발생한 미처리 예외를 안전한 JSON으로 통일(F-2f).
+
+    HTTPException은 FastAPI 기본 핸들러가 더 구체적으로 매칭되어 이 핸들러보다
+    우선 처리되므로 여기서는 진짜 미처리 예외만 잡힌다. traceback은 노출하지
+    않고 서버 로그에만 남긴다.
+    """
+    logging.error("미처리 예외: %s\n%s", exc, traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "일시적인 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."},
+    )
+
 # 앱 설정 (콜드 스타트 시 1회 초기화)
 _config: AppConfig | None = None
 
@@ -415,12 +430,14 @@ def admin_conversations(
         )
 
     total = result.count or 0
+    total_pages = max(1, (total + per_page - 1) // per_page)
     return {
         "conversations": conversations,
         "total": total,
         "page": page,
         "per_page": per_page,
-        "pages": max(1, (total + per_page - 1) // per_page),
+        "pages": total_pages,  # 하위 호환(admin.html 참조)
+        "total_pages": total_pages,  # 표준 필드명 (board 엔드포인트와 통일, F-2f)
     }
 
 
@@ -710,6 +727,7 @@ def board_recent(page: int = 1, per_page: int = 10):
         "total": total,
         "page": page,
         "per_page": per_page,
+        "total_pages": max(1, (total + per_page - 1) // per_page),  # board_search와 스키마 통일(F-2f)
         "has_more": offset + per_page < total,
     }
 
@@ -976,7 +994,8 @@ async def send_email(req: EmailRequest, request: Request):
     from_name = os.getenv("MAIL_FROM_NAME", "기초 노동상담")
 
     if not smtp_user or not smtp_pass:
-        raise HTTPException(status_code=500, detail="메일 서버가 설정되지 않았습니다.")
+        # 설정 미비는 클라이언트/코드 결함이 아닌 서버 설정 문제 → 503(F-2f)
+        raise HTTPException(status_code=503, detail="메일 서버가 설정되지 않았습니다.")
 
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", req.to):
         raise HTTPException(status_code=400, detail="올바른 이메일 주소를 입력해주세요.")

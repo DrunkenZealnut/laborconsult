@@ -278,6 +278,13 @@ window.addEventListener('popstate', () => {
   frame.style.display = 'block';
   empty.style.display = 'none';
 })();
+
+// calculator_flow/*.html의 흐름도 노드가 window.parent.sendPrompt(...)를 호출한다
+// (sandbox="allow-scripts allow-same-origin" iframe 내부이므로 부모인 이 페이지에 정의 필요).
+// 메인 챗봇 페이지로 이동시키고 ?q= 파라미터를 index.html이 읽어 자동 질문 전송한다(F-2c).
+window.sendPrompt = function(q) {
+  location.href = '/?q=' + encodeURIComponent(q);
+};
 </script>
 </body>
 </html>
