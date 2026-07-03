@@ -1,7 +1,20 @@
-# 크롤링 출력 (대용량)
-output_qna/
-output/
-output_imgum/
+# 크롤링 출력 (대용량, 글로브로 통합)
+output_*/
+nodong_counsel/
+documents/
+test_sample/
+
+# 생성 산출물 (벤치마크/테스트/메타데이터)
+benchmark_*.json
+*_results.json
+batch_test_report.md
+test_*.json
+metadata*.json
+*.jsonl
+_contextual_upload_progress.json
+
+# pip 리다이렉트 오류 산출물 (예: `pip install 'pkg>=1.0'`에서 따옴표 누락 시 생성)
+=*
 
 # 환경변수
 .env
@@ -18,6 +31,13 @@ venv/
 
 # Vercel
 .vercel/
+
+# 에디터/툴링 산출물
+.vscode/
+.devproxy.json
+.bkit/runtime/
+.bkit/snapshots/
+.bkit/state/pdca-status.json
 
 # 임시
 *.tmp

@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**laborconsult** — Korean labor law (노동법) Q&A crawler, RAG chatbot, and wage calculator system. Data sourced from nodong.kr. Four main subsystems:
+**laborconsult** — Korean labor law (노동법) Q&A crawler, RAG chatbot, and wage calculator system. Corpus sourced from nodong.kr Q&A plus 법원 노동판례 / 노동부 행정해석 / 훈령·예규·고시 / 노동상담 (multiple `output_*/` dirs, each with its own crawler + metadata + upload script). Four main subsystems:
 
-1. **Crawlers** — Scrape Q&A posts from nodong.kr into markdown files
-2. **RAG Pipeline** — Chunk, embed (OpenAI), store in Pinecone, multi-query search with Cohere reranking
+1. **Crawlers** — Scrape Q&A and legal documents into markdown files (multiple sources, see Crawlers)
+2. **RAG Pipeline** — Chunk, embed (OpenAI), store in Pinecone, multi-query hybrid search with Cohere reranking
 3. **Wage Calculator** — 25 Korean labor law calculators with unified facade
-4. **Web API** — FastAPI + Vercel serverless chatbot with intent analysis, legal API integration, file upload, and harassment assessment
+4. **Web API** — FastAPI + Vercel serverless chatbot with intent analysis, legal API integration, file upload, harassment assessment, agency-contact matching, public Q&A board, and answer email delivery
 
 ## Commands
 
@@ -17,14 +17,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 pip install -r requirements.txt
 
-# Crawling pipeline
+# Crawling pipeline (multiple sources — see Crawlers section)
 python3 crawl_bestqna.py          # BEST Q&A (274 posts → output/)
 python3 crawl_qna.py              # General Q&A (10K posts → output_qna/), resumable
+python3 crawl_boards.py           # 자료실/판례/행정해석 등 게시판 크롤 → output_*/
 python3 generate_metadata.py      # Generate metadata.json from output/
 
-# Pinecone upload
-python3 pinecone_upload.py        # Chunk + embed + upsert to Pinecone
+# Pinecone upload (one variant per corpus source)
+python3 pinecone_upload.py        # Chunk + embed + upsert to Pinecone (Q&A)
 python3 pinecone_upload.py --reset  # Reset index and re-upload
+python3 pinecone_upload_legal.py  # 법원 노동판례 업로드 (다른 변형: _2025/_imgum/_counsel/_contextual)
+python3 upload_new_precedents.py  # 신규 판례 증분 업로드
 
 # Chatbot
 python3 chatbot.py                # Interactive RAG chatbot
@@ -66,9 +69,14 @@ Defined in `.env` (see `.env.example`):
 - `LAW_API_KEY` — 법제처 법령 API
 - `ODCLOUD_API_KEY` — 공공데이터포털 API (중앙노동위원회 판정사례)
 - `COHERE_API_KEY` — search result reranking
-- `ADMIN_PASSWORD` — admin dashboard login
+- `ADMIN_PASSWORD` — admin dashboard login (also default for `ADMIN_JWT_SECRET` + CAPTCHA HMAC signing)
 - `ADMIN_JWT_SECRET` — JWT signing (defaults to ADMIN_PASSWORD)
 - `PINECONE_INDEX_NAME` — defaults to `semiconductor-lithography` (legacy name)
+
+**Email delivery** (`POST /api/send-email`, **not in `.env.example`**):
+- `MAIL_SMTP_USERNAME` / `MAIL_SMTP_PASSWORD` — SMTP auth (required for sending; 500 if absent)
+- `MAIL_SMTP_HOST` (default `smtp.gmail.com`) / `MAIL_SMTP_PORT` (default `587`, STARTTLS)
+- `MAIL_FROM_EMAIL` (defaults to username) / `MAIL_FROM_NAME` (default `기초 노동상담`)
 
 **Model config** in `app/config.py`: Claude Sonnet 4.6 (primary), OpenAI o3 (fallback), Gemini 2.5 Pro (tertiary).
 
@@ -78,31 +86,47 @@ Defined in `.env` (see `.env.example`):
 
 FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 
-**Endpoints:**
+**Endpoints** (all in `api/index.py`):
+
+*Chat:*
 - `GET /api/health` — health check
 - `GET /api/chat/stream?message=...` — SSE streaming (text only)
 - `POST /api/chat/stream` — SSE streaming (with file attachments as base64)
 - `POST /api/chat` — sync full response
+
+*Admin* (require Bearer JWT from login):
 - `POST /api/admin/login` → JWT token (24h expiry)
-- `GET /api/admin/stats`, `GET /api/admin/conversations` — analytics (requires Bearer token)
-- `GET /api/admin/conversations/{conv_id}` — 단일 대화 상세 (requires Bearer token)
-- `GET /api/board/recent?page=1&per_page=10` — 최근 공개 Q&A (비식별화, `_anonymize()` 적용)
+- `GET /api/admin/stats` — totals + 30-day daily + category counts
+- `GET /api/admin/conversations` — paged, supports `search`/`category`/`date_from`/`date_to`
+- `GET /api/admin/conversations/{conv_id}` — 단일 대화 상세 (+ attachments)
+
+*Public Q&A board* (all `_anonymize()` applied):
+- `GET /api/board/recent`, `GET /api/board/categories`, `GET /api/board/search?q=&category=`, `GET /api/board/{item_id}` — read AI conversations (`qa_conversations`) + user posts (`board_posts`), merged
+- `GET /api/captcha` — math CAPTCHA + HMAC-signed token (5min expiry, signed with `JWT_SECRET`)
+- `POST /api/board/write` — user post: CAPTCHA verify → IP rate-limit (3/60s) → length/bad-word validation → bcrypt password (rounds=12) → INSERT `board_posts`
+- `POST /api/board/{post_id}/delete` — bcrypt password check → soft delete (`status='deleted'`)
+
+*Email:*
+- `POST /api/send-email` — SMTP delivery of an answer; in-memory rate-limit 10/60s, `_sanitize_html()` strips `<script>`/`on*=`, wraps body in branded template (needs `MAIL_*` env)
+
+*Static serving:* `GET /` (index.html), `/admin` (admin.html), `/calculators`+`/calculators.html`, `/calculator_flow/{filename}` (`.html` allowlist + `commonpath` traversal guard)
 
 **Static pages:**
-- `public/index.html` — 메인페이지: 히어로(제목) → 채팅 입력창(첫 메시지 시 확장) → FAQ 6카테고리 → 질문게시판 → 푸터. 디자인: Noto Serif KR + Pretendard, 네이비(#1B2A4A) + 코퍼(#C08050), max-width 800px.
+- `public/index.html` — 메인페이지(~1,470줄, 단일 파일): Google 스타일 중앙 랜딩(로고 `#landing` + 채팅 입력창). 첫 메시지 전송 시 `expandChat()`이 `.chat-card.active`를 추가해 채팅 영역 확장. FAQ(6 카테고리, `FAQ_DATA`)와 질문게시판(`#board-section`)은 인라인이 아니라 **햄버거 슬라이드 메뉴**(`.slide-menu`)에서 접근. 각 답변 하단 액션 버튼: `actionCopy`/`actionPDF`/`actionMarkdown`/`actionEmail`(이메일은 `prompt()`로 주소 입력 → `POST /api/send-email`). 디자인: Noto Serif KR + Pretendard, 네이비(#1B2A4A) + 코퍼(#C08050), `body` max-width 800px.
 - `public/calculators.html` — 25개 계산기 흐름도 메뉴 (사이드바 + iframe 뷰어)
 - `public/calculator_flow/` — 25개 standalone HTML 계산기 시각화 (SVG 플로우차트)
 - `public/admin.html` — 관리자 대시보드 (라우트: `/admin`, `/admin.html`은 404)
 
 **SSE event types** (consumed by `public/index.html::readSSE()`):
-- `session` — session_id
+- `session` — session_id (emitted by `api/index.py`, not pipeline)
 - `status` — progress text (e.g., "질문 분석 중...")
-- `chunk` — streaming answer text
+- `chunk` / `text` — streaming / non-streamed answer text
 - `replace` — full answer replacement (after citation correction)
-- `follow_up` — follow-up question (rendered as separate message)
-- `contacts` — agency contact cards
-- `error` — error message
+- `contacts` — agency contact cards (노동위/고용센터/근로복지공단)
+- `sources` — RAG source list
 - `meta` — calc_result, sources
+- `error` — error message
+- `done` — stream end marker
 
 ### Pipeline Flow (`app/core/pipeline.py`)
 
@@ -114,10 +138,14 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
    - **Harassment assessment**: `harassment_assessor.assess_harassment()` → element scoring
    - **Legal consultation**: `legal_consultation.py` (topic→law mapping) + RAG + legal API
 3. **RAG search** → Adaptive complexity classification (`classify_complexity()` → SIMPLE/MODERATE/COMPLEX) → `query_decomposer.py` (LLM multi-query) → `rag.py::search_hybrid()` (BM25+Dense RRF fusion → Pinecone 2-group parallel) → `rerank_results()` (Cohere) → Self-RAG relevance filter (COMPLEX only, `self_rag.py`) + `graph.py` (GraphRAG multi-hop)
-4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (공공데이터포털 판정사례 360건 캐싱 + 법제처 판례 보강)
-5. **LLM streaming** → Claude → OpenAI → Gemini fallback chain (`_stream_answer()`)
-6. **Citation validation** → `citation_validator.py` detects hallucinated case numbers, sends `replace` event
-7. **Persistence** → Supabase conversation + session snapshot
+4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (공공데이터포털 판정사례 360건 캐싱 + 법제처 판례 보강). `precedent_query.py::build_precedent_queries()` expands precedent search terms.
+5. **Source conflict resolution** → `conflict_resolver.py::annotate_source_priority()` tags hits by source-type priority before they reach the LLM.
+6. **Agency contacts** → `labor_offices.py` / `employment_centers.py` / `comwel_offices.py` match the user's region to 노동위원회(14)/고용센터(133)/근로복지공단(63) and emit a `contacts` event.
+7. **LLM streaming** → Claude → OpenAI → Gemini fallback chain (`_stream_answer()` in `pipeline.py`)
+8. **Citation validation** → `citation_validator.py` detects hallucinated case numbers, sends `replace` event
+9. **Persistence** → Supabase conversation + session snapshot
+
+**Other `app/core/` modules:** `composer.py` now holds only `compose_follow_up()` — **legacy**, kept solely because `test_followup_consistency*.py` import it; the web pipeline builds its answer inline (`_stream_answer()`) and never calls it. (The former `calculator.py`/`converter.py` analysis→calculator bridge was removed as orphaned dead code — the pipeline converts `extracted_info` → `WageInput` inline.)
 
 ### Crawlers
 
@@ -125,7 +153,9 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 
 - `crawl_bestqna.py` → `output/` (BEST Q&A, ~274 posts)
 - `crawl_qna.py` → `output_qna/` (general Q&A, ~10K posts, resumable via saved file detection)
-- `crawl_2025.py`, `crawl_imgum.py` — variant crawlers for different board sections
+- `crawl_2025.py`, `crawl_imgum.py`, `crawl_boards.py` — variant crawlers for other board sections (2025 Q&A, 임금/근로감독 자료, 자료실)
+- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`, `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`
+- Each source has a matching `generate_metadata_*.py` and `pinecone_upload_*.py` (e.g. `_2025`, `_imgum`, `_legal`, `_counsel`, `_contextual`) — keep the three in sync when adding a source
 
 ### RAG Pipeline
 
@@ -215,7 +245,11 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - All `app/core/*.py` modules use `from __future__ import annotations` for forward reference support.
 - Legal API (`legal_api.py`) has circuit breaker pattern: 3 consecutive failures → 30s cooldown. L1 in-memory → L2 Supabase → L3 API call.
 - Citation validator (`citation_validator.py`) regex patterns: `대법원 YYYY[가-힣]NNNN` for precedents, `[부서명]과-NNNN` for administrative interpretations.
-- Graceful degradation everywhere: BM25 미설치 → Dense-only, Self-RAG 실패 → rerank 유지, `classify_complexity` 실패 → MODERATE 폴백. 새 기능 추가 시 반드시 폴백 경로 구현.
+- Graceful degradation everywhere: Pinecone 초기화/쿼리 실패 → `pinecone_index=None`으로 RAG 비활성(계산기·법령 API·LLM 답변은 정상, `config.py`에서 try/except), BM25 미설치 → Dense-only, Self-RAG 실패 → rerank 유지, `classify_complexity` 실패 → MODERATE 폴백. 새 기능 추가 시 반드시 폴백 경로 구현.
 - `public/calculator_flow/*.html` 내 `sendPrompt()` 호출은 반드시 `window.parent?.sendPrompt?.()` 로 — iframe 내에서 실행되므로 부모 컨텍스트 필요.
 - `api/index.py`의 파일 서빙 엔드포인트는 `os.path.commonpath` + `.html` allowlist로 path traversal 방지 필수.
 - `public/index.html`의 채팅 UI는 `expandChat()`으로 제어 — 초기에 입력창만 표시, 첫 메시지 전송 시 `.chat-card.active` 클래스 추가로 채팅 영역 확장.
+- 공개 게시판/대화 응답은 반드시 `_anonymize()`(이름·회사·전화·이메일 마스킹) 통과 후 반환. 신규 공개 엔드포인트 추가 시 동일 적용.
+- 게시판 글쓰기 보안 체인 순서 고정: CAPTCHA(HMAC, `JWT_SECRET` 서명) → IP rate-limit → 입력 검증/금칙어 → bcrypt(rounds=12) 해싱 → INSERT. 삭제는 bcrypt `checkpw` 후 soft delete.
+- 이메일 발송(`/api/send-email`)은 전송 전 `_sanitize_html()`로 `<script>`/`on*=` 제거 필수, 분당 10건 인메모리 rate-limit.
+- 새 코퍼스 소스 추가 시 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 스크립트를 함께 추가/동기화.

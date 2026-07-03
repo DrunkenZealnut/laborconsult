@@ -32,27 +32,37 @@ LAW_CACHE_TTL = int(os.getenv("LAW_API_CACHE_TTL", "86400"))  # 24시간
 
 
 # ── Circuit Breaker ──────────────────────────────────────────────────────────
-_circuit: dict = {"fail_count": 0, "open_until": 0.0}
+_circuit: dict = {"fail_count": 0, "open_until": 0.0, "probing": False}
 _CIRCUIT_FAIL_THRESHOLD = 3
 _CIRCUIT_COOLDOWN = 30.0
 
 
 def _circuit_check() -> bool:
-    """차단 상태이면 True (호출 금지)."""
+    """차단 상태이면 True (호출 금지).
+
+    쿨다운 만료 시 fail_count를 즉시 0으로 초기화하면 그 순간 동시 요청
+    전부가 통과해버려(half-open 무의미화) 아직 복구 안 된 서비스에 요청이
+    몰릴 수 있다. probing 플래그로 단 1건만 통과시키는 단일 probe 방식으로
+    보수화한다(P3).
+    """
     if _circuit["fail_count"] < _CIRCUIT_FAIL_THRESHOLD:
         return False
     if time.time() > _circuit["open_until"]:
-        _circuit["fail_count"] = 0  # half-open: 1건 시도 허용
-        return False
+        if _circuit["probing"]:
+            return True  # 이미 다른 요청이 probe 진행 중 — 차단 유지
+        _circuit["probing"] = True
+        return False  # 이 요청 1건만 probe로 통과
     return True
 
 
 def _circuit_record_success():
     _circuit["fail_count"] = 0
+    _circuit["probing"] = False
 
 
 def _circuit_record_failure():
     _circuit["fail_count"] += 1
+    _circuit["probing"] = False
     if _circuit["fail_count"] >= _CIRCUIT_FAIL_THRESHOLD:
         _circuit["open_until"] = time.time() + _CIRCUIT_COOLDOWN
         logger.warning("법령 API circuit breaker OPEN (%.0fs)", _CIRCUIT_COOLDOWN)
