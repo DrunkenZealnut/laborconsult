@@ -346,6 +346,24 @@
   .board-item.open .board-a { display: block; }
   .board-ask-btn { display: inline-block; margin-top: 8px; color: var(--copper); font-size: 12px; font-weight: 600; cursor: pointer; background: none; border: none; font-family: var(--font-body); }
   .board-ask-btn:hover { text-decoration: underline; }
+  .retry-btn { margin-top: 8px; padding: 6px 14px; color: var(--copper); font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: 1px solid var(--copper); border-radius: var(--radius-pill); font-family: var(--font-body); }
+  .retry-btn:hover { background: rgba(192,128,80,0.1); }
+  .retry-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* Email modal */
+  .email-modal-overlay { position: fixed; inset: 0; background: rgba(15,27,48,0.45); z-index: 400; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .email-modal-overlay.open { display: flex; }
+  .email-modal { background: var(--warm-white); border-radius: var(--radius-md); padding: 28px; max-width: 380px; width: 100%; box-shadow: var(--shadow-lg); }
+  .email-modal h3 { margin: 0 0 18px; font-size: 18px; font-weight: 700; color: var(--navy); font-family: var(--font-display); }
+  .email-modal label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; color: var(--text-secondary); }
+  .email-modal input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font-body); box-sizing: border-box; }
+  .email-modal input:focus { outline: none; border-color: var(--copper); }
+  .email-modal-error { color: #c0392b; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .email-modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .email-modal-actions button { flex: 1; padding: 10px; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer; font-family: var(--font-body); font-size: 14px; }
+  .email-modal-cancel { background: none; border: 1px solid var(--border); color: var(--text-muted); }
+  .email-modal-submit { background: var(--copper); border: none; color: #fff; }
+  .email-modal-submit:disabled { opacity: 0.5; cursor: default; }
   #board-more-btn { border: none; background: none; cursor: pointer; color: var(--copper); font-size: 14px; font-weight: 600; font-family: var(--font-body); padding: 8px 16px; }
   #board-more-btn:hover { text-decoration: underline; }
   .section-link-wrap { text-align: center; margin-top: 20px; }
@@ -424,6 +442,22 @@
   </button>
 </header>
 
+<!-- ═══ EMAIL MODAL ═══ -->
+<div class="email-modal-overlay" id="email-modal-overlay">
+  <div class="email-modal" role="dialog" aria-modal="true" aria-labelledby="email-modal-title">
+    <h3 id="email-modal-title">이메일로 답변 받기</h3>
+    <label for="email-modal-input">받는 사람 이메일 주소</label>
+    <input type="email" id="email-modal-input" placeholder="example@email.com" autocomplete="email">
+    <label for="email-modal-captcha-input"><span id="email-modal-captcha-q">보안문자 로딩 중...</span></label>
+    <input type="text" id="email-modal-captcha-input" inputmode="numeric" placeholder="답을 입력하세요">
+    <div class="email-modal-error" id="email-modal-error"></div>
+    <div class="email-modal-actions">
+      <button type="button" class="email-modal-cancel" id="email-modal-cancel">취소</button>
+      <button type="button" class="email-modal-submit" id="email-modal-submit">전송</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ SLIDE MENU ═══ -->
 <div class="slide-overlay" id="slide-overlay" onclick="closeMenu()"></div>
 <nav class="slide-menu" id="slide-menu">
@@ -467,7 +501,7 @@
   <section id="chat-section">
     <div class="chat-container">
       <div class="chat-card" id="chat-card">
-        <div id="chat"></div>
+        <div id="chat" aria-live="polite"></div>
         <div id="input-wrapper">
           <div id="file-preview"></div>
           <div id="input-area">
@@ -477,7 +511,7 @@
               </svg>
             </button>
             <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
-            <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." rows="1" autocomplete="off"></textarea>
+            <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." aria-label="노동법 관련 질문 입력" rows="1" autocomplete="off"></textarea>
             <button id="send-btn">전송</button>
           </div>
           <p class="input-hint">Shift + Enter로 줄바꿈</p>
@@ -537,13 +571,25 @@
 <script>
 // ── Hamburger Menu ──────────────────────────────────────────────────────────
 function toggleMenu() {
-  document.getElementById('slide-menu').classList.toggle('open');
+  const menu = document.getElementById('slide-menu');
+  const opening = !menu.classList.contains('open');
+  menu.classList.toggle('open');
   document.getElementById('slide-overlay').classList.toggle('open');
+  // 키보드 사용자를 위한 포커스 이동(열릴 때 메뉴 안 첫 포커스 가능 요소로)
+  if (opening) {
+    const first = menu.querySelector('button, a, [tabindex]');
+    if (first) first.focus();
+  }
 }
 function closeMenu() {
   document.getElementById('slide-menu').classList.remove('open');
   document.getElementById('slide-overlay').classList.remove('open');
 }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('slide-menu').classList.contains('open')) {
+    closeMenu();
+  }
+});
 function showSection(id) {
   var sections = { faq: 'faq-section', board: 'board-section' };
   var el = document.getElementById(sections[id]);
@@ -855,12 +901,18 @@ function renderPendingMath(container) {
 
 // ── Markdown → HTML ──────────────────────────────────────────────────────────
 
+function renderMdLink(txt, url) {
+  // javascript:/data: 등 위험 스킴 차단 (href 인젝션 방지)
+  const safeHref = /^(https?:|mailto:)/i.test(url) ? url : '#';
+  return '<a href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
+}
+
 function inlineTransform(t) {
   return t
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => renderMdLink(txt, url));
 }
 
 const CALLOUT_MAP = [
@@ -881,6 +933,11 @@ function md(text) {
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => stash(renderTex(tex.trim(), true)));
   text = text.replace(/\$([^\$\n]+?)\$/g, (_, tex) => stash(renderTex(tex.trim(), false)));
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => stash(renderTex(tex.trim(), false)));
+
+  // XSS 방지: 코드/수식은 이미 stash로 분리됐으므로, 잔여 마크다운 본문(표·리스트·
+  // 헤더·굵게·링크 등)에서 태그 오프닝·속성 이탈에 쓰이는 &,<,"만 이스케이프한다.
+  // 마크다운 문법(#,*,-,|,>,[]())은 이 문자들을 쓰지 않으므로 파싱에 영향 없다.
+  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
   text = text.replace(/((?:^\|.+\|[ \t]*$\n?)+)/gm, block => {
     const rows = block.trim().split('\n');
@@ -943,7 +1000,7 @@ function md(text) {
     .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => renderMdLink(txt, url))
     .replace(/^---$/gm, '<hr>');
 
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
@@ -1062,7 +1119,7 @@ function showAnswerActions(el) {
     '<button onclick="actionCopy(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 복사하기</button>' +
     '<button onclick="actionPDF()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> PDF 저장</button>' +
     '<button onclick="actionMarkdown()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Markdown 저장</button>' +
-    '<button onclick="actionEmail(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg> 이메일 전송</button>';
+    '<button onclick="openEmailModal(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg> 이메일 전송</button>';
   card.appendChild(bar);
 }
 
@@ -1138,58 +1195,108 @@ function actionMarkdown() {
   URL.revokeObjectURL(a.href);
 }
 
-async function actionEmail(btn) {
-  const to = prompt('받는 사람 이메일 주소를 입력하세요:');
-  if (!to || !to.includes('@')) return;
+// ── 이메일 전송 모달 (F-3: prompt() 연쇄 대신 인라인 모달 UX) ────────────────
 
-  // 보안문자 검증 — 무인증 대량 발송(피싱 릴레이) 방지
-  let captchaToken, captchaAnswer;
-  try {
-    const cRes = await fetch(API_BASE + '/api/captcha');
-    const cData = await cRes.json();
-    captchaToken = cData.token;
-    const ans = prompt('보안문자를 입력하세요: ' + cData.question);
-    if (ans === null) return;
-    captchaAnswer = parseInt(ans, 10);
-    if (isNaN(captchaAnswer)) { alert('보안문자는 숫자로 입력해주세요.'); return; }
-  } catch (e) {
-    alert('보안문자 확인에 실패했습니다. 잠시 후 다시 시도해주세요.');
+let emailModalTargetBtn = null;
+let emailModalToken = null;
+
+function openEmailModal(btn) {
+  emailModalTargetBtn = btn;
+  emailModalToken = null;
+  const overlay = document.getElementById('email-modal-overlay');
+  const emailInput = document.getElementById('email-modal-input');
+  const captchaInput = document.getElementById('email-modal-captcha-input');
+  const captchaQ = document.getElementById('email-modal-captcha-q');
+  const errorEl = document.getElementById('email-modal-error');
+  const submitBtn = document.getElementById('email-modal-submit');
+
+  emailInput.value = '';
+  captchaInput.value = '';
+  errorEl.textContent = '';
+  captchaQ.textContent = '보안문자 로딩 중...';
+  submitBtn.disabled = true;
+
+  overlay.classList.add('open');
+  emailInput.focus();
+
+  fetch(API_BASE + '/api/captcha')
+    .then(r => r.json())
+    .then(data => {
+      emailModalToken = data.token;
+      captchaQ.textContent = '보안문자: ' + data.question;
+      submitBtn.disabled = false;
+    })
+    .catch(() => {
+      captchaQ.textContent = '보안문자 로딩 실패';
+      errorEl.textContent = '보안문자를 불러오지 못했습니다. 다시 열어주세요.';
+    });
+}
+
+function closeEmailModal() {
+  document.getElementById('email-modal-overlay').classList.remove('open');
+  emailModalTargetBtn = null;
+}
+
+function submitEmailModal() {
+  const to = document.getElementById('email-modal-input').value.trim();
+  const captchaAnswer = parseInt(document.getElementById('email-modal-captcha-input').value, 10);
+  const errorEl = document.getElementById('email-modal-error');
+  const submitBtn = document.getElementById('email-modal-submit');
+
+  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+    errorEl.textContent = '올바른 이메일 주소를 입력해주세요.';
+    return;
+  }
+  if (!emailModalToken || isNaN(captchaAnswer)) {
+    errorEl.textContent = '보안문자를 입력해주세요.';
     return;
   }
 
+  const btn = emailModalTargetBtn;
   const { question, answerHtml } = getQAPair();
   const subject = '[기초 노동상담] ' + question.slice(0, 50);
 
-  btn.disabled = true;
-  btn.innerHTML = btn.innerHTML.replace('이메일 전송', '전송 중...');
+  submitBtn.disabled = true;
+  errorEl.textContent = '';
 
   fetch(API_BASE + '/api/send-email', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to: to, subject: subject, body_html: answerHtml, captcha_token: captchaToken, captcha_answer: captchaAnswer }),
+    body: JSON.stringify({ to, subject, body_html: answerHtml, captcha_token: emailModalToken, captcha_answer: captchaAnswer }),
   })
   .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
   .then(function(res) {
+    submitBtn.disabled = false;
     if (res.ok) {
-      btn.classList.add('done');
-      btn.innerHTML = btn.innerHTML.replace('전송 중...', '전송 완료');
-      setTimeout(function() {
-        btn.classList.remove('done');
-        btn.innerHTML = btn.innerHTML.replace('전송 완료', '이메일 전송');
-        btn.disabled = false;
-      }, 2000);
+      closeEmailModal();
+      if (btn) {
+        btn.classList.add('done');
+        btn.innerHTML = btn.innerHTML.replace('이메일 전송', '전송 완료');
+        setTimeout(function() {
+          btn.classList.remove('done');
+          btn.innerHTML = btn.innerHTML.replace('전송 완료', '이메일 전송');
+        }, 2000);
+      }
     } else {
-      alert(res.data.detail || '전송 실패');
-      btn.innerHTML = btn.innerHTML.replace('전송 중...', '이메일 전송');
-      btn.disabled = false;
+      errorEl.textContent = res.data.detail || '전송 실패';
     }
   })
   .catch(function() {
-    alert('이메일 전송에 실패했습니다.');
-    btn.innerHTML = btn.innerHTML.replace('전송 중...', '이메일 전송');
-    btn.disabled = false;
+    submitBtn.disabled = false;
+    errorEl.textContent = '이메일 전송에 실패했습니다.';
   });
 }
+
+document.getElementById('email-modal-cancel').addEventListener('click', closeEmailModal);
+document.getElementById('email-modal-submit').addEventListener('click', submitEmailModal);
+document.getElementById('email-modal-overlay').addEventListener('click', e => {
+  if (e.target.id === 'email-modal-overlay') closeEmailModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('email-modal-overlay').classList.contains('open')) {
+    closeEmailModal();
+  }
+});
 
 // ── 전송 ─────────────────────────────────────────────────────────────────────
 
@@ -1220,7 +1327,16 @@ async function send() {
   msgInput.style.height = 'auto';
   pendingFiles = [];
   renderPreview();
+
+  await doSend(text, attachments);
+}
+
+const SEND_TIMEOUT_MS = 60000; // 응답 전체 대기 상한 — 무한 대기 방지(F-2d)
+
+async function doSend(text, attachments) {
   btn.disabled = true;
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
 
   try {
     let resp;
@@ -1233,11 +1349,12 @@ async function send() {
           session_id: sessionId,
           attachments,
         }),
+        signal: ctrl.signal,
       });
     } else {
       const params = new URLSearchParams({ message: text });
       if (sessionId) params.set('session_id', sessionId);
-      resp = await fetch(API_BASE + '/api/chat/stream?' + params);
+      resp = await fetch(API_BASE + '/api/chat/stream?' + params, { signal: ctrl.signal });
     }
     if (!resp.ok) {
       let detail = '';
@@ -1247,12 +1364,30 @@ async function send() {
     await readSSE(resp);
   } catch (e) {
     removeStatus();
-    addMsg('assistant', '오류가 발생했습니다: ' + e.message);
+    const timedOut = e.name === 'AbortError';
+    const message = timedOut
+      ? '응답 시간이 초과되었습니다. 네트워크 상태를 확인 후 다시 시도해주세요.'
+      : ('오류가 발생했습니다: ' + e.message);
+    addErrorWithRetry(message, text, attachments);
   } finally {
+    clearTimeout(timeoutId);
     removeStatus();
     btn.disabled = false;
     msgInput.focus();
   }
+}
+
+function addErrorWithRetry(message, text, attachments) {
+  const el = addMsg('assistant', escHtml(message));
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'retry-btn';
+  retryBtn.textContent = '다시 시도';
+  retryBtn.addEventListener('click', () => {
+    retryBtn.disabled = true;
+    doSend(text, attachments);
+  });
+  el.appendChild(document.createElement('br'));
+  el.appendChild(retryBtn);
 }
 
 // ── FAQ ──────────────────────────────────────────────────────────────────────
@@ -1318,9 +1453,12 @@ function initFAQ() {
     const tab = document.createElement('button');
     tab.className = 'faq-tab' + (i === 0 ? ' active' : '');
     tab.textContent = FAQ_DATA[cat].icon + ' ' + cat;
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
     tab.onclick = () => {
-      document.querySelectorAll('.faq-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.faq-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
       tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
       renderFaqList(cat);
     };
     tabs.appendChild(tab);
@@ -1377,10 +1515,6 @@ function initHeroCalcs() {
 let boardPage = 1;
 let boardLoading = false;
 
-function escHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function getTimeAgo(isoStr) {
   const diff = Date.now() - new Date(isoStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -1415,7 +1549,7 @@ async function loadBoard(append) {
       const qText = escHtml(item.question);
       const aText = escHtml(item.answer_preview);
       div.innerHTML =
-        '<div class="board-q" onclick="this.parentElement.classList.toggle(\'open\')">' +
+        '<div class="board-q" role="button" tabindex="0" aria-expanded="false">' +
           '<span class="board-cat">' + escHtml(item.category || '일반') + '</span>' +
           '<span class="board-text">' + qText + '</span>' +
           '<span class="board-time">' + timeAgo + '</span>' +
@@ -1423,8 +1557,20 @@ async function loadBoard(append) {
         '</div>' +
         '<div class="board-a">' +
           aText +
-          '<br><button class="board-ask-btn" onclick="askQuestion(\'' + qText.replace(/'/g, "\\'") + '\')">비슷한 질문하기 \u2192</button>' +
+          '<br><button class="board-ask-btn">비슷한 질문하기 \u2192</button>' +
         '</div>';
+      // 인라인 onclick 문자열 조립 대신 addEventListener + 원문 그대로 전달
+      // — HTML 속성 이탈(quote-breakout) 인젝션 벡터를 원천 차단(F-2b)
+      const qDiv = div.querySelector('.board-q');
+      const toggleOpen = () => {
+        const open = div.classList.toggle('open');
+        qDiv.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      qDiv.addEventListener('click', toggleOpen);
+      qDiv.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleOpen(); }
+      });
+      div.querySelector('.board-ask-btn').addEventListener('click', () => askQuestion(item.question));
       list.appendChild(div);
     });
 
@@ -1478,6 +1624,16 @@ backBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smo
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 initFAQ();
+
+// calculators.html의 흐름도 노드 클릭(sendPrompt) → /?q=... 이동 시 자동 질문 전송(F-2c)
+(function() {
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q');
+  if (q) {
+    history.replaceState(null, '', location.pathname); // 새로고침 시 재전송 방지
+    askQuestion(q);
+  }
+})();
 </script>
 </body>
 </html>

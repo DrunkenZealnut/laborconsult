@@ -9,10 +9,7 @@
       "dest": "/api/index.py",
       "headers": {
         "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
+        "X-Accel-Buffering": "no"
       }
     },
     { "src": "/admin", "dest": "/public/admin.html" },
