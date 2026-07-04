@@ -414,6 +414,47 @@ def _ensure_minimum_wage_flag(params: dict, query: str) -> None:
         params.pop("wage_amount", None)
 
 
+_MINWAGE_SIGNALS = ("최저임금", "최저시급", "최저 임금", "최저 시급")
+
+
+def _build_minwage_facts(query: str, analysis) -> str | None:
+    """최저임금 관련 질문 감지 시 법정 최저임금 사실 블록 생성.
+
+    연도별 최저임금 '금액'은 고용노동부 고시 사항이라 법령 API·코퍼스 어디에도
+    신뢰 가능한 최신 값이 없고, 계산기는 임금·근로시간 정보가 없는 조회성 질문에
+    실행되지 않는다. LLM이 학습 시점의 과거 금액을 현재 값으로 환각하는 것을
+    constants 값 직접 주입으로 차단한다.
+    """
+    topic_hit = bool(
+        analysis and "최저임금" in (getattr(analysis, "calculation_types", None) or [])
+    )
+    if not (topic_hit or any(s in query for s in _MINWAGE_SIGNALS)):
+        return None
+
+    from datetime import date as _date
+    from wage_calculator.constants import MINIMUM_HOURLY_WAGE, MONTHLY_STANDARD_HOURS
+
+    cur = _date.today().year
+    years = sorted((y for y in MINIMUM_HOURLY_WAGE if cur - 2 <= y <= cur + 1), reverse=True)
+    if not years:
+        return None
+
+    lines = []
+    for y in years:
+        hw = MINIMUM_HOURLY_WAGE[y]
+        lines.append(
+            f"- {y}년: 시급 {hw:,.0f}원 / 일급(8시간) {hw * 8:,.0f}원"
+            f" / 월급(주40시간, {MONTHLY_STANDARD_HOURS:.0f}시간) {hw * MONTHLY_STANDARD_HOURS:,.0f}원"
+        )
+    return (
+        "[검증된 법정 최저임금 데이터 — 연도별 최저임금 금액은 반드시 아래 수치만 사용하세요. "
+        "학습 지식의 최저임금 금액은 오래된 값일 수 있으므로 사용 금지]\n"
+        + "\n".join(lines)
+        + "\n위 목록에 없는 연도의 금액은 아직 고시되지 않은 것이므로 '미확정'으로 안내하세요."
+        + "\n(출처: 고용노동부 고시, 최저임금위원회)"
+    )
+
+
 def _run_calculator(params: dict) -> str | None:
     if not params or not params.get("needs_calculation"):
         return None
@@ -1128,6 +1169,9 @@ def process_question(query: str, session: Session, config: AppConfig,
         parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{precedent_text}")
     if calc_result:
         parts.append(f"임금계산기 결과 (정확한 계산 — 이 수치를 사용하세요):\n\n{calc_result}")
+    minwage_facts = _build_minwage_facts(query, analysis)
+    if minwage_facts:
+        parts.append(minwage_facts)
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
     if nlrc_text:
