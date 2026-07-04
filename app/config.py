@@ -1,5 +1,6 @@
 """앱 설정 — 환경변수에서 API 클라이언트 초기화"""
 
+import logging
 import os
 from dataclasses import dataclass
 
@@ -21,7 +22,7 @@ EXTRACT_MODEL = "claude-sonnet-4-6"
 @dataclass
 class AppConfig:
     openai_client: OpenAI
-    pinecone_index: object
+    pinecone_index: object | None
     claude_client: anthropic.Anthropic
     gemini_api_key: str | None = None
     supabase: SupabaseClient | None = None
@@ -47,9 +48,20 @@ class AppConfig:
                 f".env 파일 또는 Vercel 환경변수를 확인하세요."
             )
         openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+
+        # Pinecone 인덱스 초기화 — 실패해도 챗봇은 계속 동작(RAG만 비활성화).
+        # rag.py가 pinecone_index=None 및 쿼리 실패를 graceful하게 처리하므로,
+        # 무효 키/Pinecone 장애 시에도 계산기·법령 API·LLM 답변은 정상 제공된다.
         index_name = os.getenv("PINECONE_INDEX_NAME", "semiconductor-lithography")
-        pinecone_index = pc.Index(index_name)
+        pinecone_index = None
+        try:
+            pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+            pinecone_index = pc.Index(index_name)
+        except Exception as exc:
+            logging.warning(
+                "Pinecone 초기화 실패 — 벡터 검색(RAG) 없이 동작합니다: %s", exc
+            )
+
         claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         supabase_url = os.getenv("SUPABASE_URL")
