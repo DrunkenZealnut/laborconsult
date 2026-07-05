@@ -63,6 +63,8 @@ _KW_CALC_TYPES: list[tuple[list[str], list[str]]] = [
     (["보상휴가", "대체휴가"], ["compensatory_leave"]),
     (["근로장려금", "EITC"], ["eitc"]),
     (["통상임금", "통상시급"], ["ordinary_wage"]),
+    (["소정근로시간", "근로시간 계산", "근로시간계산", "월 근로시간", "월근로시간"], ["working_hours"]),
+    (["주 52시간", "주52시간", "52시간"], ["weekly_hours_check"]),
     (["평균임금"], ["average_wage"]),
     (["퇴직소득세", "퇴직세금"], ["retirement_tax"]),
     (["퇴직연금"], ["retirement_pension"]),

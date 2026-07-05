@@ -640,9 +640,12 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
     if not has_wage:
-        targets = [t for t in targets if t in _WAGELESS_TARGETS]
-        if not targets:
+        wageless = [t for t in targets if t in _WAGELESS_TARGETS]
+        if not wageless:
+            logger.info("임금 정보 없음 — 임금 필요 계산기(%s) 제외 후 실행 대상 없음, "
+                        "계산기 미실행", targets)
             return None
+        targets = wageless
 
     # 특수고용직: 근로기준법 미적용 계산기 제외 + insurance/legal_hints 자동 추가
     if inp.is_platform_worker:
