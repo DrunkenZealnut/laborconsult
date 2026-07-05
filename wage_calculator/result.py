@@ -50,10 +50,10 @@ def format_result(result: "WageResult") -> str:
     lines.append("📊 임금 계산 결과")
     lines.append("=" * 50)
 
+    # 임금 미제공(통상시급 0원) 부분 실행 시 최저임금 판정도 무의미 — 함께 숨김
     if result.ordinary_hourly:
         lines.append(f"통상시급: {result.ordinary_hourly:,.0f}원")
-
-    lines.append(f"최저임금 충족: {'✅ 충족' if result.minimum_wage_ok else '❌ 미달'}")
+        lines.append(f"최저임금 충족: {'✅ 충족' if result.minimum_wage_ok else '❌ 미달'}")
     lines.append("")
 
     if result.summary:

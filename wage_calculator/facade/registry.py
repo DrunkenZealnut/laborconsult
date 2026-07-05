@@ -162,10 +162,10 @@ CALC_TYPE_MAP = {
 }
 
 
-def resolve_calc_type(calc_type_str: str) -> list[str]:
+def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
     """
-    CALC_TYPE_MAP 정확 매칭 → 키워드 기반 fallback.
-    벤치마크·chatbot 양쪽에서 사용.
+    CALC_TYPE_MAP 정확 매칭 → 구분자 분리 → 키워드 fallback.
+    모든 단계 매칭 실패 시 None — 묵시적 기본값 없음 (웹 파이프라인 라우팅용).
     """
     if calc_type_str in CALC_TYPE_MAP:
         return CALC_TYPE_MAP[calc_type_str]
@@ -205,7 +205,15 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
         if any(kw in calc_type_str for kw in keywords):
             return targets
 
-    return ["minimum_wage"]
+    return None
+
+
+def resolve_calc_type(calc_type_str: str) -> list[str]:
+    """
+    resolve_calc_type_strict + 미매칭 시 최저임금 검증 기본값.
+    벤치마크·chatbot 양쪽에서 사용 (기존 동작 유지).
+    """
+    return resolve_calc_type_strict(calc_type_str) or ["minimum_wage"]
 
 
 # ── 디스패처 레지스트리 ──────────────────────────────────────────────────────

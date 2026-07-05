@@ -14,6 +14,7 @@ from app.core.analyzer import analyze_intent
 from app.core.storage import save_conversation, save_session_data, upload_attachment, classify_category, infer_calc_types, ConversationRecord
 from app.models.session import Session
 from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
+from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
 from wage_calculator.result import format_result
 from harassment_assessor import assess_harassment, HarassmentInput, format_assessment
@@ -455,7 +456,85 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
     )
 
 
-def _run_calculator(params: dict) -> str | None:
+_INSURANCE_SIGNALS = ("4대보험", "국민연금", "건강보험", "고용보험", "장기요양",
+                      "보험요율", "보험 요율", "보험료")
+
+
+def _build_insurance_facts(query: str, analysis) -> str | None:
+    """4대보험 요율 질문 감지 시 검증된 요율 블록 생성.
+
+    요율·상하한은 매년 바뀌는 고시 사항이라 LLM 학습 지식이 낡기 쉬운 영역 —
+    최저임금과 동일하게 constants 값 주입으로 환각을 차단한다.
+    """
+    if not any(s in query for s in _INSURANCE_SIGNALS):
+        return None
+
+    from datetime import date as _date
+    from wage_calculator.constants import INSURANCE_RATES
+
+    cur = _date.today().year
+    year = cur if cur in INSURANCE_RATES else max(INSURANCE_RATES.keys())
+    r = INSURANCE_RATES[year]
+
+    def pct(v: float) -> str:
+        return f"{v * 100:.4g}%"
+
+    return (
+        "[검증된 4대보험 요율 — 요율·상하한 수치는 반드시 아래 값만 사용하세요. "
+        "학습 지식의 요율은 오래된 값일 수 있으므로 사용 금지]\n"
+        f"- {year}년 근로자 부담 요율: 국민연금 {pct(r['national_pension'])}"
+        f"(전체 {pct(r['national_pension'] * 2)}), "
+        f"건강보험 {pct(r['health_insurance'])}(전체 {pct(r['health_insurance'] * 2)}), "
+        f"장기요양 건강보험료의 {pct(r['long_term_care'])}, "
+        f"고용보험(실업급여) {pct(r['employment_insurance'])}"
+        f"(전체 {pct(r['employment_insurance'] * 2)})\n"
+        "- 산재보험: 근로자 부담 없음 (전액 사업주 부담)\n"
+        f"- 국민연금 기준소득월액: 상한 {r['pension_income_max']:,}원"
+        f" / 하한 {r['pension_income_min']:,}원\n"
+        "(출처: 시스템 내장 상수 — 관계 법령·고시 기준)"
+    )
+
+
+# ── 지식 모듈 등록제 ──────────────────────────────────────────────────────────
+# (이름, 빌더) — 빌더 시그니처: (query, analysis) -> str | None
+# 계산기가 아니어도 검증된 사실(고시 금액·요율 등)을 LLM 컨텍스트에 공급하는 모듈.
+# 새 지식 모듈은 여기에 등록만 하면 파이프라인 수정 없이 주입된다.
+_KNOWLEDGE_MODULES = [
+    ("최저임금", _build_minwage_facts),
+    ("4대보험요율", _build_insurance_facts),
+]
+
+
+# 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반)
+_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check"}
+
+
+def _resolve_targets(calc_type: str, query: str, has_wage: bool) -> list[str] | None:
+    """계산기 타깃 라우팅: 라벨 엄격 매칭 → 질문 키워드 추론 → 명시적 폴백.
+
+    기존의 묵시적 minimum_wage 기본값(오배치가 티 안 나던 원인)을 제거하고,
+    단계별로 로그를 남겨 라우팅 실패를 관측 가능하게 한다.
+    """
+    targets = resolve_calc_type_strict(calc_type) if calc_type else None
+    if targets:
+        return targets
+
+    inferred = [t for t in infer_calc_types(query) if t in CALC_TYPES]
+    if inferred:
+        logger.info("계산 유형 라벨 미매칭(%r) — 질문 키워드 추론 사용: %s",
+                    calc_type, inferred)
+        return inferred
+
+    if has_wage:
+        logger.info("계산 유형 미확정(label=%r) — 임금 정보 존재, 최저임금 검증만 실행",
+                    calc_type)
+        return ["minimum_wage"]
+
+    logger.info("계산 유형 미확정(label=%r) — 계산기 미실행, 상담 경로로 진행", calc_type)
+    return None
+
+
+def _run_calculator(params: dict, query: str = "") -> str | None:
     if not params or not params.get("needs_calculation"):
         return None
 
@@ -479,17 +558,19 @@ def _run_calculator(params: dict) -> str | None:
         wt = WageType.HOURLY
     else:
         amount = params.get("wage_amount")
-        if not amount:
-            return None
+        # 임금 정보가 없어도 즉시 포기하지 않는다 — 아래에서 임금이 필요 없는
+        # 계산기(소정근로시간·주52시간 체크)만 부분 실행하는 경로로 이어간다.
         # 가드: LLM이 과거 연도 최저임금 값을 환각한 경우 보정
         # 예: 2026년인데 wage_amount=10030 (2025년 최저임금) → 10320으로 보정
-        if wt == WageType.HOURLY:
+        if amount and wt == WageType.HOURLY:
             from datetime import date as _date
             from wage_calculator.constants import MINIMUM_HOURLY_WAGE
             ref_year = int(params.get("reference_year") or _date.today().year)
             ref_min = MINIMUM_HOURLY_WAGE.get(ref_year)
             if ref_min and amount != ref_min and amount in MINIMUM_HOURLY_WAGE.values():
                 amount = ref_min
+
+    has_wage = bool(amount)
 
     weekly_days = params.get("weekly_work_days")
     weekly_total = params.get("weekly_total_hours")
@@ -526,14 +607,15 @@ def _run_calculator(params: dict) -> str | None:
     if params.get("reference_year"):
         inp.reference_year = int(params["reference_year"])
 
-    if wt == WageType.HOURLY:
-        inp.hourly_wage = amount
-    elif wt == WageType.DAILY:
-        inp.daily_wage = amount
-    elif wt in (WageType.MONTHLY, WageType.COMPREHENSIVE):
-        inp.monthly_wage = amount
-    elif wt == WageType.ANNUAL:
-        inp.annual_wage = amount
+    if has_wage:
+        if wt == WageType.HOURLY:
+            inp.hourly_wage = amount
+        elif wt == WageType.DAILY:
+            inp.daily_wage = amount
+        elif wt in (WageType.MONTHLY, WageType.COMPREHENSIVE):
+            inp.monthly_wage = amount
+        elif wt == WageType.ANNUAL:
+            inp.annual_wage = amount
 
     start = params.get("start_date", "")
     if start:
@@ -551,8 +633,16 @@ def _run_calculator(params: dict) -> str | None:
         from wage_calculator.models import WorkType
         inp.work_type = WorkType.PLATFORM_WORKER
 
-    calc_type = params.get("calculation_type", "임금계산")
-    targets = CALC_TYPE_MAP.get(calc_type, ["minimum_wage"])
+    calc_type = params.get("calculation_type", "")
+    targets = _resolve_targets(calc_type, query, has_wage)
+    if not targets:
+        return None
+
+    # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
+    if not has_wage:
+        targets = [t for t in targets if t in _WAGELESS_TARGETS]
+        if not targets:
+            return None
 
     # 특수고용직: 근로기준법 미적용 계산기 제외 + insurance/legal_hints 자동 추가
     if inp.is_platform_worker:
@@ -571,6 +661,10 @@ def _run_calculator(params: dict) -> str | None:
     try:
         calc = WageCalculator()
         result = calc.calculate(inp, targets)
+        if not has_wage:
+            # 임금 미제공 부분 실행 — 0원 통상임금 계산식 노이즈 제거
+            result.formulas = [f for f in result.formulas
+                               if not f.startswith("[통상임금]")]
         return format_result(result)
     except Exception as e:
         return f"[계산기 오류: {e}]"
@@ -922,7 +1016,7 @@ def process_question(query: str, session: Session, config: AppConfig,
         if params.get("needs_calculation"):
             _ensure_minimum_wage_flag(params, query)
             yield {"type": "status", "text": "임금계산기 실행 중..."}
-            calc_result = _run_calculator(params)
+            calc_result = _run_calculator(params, query)
             if calc_result:
                 # 계산 결과 캐싱
                 for ct in (analysis.calculation_types or []):
@@ -940,7 +1034,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             if tool_type == "wage" and params and params.get("needs_calculation"):
                 _ensure_minimum_wage_flag(params, query)
                 yield {"type": "status", "text": "임금계산기 실행 중..."}
-                calc_result = _run_calculator(params)
+                calc_result = _run_calculator(params, query)
                 if calc_result:
                     yield {"type": "meta", "calc_result": calc_result}
             elif tool_type == "harassment" and params and params.get("is_harassment_question"):
@@ -1169,9 +1263,14 @@ def process_question(query: str, session: Session, config: AppConfig,
         parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{precedent_text}")
     if calc_result:
         parts.append(f"임금계산기 결과 (정확한 계산 — 이 수치를 사용하세요):\n\n{calc_result}")
-    minwage_facts = _build_minwage_facts(query, analysis)
-    if minwage_facts:
-        parts.append(minwage_facts)
+    # 지식 모듈: 트리거되는 모듈의 검증된 사실 블록을 순서대로 주입
+    for _km_name, _km_builder in _KNOWLEDGE_MODULES:
+        try:
+            _km_block = _km_builder(query, analysis)
+            if _km_block:
+                parts.append(_km_block)
+        except Exception as e:
+            logger.warning("지식 모듈 %s 실패 (무시): %s", _km_name, e)
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
     if nlrc_text:
