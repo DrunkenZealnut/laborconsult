@@ -53,14 +53,30 @@ def main() -> int:
     print("── working_hours ↔ ordinary_wage 월 소정근로시간 일치 (불일치 회귀 방지) ──")
     from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
     from wage_calculator.calculators.working_hours import calc_working_hours
-    for daily, days in [(8, 5), (9, 5), (10, 4), (6, 6), (8, 6)]:
-        _inp = WageInput(wage_type=WageType.MONTHLY,
-                         schedule=WorkSchedule(daily_work_hours=daily, weekly_work_days=days))
+    from wage_calculator.models import WorkType
+
+    def _check_wh_consistency(label: str, sched: WorkSchedule, work_type=None):
+        kwargs = {"wage_type": WageType.MONTHLY, "schedule": sched}
+        if work_type is not None:
+            kwargs["work_type"] = work_type
+        _inp = WageInput(**kwargs)
         _ow = calc_ordinary_wage(_inp)
         _wh = calc_working_hours(_inp, _ow)
-        check(f"{daily}h×{days}일 월 소정근로시간 = ordinary_wage 기준시간",
+        check(f"{label} 월 소정근로시간 = ordinary_wage 기준시간",
               approx(_wh.monthly_hours, _ow.monthly_base_hours),
               f"working={_wh.monthly_hours}h / ordinary={_ow.monthly_base_hours}h")
+
+    # 일반 스케줄 (daily × days)
+    for daily, days in [(8, 5), (9, 5), (10, 4), (6, 6), (8, 6)]:
+        _check_wh_consistency(f"{daily}h×{days}일",
+                              WorkSchedule(daily_work_hours=daily, weekly_work_days=days))
+    # 오버라이드 경로 (PR 주장 범위: 교대근무·월소정 직접입력) — CodeRabbit #18 반영
+    _check_wh_consistency("월소정 직접입력 226h",
+                          WorkSchedule(daily_work_hours=8, weekly_work_days=5, monthly_scheduled_hours=226.0))
+    _check_wh_consistency("교대 월시간 243h",
+                          WorkSchedule(daily_work_hours=8, weekly_work_days=5, shift_monthly_hours=243.0))
+    _check_wh_consistency("4조2교대 유형",
+                          WorkSchedule(daily_work_hours=8, weekly_work_days=5), work_type=WorkType.SHIFT_4_2)
 
     print("── 엣지케이스 (Wave 0/2 방어) ──")
     r_zero = calc(WageInput(wage_type=WageType.MONTHLY, monthly_wage=2_090_000,
