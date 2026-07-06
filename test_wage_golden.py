@@ -71,12 +71,16 @@ def main() -> int:
         _check_wh_consistency(f"{daily}h×{days}일",
                               WorkSchedule(daily_work_hours=daily, weekly_work_days=days))
     # 오버라이드 경로 (PR 주장 범위: 교대근무·월소정 직접입력) — CodeRabbit #18 반영
-    _check_wh_consistency("월소정 직접입력 226h",
-                          WorkSchedule(daily_work_hours=8, weekly_work_days=5, monthly_scheduled_hours=226.0))
-    _check_wh_consistency("교대 월시간 243h",
-                          WorkSchedule(daily_work_hours=8, weekly_work_days=5, shift_monthly_hours=243.0))
-    _check_wh_consistency("4조2교대 유형",
-                          WorkSchedule(daily_work_hours=8, weekly_work_days=5), work_type=WorkType.SHIFT_4_2)
+    _override_cases = [
+        ("월소정 직접입력 226h",
+         WorkSchedule(daily_work_hours=8, weekly_work_days=5, monthly_scheduled_hours=226.0), None),
+        ("교대 월시간 243h",
+         WorkSchedule(daily_work_hours=8, weekly_work_days=5, shift_monthly_hours=243.0), None),
+        ("4조2교대 유형",
+         WorkSchedule(daily_work_hours=8, weekly_work_days=5), WorkType.SHIFT_4_2),
+    ]
+    for _label, _sched, _wt in _override_cases:
+        _check_wh_consistency(_label, _sched, work_type=_wt)
 
     print("── 엣지케이스 (Wave 0/2 방어) ──")
     r_zero = calc(WageInput(wage_type=WageType.MONTHLY, monthly_wage=2_090_000,
