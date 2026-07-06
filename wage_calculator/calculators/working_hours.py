@@ -12,6 +12,7 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
+from ..constants import WEEKLY_HOLIDAY_MIN_HOURS
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 
@@ -27,7 +28,13 @@ class WorkingHoursResult(BaseCalculatorResult):
 
 
 def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursResult:
-    """소정근로시간 계산 + 시급↔월급 환산"""
+    """소정근로시간 계산 + 시급↔월급 환산.
+
+    월 소정근로시간은 통상임금 계산기(ordinary_wage._get_base_hours)가 산출한
+    ow.monthly_base_hours를 단일 출처로 사용한다. 과거 이 계산기는 주휴시간을
+    daily(상한 미적용)로 잡아 ordinary_wage(min(주소정/5, 8h), 대법원 2022다291153)와
+    다른 월 소정근로시간을 산출했고, 두 값이 한 답변에 함께 노출되는 불일치가 있었다.
+    """
     daily = inp.schedule.daily_work_hours
     weekly_days = inp.schedule.weekly_work_days
     warnings = []
@@ -37,22 +44,21 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
     # ── 주 소정근로시간 ──
     weekly_hours = daily * weekly_days
 
-    # ── 유급주휴시간 ──
-    if weekly_hours >= 15:
-        paid_holiday_hours = daily
+    # ── 유급주휴시간 (ordinary_wage와 동일 법리: min(주소정/5, 8h), 대법원 2022다291153) ──
+    if weekly_hours >= WEEKLY_HOLIDAY_MIN_HOURS:
+        paid_holiday_hours = min(weekly_hours / 5, 8.0)
         legal.append("근로기준법 제55조 (유급주휴일)")
     else:
-        paid_holiday_hours = 0
+        paid_holiday_hours = 0.0
         warnings.append("주 소정근로시간 15시간 미만: 주휴일 미발생")
 
     weekly_paid = weekly_hours + paid_holiday_hours
 
-    # ── 월 소정근로시간 ──
-    monthly_hours = round(weekly_paid * (365 / 12 / 7), 2)
-    formulas.append(
-        f"월 소정근로시간 = ({weekly_hours} + {paid_holiday_hours}) × 365/12/7 "
-        f"= {monthly_hours:.2f}시간"
-    )
+    # ── 월 소정근로시간: 통상임금 기준시간을 단일 출처로 사용 (불일치 방지) ──
+    # 산출 근거(ow.base_hours_detail)는 facade가 "[기준시간]" 계산식으로 이미 노출하므로
+    # 여기서는 결과값만 명시해 중복을 피한다.
+    monthly_hours = ow.monthly_base_hours
+    formulas.append(f"월 소정근로시간(주휴 포함) = {monthly_hours}시간")
 
     # ── 연 소정근로시간 (주휴 제외, 순수 근로시간) ──
     annual_contractual_hours = round(weekly_hours * 52, 1)
