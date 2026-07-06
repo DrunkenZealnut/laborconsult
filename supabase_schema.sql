@@ -1,8 +1,10 @@
 -- Q&A 상담 저장 테이블 (Supabase SQL Editor에서 실행)
 
 -- 1. 세션 테이블
+-- id는 앱의 12자 hex 세션 ID와 호환되도록 TEXT (supabase_fix_session_id.sql과 동일 계약).
 CREATE TABLE IF NOT EXISTS qa_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    session_data JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -10,7 +12,7 @@ CREATE TABLE IF NOT EXISTS qa_sessions (
 -- 2. 대화 테이블 (질문 + 답변)
 CREATE TABLE IF NOT EXISTS qa_conversations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id UUID NOT NULL REFERENCES qa_sessions(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL REFERENCES qa_sessions(id) ON DELETE CASCADE,
     category TEXT NOT NULL DEFAULT '일반상담',
     question_text TEXT NOT NULL,
     answer_text TEXT NOT NULL DEFAULT '',

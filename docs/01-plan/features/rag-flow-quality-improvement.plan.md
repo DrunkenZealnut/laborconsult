@@ -218,7 +218,7 @@ for hit in reranked_hits:
 
 ## 5. 참조
 
-- SafeFactory RAG Pipeline 아키텍처 (`/Users/zealnutkim/Downloads/safefactory-rag-pipeline.png`)
+- SafeFactory RAG Pipeline 아키텍처 (외부 참고 자료 — 저장소 미포함)
 - [Anthropic Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval) — 청크 품질 향상 기법
 - 현재 파이프라인: `app/core/pipeline.py`, `app/core/rag.py`, `app/core/query_decomposer.py`, `app/core/graph.py`
 - 현재 벤치마크: `benchmark_pipeline.py`, `search_quality_test.py`
