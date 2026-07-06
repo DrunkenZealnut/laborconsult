@@ -50,6 +50,18 @@ def main() -> int:
                          schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5)), ["ordinary"])
     check("일급 80,000원 ÷ 8h → 통상시급 10,000", approx(r_d.ordinary_hourly, 10_000), f"{r_d.ordinary_hourly}")
 
+    print("── working_hours ↔ ordinary_wage 월 소정근로시간 일치 (불일치 회귀 방지) ──")
+    from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
+    from wage_calculator.calculators.working_hours import calc_working_hours
+    for daily, days in [(8, 5), (9, 5), (10, 4), (6, 6), (8, 6)]:
+        _inp = WageInput(wage_type=WageType.MONTHLY,
+                         schedule=WorkSchedule(daily_work_hours=daily, weekly_work_days=days))
+        _ow = calc_ordinary_wage(_inp)
+        _wh = calc_working_hours(_inp, _ow)
+        check(f"{daily}h×{days}일 월 소정근로시간 = ordinary_wage 기준시간",
+              approx(_wh.monthly_hours, _ow.monthly_base_hours),
+              f"working={_wh.monthly_hours}h / ordinary={_ow.monthly_base_hours}h")
+
     print("── 엣지케이스 (Wave 0/2 방어) ──")
     r_zero = calc(WageInput(wage_type=WageType.MONTHLY, monthly_wage=2_090_000,
                             schedule=WorkSchedule(daily_work_hours=0, weekly_work_days=0)), ["ordinary", "minimum_wage"])
