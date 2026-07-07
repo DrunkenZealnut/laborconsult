@@ -30,6 +30,7 @@ from app.models.session import get_or_create_session
 from app.core.storage import restore_session_data
 from app.core.pipeline import process_question
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
+from app.anonymize import anonymize as _anonymize
 
 app = FastAPI(title="AI 노동상담 챗봇")
 
@@ -669,23 +670,6 @@ def board_post_delete(post_id: str, body: BoardDeleteRequest):
 
 
 # ── 질문게시판 (공개) ──────────────────────────────────────────────────────────
-
-_ANON_PATTERNS = [
-    # 주민등록번호(6자리-성별1~4+6자리)는 전화번호 패턴보다 먼저 매칭해야 함
-    (re.compile(r'\b\d{6}[-\s]?[1-4]\d{6}\b'), '******-*******'),
-    (re.compile(r'[가-힣]{2,4}(?=\s*(?:씨|님|사장|대표|과장|부장|팀장|차장|이사))'), 'OOO'),
-    (re.compile(r'(?:주\s*\)?\s*|㈜\s*|(?:주식)?회사\s+)[가-힣A-Za-z]+'), '(주)OOO'),
-    (re.compile(r'\d{2,3}[-.\s]?\d{3,4}[-.\s]?\d{4}'), '***-****-****'),
-    (re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'), '***@***.***'),
-]
-
-
-def _anonymize(text: str) -> str:
-    """개인정보 비식별화"""
-    for pattern, replacement in _ANON_PATTERNS:
-        text = pattern.sub(replacement, text)
-    return text
-
 
 @app.get("/api/board/recent")
 def board_recent(page: int = 1, per_page: int = 10):
