@@ -141,6 +141,8 @@
     background: var(--warm-white); border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg); border: 1px solid var(--border-light);
     overflow: visible; display: flex; flex-direction: column;
+    /* #landing의 text-align:center 상속 차단 — 답변 본문·리스트는 좌측 정렬 */
+    text-align: left;
   }
 
   /* Chat messages area — hidden until first interaction */
@@ -954,16 +956,26 @@ function md(text) {
   });
 
   text = text.replace(/((?:^[ \t]*[-*] .+$\n?)+)/gm, block => {
-    const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*[-*] /, '') + '</li>');
+    // inlineTransform 적용 — 과거엔 누락되어 불릿 항목의 **볼드**·`코드`가 원문(별표)째 노출됐음
+    const items = block.trim().split('\n').map(l => '<li>' + inlineTransform(l.replace(/^[ \t]*[-*] /, '')) + '</li>');
     return stash('<ul>' + items.join('') + '</ul>');
   });
 
-  text = text.replace(/((?:^[ \t]*\d+\. .+$\n?)+)/gm, (block, _, offset) => {
+  text = text.replace(/((?:^[ \t]*\d+\. .+(?:\n(?![ \t]*\d+\. )(?![ \t]*[-*] ).+)*$\n?)+)/gm, (block, _, offset) => {
     const preceding = text.slice(Math.max(0, offset - 200), offset);
     const isStep = /(?:절차|방법|순서|과정|단계|대응|신청|진행)\s*$/m.test(preceding)
       || /^#{2,3}\s.*(?:절차|방법|순서|과정|단계|대응|신청|진행)/m.test(preceding);
-    const items = block.trim().split('\n').map(l => '<li>' + inlineTransform(l.replace(/^[ \t]*\d+\. /, '')) + '</li>');
-    return stash(isStep ? '<ol class="step-list">' + items.join('') + '</ol>' : '<ol>' + items.join('') + '</ol>');
+    // 번호 줄마다 새 항목 시작, 번호 없는 후속 줄(계산식 "→ ..." 등)은 직전 항목에 병합.
+    // 과거엔 항목 사이 continuation 줄이 리스트를 분절해 각 항목이 개별 <ol>이 되어
+    // 번호가 매번 1로 리셋됐음 — 하나의 <ol>로 묶어 순번(1·2·3)이 이어지게 한다.
+    const items = [];
+    for (const line of block.replace(/\n+$/, '').split('\n')) {
+      const m = line.match(/^[ \t]*\d+\.\s+(.*)$/);
+      if (m) items.push(m[1]);
+      else if (items.length) items[items.length - 1] += '\n' + line.trim();
+    }
+    const lis = items.map(it => '<li>' + inlineTransform(it).replace(/\n/g, '<br>') + '</li>').join('');
+    return stash(isStep ? '<ol class="step-list">' + lis + '</ol>' : '<ol>' + lis + '</ol>');
   });
 
   text = text.replace(/((?:^> .+$\n?)+)/gm, block => {
