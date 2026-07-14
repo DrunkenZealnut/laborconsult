@@ -39,13 +39,24 @@ def build_corpus() -> None:
         print(f"  Fetching namespace: {ns}...")
         try:
             count = 0
-            for ids_batch in index.list(namespace=ns):
-                if not ids_batch:
-                    continue
-                fetched = index.fetch(ids=list(ids_batch), namespace=ns)
-                for vid, vec in fetched.vectors.items():
+            pagination_token = None
+            while True:
+                # index.list()+fetch(by id)는 이 계정에서 list()가 반환한 ID가
+                # fetch()에서 일관되게 0건으로 돌아오는 문제가 있어(list()의
+                # ID 인덱스가 실제 벡터 데이터와 어긋난 것으로 보임 —
+                # query()/fetch_by_metadata는 정상 동작함을 확인) 메타데이터
+                # 필터 기반 페이지네이션으로 우회한다. chunk_index는 모든
+                # 청크에 항상 존재하는 정수 필드라 전체 매치용으로 사용.
+                resp = index.fetch_by_metadata(
+                    filter={"chunk_index": {"$gte": 0}},
+                    namespace=ns,
+                    limit=100,
+                    pagination_token=pagination_token,
+                )
+                for vid, vec in resp.vectors.items():
                     meta = vec.metadata or {}
-                    text = meta.get("text", "")
+                    # laborlaw-v2(Contextual Retrieval)는 "text" 없이 "chunk_text"만 존재
+                    text = meta.get("text") or meta.get("chunk_text", "")
                     if not text:
                         continue
                     corpus.append({
@@ -56,6 +67,9 @@ def build_corpus() -> None:
                         "source_type": meta.get("source_type", ""),
                     })
                     count += 1
+                pagination_token = resp.pagination.next if resp.pagination else None
+                if not pagination_token:
+                    break
             print(f"    {ns}: {count} documents")
         except Exception as e:
             print(f"    {ns}: ERROR — {e}")

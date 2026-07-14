@@ -44,3 +44,5 @@ venv/
 
 # 임시
 *.tmp
+.vercel
+.env*

@@ -28,7 +28,9 @@ _BM25_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 # gz(배포용 커밋 대상) 우선, raw json(로컬 빌드 산출물) 폴백 (DB-1)
 BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
                      _BM25_DATA_DIR / "bm25_corpus.json"]
-BM25_MAX_DOCS = 15000    # Vercel 메모리 제한 내 (256MB)
+# 실측(60,174건 전체 로드 시 BM25Okapi 인덱스까지 프로세스 RSS 약 815MB, 2026-07-14)
+# 기준 넉넉한 여유를 둔 상한 — 코퍼스가 이보다 커지면 이 상수부터 재검토할 것.
+BM25_MAX_DOCS = 100_000
 
 
 # ── 한국어 토크나이저 ────────────────────────────────────────────────────
