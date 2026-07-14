@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Pinecone precedent 네임스페이스 검색 검증 테스트."""
+"""Pinecone 네임스페이스 검색 검증 (수동 도구 — 라이브 API 키 필요)
+
+기본은 프로덕션 법령·판례 네임스페이스(laborlaw-v2)를 조회한다.
+과거 업로드 검증용 네임스페이스는 TEST_NS 환경변수로 지정:
+  TEST_NS=precedent python3 test_precedent_search.py
+"""
 
 import os
 from dotenv import load_dotenv
@@ -10,13 +15,16 @@ load_dotenv()
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index(os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna"))
+from app.config import resolve_index_name
+index = pc.Index(resolve_index_name())
 
 # 1. 인덱스 통계
 stats = index.describe_index_stats()
-ns = stats.namespaces.get("precedent")
+from app.core.rag import NS_GROUP_LAW
+TEST_NS = os.getenv("TEST_NS", NS_GROUP_LAW[0])
+ns = stats.namespaces.get(TEST_NS)
 print(f"{'='*60}")
-print(f"1. Pinecone precedent 네임스페이스 통계")
+print(f"1. Pinecone {TEST_NS} 네임스페이스 통계")
 print(f"   총 벡터: {ns.vector_count:,}개" if ns else "   없음")
 print(f"{'='*60}\n")
 
@@ -39,7 +47,7 @@ for query, desc in test_queries:
 
     results = index.query(
         vector=qvec,
-        namespace="precedent",
+        namespace=TEST_NS,
         top_k=3,
         include_metadata=True,
     )

@@ -29,6 +29,8 @@ class AnalysisResult(BaseModel):
     extracted_info: dict = {}
     relevant_laws: list[str] = []
     missing_info: list[str] = []
+    # 숫자 범위 검증이 제거한 파라미터 라벨 — 코드 판정 교체 후에도 보존 (CALC-13)
+    validation_warnings: list[str] = []
     question_summary: str = ""
     # 법률상담 전용 필드 (계산 불필요 + 괴롭힘 아닌 경우)
     consultation_type: str | None = None

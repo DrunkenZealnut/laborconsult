@@ -1,0 +1,32 @@
+name: Offline Tests
+
+# API 키 없이 도는 오프라인 스위트 — 계산 엔진 골든 + 파이프라인 배선 + 검색/인용 단위
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: 계산 엔진 골든 테스트
+        run: python3 test_wage_golden.py
+
+      - name: 파이프라인 배선 테스트
+        run: python3 test_pipeline_wiring.py
+
+      - name: 검색·인용 모듈 단위 테스트
+        run: python3 test_offline_units.py

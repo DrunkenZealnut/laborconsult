@@ -1046,6 +1046,7 @@ async function readSSE(resp) {
   let assistantEl = null;
   let fullText = '';
   let pendingContacts = null;
+  let pendingSources = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -1071,7 +1072,9 @@ async function readSSE(resp) {
         const el = addMsg('assistant', event.text);
         ensureCopyBtn(el);
         if (pendingContacts) renderContacts(pendingContacts, el);
-      } else if (event.type === 'sources' || event.type === 'meta') {
+      } else if (event.type === 'sources') {
+        pendingSources = event.hits || null;   // 답변 완료 후 출처 표시
+      } else if (event.type === 'meta') {
         // handled in answer
       } else if (event.type === 'replace') {
         if (assistantEl) {
@@ -1095,6 +1098,7 @@ async function readSSE(resp) {
   // 마지막 assistant 메시지에 액션 바 표시
   var lastAssistant = assistantEl || chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant');
   if (lastAssistant) {
+    renderSources(pendingSources, lastAssistant);
     if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
     showAnswerActions(lastAssistant);
@@ -1103,6 +1107,22 @@ async function readSSE(resp) {
     removeStatus();
     addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
   }
+}
+
+// ── 답변 출처 표시 (sources 이벤트) ──────────────────────────────────────────
+// 말풍선(innerHTML 교체 대상) 바깥에 붙여 replace 이벤트에도 보존된다.
+
+function renderSources(hits, el) {
+  if (!hits || !hits.length || !el) return;
+  var labels = { precedent: '판례', interpretation: '행정해석', regulation: '훈령·예규',
+                 counsel: '노무사 상담', qa: '상담 Q&A' };
+  var div = document.createElement('div');
+  div.className = 'sources';
+  div.textContent = '근거 자료: ' + hits.map(function (h) {
+    var label = labels[h.source_type] || h.source_type || '자료';
+    return '[' + label + '] ' + h.title + (h.section ? ' — ' + h.section : '');
+  }).join('  ·  ');
+  el.insertAdjacentElement('afterend', div);
 }
 
 // ── 답변 완료 후 액션 바 ─────────────────────────────────────────────────────

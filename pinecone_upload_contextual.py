@@ -13,7 +13,7 @@ Anthropic Contextual Retrieval 방식으로 법률 데이터 → Pinecone 업로
   2. 섹션 기반 청킹 (max 700자, 80자 overlap)
   3. ★ Contextual Retrieval: Claude Haiku로 각 청크에 문서 맥락 prefix 생성
   4. 맥락화된 텍스트 → OpenAI 임베딩 (text-embedding-3-small)
-  5. Pinecone upsert (semiconductor-lithography / 소스별 네임스페이스)
+  5. Pinecone upsert (app.config.resolve_index_name() / 소스별 네임스페이스)
 
 사용법:
   python3 pinecone_upload_contextual.py                  # 전체 업로드
@@ -44,7 +44,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROGRESS_FILE = os.path.join(BASE_DIR, "_contextual_upload_progress.json")
 
 # Pinecone
-PINECONE_INDEX = "semiconductor-lithography"
+from app.config import resolve_index_name
+PINECONE_INDEX = resolve_index_name()
 
 # 모델
 EMBED_MODEL = "text-embedding-3-small"

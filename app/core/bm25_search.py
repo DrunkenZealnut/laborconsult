@@ -24,7 +24,10 @@ _bm25_index = None       # rank_bm25.BM25Okapi | None
 _bm25_corpus = None      # list[dict] — [{id, text, title, section, source_type}, ...]
 _bm25_loaded = False
 
-BM25_CORPUS_PATH = Path(__file__).parent.parent.parent / "data" / "bm25_corpus.json"
+_BM25_DATA_DIR = Path(__file__).parent.parent.parent / "data"
+# gz(배포용 커밋 대상) 우선, raw json(로컬 빌드 산출물) 폴백 (DB-1)
+BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
+                     _BM25_DATA_DIR / "bm25_corpus.json"]
 BM25_MAX_DOCS = 15000    # Vercel 메모리 제한 내 (256MB)
 
 
@@ -95,16 +98,22 @@ def load_bm25_corpus() -> bool:
 
     _bm25_loaded = True
 
-    if not BM25_CORPUS_PATH.exists():
-        logger.info("BM25 corpus not found: %s — BM25 disabled", BM25_CORPUS_PATH)
+    corpus_path = next((p for p in BM25_CORPUS_PATHS if p.exists()), None)
+    if corpus_path is None:
+        logger.info("BM25 corpus not found: %s — BM25 disabled", BM25_CORPUS_PATHS[0])
         return False
 
     try:
         from rank_bm25 import BM25Okapi
 
         start = time.monotonic()
-        with open(BM25_CORPUS_PATH, "r", encoding="utf-8") as f:
-            _bm25_corpus = json.load(f)
+        if corpus_path.suffix == ".gz":
+            import gzip
+            with gzip.open(corpus_path, "rt", encoding="utf-8") as f:
+                _bm25_corpus = json.load(f)
+        else:
+            with open(corpus_path, "r", encoding="utf-8") as f:
+                _bm25_corpus = json.load(f)
 
         if len(_bm25_corpus) > BM25_MAX_DOCS:
             _bm25_corpus = _bm25_corpus[:BM25_MAX_DOCS]
@@ -170,6 +179,24 @@ def search_bm25(query: str, top_k: int = 10) -> list[dict]:
 # ── Reciprocal Rank Fusion (RRF) ─────────────────────────────────────────
 
 RRF_K = 60  # 표준 RRF 상수
+
+
+def rrf_merge_ranked_lists(result_lists: list[list[dict]], top_k: int = 10) -> list[dict]:
+    """여러 쿼리의 BM25 결과를 순위 기반으로 병합 (DB-8).
+
+    멀티쿼리 분해 이점이 단일 문자열 결합 검색에서 상실되던 문제 해소 —
+    쿼리별 검색 결과를 RRF로 결합한다.
+    """
+    scores: dict[str, float] = {}
+    hit_map: dict[str, dict] = {}
+    for hits in result_lists:
+        for rank, hit in enumerate(hits):
+            doc_id = hit["id"]
+            scores[doc_id] = scores.get(doc_id, 0) + 1.0 / (RRF_K + rank + 1)
+            if doc_id not in hit_map:
+                hit_map[doc_id] = hit
+    ordered = sorted(scores, key=lambda x: scores[x], reverse=True)
+    return [hit_map[doc_id] for doc_id in ordered[:top_k]]
 
 
 def reciprocal_rank_fusion(

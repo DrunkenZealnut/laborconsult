@@ -128,6 +128,96 @@ def _merge_search_queries(
     return merged[:max_total]
 
 
+def _build_sources_payload(
+    precedent_meta: list[dict] | None,
+    consultation_hits: list[dict] | None,
+    legal_articles_text: str | None = None,
+    nlrc_text: str | None = None,
+    graph_context: str | None = None,
+    max_items: int = 5,
+) -> list[dict]:
+    """검색 결과를 sources SSE 이벤트용으로 정규화 (DB-2).
+
+    답변·인용 화이트리스트(_citation_source_hits)에 실제로 쓰이는 소스와
+    동일한 집합을 노출한다 — 법령 API·NLRC·GraphRAG가 빠져 있으면 인용은
+    검증됐는데 출처 UI에는 안 뜨는 불일치가 생긴다(CodeRabbit 지적).
+    본문(chunk_text)은 제외 — UI에는 제목·출처 메타만 표시한다.
+    """
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for origin, hits in (("consultation", consultation_hits or []),
+                         ("rag", precedent_meta or [])):
+        for h in hits:
+            title = h.get("title") or h.get("case_name") or ""
+            key = (title, h.get("section") or "")
+            if not title or key in seen:
+                continue
+            seen.add(key)
+            try:
+                score = round(float(h.get("rerank_score") or h.get("score") or 0), 3)
+            except (TypeError, ValueError):
+                score = 0.0
+            out.append({
+                "title": title[:120],
+                "section": (h.get("section") or "")[:80],
+                "source_type": h.get("source_type", "precedent"),
+                "score": score,
+                "origin": origin,
+            })
+    # 텍스트 블록 소스(개별 hit 구조가 없음) — 라벨 하나로 노출
+    for origin, source_type, label, text in (
+        ("legal_api", "law_article", "법제처 법령 조문", legal_articles_text),
+        ("nlrc", "nlrc_case", "중앙노동위원회 판정사례", nlrc_text),
+        ("graph", "graph", "법령 지식그래프", graph_context),
+    ):
+        if not text:
+            continue
+        key = (label, "")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "title": label, "section": "", "source_type": source_type,
+            "score": 0.0, "origin": origin,
+        })
+    return out[:max_items]
+
+
+def _citation_source_hits(
+    consultation_hits: list[dict] | None,
+    precedent_meta: list[dict] | None,
+    legal_articles_text: str | None,
+    nlrc_text: str | None,
+    graph_context: str | None,
+) -> list[dict]:
+    """인용 가능 목록·검증 화이트리스트의 공통 원천 (DB-4).
+
+    법령 API·NLRC·GraphRAG 텍스트에 실린 판례번호가 화이트리스트에서 빠져
+    정당한 인용이 환각으로 오판·삭제되던 사각지대를 해소한다.
+    텍스트 블록은 hits로 감싸기만 하며, 번호 추출은 citation_validator의
+    정규식이 수행 — 소스에 실재하는 번호만 목록에 오른다.
+    """
+    hits = list(consultation_hits or [])
+    for m in (precedent_meta or []):
+        hits.append({
+            "title": m.get("case_name", m.get("title", "")),
+            "chunk_text": m.get("chunk_text", ""),
+        })
+    for label, text in (("법제처 법령 조문", legal_articles_text),
+                        ("NLRC 판정사례", nlrc_text),
+                        ("법령 지식그래프", graph_context)):
+        if text:
+            hits.append({"title": label, "chunk_text": text})
+    return hits
+
+
+def _cap(text: str | None, limit: int) -> str | None:
+    """LLM 컨텍스트 소스별 길이 예산 (DB-5). 초과분은 뒤에서 절삭."""
+    if text and len(text) > limit:
+        return text[:limit] + "\n...(자료 일부 생략)"
+    return text
+
+
 # ── LLM 스트리밍 (Claude → OpenAI → Gemini 폴백) ────────────────────────────
 
 def _flatten_content(content) -> str:
@@ -138,8 +228,14 @@ def _flatten_content(content) -> str:
 
 
 def _stream_claude(messages: list, system: str, config: AppConfig):
-    """Claude 스트리밍"""
-    with config.claude_client.messages.stream(
+    """Claude 스트리밍 — read 30s는 토큰 간 무진행 감지 (DB-6).
+
+    첫 청크 전 실패 → _stream_answer가 OpenAI/Gemini로 폴백,
+    스트림 도중 실패 → 부분 응답 유지(기존 규약, 재시도 없음).
+    """
+    import httpx
+    timeout = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
+    with config.claude_client.with_options(timeout=timeout).messages.stream(
         model=CLAUDE_MODEL,
         max_tokens=2048,
         system=system,
@@ -367,7 +463,8 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
     from app.core.analyzer import _correct_date_year
     today = _date.today().isoformat()
     try:
-        resp = client.messages.create(
+        # 임계경로 타임아웃 (DB-6) — 지연 시 폴백 경로로 진행
+        resp = client.with_options(timeout=10.0).messages.create(
             model=EXTRACT_MODEL,
             max_tokens=512,
             temperature=0,
@@ -397,8 +494,9 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
                     if dk in params:
                         params[dk] = _correct_date_year(params[dk])
                 return ("wage", params)
-    except Exception:
-        pass
+    except Exception as e:
+        # 조용한 삼킴 제거 — 계산기 미실행 원인 관측 가능하게 (CALC-7)
+        logger.warning("파라미터 추출 실패 (상담 경로로 진행): %s", e)
     return ("none", None)
 
 
@@ -413,6 +511,37 @@ def _ensure_minimum_wage_flag(params: dict, query: str) -> None:
     if "최저시급" in query or "최저임금으로" in query or "최저임금 기준" in query:
         params["use_minimum_wage"] = True
         params.pop("wage_amount", None)
+
+
+_UNIT_FLOORS = {  # wage_type: (하한, 배율) — 하한 미만이면 만원 단위 누락으로 판단
+    "월급": (100_000, 10_000),
+    "포괄임금제": (100_000, 10_000),
+    "연봉": (1_200_000, 10_000),
+}
+
+
+def _normalize_wage_units(params: dict) -> bool:
+    """월급/연봉의 만원 단위 누락 보정 (CALC-5).
+
+    "250만원"이 250으로 추출된 경우 ×10,000 보정. 시급·일급은 정상 저액이
+    존재하므로 제외(시급은 최저임금 환각 가드가 별도 처리).
+    보정 발생 시 True 반환 — 호출부가 missing_info에 확인 안내를 추가한다.
+
+    한계(알려진 트레이드오프, CodeRabbit 지적): 크기만으로 판단하는 휴리스틱이라
+    "월급 25,000원"처럼 명시적 저액과 "250(만원 단위 누락)"을 원천적으로 구분 못한다.
+    2026년 최저임금(10,320원/h) 기준 실제 월급이 10만원 미만이려면 월 10시간 미만
+    근무해야 해 극히 드문 케이스이고, 오탐이어도 missing_info로 사용자에게 확인을
+    요청하므로 안전망이 있다. 완전한 해소는 analyzer가 "만원 단위 여부"를 별도
+    필드로 명시하도록 스키마를 확장해야 하는 별도 작업 범위로 남겨둔다.
+    """
+    rule = _UNIT_FLOORS.get(params.get("wage_type", ""))
+    amt = params.get("wage_amount")
+    if rule and amt and 10 <= amt < rule[0]:
+        params["wage_amount"] = amt * rule[1]
+        logger.warning("임금 단위 보정: %s %s → %s",
+                       params.get("wage_type"), amt, params["wage_amount"])
+        return True
+    return False
 
 
 _MINWAGE_SIGNALS = ("최저임금", "최저시급", "최저 임금", "최저 시급")
@@ -505,32 +634,38 @@ _KNOWLEDGE_MODULES = [
 ]
 
 
-# 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반)
-_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check"}
+# 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반 + 독립 계산)
+# wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
+_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
 
 
-def _resolve_targets(calc_type: str, query: str, has_wage: bool) -> list[str] | None:
-    """계산기 타깃 라우팅: 라벨 엄격 매칭 → 질문 키워드 추론 → 명시적 폴백.
+def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[str] | None:
+    """계산기 타깃 라우팅: 라벨 엄격 매칭(전체 유형 union) → 질문 키워드 추론 → 명시적 폴백.
 
     기존의 묵시적 minimum_wage 기본값(오배치가 티 안 나던 원인)을 제거하고,
     단계별로 로그를 남겨 라우팅 실패를 관측 가능하게 한다.
+    복수 계산 유형은 순서 보존 union으로 전부 계산 대상에 포함한다(CALC-2).
     """
-    targets = resolve_calc_type_strict(calc_type) if calc_type else None
-    if targets:
-        return targets
+    merged: list[str] = []
+    for label in calc_types:
+        for t in (resolve_calc_type_strict(label) or []):
+            if t not in merged:
+                merged.append(t)
+    if merged:
+        return merged
 
     inferred = [t for t in infer_calc_types(query) if t in CALC_TYPES]
     if inferred:
         logger.info("계산 유형 라벨 미매칭(%r) — 질문 키워드 추론 사용: %s",
-                    calc_type, inferred)
+                    calc_types, inferred)
         return inferred
 
     if has_wage:
-        logger.info("계산 유형 미확정(label=%r) — 임금 정보 존재, 최저임금 검증만 실행",
-                    calc_type)
+        logger.info("계산 유형 미확정(labels=%r) — 임금 정보 존재, 최저임금 검증만 실행",
+                    calc_types)
         return ["minimum_wage"]
 
-    logger.info("계산 유형 미확정(label=%r) — 계산기 미실행, 상담 경로로 진행", calc_type)
+    logger.info("계산 유형 미확정(labels=%r) — 계산기 미실행, 상담 경로로 진행", calc_types)
     return None
 
 
@@ -578,8 +713,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         daily_hours = weekly_total / weekly_days
     elif weekly_total:
         # 주당 총시간만 있고 근무일수 없음 → 기본 5일로 나누어 일일시간 산출
+        # 가정 사실을 params에 기록 — 호출부가 답변 말미 확인 안내에 반영 (CALC-12)
         weekly_days = 5.0
         daily_hours = weekly_total / weekly_days
+        params["assumed_weekly_days"] = True
     else:
         daily_hours = params.get("daily_work_hours")
 
@@ -633,8 +770,40 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         from wage_calculator.models import WorkType
         inp.work_type = WorkType.PLATFORM_WORKER
 
-    calc_type = params.get("calculation_type", "")
-    targets = _resolve_targets(calc_type, query, has_wage)
+    # 수습·계약기간·직종 — 최저임금 수습 감액 판정에 소비 (CALC-1)
+    if params.get("is_probation"):
+        inp.is_probation = True
+    if params.get("contract_months") is not None:
+        inp.contract_months = int(params["contract_months"])
+    if params.get("occupation_code"):
+        inp.occupation_code = str(params["occupation_code"]).strip()
+
+    # 해고예고·육아휴직·임금체불 — 배선 누락으로 계산이 조용히 skip되던 필드 (CALC-1)
+    if params.get("notice_days_given") is not None:
+        inp.notice_days_given = int(params["notice_days_given"])
+    if params.get("parental_leave_months"):
+        inp.parental_leave_months = int(params["parental_leave_months"])
+    if params.get("arrear_amount"):
+        inp.arrear_amount = float(params["arrear_amount"])
+    if params.get("arrear_due_date"):
+        inp.arrear_due_date = str(params["arrear_due_date"])
+
+    # 고정수당 — facade가 dict 항목을 그대로 지원 (CALC-1)
+    if params.get("fixed_allowances"):
+        inp.fixed_allowances = [
+            a for a in params["fixed_allowances"]
+            if isinstance(a, dict) and a.get("amount")
+        ]
+
+    # 휴업수당·유급공휴일 (CALC-6 enum 확장분 배선)
+    if params.get("shutdown_days"):
+        inp.shutdown_days = int(params["shutdown_days"])
+    if params.get("public_holiday_days"):
+        inp.public_holiday_days = int(params["public_holiday_days"])
+
+    calc_types = params.get("calculation_types_kr") or (
+        [params["calculation_type"]] if params.get("calculation_type") else [])
+    targets = _resolve_targets(calc_types, query, has_wage)
     if not targets:
         return None
 
@@ -669,8 +838,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             result.formulas = [f for f in result.formulas
                                if not f.startswith("[통상임금]")]
         return format_result(result)
-    except Exception as e:
-        return f"[계산기 오류: {e}]"
+    except Exception:
+        # 오류 문자열이 '정확한 계산' 헤더로 LLM에 주입되던 경로 차단 (CALC-3)
+        logger.exception("계산기 실행 실패 — 계산 없이 상담 경로로 진행 (targets=%s)", targets)
+        return None
 
 
 # ── 계산 유형별 필수 필드 정의 ────────────────────────────────────────────────
@@ -740,6 +911,32 @@ _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     "eitc": [
         ({"annual_wage", "monthly_wage", "wage_amount"}, "연간 총 소득 (또는 월급)"),
     ],
+    # enum 확장분 (CALC-6) — 누락 판정 공백 방지
+    "average_wage": [
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
+    ],
+    "shutdown_allowance": [
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
+        ({"shutdown_days"}, "휴업 일수"),
+    ],
+    "public_holiday": [
+        (_WAGE_FIELDS, "임금 (시급/월급)"),
+        ({"public_holiday_days"}, "유급 공휴일 일수"),
+    ],
+    "working_hours": [
+        ({"daily_work_hours", "weekly_total_hours"}, "1일 소정근로시간 또는 주 소정근로시간"),
+    ],
+    "retirement_tax": [
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
+        ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
+    ],
+    "retirement_pension": [
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
+        ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
+    ],
+    "ordinary_wage": [
+        (_WAGE_FIELDS, "임금 (시급/월급/연봉)"),
+    ],
 }
 
 
@@ -805,19 +1002,28 @@ def _analysis_to_extract_params(analysis) -> dict:
         "overtime": "연장수당", "weekly_holiday": "주휴수당",
         "minimum_wage": "최저임금", "severance": "퇴직금",
         "annual_leave": "연차수당", "dismissal": "해고예고수당",
-        "unemployment": "실업급여", "insurance": "임금계산",
+        "unemployment": "실업급여", "insurance": "4대보험",
         "parental_leave": "육아휴직", "maternity_leave": "출산휴가",
         "wage_arrears": "임금체불", "compensatory_leave": "보상휴가",
         "flexible_work": "탄력근무", "comprehensive": "포괄임금제",
         "eitc": "근로장려금",
+        # enum 확장분 (CALC-6) — 전부 CALC_TYPE_MAP 기존/신규 키로 연결.
+        # industrial_accident·business_size는 ANALYZE_TOOL enum에서 제외돼
+        # analysis.calculation_types에 나타날 수 없음 — 매핑 불필요
+        "average_wage": "평균임금",
+        "shutdown_allowance": "휴업수당", "working_hours": "근로시간산정",
+        "public_holiday": "유급공휴일", "ordinary_wage": "통상임금",
+        "retirement_tax": "퇴직소득세", "retirement_pension": "퇴직연금",
     }
-    calc_type = "임금계산"
-    if analysis.calculation_types:
-        calc_type = REVERSE_CALC_MAP.get(analysis.calculation_types[0], "임금계산")
+    # 전체 계산 유형을 라벨로 변환 — 첫 유형만 계산되던 결함 수정 (CALC-2)
+    labels = [REVERSE_CALC_MAP[ct] for ct in (analysis.calculation_types or [])
+              if ct in REVERSE_CALC_MAP]
+    calc_type = labels[0] if labels else "임금계산"
 
     params = {
         "needs_calculation": analysis.requires_calculation,
         "calculation_type": calc_type,
+        "calculation_types_kr": labels or None,
         "wage_type": info.get("wage_type"),
         "wage_amount": info.get("wage_amount") or info.get("monthly_wage") or info.get("annual_wage"),
         "weekly_work_days": info.get("weekly_work_days"),
@@ -834,6 +1040,15 @@ def _analysis_to_extract_params(analysis) -> dict:
         "is_platform_worker": info.get("is_platform_worker"),
         "is_probation": info.get("is_probation"),
         "contract_months": info.get("contract_months"),
+        # 계산기 소비처가 있는데 배선이 끊겨 있던 필드들 (CALC-1)
+        "occupation_code": info.get("occupation_code"),
+        "notice_days_given": info.get("notice_days_given"),
+        "parental_leave_months": info.get("parental_leave_months"),
+        "arrear_amount": info.get("arrear_amount"),
+        "arrear_due_date": info.get("arrear_due_date"),
+        "fixed_allowances": info.get("fixed_allowances"),
+        "shutdown_days": info.get("shutdown_days"),
+        "public_holiday_days": info.get("public_holiday_days"),
     }
     return {k: v for k, v in params.items() if v is not None}
 
@@ -961,13 +1176,14 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     combined_query = query
     if attachment_text:
-        combined_query = f"{query}\n\n첨부된 문서 내용:\n{attachment_text}"
+        combined_query = f"{query}\n\n첨부된 문서 내용:\n{_cap(attachment_text, 4000)}"
 
     # 1. 의도 분석 + 추가 질문 판단
     yield {"type": "status", "text": "질문 분석 중..."}
 
     use_analysis_params = False
     analysis = None
+    prefilled_keys: list[str] = []
 
     try:
         if session.has_pending_info():
@@ -985,26 +1201,37 @@ def process_question(query: str, session: Session, config: AppConfig,
                 summary=session.summary,
             )
 
-            # 캐시 기반 extracted_info 프리필 (이전 계산 파라미터 재활용)
-            cached = session.get_cached_info()
-            for key, val in cached.items():
-                if key not in analysis.extracted_info or analysis.extracted_info[key] is None:
-                    analysis.extracted_info[key] = val
+            # 캐시 기반 extracted_info 프리필 — 동일 계산 유형의 캐시만 사용해
+            # 무관한 이전 질문 파라미터의 교차오염을 차단 (CALC-4)
+            if analysis.calculation_types:
+                cached = session.get_cached_info(analysis.calculation_types)
+                for key, val in cached.items():
+                    if key not in analysis.extracted_info or analysis.extracted_info[key] is None:
+                        analysis.extracted_info[key] = val
+                        prefilled_keys.append(key)
+                if prefilled_keys:
+                    logger.info("calc_cache 프리필(%s): %s",
+                                analysis.calculation_types, prefilled_keys)
 
             # 코드 기반 누락 정보 판정 (LLM의 자유형 missing_info 대체)
             if analysis.requires_calculation and analysis.calculation_types:
                 code_missing = _compute_missing_info(
                     analysis.calculation_types, analysis.extracted_info
                 )
-                # LLM missing_info를 코드 판정 결과로 교체
-                analysis.missing_info = code_missing
+                # LLM missing_info를 코드 판정 결과로 교체하되,
+                # 숫자 범위 검증이 제거한 라벨은 보존 (CALC-13)
+                analysis.missing_info = code_missing + [
+                    w for w in analysis.validation_warnings
+                    if w not in code_missing
+                ]
 
             # 분석에서 계산이 필요하면 (누락 정보 유무와 관계없이) 진행
             # 누락 정보가 있어도 가능한 범위 내에서 답변하고, 추가정보 안내를 포함
             if analysis.requires_calculation and analysis.extracted_info:
                 use_analysis_params = True
     except Exception:
-        # 분석 실패 시 기존 로직으로 fallback
+        # 분석 실패 시 기존 로직으로 fallback — 원인은 로그로 관측 (CALC-7)
+        logger.exception("의도분석 실패 — 레거시 추출 경로로 폴백")
         session.clear_pending()
         use_analysis_params = False
 
@@ -1018,9 +1245,13 @@ def process_question(query: str, session: Session, config: AppConfig,
         params = _analysis_to_extract_params(analysis)
         if params.get("needs_calculation"):
             _ensure_minimum_wage_flag(params, query)
+            if _normalize_wage_units(params):
+                analysis.missing_info.append("임금액 단위(만원으로 해석함) 확인")
             yield {"type": "status", "text": "임금계산기 실행 중..."}
             calc_result = _run_calculator(params, query)
             if calc_result:
+                if params.get("assumed_weekly_days"):
+                    analysis.missing_info.append("주 근무일수 (5일로 가정하고 계산함)")
                 # 계산 결과 캐싱
                 for ct in (analysis.calculation_types or []):
                     session.cache_calculation(ct, analysis.extracted_info)
@@ -1036,6 +1267,7 @@ def process_question(query: str, session: Session, config: AppConfig,
 
             if tool_type == "wage" and params and params.get("needs_calculation"):
                 _ensure_minimum_wage_flag(params, query)
+                _normalize_wage_units(params)
                 yield {"type": "status", "text": "임금계산기 실행 중..."}
                 calc_result = _run_calculator(params, query)
                 if calc_result:
@@ -1212,8 +1444,6 @@ def process_question(query: str, session: Session, config: AppConfig,
         except Exception as e:
             logger.warning("법률상담 처리 실패 (RAG fallback): %s", e)
 
-    yield {"type": "sources", "hits": []}
-
     # ── GraphRAG 검색 ─────────────────────────────────────────────────
     graph_context = ""
     if analysis:
@@ -1227,6 +1457,13 @@ def process_question(query: str, session: Session, config: AppConfig,
             )
         except Exception as e:
             logger.warning("GraphRAG 검색 실패 (fallback): %s", e)
+
+    # sources는 GraphRAG까지 전부 모인 뒤 발신 — 인용 화이트리스트와 동일 소스 집합 노출
+    yield {"type": "sources",
+           "hits": _build_sources_payload(
+               precedent_meta, consultation_hits,
+               legal_articles_text, nlrc_text, graph_context,
+           )}
 
     has_attachments = attachments and len(attachments) > 0
 
@@ -1243,27 +1480,29 @@ def process_question(query: str, session: Session, config: AppConfig,
         logger.debug("충돌 해결 모듈 실패 (무시): %s", e)
 
     # 3. 컨텍스트 구성
+    # 인용 가능 목록·사후 검증이 같은 원천을 쓰도록 화이트리스트 hits를 한 번 구성 (DB-4)
+    whitelist_hits = _citation_source_hits(
+        consultation_hits if consultation_context else None,
+        precedent_meta, legal_articles_text, nlrc_text, graph_context,
+    )
     if consultation_context:
         # 법률상담 경로: 전용 컨텍스트 사용
-        parts = [f"참고 자료:\n\n{consultation_context}"]
+        parts = [f"참고 자료:\n\n{_cap(consultation_context, 8000)}"]
         # 인용 가능한 판례 목록 명시 (환각 방지)
-        citation_list = build_available_citations_text(
-            list(consultation_hits) + (precedent_meta or []),
-            legal_precedents=precedent_meta,
-        )
-        parts.append(citation_list)
+        parts.append(build_available_citations_text(
+            whitelist_hits, legal_precedents=precedent_meta,
+        ))
     else:
         parts = []
         # 비 consultation 경로에서도 인용 가능 목록 주입 (환각 방지)
-        if precedent_meta:
-            citation_list = build_available_citations_text(
-                precedent_meta, legal_precedents=precedent_meta,
-            )
-            parts.append(citation_list)
+        if whitelist_hits:
+            parts.append(build_available_citations_text(
+                whitelist_hits, legal_precedents=precedent_meta,
+            ))
     if graph_context:
         parts.append(f"법령 관계 분석 (지식 그래프):\n\n{graph_context}")
     if precedent_text:
-        parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{precedent_text}")
+        parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{_cap(precedent_text, 8000)}")
     if calc_result:
         parts.append(f"임금계산기 결과 (정확한 계산 — 이 수치를 사용하세요):\n\n{calc_result}")
     # 지식 모듈: 트리거되는 모듈의 검증된 사실 블록을 순서대로 주입
@@ -1277,11 +1516,17 @@ def process_question(query: str, session: Session, config: AppConfig,
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
     if nlrc_text:
-        parts.append(f"중앙노동위원회 주요판정사례 (공공데이터포털 조회):\n\n{nlrc_text}")
+        parts.append(f"중앙노동위원회 주요판정사례 (공공데이터포털 조회):\n\n{_cap(nlrc_text, 4000)}")
     if legal_articles_text:
-        parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{legal_articles_text}")
-    if attachment_text:
-        parts.append(f"첨부된 문서 내용:\n\n{attachment_text}")
+        parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{_cap(legal_articles_text, 5000)}")
+    # 이미지 첨부는 Vision 블록으로 전달되므로 텍스트 프롬프트에서 제외 — 이중 주입 방지 (DB-5)
+    non_vision_attachment_text = "\n\n".join(
+        f"[첨부: {att.filename}]\n{att.extracted_text}"
+        for att in (attachments or [])
+        if att.extracted_text and not att.vision_block
+    )
+    if non_vision_attachment_text:
+        parts.append(f"첨부된 문서 내용:\n\n{_cap(non_vision_attachment_text, 6000)}")
 
     # ── FR-01: 정보 충돌 우선순위 안내 (최상단 배치) ──
     if conflict_note:
@@ -1295,6 +1540,14 @@ def process_question(query: str, session: Session, config: AppConfig,
         # 충돌 메모 다음, 나머지 컨텍스트 앞에 배치
         insert_pos = 1 if conflict_note else 0
         parts.insert(insert_pos, worker_ctx)
+
+    # 이전 대화 값 재사용 안내 — 프리필이 조용히 계산에 스며드는 것을 표면화 (CALC-4)
+    if prefilled_keys and calc_result:
+        parts.append(
+            "[이전 대화에서 재사용한 정보] " + ", ".join(prefilled_keys) + "\n"
+            "→ 새 사업장·다른 조건에 대한 질문이라면 위 값이 다를 수 있음을 "
+            "답변에서 자연스럽게 짚어주세요."
+        )
 
     # 누락 정보 안내 (계산 시도 후에도 부족한 정보가 있을 때)
     if analysis and analysis.missing_info:
@@ -1392,6 +1645,7 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     parts.append(f"질문: {query}")
     user_message = "\n\n---\n\n".join(parts)
+    logger.info("LLM 컨텍스트 %d자 (parts=%d)", len(user_message), len(parts))
 
     # 4. 대화 이력 포함
     messages = session.recent()
@@ -1443,16 +1697,10 @@ def process_question(query: str, session: Session, config: AppConfig,
         yield {"type": "chunk", "text": _DISCLAIMER}
 
     # 6-1. 판례 인용 검증 (환각 감지 + 사용자 경고)
-    all_source_hits = list(consultation_hits) if consultation_context else []
-    # precedent_meta(Pinecone/법제처 API) 판례도 화이트리스트에 포함
-    if precedent_meta:
-        for m in precedent_meta:
-            all_source_hits.append({
-                "title": m.get("case_name", m.get("title", "")),
-                "chunk_text": m.get("chunk_text", ""),
-            })
-    available_precs = extract_precedents_from_hits(all_source_hits)
-    available_admins = extract_admin_refs_from_hits(all_source_hits)
+    # 화이트리스트는 컨텍스트 조립과 동일 원천(whitelist_hits) 사용 —
+    # 법령 API·NLRC·graph 소스의 정당한 인용이 삭제되던 사각지대 해소 (DB-4)
+    available_precs = extract_precedents_from_hits(whitelist_hits)
+    available_admins = extract_admin_refs_from_hits(whitelist_hits)
     citation_check = validate_response_citations(
         full_text, available_precs, available_admins,
     )
