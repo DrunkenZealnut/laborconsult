@@ -748,6 +748,13 @@ function guessMime(f) {
 // Vercel 요청 바디 한도(4.5MB)에 걸려 413으로 거부된다. 사전 차단.
 const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 
+// 서버(file_parser.py) 허용 목록과 동일 — image/*로 느슨하게 받으면
+// svg/heic 등이 드래그앤드롭(accept 미적용)으로 통과 후 서버에서 거부된다
+const ALLOWED_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/markdown',
+]);
+
 function addFiles(files) {
   for (const f of files) {
     if (pendingFiles.length >= MAX_FILES) {
@@ -755,9 +762,7 @@ function addFiles(files) {
       break;
     }
     const mime = guessMime(f);
-    const ok = mime.startsWith('image/') ||
-               mime === 'application/pdf' ||
-               mime === 'text/plain' || mime === 'text/markdown';
+    const ok = ALLOWED_MIMES.has(mime);
     if (!ok) {
       alert('지원하지 않는 파일 형식입니다: ' + f.name + '\n이미지(JPG/PNG), PDF, TXT 파일만 가능합니다.');
       continue;
