@@ -34,6 +34,7 @@ def build_corpus() -> None:
 
     namespaces = ["laborlaw-v2", "counsel", "qa"]
     corpus: list[dict] = []
+    failed_namespaces: list[str] = []
 
     for ns in namespaces:
         print(f"  Fetching namespace: {ns}...")
@@ -73,14 +74,25 @@ def build_corpus() -> None:
             print(f"    {ns}: {count} documents")
         except Exception as e:
             print(f"    {ns}: ERROR — {e}")
+            failed_namespaces.append(ns)
+
+    # 일부 네임스페이스라도 실패하면 부분 코퍼스로 기존 정상 파일을 덮어쓰지 않는다
+    # — 이전엔 실패 후에도 무조건 저장해 불완전한 코퍼스가 커밋될 위험이 있었다.
+    if failed_namespaces:
+        print(f"\nERROR: 다음 네임스페이스 조회 실패 — 저장 건너뜀 (기존 파일 보존): "
+              f"{failed_namespaces}")
+        sys.exit(1)
 
     # gzip 출력 — Vercel 배포용 커밋 대상 (raw json은 .gitignore) (DB-1)
+    # 임시 파일에 먼저 쓰고 성공 시에만 교체 — 쓰기 도중 중단돼도 기존 파일이 손상되지 않음
     import gzip
     out_path = Path("data/bm25_corpus.json.gz")
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
 
-    with gzip.open(out_path, "wt", encoding="utf-8") as f:
+    with gzip.open(tmp_path, "wt", encoding="utf-8") as f:
         json.dump(corpus, f, ensure_ascii=False, separators=(",", ":"))
+    tmp_path.replace(out_path)
 
     size_mb = out_path.stat().st_size / 1e6
     print(f"\nBM25 corpus saved: {len(corpus)} documents → {out_path} ({size_mb:.1f}MB gz)")
