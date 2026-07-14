@@ -91,7 +91,8 @@ print(f"기존 사건번호: {len(existing)}개\n")
 # Pinecone + OpenAI
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index(os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna"))
+from app.config import resolve_index_name
+index = pc.Index(resolve_index_name())
 
 deleted_dups = 0
 uploaded = 0

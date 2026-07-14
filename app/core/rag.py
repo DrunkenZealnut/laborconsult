@@ -20,6 +20,9 @@ NS_GROUPS = [NS_GROUP_LAW, NS_GROUP_COUNSEL]
 TOP_K = 5
 MIN_SCORE = 0.35  # 이 점수 이하는 무관한 결과로 간주
 
+# 인덱스/네임스페이스 오배선 경고 — 인스턴스당 1회만 (DB-3 관측성)
+_zero_hit_warned = False
+
 
 def _query_namespaces(
     namespaces: list[str],
@@ -172,6 +175,15 @@ def search_pinecone_multi(
 
     # score 내림차순 정렬
     all_hits.sort(key=lambda x: x["score"], reverse=True)
+
+    # 인덱스/네임스페이스 오배선 조기 감지 (DB-3 관측성) — 인스턴스당 최초 1회만 경고
+    global _zero_hit_warned
+    if not all_hits and not _zero_hit_warned:
+        _zero_hit_warned = True
+        from app.config import resolve_index_name
+        logger.warning("RAG 검색 결과 0건 — 인덱스/네임스페이스 오배선 가능성 확인 필요 "
+                       "(index=%s, ns_groups=%s)", resolve_index_name(), NS_GROUPS)
+
     logger.info("Pinecone 다중검색: %d개 쿼리 → %d건 (중복제거)",
                 len(queries), len(all_hits))
     return all_hits[:top_k * 2]  # 최대 top_k*2건
@@ -203,11 +215,15 @@ def search_hybrid(
 
     # BM25 검색 시도
     try:
-        from app.core.bm25_search import search_bm25, reciprocal_rank_fusion, load_bm25_corpus
+        from app.core.bm25_search import (
+            search_bm25, reciprocal_rank_fusion, load_bm25_corpus,
+            rrf_merge_ranked_lists,
+        )
 
         load_bm25_corpus()
-        combined_query = " ".join(queries)
-        bm25_hits = search_bm25(combined_query, top_k=top_k)
+        # 쿼리별 검색 후 순위 병합 — 단일 문자열 결합의 분해 이점 상실 방지 (DB-8)
+        per_query = [search_bm25(q, top_k=top_k) for q in queries[:3]]
+        bm25_hits = rrf_merge_ranked_lists(per_query, top_k=top_k)
 
         if bm25_hits:
             fused = reciprocal_rank_fusion(dense_hits, bm25_hits, alpha=alpha, top_k=top_k)

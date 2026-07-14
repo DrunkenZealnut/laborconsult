@@ -113,6 +113,8 @@ CALC_TYPE_MAP = {
     "탄력근무":   ["flexible_work"],
     "사업장규모": ["business_size"],
     "근로장려금": ["eitc"],
+    "4대보험":    ["insurance"],
+    "유급공휴일": ["public_holiday"],
     "근로장려세제": ["eitc"],
     "EITC":       ["eitc"],
     "퇴직소득세":  ["severance", "retirement_tax"],

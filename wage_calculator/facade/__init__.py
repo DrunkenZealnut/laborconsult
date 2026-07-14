@@ -17,7 +17,7 @@ from ..legal_hints import generate_legal_hints, format_hints, LegalHint
 from ..models import WageInput, WageType, BusinessSize
 from ..result import WageResult, format_result, format_result_json
 
-from .conversion import _provided_info_to_input, _guess_start_date
+from .conversion import _guess_start_date
 from .helpers import _merge, _pop_retirement_tax, _pop_retirement_pension
 from .registry import (
     CALC_TYPES, CALC_TYPE_MAP, _STANDARD_CALCS, resolve_calc_type,
@@ -153,24 +153,6 @@ class WageCalculator:
 
         return result
 
-    def from_analysis(self, calculation_type: str, provided_info: dict) -> "WageResult | None":
-        """
-        analyze_qna.py 분석 결과(calculation_type, provided_info)에서 자동 계산
-
-        Args:
-            calculation_type: "연장수당", "최저임금", "주휴수당" 등
-            provided_info: {"임금형태": "시급", "임금액": "10030", ...}
-
-        Returns:
-            WageResult 또는 None (정보 불충분 시)
-        """
-        inp = _provided_info_to_input(provided_info)
-        if inp is None:
-            return None
-
-        targets = CALC_TYPE_MAP.get(calculation_type, ["minimum_wage"])
-        return self.calculate(inp, targets)
-
     def _auto_detect_targets(self, inp: WageInput) -> list[str]:
         """입력 정보를 보고 필요한 계산 유형 자동 결정"""
         is_pw = getattr(inp, "is_platform_worker", False)
@@ -229,7 +211,7 @@ class WageCalculator:
             targets.append("parental_leave")
 
         # 출산전후휴가: 다태아 등 출산 관련 입력이 명시되면 자동 포함
-        # (단태아 일반 케이스는 from_analysis("출산휴가") 명시 경로로 처리)
+        # (단태아 일반 케이스는 파이프라인의 '출산휴가' 라벨 명시 라우팅으로 처리)
         if getattr(inp, "is_multiple_birth", False):
             targets.append("maternity_leave")
 

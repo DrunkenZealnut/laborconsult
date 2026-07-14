@@ -1,10 +1,10 @@
-"""Pinecone 메타데이터에서 BM25 코퍼스 JSON 생성
+"""Pinecone 메타데이터에서 BM25 코퍼스 생성
 
 사용법:
     python build_bm25_corpus.py
 
 출력:
-    data/bm25_corpus.json — BM25 검색용 코퍼스 데이터
+    data/bm25_corpus.json.gz — BM25 검색용 코퍼스 (커밋 대상, raw json은 gitignore)
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ def build_corpus() -> None:
 
     from pinecone import Pinecone
 
-    index_name = os.getenv("PINECONE_INDEX_NAME", "semiconductor-lithography")
+    from app.config import resolve_index_name
+    index_name = resolve_index_name()
     pc = Pinecone(api_key=api_key)
     index = pc.Index(index_name)
 
@@ -59,14 +60,18 @@ def build_corpus() -> None:
         except Exception as e:
             print(f"    {ns}: ERROR — {e}")
 
-    # 출력 디렉토리 생성
-    out_path = Path("data/bm25_corpus.json")
+    # gzip 출력 — Vercel 배포용 커밋 대상 (raw json은 .gitignore) (DB-1)
+    import gzip
+    out_path = Path("data/bm25_corpus.json.gz")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(corpus, f, ensure_ascii=False)
+    with gzip.open(out_path, "wt", encoding="utf-8") as f:
+        json.dump(corpus, f, ensure_ascii=False, separators=(",", ":"))
 
-    print(f"\nBM25 corpus saved: {len(corpus)} documents → {out_path}")
+    size_mb = out_path.stat().st_size / 1e6
+    print(f"\nBM25 corpus saved: {len(corpus)} documents → {out_path} ({size_mb:.1f}MB gz)")
+    if size_mb > 10:
+        print("⚠️ 10MB 초과 — 리포 커밋 대신 외부 저장(design 부록 A) 검토 필요")
 
 
 if __name__ == "__main__":

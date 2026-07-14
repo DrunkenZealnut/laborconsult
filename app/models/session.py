@@ -94,10 +94,16 @@ class Session:
             {k: v for k, v in extracted_info.items() if v is not None}
         )
 
-    def get_cached_info(self) -> dict:
-        """모든 캐시된 계산 파라미터를 병합하여 반환 (최신 값 우선)"""
+    def get_cached_info(self, calc_types: list[str] | None = None) -> dict:
+        """캐시된 계산 파라미터를 병합하여 반환 (최신 값 우선).
+
+        calc_types 지정 시 해당 계산 유형의 캐시만 병합 — 무관한 이전 질문
+        파라미터가 새 질문에 스며드는 교차오염을 차단한다(CALC-4).
+        """
         merged = {}
-        for info in self.calc_cache.values():
+        for ct, info in self.calc_cache.items():
+            if calc_types is not None and ct not in calc_types:
+                continue
             for k, v in info.items():
                 merged[k] = v
         return merged

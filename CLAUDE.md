@@ -42,13 +42,23 @@ python3 summarize_analysis.py     # Aggregate analysis → stats JSON + design d
 python3 wage_calculator_cli.py           # Run all 32 test cases
 python3 wage_calculator_cli.py --case 1  # Run specific test case
 python3 wage_calculator_cli.py --interactive  # Interactive mode
-python3 calculator_batch_test.py         # Run all 102 batch test cases
+python3 calculator_batch_test.py         # Run all 102 batch test cases (output_qna/ 원문 필요)
+
+# Offline test suites (API 키 불요 — CI에서도 실행, .github/workflows/tests.yml)
+python3 test_wage_golden.py       # 계산 엔진 골든 테스트
+python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-1/2/3)
+python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
-python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json
+# 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.json.gz 커밋 필수
+# (gz 미커밋 시 프로덕션 하이브리드 검색이 Dense-only로 폴백됨)
+python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json.gz
+
+# NLRC 판정사례 번들 갱신 (odcloud API 키 필요, 주기 실행 후 커밋)
+python3 refresh_nlrc_cases.py     # odcloud → data/nlrc_cases.json
 
 # Environment check
 python3 check_env.py              # Validate all API keys configured
@@ -123,8 +133,8 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `chunk` / `text` — streaming / non-streamed answer text
 - `replace` — full answer replacement (after citation correction)
 - `contacts` — agency contact cards (노동위/고용센터/근로복지공단)
-- `sources` — RAG source list
-- `meta` — calc_result, sources
+- `sources` — 검색 출처 목록 (`_build_sources_payload()`, 상위 5건 {title, section, source_type, score, origin}) → 프론트 `renderSources()`가 답변 하단에 표시
+- `meta` — calc_result (프론트는 현재 미표시 — 수치 카드 UI는 제품 결정 대기)
 - `error` — error message
 - `done` — stream end marker
 
@@ -132,13 +142,13 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 
 `process_question()` is the main orchestrator. It yields SSE events:
 
-1. **Intent analysis** → `analyzer.py` (Claude tool_use extracts params, `NUMERIC_RANGES` guardrails)
+1. **Intent analysis** → `analyzer.py` (Claude tool_use extracts params, `NUMERIC_RANGES` guardrails, timeout 12s)
 2. **Branching**:
-   - **Wage calculation**: `WageCalculator.from_analysis()` → calculators → formatted result
+   - **Wage calculation**: `_analysis_to_extract_params()` → `_run_calculator()` (extracted_info → `WageInput` 인라인 배선, `calculation_types` 전체를 union 라우팅) → calculators → formatted result. 계산 예외 시 오류 문자열 주입 없이 None(상담 경로 진행)
    - **Harassment assessment**: `harassment_assessor.assess_harassment()` → element scoring
    - **Legal consultation**: `legal_consultation.py` (topic→law mapping) + RAG + legal API
 3. **RAG search** → Adaptive complexity classification (`classify_complexity()` → SIMPLE/MODERATE/COMPLEX) → `query_decomposer.py` (LLM multi-query) → `rag.py::search_hybrid()` (BM25+Dense RRF fusion → Pinecone 2-group parallel) → `rerank_results()` (Cohere) → Self-RAG relevance filter (COMPLEX only, `self_rag.py`) + `graph.py` (GraphRAG multi-hop)
-4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (공공데이터포털 판정사례 360건 캐싱 + 법제처 판례 보강). `precedent_query.py::build_precedent_queries()` expands precedent search terms.
+4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (판정사례 360건 — `data/nlrc_cases.json` 번들 우선 로드, 부재 시에만 odcloud API 폴백; 갱신은 `refresh_nlrc_cases.py`). `precedent_query.py::build_precedent_queries()` expands precedent search terms.
 5. **Source conflict resolution** → `conflict_resolver.py::annotate_source_priority()` tags hits by source-type priority before they reach the LLM.
 6. **Agency contacts** → `labor_offices.py` / `employment_centers.py` / `comwel_offices.py` match the user's region to 노동위원회(14)/고용센터(133)/근로복지공단(63) and emit a `contacts` event.
 7. **LLM streaming** → Claude → OpenAI → Gemini fallback chain (`_stream_answer()` in `pipeline.py`)
@@ -162,7 +172,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - **Chunking**: Section-based (h2/h3) split, max 700 chars, 80 char overlap. Critical: `split_by_size` must have `end >= len(text): break` guard to prevent tiny trailing chunks.
 - **Embedding**: OpenAI text-embedding-3-small (1536 dim)
 - **Vector DB**: Pinecone Serverless (AWS us-east-1, cosine metric), 3 namespaces
-- **Hybrid Search**: `bm25_search.py` (BM25 keyword) + Dense (Pinecone) → Reciprocal Rank Fusion (`search_hybrid()` in `rag.py`). BM25 uses `rank_bm25` with Mecab tokenizer (fallback: regex). Corpus built by `build_bm25_corpus.py` → `data/bm25_corpus.json`. Graceful fallback to Dense-only if BM25 unavailable.
+- **Hybrid Search**: `bm25_search.py` (BM25 keyword, 쿼리별 검색 후 `rrf_merge_ranked_lists()` 병합) + Dense (Pinecone) → Reciprocal Rank Fusion (`search_hybrid()` in `rag.py`). BM25 uses `rank_bm25` with Mecab tokenizer (fallback: regex). Corpus built by `build_bm25_corpus.py` → `data/bm25_corpus.json.gz`(**커밋 대상** — 없으면 프로덕션이 Dense-only 폴백, raw json은 gitignore). Graceful fallback to Dense-only if BM25 unavailable.
 - **Adaptive Retrieval**: `classify_complexity()` in `query_decomposer.py` scores query complexity → SIMPLE (top_k=8, no decomposition) / MODERATE (top_k=15) / COMPLEX (top_k=20, force decomposition, Self-RAG enabled). `COMPLEXITY_PARAMS` dict drives all dynamic parameters.
 - **Multi-query**: `query_decomposer.py` decomposes user query via LLM, merged with rule-based queries, deduped. `force` param bypasses `_should_decompose()` for COMPLEX queries.
 - **Reranking**: Cohere Rerank v3.5 (optional, falls back to cosine score sorting)
@@ -181,10 +191,10 @@ wage_calculator/
 ├── result.py                # WageResult dataclass, format_result()
 ├── legal_hints.py           # Legal review point generation
 ├── facade/
-│   ├── __init__.py          # WageCalculator.calculate(), from_analysis()
+│   ├── __init__.py          # WageCalculator.calculate()
 │   ├── registry.py          # CALC_TYPES, CALC_TYPE_MAP, _STANDARD_CALCS dispatcher
 │   ├── helpers.py           # _pop_* result population, _merge()
-│   └── conversion.py        # _provided_info_to_input() — Korean labels → WageInput
+│   └── conversion.py        # 파싱 유틸 (_guess_start_date 등) — 변환은 pipeline 인라인이 정식
 └── calculators/
     ├── shared.py            # DateRange, AllowanceClassifier, MultiplierContext
     ├── ordinary_wage.py     # Base ordinary wage (foundation for all other calcs)
@@ -193,7 +203,7 @@ wage_calculator/
 
 **Key design decisions:**
 - `WageCalculator.calculate(inp, targets)` — pass `WageInput` + list of target calculator names. If `targets=None`, auto-detected from input fields.
-- `WageCalculator.from_analysis(calculation_type, provided_info)` — converts Korean analysis labels (e.g., "연장수당") to calculator targets via `CALC_TYPE_MAP` in `registry.py`. The `resolve_calc_type()` function handles exact match → slash/comma split → keyword fallback.
+- 웹 파이프라인의 유일한 변환 경로는 `pipeline.py::_run_calculator()` — 한국어 라벨은 `resolve_calc_type_strict()`(exact match → slash/comma split → keyword fallback, 미매칭 시 None)로 targets 변환. 구 `from_analysis()`/`_provided_info_to_input()`은 호출처가 없어 제거됨(calc-db-integration-review D1).
 - `calc_ordinary_wage()` runs first as the foundation — all other calculators depend on its result.
 - `_STANDARD_CALCS` in `registry.py` is the dispatcher: list of `(key, func, section_name, populate_fn, precondition)` tuples.
 - `AllowanceCondition` enum reflects Supreme Court ruling 2023다302838: NONE/ATTENDANCE/EMPLOYMENT are included in ordinary wage; PERFORMANCE is excluded.
@@ -238,7 +248,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 ## Key Conventions
 
 - All monetary amounts in Korean Won (원), no decimal for display (use `{:,.0f}`)
-- Korean variable names used in `facade/conversion.py::_provided_info_to_input()` (e.g., `임금형태`, `임금액`) to match analysis output schema
+- 계산기 입력 params는 영문 키(`wage_type`, `wage_amount` 등, `pipeline.py::_run_calculator()` 규약) — 한국어는 계산 유형 라벨(`CALC_TYPE_MAP` 키, 예: "연장수당")에만 사용
 - Legal references follow format: "근로기준법 제N조" or "대법원 YYYY다NNNN"
 - Test cases in `wage_calculator_cli.py` numbered #1–#32; batch tests in `calculator_batch_test.py` with 102 cases
 - LLM provider fallback: Claude (primary) → OpenAI o3 → Gemini. If streaming starts then fails mid-stream, partial response is kept (no retry).

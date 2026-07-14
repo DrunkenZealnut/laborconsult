@@ -18,6 +18,14 @@ OPENAI_CHAT_MODEL = "o3"
 GEMINI_MODEL = "gemini-2.5-pro"
 EXTRACT_MODEL = "claude-sonnet-4-6"
 
+# Pinecone 인덱스명 단일 출처 (DB-3) — 업로드·조회·테스트 스크립트가 모두 이 값을 공유한다.
+# 기본값 교체는 프로덕션 env(PINECONE_INDEX_NAME) 실값 확인 후 별도 커밋으로(R-1).
+DEFAULT_PINECONE_INDEX = "semiconductor-lithography"
+
+
+def resolve_index_name() -> str:
+    return os.getenv("PINECONE_INDEX_NAME", DEFAULT_PINECONE_INDEX)
+
 
 @dataclass
 class AppConfig:
@@ -52,14 +60,16 @@ class AppConfig:
         # Pinecone 인덱스 초기화 — 실패해도 챗봇은 계속 동작(RAG만 비활성화).
         # rag.py가 pinecone_index=None 및 쿼리 실패를 graceful하게 처리하므로,
         # 무효 키/Pinecone 장애 시에도 계산기·법령 API·LLM 답변은 정상 제공된다.
-        index_name = os.getenv("PINECONE_INDEX_NAME", "semiconductor-lithography")
+        index_name = resolve_index_name()
         pinecone_index = None
         try:
             pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
             pinecone_index = pc.Index(index_name)
+            logging.info("Pinecone index=%s", index_name)
         except Exception as exc:
             logging.warning(
-                "Pinecone 초기화 실패 — 벡터 검색(RAG) 없이 동작합니다: %s", exc
+                "Pinecone 초기화 실패 (index=%s) — 벡터 검색(RAG) 없이 동작합니다: %s",
+                index_name, exc,
             )
 
         claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])

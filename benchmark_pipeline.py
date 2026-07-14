@@ -24,6 +24,7 @@ import argparse
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,7 +32,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
-CASE_DIR = Path(__file__).parent / "output_legal_cases"
+# BENCHMARK_CASE_DIR로 오버라이드 가능. output_*는 gitignore라 이 체크아웃에 없을 수 있다.
+CASE_DIR = Path(os.getenv("BENCHMARK_CASE_DIR", Path(__file__).parent / "output_legal_cases"))
 RESULTS_FILE = Path(__file__).parent / "benchmark_pipeline_results.json"
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
 
@@ -533,6 +535,11 @@ def print_summary(summary: dict, results: list[dict]):
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main():
+    if not CASE_DIR.exists() or not any(CASE_DIR.glob("case_*.md")):
+        print(f"ERROR: 벤치마크 케이스 없음 — {CASE_DIR}")
+        print("output_legal_cases/ 코퍼스가 있는 체크아웃에서 실행하거나 "
+              "BENCHMARK_CASE_DIR 환경변수로 케이스 디렉토리를 지정하세요.")
+        return
     parser = argparse.ArgumentParser(description="RAG 파이프라인 벤치마크 — 정확도 + 응답시간 측정")
     parser.add_argument("--limit", type=int, help="최대 실행 건수")
     parser.add_argument("--skip-to", type=int, default=1, help="이 케이스 번호부터 실행")

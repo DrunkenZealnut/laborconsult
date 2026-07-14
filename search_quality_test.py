@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Pinecone 네임스페이스 검색 품질 비교: laborlaw vs laborlaw-v2
+"""Pinecone 네임스페이스 검색 품질 비교 (수동 도구 — 라이브 API 키 필요)
+
+프로덕션 검색 네임스페이스(app/core/rag.py NS_GROUPS)를 기준으로 비교한다.
 
 laborlaw: 표준 임베딩 (text-embedding-3-small)
 laborlaw-v2: Contextual Retrieval (Claude Haiku 맥락 prefix + 임베딩)
@@ -17,9 +19,11 @@ from pinecone import Pinecone
 load_dotenv()
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
-PINECONE_INDEX = "semiconductor-lithography"
+from app.config import resolve_index_name
+PINECONE_INDEX = resolve_index_name()
 EMBED_MODEL = "text-embedding-3-small"
-NAMESPACES = ["laborlaw", "laborlaw-v2"]
+from app.core.rag import NS_GROUP_LAW, NS_GROUP_COUNSEL
+NAMESPACES = NS_GROUP_LAW + NS_GROUP_COUNSEL  # 프로덕션과 동일 대상 (TEST-3)
 TOP_K = 5
 
 # ── 테스트 쿼리 ──────────────────────────────────────────────────────────────
