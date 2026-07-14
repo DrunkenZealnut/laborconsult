@@ -1186,53 +1186,43 @@ def process_question(query: str, session: Session, config: AppConfig,
     prefilled_keys: list[str] = []
 
     try:
-        if session.has_pending_info():
-            # 추가 정보 제공됨 → 기존 pending과 병합
-            new_analysis = analyze_intent(
-                combined_query, session.recent(), config,
-                summary=session.summary,
+        # 질문 분석 (되묻지 않고 가능한 범위에서 답변하는 설계 — pending 흐름 폐기됨)
+        analysis = analyze_intent(
+            combined_query, session.recent(), config,
+            summary=session.summary,
+        )
+
+        # 캐시 기반 extracted_info 프리필 — 동일 계산 유형의 캐시만 사용해
+        # 무관한 이전 질문 파라미터의 교차오염을 차단 (CALC-4)
+        if analysis.calculation_types:
+            cached = session.get_cached_info(analysis.calculation_types)
+            for key, val in cached.items():
+                if key not in analysis.extracted_info or analysis.extracted_info[key] is None:
+                    analysis.extracted_info[key] = val
+                    prefilled_keys.append(key)
+            if prefilled_keys:
+                logger.info("calc_cache 프리필(%s): %s",
+                            analysis.calculation_types, prefilled_keys)
+
+        # 코드 기반 누락 정보 판정 (LLM의 자유형 missing_info 대체)
+        if analysis.requires_calculation and analysis.calculation_types:
+            code_missing = _compute_missing_info(
+                analysis.calculation_types, analysis.extracted_info
             )
-            analysis = session.merge_with_pending(new_analysis, query)
+            # LLM missing_info를 코드 판정 결과로 교체하되,
+            # 숫자 범위 검증이 제거한 라벨은 보존 (CALC-13)
+            analysis.missing_info = code_missing + [
+                w for w in analysis.validation_warnings
+                if w not in code_missing
+            ]
+
+        # 분석에서 계산이 필요하면 (누락 정보 유무와 관계없이) 진행
+        # 누락 정보가 있어도 가능한 범위 내에서 답변하고, 추가정보 안내를 포함
+        if analysis.requires_calculation and analysis.extracted_info:
             use_analysis_params = True
-        else:
-            # 새 질문 → 분석
-            analysis = analyze_intent(
-                combined_query, session.recent(), config,
-                summary=session.summary,
-            )
-
-            # 캐시 기반 extracted_info 프리필 — 동일 계산 유형의 캐시만 사용해
-            # 무관한 이전 질문 파라미터의 교차오염을 차단 (CALC-4)
-            if analysis.calculation_types:
-                cached = session.get_cached_info(analysis.calculation_types)
-                for key, val in cached.items():
-                    if key not in analysis.extracted_info or analysis.extracted_info[key] is None:
-                        analysis.extracted_info[key] = val
-                        prefilled_keys.append(key)
-                if prefilled_keys:
-                    logger.info("calc_cache 프리필(%s): %s",
-                                analysis.calculation_types, prefilled_keys)
-
-            # 코드 기반 누락 정보 판정 (LLM의 자유형 missing_info 대체)
-            if analysis.requires_calculation and analysis.calculation_types:
-                code_missing = _compute_missing_info(
-                    analysis.calculation_types, analysis.extracted_info
-                )
-                # LLM missing_info를 코드 판정 결과로 교체하되,
-                # 숫자 범위 검증이 제거한 라벨은 보존 (CALC-13)
-                analysis.missing_info = code_missing + [
-                    w for w in analysis.validation_warnings
-                    if w not in code_missing
-                ]
-
-            # 분석에서 계산이 필요하면 (누락 정보 유무와 관계없이) 진행
-            # 누락 정보가 있어도 가능한 범위 내에서 답변하고, 추가정보 안내를 포함
-            if analysis.requires_calculation and analysis.extracted_info:
-                use_analysis_params = True
     except Exception:
         # 분석 실패 시 기존 로직으로 fallback — 원인은 로그로 관측 (CALC-7)
         logger.exception("의도분석 실패 — 레거시 추출 경로로 폴백")
-        session.clear_pending()
         use_analysis_params = False
 
     # 2. 질문 분류 + 파라미터 추출
@@ -1733,43 +1723,49 @@ def process_question(query: str, session: Session, config: AppConfig,
     session.add_assistant(full_text)
     session.condense_if_needed()
 
-    # 8. Supabase에 영구 저장 (fire-and-forget — 실패해도 답변에 영향 없음)
+    # 8. Supabase에 영구 저장 (동기 — done 전에 완료해 유실을 원천 차단)
+    #    Python 런타임엔 waitUntil이 없어 '응답 후 백그라운드 저장'을 플랫폼이 보장할 수 없다.
+    #    (@vercel/functions의 waitUntil은 Node.js/Edge 전용, Starlette BackgroundTask도
+    #     Vercel이 완료를 보장하지 않음.) 따라서 스트림 종료(done) 전에 저장을 마쳐야 유실이 없다.
+    #    저장(특히 첨부 업로드)이 길어질 때는 하트비트(ping) 이벤트로 프론트 idle 타임아웃을
+    #    리셋해, 답변 직후 저장 지연 때문에 타임아웃 메시지가 뜨던 문제를 막는다.
     if not config.supabase:
         yield {"type": "done"}
         return
+
+    # 카테고리 결정
+    calc_types = None
+    tool_type_for_category = "none"
+    if use_analysis_params and analysis:
+        calc_types = analysis.calculation_types
+    elif params:
+        ct = params.get("calculation_type", "")
+        if ct:
+            calc_types = list(CALC_TYPE_MAP.get(ct, []))
+        if params.get("is_harassment_question"):
+            tool_type_for_category = "harassment"
+
+    # LLM 추출 실패 시 키워드 기반 폴백
+    if not calc_types:
+        calc_types = infer_calc_types(query) or None
+
+    category = classify_category(calc_types, tool_type_for_category, query)
+
+    record = ConversationRecord(
+        session_id=session.id,
+        category=category,
+        question_text=query,
+        answer_text=full_text,
+        calculation_types=calc_types,
+        metadata={"has_attachments": has_attachments},
+    )
     try:
-        # 카테고리 결정
-        calc_types = None
-        tool_type_for_category = "none"
-        if use_analysis_params and analysis:
-            calc_types = analysis.calculation_types
-        elif params:
-            ct = params.get("calculation_type", "")
-            if ct:
-                calc_types = list(CALC_TYPE_MAP.get(ct, []))
-            if params.get("is_harassment_question"):
-                tool_type_for_category = "harassment"
-
-        # LLM 추출 실패 시 키워드 기반 폴백
-        if not calc_types:
-            calc_types = infer_calc_types(query) or None
-
-        category = classify_category(calc_types, tool_type_for_category, query)
-
-        record = ConversationRecord(
-            session_id=session.id,
-            category=category,
-            question_text=query,
-            answer_text=full_text,
-            calculation_types=calc_types,
-            metadata={"has_attachments": has_attachments},
-        )
         conv_id = save_conversation(config.supabase, record)
-
-        # 첨부파일 업로드
         if conv_id and attachments:
             for att in attachments:
                 if att.raw_data:
+                    # 첨부 업로드는 상대적으로 느림 — 파일마다 하트비트로 프론트 idle 타임아웃 리셋
+                    yield {"type": "ping"}
                     upload_attachment(
                         config.supabase, conv_id, session.id,
                         att.filename, att.content_type, att.raw_data,

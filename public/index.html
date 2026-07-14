@@ -210,6 +210,8 @@
   .sources { font-size: 12px; color: var(--text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
   .sources a { color: var(--navy-light); text-decoration: none; }
   .sources a:hover { text-decoration: underline; }
+  .calc-result { margin: 0 0 12px; border: 1px solid #C08050; border-left: 3px solid #C08050; border-radius: 8px; background: #FAF7F2; overflow-x: auto; }
+  .calc-result-body { margin: 0; padding: 12px 14px; font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px; line-height: 1.55; color: #2A2A2A; white-space: pre; }
 
   /* Contact cards */
   .contact-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; max-width: 80%; }
@@ -1038,7 +1040,7 @@ function renderContacts(agencies, afterEl) {
   else wrapper.appendChild(bar);
 }
 
-async function readSSE(resp) {
+async function readSSE(resp, onActivity) {
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -1047,10 +1049,13 @@ async function readSSE(resp) {
   let fullText = '';
   let pendingContacts = null;
   let pendingSources = null;
+  let pendingCalc = null;
+  let streamDone = false;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (onActivity) onActivity();   // 데이터 수신 → idle 타이머 리셋
     buffer += decoder.decode(value, { stream: true });
 
     const lines = buffer.split('\n');
@@ -1060,7 +1065,10 @@ async function readSSE(resp) {
       if (!line.startsWith('data: ')) continue;
       const event = JSON.parse(line.slice(6));
 
-      if (event.type === 'session') {
+      if (event.type === 'done') {          // 완료 마커 (서버가 저장까지 마친 뒤 전송)
+        streamDone = true;
+        break;
+      } else if (event.type === 'session') {
         sessionId = event.session_id;
         try { sessionStorage.setItem('chatSessionId', sessionId); } catch (e) { /* ignore */ }
       } else if (event.type === 'status') {
@@ -1075,7 +1083,7 @@ async function readSSE(resp) {
       } else if (event.type === 'sources') {
         pendingSources = event.hits || null;   // 답변 완료 후 출처 표시
       } else if (event.type === 'meta') {
-        // handled in answer
+        if (event.calc_result) pendingCalc = event.calc_result;   // 답변 완료 후 정확 계산값 카드로 표시
       } else if (event.type === 'replace') {
         if (assistantEl) {
           fullText = event.text;
@@ -1094,10 +1102,16 @@ async function readSSE(resp) {
         chat.scrollTop = chat.scrollHeight;
       }
     }
+    if (streamDone) break;
+  }
+  // done 수신 = 서버가 저장을 마쳤다는 뜻. 스트림을 명시적으로 닫는다
+  if (streamDone) {
+    try { await reader.cancel(); } catch (_) { /* ignore */ }
   }
   // 마지막 assistant 메시지에 액션 바 표시
   var lastAssistant = assistantEl || chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant');
   if (lastAssistant) {
+    renderCalcResult(pendingCalc, lastAssistant);
     renderSources(pendingSources, lastAssistant);
     if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
@@ -1123,6 +1137,21 @@ function renderSources(hits, el) {
     return '[' + label + '] ' + h.title + (h.section ? ' — ' + h.section : '');
   }).join('  ·  ');
   el.insertAdjacentElement('afterend', div);
+}
+
+// ── 정확 계산값 카드 (meta.calc_result) ──────────────────────────────────────
+// 계산기 산출값은 사전 포맷된 플레인 텍스트 — 정렬·줄바꿈 보존 위해 <pre>로 렌더.
+// LLM 답변의 수치 재현에 의존하지 않는 '결정적' 표시. 말풍선 바깥이라 replace에도 보존.
+
+function renderCalcResult(text, el) {
+  if (!text || !el) return;
+  var div = document.createElement('div');
+  div.className = 'calc-result';
+  var pre = document.createElement('pre');
+  pre.className = 'calc-result-body';
+  pre.textContent = text;   // textContent — XSS 안전, 원문 그대로
+  div.appendChild(pre);
+  el.insertAdjacentElement('beforebegin', div);   // 답변 위에 정확값 먼저
 }
 
 // ── 답변 완료 후 액션 바 ─────────────────────────────────────────────────────
@@ -1350,12 +1379,17 @@ async function send() {
   await doSend(text, attachments);
 }
 
-const SEND_TIMEOUT_MS = 60000; // 응답 전체 대기 상한 — 무한 대기 방지(F-2d)
+const SEND_TIMEOUT_MS = 60000; // 무활동(idle) 상한 — 이벤트 수신마다 리셋, 진행 중 응답은 유지하고 진짜 멈춤만 감지(F-2d)
 
 async function doSend(text, attachments) {
   btn.disabled = true;
   const ctrl = new AbortController();
-  const timeoutId = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+  let timeoutId = null;
+  const resetIdleTimeout = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+  };
+  resetIdleTimeout();
 
   try {
     let resp;
@@ -1380,7 +1414,7 @@ async function doSend(text, attachments) {
       try { const body = await resp.json(); detail = body.detail || ''; } catch (_) {}
       throw new Error('서버 오류 (' + resp.status + ')' + (detail ? ': ' + detail : ''));
     }
-    await readSSE(resp);
+    await readSSE(resp, resetIdleTimeout);
   } catch (e) {
     removeStatus();
     const timedOut = e.name === 'AbortError';
