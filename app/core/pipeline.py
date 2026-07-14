@@ -1759,6 +1759,10 @@ def process_question(query: str, session: Session, config: AppConfig,
         calculation_types=calc_types,
         metadata={"has_attachments": has_attachments},
     )
+    # 저장 구간 전체(첨부 유무 무관)를 하트비트로 감싼다 — save_conversation·
+    # save_session_data도 blocking Supabase 호출이라 첨부 루프 안쪽 ping만으로는
+    # 첨부 없는 대화(대부분의 경우)에서 idle 타임아웃 재발을 막지 못한다.
+    yield {"type": "ping"}
     try:
         conv_id = save_conversation(config.supabase, record)
         if conv_id and attachments:
@@ -1770,6 +1774,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                         config.supabase, conv_id, session.id,
                         att.filename, att.content_type, att.raw_data,
                     )
+        yield {"type": "ping"}
         # 세션 데이터(summary + calc_cache) 영속 저장
         save_session_data(config.supabase, session.id, session.to_snapshot())
     except Exception as e:
