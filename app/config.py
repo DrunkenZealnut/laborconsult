@@ -19,7 +19,7 @@ GEMINI_MODEL = "gemini-2.5-pro"
 EXTRACT_MODEL = "claude-sonnet-4-6"
 
 # Pinecone 인덱스명 단일 출처 (DB-3) — 업로드·조회·테스트 스크립트가 모두 이 값을 공유한다.
-# 기본값 교체는 프로덕션 env(PINECONE_INDEX_NAME) 실값 확인 후 별도 커밋으로(R-1).
+# 프로덕션 env(PINECONE_INDEX_NAME) 실값과 일치 확인 완료(R-1) — 레거시 인덱스명 그대로 유지.
 DEFAULT_PINECONE_INDEX = "semiconductor-lithography"
 
 
