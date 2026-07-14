@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Pinecone 네임스페이스 검색 품질 비교 (수동 도구 — 라이브 API 키 필요)
 
-프로덕션 검색 네임스페이스(app/core/rag.py NS_GROUPS)를 기준으로 비교한다.
-
-laborlaw: 표준 임베딩 (text-embedding-3-small)
-laborlaw-v2: Contextual Retrieval (Claude Haiku 맥락 prefix + 임베딩)
+프로덕션 검색 네임스페이스(app/core/rag.py NS_GROUPS)를 기준으로 N개
+네임스페이스의 검색 품질을 비교한다. (과거 laborlaw vs laborlaw-v2
+2원 비교에서, 프로덕션 실제 조합인 laborlaw-v2/counsel/qa 다원 비교로 전환)
 
 사용법:
   python3 search_quality_test.py
@@ -109,7 +108,7 @@ def main():
     category_scores = {cat: {ns: [] for ns in NAMESPACES} for cat in ["법령", "판례", "행정해석", "복합"]}
 
     print("=" * 70)
-    print("검색 품질 비교 테스트: laborlaw vs laborlaw-v2")
+    print(f"검색 품질 비교 테스트: {' vs '.join(NAMESPACES)}")
     print("=" * 70)
 
     for i, test in enumerate(TEST_QUERIES, 1):
@@ -149,62 +148,50 @@ def main():
     print("종합 비교 분석")
     print("=" * 70)
 
-    # 카테고리별 평균 Top1 점수
+    # 카테고리별 평균 Top1 점수 (N개 네임스페이스 일반화)
+    col_w = max(12, max(len(ns) for ns in NAMESPACES) + 2)
     print("\n카테고리별 Top-1 평균 점수:")
-    print(f"  {'카테고리':<10} {'laborlaw':>12} {'laborlaw-v2':>12} {'차이':>10} {'승자':>12}")
-    print(f"  {'─' * 56}")
+    header = f"  {'카테고리':<10}" + "".join(f"{ns:>{col_w}}" for ns in NAMESPACES) + f"{'최고':>{col_w}}"
+    print(header)
+    print(f"  {'─' * (10 + col_w * (len(NAMESPACES) + 1))}")
 
     overall = {ns: [] for ns in NAMESPACES}
     wins = {ns: 0 for ns in NAMESPACES}
 
     for cat in ["법령", "판례", "행정해석", "복합"]:
         scores = category_scores[cat]
-        avg1 = sum(scores["laborlaw"]) / len(scores["laborlaw"]) if scores["laborlaw"] else 0
-        avg2 = sum(scores["laborlaw-v2"]) / len(scores["laborlaw-v2"]) if scores["laborlaw-v2"] else 0
-        diff = avg2 - avg1
-        winner = "laborlaw-v2" if diff > 0 else ("laborlaw" if diff < 0 else "동점")
-        print(f"  {cat:<10} {avg1:>12.4f} {avg2:>12.4f} {diff:>+10.4f} {winner:>12}")
-
-        overall["laborlaw"].extend(scores["laborlaw"])
-        overall["laborlaw-v2"].extend(scores["laborlaw-v2"])
+        avgs = {ns: (sum(scores[ns]) / len(scores[ns]) if scores[ns] else 0) for ns in NAMESPACES}
+        best_ns = max(avgs, key=avgs.get)
+        row = f"  {cat:<10}" + "".join(f"{avgs[ns]:>{col_w}.4f}" for ns in NAMESPACES) + f"{best_ns:>{col_w}}"
+        print(row)
+        for ns in NAMESPACES:
+            overall[ns].extend(scores[ns])
 
     # 전체 평균
-    total_avg1 = sum(overall["laborlaw"]) / len(overall["laborlaw"]) if overall["laborlaw"] else 0
-    total_avg2 = sum(overall["laborlaw-v2"]) / len(overall["laborlaw-v2"]) if overall["laborlaw-v2"] else 0
-    total_diff = total_avg2 - total_avg1
-    total_winner = "laborlaw-v2" if total_diff > 0 else ("laborlaw" if total_diff < 0 else "동점")
+    total_avg = {ns: (sum(overall[ns]) / len(overall[ns]) if overall[ns] else 0) for ns in NAMESPACES}
+    total_best = max(total_avg, key=total_avg.get)
 
-    print(f"  {'─' * 56}")
-    print(f"  {'전체평균':<10} {total_avg1:>12.4f} {total_avg2:>12.4f} {total_diff:>+10.4f} {total_winner:>12}")
+    print(f"  {'─' * (10 + col_w * (len(NAMESPACES) + 1))}")
+    print(f"  {'전체평균':<10}" + "".join(f"{total_avg[ns]:>{col_w}.4f}" for ns in NAMESPACES) + f"{total_best:>{col_w}}")
 
-    # 쿼리별 승률
-    v1_wins = 0
-    v2_wins = 0
-    ties = 0
+    # 쿼리별 Top-1 승리 네임스페이스 집계
     for result in all_results:
-        s1 = result["laborlaw"][0]["score"] if result["laborlaw"] else 0
-        s2 = result["laborlaw-v2"][0]["score"] if result["laborlaw-v2"] else 0
-        if s1 > s2:
-            v1_wins += 1
-        elif s2 > s1:
-            v2_wins += 1
-        else:
-            ties += 1
+        top_scores = {ns: (result[ns][0]["score"] if result[ns] else 0) for ns in NAMESPACES}
+        best = max(top_scores, key=top_scores.get)
+        wins[best] += 1
 
     print(f"\n쿼리별 Top-1 승률 ({len(TEST_QUERIES)}건):")
-    print(f"  laborlaw 승: {v1_wins}건 ({v1_wins/len(TEST_QUERIES)*100:.0f}%)")
-    print(f"  laborlaw-v2 승: {v2_wins}건 ({v2_wins/len(TEST_QUERIES)*100:.0f}%)")
-    print(f"  동점: {ties}건")
+    for ns in NAMESPACES:
+        print(f"  {ns} 승: {wins[ns]}건 ({wins[ns]/len(TEST_QUERIES)*100:.0f}%)")
 
     # 0.3 이상 검색 결과 수 비교 (실질적 결과)
     print(f"\n유효 결과 수 비교 (score ≥ 0.3):")
-    total_valid_v1 = 0
-    total_valid_v2 = 0
+    total_valid = {ns: 0 for ns in NAMESPACES}
     for result in all_results:
-        total_valid_v1 += sum(1 for h in result["laborlaw"] if h["score"] >= 0.3)
-        total_valid_v2 += sum(1 for h in result["laborlaw-v2"] if h["score"] >= 0.3)
-    print(f"  laborlaw: {total_valid_v1}건")
-    print(f"  laborlaw-v2: {total_valid_v2}건")
+        for ns in NAMESPACES:
+            total_valid[ns] += sum(1 for h in result[ns] if h["score"] >= 0.3)
+    for ns in NAMESPACES:
+        print(f"  {ns}: {total_valid[ns]}건")
 
     print(f"\n{'=' * 70}")
 
@@ -214,12 +201,10 @@ def main():
         "namespaces": NAMESPACES,
         "test_count": len(TEST_QUERIES),
         "summary": {
-            "total_avg_laborlaw": round(total_avg1, 4),
-            "total_avg_laborlaw_v2": round(total_avg2, 4),
-            "diff": round(total_diff, 4),
-            "winner": total_winner,
-            "query_wins": {"laborlaw": v1_wins, "laborlaw-v2": v2_wins, "ties": ties},
-            "valid_results_gte_03": {"laborlaw": total_valid_v1, "laborlaw-v2": total_valid_v2},
+            "total_avg": {ns: round(total_avg[ns], 4) for ns in NAMESPACES},
+            "best_namespace": total_best,
+            "query_wins": wins,
+            "valid_results_gte_03": total_valid,
         },
         "category_avg": {},
         "queries": all_results,
@@ -228,8 +213,7 @@ def main():
     for cat in ["법령", "판례", "행정해석", "복합"]:
         scores = category_scores[cat]
         output["category_avg"][cat] = {
-            "laborlaw": round(sum(scores["laborlaw"]) / len(scores["laborlaw"]), 4) if scores["laborlaw"] else 0,
-            "laborlaw-v2": round(sum(scores["laborlaw-v2"]) / len(scores["laborlaw-v2"]), 4) if scores["laborlaw-v2"] else 0,
+            ns: (round(sum(scores[ns]) / len(scores[ns]), 4) if scores[ns] else 0) for ns in NAMESPACES
         }
 
     with open("search_quality_results.json", "w", encoding="utf-8") as f:

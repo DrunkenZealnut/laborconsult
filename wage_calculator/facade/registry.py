@@ -118,7 +118,10 @@ CALC_TYPE_MAP = {
     "근로장려세제": ["eitc"],
     "EITC":       ["eitc"],
     "퇴직소득세":  ["severance", "retirement_tax"],
-    "퇴직연금":    ["retirement_pension"],
+    # severance 동반 필수 — DB형은 "퇴직금과 동일"이 전제라 severance 결과가
+    # 없으면 별도의 단순 근사식으로 계산돼 정식 퇴직금 산정과 어긋날 수 있음
+    # (1년 미만 근속 등 지급요건 판정도 severance 계산기가 전담, CodeRabbit 지적)
+    "퇴직연금":    ["severance", "retirement_pension"],
     "퇴직":       ["severance", "retirement_tax"],
     "평균임금":   ["average_wage"],
     "산재보상":   ["industrial_accident", "average_wage"],

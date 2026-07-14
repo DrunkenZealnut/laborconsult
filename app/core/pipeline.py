@@ -131,10 +131,16 @@ def _merge_search_queries(
 def _build_sources_payload(
     precedent_meta: list[dict] | None,
     consultation_hits: list[dict] | None,
+    legal_articles_text: str | None = None,
+    nlrc_text: str | None = None,
+    graph_context: str | None = None,
     max_items: int = 5,
 ) -> list[dict]:
     """검색 결과를 sources SSE 이벤트용으로 정규화 (DB-2).
 
+    답변·인용 화이트리스트(_citation_source_hits)에 실제로 쓰이는 소스와
+    동일한 집합을 노출한다 — 법령 API·NLRC·GraphRAG가 빠져 있으면 인용은
+    검증됐는데 출처 UI에는 안 뜨는 불일치가 생긴다(CodeRabbit 지적).
     본문(chunk_text)은 제외 — UI에는 제목·출처 메타만 표시한다.
     """
     out: list[dict] = []
@@ -158,6 +164,22 @@ def _build_sources_payload(
                 "score": score,
                 "origin": origin,
             })
+    # 텍스트 블록 소스(개별 hit 구조가 없음) — 라벨 하나로 노출
+    for origin, source_type, label, text in (
+        ("legal_api", "law_article", "법제처 법령 조문", legal_articles_text),
+        ("nlrc", "nlrc_case", "중앙노동위원회 판정사례", nlrc_text),
+        ("graph", "graph", "법령 지식그래프", graph_context),
+    ):
+        if not text:
+            continue
+        key = (label, "")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "title": label, "section": "", "source_type": source_type,
+            "score": 0.0, "origin": origin,
+        })
     return out[:max_items]
 
 
@@ -504,6 +526,13 @@ def _normalize_wage_units(params: dict) -> bool:
     "250만원"이 250으로 추출된 경우 ×10,000 보정. 시급·일급은 정상 저액이
     존재하므로 제외(시급은 최저임금 환각 가드가 별도 처리).
     보정 발생 시 True 반환 — 호출부가 missing_info에 확인 안내를 추가한다.
+
+    한계(알려진 트레이드오프, CodeRabbit 지적): 크기만으로 판단하는 휴리스틱이라
+    "월급 25,000원"처럼 명시적 저액과 "250(만원 단위 누락)"을 원천적으로 구분 못한다.
+    2026년 최저임금(10,320원/h) 기준 실제 월급이 10만원 미만이려면 월 10시간 미만
+    근무해야 해 극히 드문 케이스이고, 오탐이어도 missing_info로 사용자에게 확인을
+    요청하므로 안전망이 있다. 완전한 해소는 analyzer가 "만원 단위 여부"를 별도
+    필드로 명시하도록 스키마를 확장해야 하는 별도 작업 범위로 남겨둔다.
     """
     rule = _UNIT_FLOORS.get(params.get("wage_type", ""))
     amt = params.get("wage_amount")
@@ -897,6 +926,17 @@ _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     "working_hours": [
         ({"daily_work_hours", "weekly_total_hours"}, "1일 소정근로시간 또는 주 소정근로시간"),
     ],
+    "retirement_tax": [
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
+        ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
+    ],
+    "retirement_pension": [
+        (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
+        ({"start_date", "service_period_text"}, "입사일 또는 근무기간"),
+    ],
+    "ordinary_wage": [
+        (_WAGE_FIELDS, "임금 (시급/월급/연봉)"),
+    ],
 }
 
 
@@ -967,12 +1007,13 @@ def _analysis_to_extract_params(analysis) -> dict:
         "wage_arrears": "임금체불", "compensatory_leave": "보상휴가",
         "flexible_work": "탄력근무", "comprehensive": "포괄임금제",
         "eitc": "근로장려금",
-        # enum 확장분 (CALC-6) — 전부 CALC_TYPE_MAP 기존/신규 키로 연결
-        "average_wage": "평균임금", "industrial_accident": "산재보상",
+        # enum 확장분 (CALC-6) — 전부 CALC_TYPE_MAP 기존/신규 키로 연결.
+        # industrial_accident·business_size는 ANALYZE_TOOL enum에서 제외돼
+        # analysis.calculation_types에 나타날 수 없음 — 매핑 불필요
+        "average_wage": "평균임금",
         "shutdown_allowance": "휴업수당", "working_hours": "근로시간산정",
         "public_holiday": "유급공휴일", "ordinary_wage": "통상임금",
         "retirement_tax": "퇴직소득세", "retirement_pension": "퇴직연금",
-        "business_size": "사업장규모",
     }
     # 전체 계산 유형을 라벨로 변환 — 첫 유형만 계산되던 결함 수정 (CALC-2)
     labels = [REVERSE_CALC_MAP[ct] for ct in (analysis.calculation_types or [])
@@ -1403,9 +1444,6 @@ def process_question(query: str, session: Session, config: AppConfig,
         except Exception as e:
             logger.warning("법률상담 처리 실패 (RAG fallback): %s", e)
 
-    yield {"type": "sources",
-           "hits": _build_sources_payload(precedent_meta, consultation_hits)}
-
     # ── GraphRAG 검색 ─────────────────────────────────────────────────
     graph_context = ""
     if analysis:
@@ -1419,6 +1457,13 @@ def process_question(query: str, session: Session, config: AppConfig,
             )
         except Exception as e:
             logger.warning("GraphRAG 검색 실패 (fallback): %s", e)
+
+    # sources는 GraphRAG까지 전부 모인 뒤 발신 — 인용 화이트리스트와 동일 소스 집합 노출
+    yield {"type": "sources",
+           "hits": _build_sources_payload(
+               precedent_meta, consultation_hits,
+               legal_articles_text, nlrc_text, graph_context,
+           )}
 
     has_attachments = attachments and len(attachments) > 0
 

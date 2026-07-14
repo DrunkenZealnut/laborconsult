@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import sys
@@ -32,6 +33,11 @@ def main() -> None:
     if not cases:
         print("ERROR: odcloud 조회 결과 0건 — 기존 번들 유지")
         sys.exit(1)
+
+    # odcloud API가 제목에 HTML 엔티티(&#8228; 등)를 이스케이프한 채로 반환 — 디코딩
+    for case in cases:
+        if "제목" in case:
+            case["제목"] = html.unescape(case["제목"])
 
     out_path = Path("data/nlrc_cases.json")
     with open(out_path, "w", encoding="utf-8") as f:

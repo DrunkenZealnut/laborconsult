@@ -87,15 +87,19 @@ class Session:
     # ── 계산 결과 캐싱 ──
 
     def cache_calculation(self, calc_type: str, extracted_info: dict):
-        """계산 결과의 입력 파라미터를 캐싱"""
-        if calc_type not in self.calc_cache:
-            self.calc_cache[calc_type] = {}
-        self.calc_cache[calc_type].update(
-            {k: v for k, v in extracted_info.items() if v is not None}
-        )
+        """계산 결과의 입력 파라미터를 캐싱.
+
+        갱신되는 calc_type을 dict 끝으로 재삽입해 삽입 순서가 항상 "최신
+        갱신 순서"와 일치하도록 한다 — get_cached_info()의 병합이 실제로는
+        "calc_type이 처음 등장한 순서" 기준이라 재질문 시 오래된 다른
+        유형 값이 최신 값을 덮어쓰던 문제를 해소한다(CodeRabbit 지적).
+        """
+        existing = self.calc_cache.pop(calc_type, {})
+        existing.update({k: v for k, v in extracted_info.items() if v is not None})
+        self.calc_cache[calc_type] = existing
 
     def get_cached_info(self, calc_types: list[str] | None = None) -> dict:
-        """캐시된 계산 파라미터를 병합하여 반환 (최신 값 우선).
+        """캐시된 계산 파라미터를 병합하여 반환 (최신 갱신 순서 우선).
 
         calc_types 지정 시 해당 계산 유형의 캐시만 병합 — 무관한 이전 질문
         파라미터가 새 질문에 스며드는 교차오염을 차단한다(CALC-4).

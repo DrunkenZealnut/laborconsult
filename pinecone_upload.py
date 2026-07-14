@@ -27,6 +27,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pinecone import Pinecone, ServerlessSpec
 
+from app.config import resolve_index_name
+
 load_dotenv()
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
@@ -282,7 +284,6 @@ def main():
     # API 키 확인
     openai_key   = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
-    from app.config import resolve_index_name
     index_name   = resolve_index_name()
 
     if not openai_key:

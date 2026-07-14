@@ -20,11 +20,15 @@ ANALYZE_TOOL = {
                         "unemployment", "insurance", "comprehensive",
                         "parental_leave", "maternity_leave", "prorated",
                         "wage_arrears", "flexible_work", "compensatory_leave",
-                        # 주 분석경로에서 분류 불가능하던 계산기들 (CALC-6)
-                        "eitc", "average_wage", "industrial_accident",
+                        # 주 분석경로에서 분류 불가능하던 계산기들 (CALC-6).
+                        # industrial_accident·business_size는 여기서 제외 —
+                        # 사고유형/장해등급, 상시근로자 수 입력 계약이 아직
+                        # 없어 라우팅만 되고 값은 채워지지 않는 결과를 냄
+                        # (CodeRabbit 지적). 기존 키워드 폴백(infer_calc_types)
+                        # 경로로는 계속 도달 가능 — PR 이전과 동일한 노출도.
+                        "eitc", "average_wage",
                         "shutdown_allowance", "working_hours", "public_holiday",
                         "ordinary_wage", "retirement_tax", "retirement_pension",
-                        "business_size",
                     ],
                 },
                 "description": "필요한 계산 유형 (복수 가능)",
@@ -221,13 +225,12 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 - 임금체불 지연이자 → wage_arrears
 - 근로장려금(EITC) → eitc
 - 평균임금 산정 → average_wage
-- 산재보상(휴업·장해·유족급여) → industrial_accident
 - 휴업수당(회사 사정 휴업) → shutdown_allowance (shutdown_days 함께 추출)
 - 소정근로시간/월 근로시간 산정 → working_hours
 - 유급 공휴일 수당 → public_holiday (public_holiday_days 함께 추출)
 - 통상임금/통상시급 산출 → ordinary_wage
 - 퇴직소득세 → retirement_tax, 퇴직연금(DB/DC) → retirement_pension
-- 상시근로자 수 판정 → business_size
+- 산재보상·상시근로자 수 판정은 이 도구로 분류하지 않음(계산 없이 상담으로 진행)
 - 복수 유형 동시 가능 (예: 퇴직금+연차수당)
 
 10. **수습기간 및 직종 판별** (최저임금 감액 판단에 핵심):

@@ -119,6 +119,12 @@ def test_pipeline_helpers() -> None:
     assert len(hits) == 2 and hits[0]["origin"] == "rag", hits
     assert hits[1]["title"] == "대법원 2020다1" and hits[1]["score"] == 0.0, hits
 
+    # 법령API/NLRC/GraphRAG도 sources에 노출 — 인용 화이트리스트와 동일 소스 집합이어야 함
+    hits2 = _build_sources_payload(
+        [], [], legal_articles_text="법조문", nlrc_text="NLRC", graph_context="그래프",
+    )
+    assert {h["origin"] for h in hits2} == {"legal_api", "nlrc", "graph"}, hits2
+
     wl = _citation_source_hits(None, [{"title": "t", "chunk_text": "c"}],
                                "법조문 텍스트", None, "그래프 텍스트")
     assert len(wl) == 3, wl  # precedent_meta + 법조문 + 그래프
