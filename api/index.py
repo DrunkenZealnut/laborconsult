@@ -453,12 +453,29 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
 
     attachments = (
         sb.table("qa_attachments")
-        .select("filename, content_type, public_url, file_size")
+        .select("filename, content_type, public_url, file_size, storage_path")
         .eq("conversation_id", conv_id)
         .execute()
     )
 
-    return {**result.data, "attachments": attachments.data or []}
+    # 첨부 URL은 요청 시점에 만료형 signed URL로 발급 (1시간) — 버킷을 비공개로
+    # 전환해도 관리자 조회가 동작하도록. 발급 실패 시 기존 public_url 폴백.
+    # 응답 키는 admin.html 호환을 위해 public_url 유지.
+    att_rows = []
+    for att in (attachments.data or []):
+        row = {k: att.get(k) for k in ("filename", "content_type", "public_url", "file_size")}
+        storage_path = att.get("storage_path")
+        if storage_path:
+            try:
+                signed = sb.storage.from_("chat-attachments").create_signed_url(storage_path, 3600)
+                url = signed.get("signedUrl") or signed.get("signedURL")
+                if url:
+                    row["public_url"] = url
+            except Exception as e:
+                logging.warning("signed URL 발급 실패 (%s): %s", storage_path, e)
+        att_rows.append(row)
+
+    return {**result.data, "attachments": att_rows}
 
 
 # ── 게시판 글쓰기 (CAPTCHA + 비밀번호) ─────────────────────────────────────────

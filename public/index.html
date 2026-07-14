@@ -502,12 +502,12 @@
         <div id="input-wrapper">
           <div id="file-preview"></div>
           <div id="input-area">
-            <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개)">
+            <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개 · 합계 3MB)">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
-            <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
+            <input type="file" id="file-input" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.txt,.md" hidden>
             <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." aria-label="노동법 관련 질문 입력" rows="1" autocomplete="off"></textarea>
             <button id="send-btn">전송</button>
           </div>
@@ -729,23 +729,47 @@ document.addEventListener('drop', e => {
   addFiles(Array.from(e.dataTransfer.files));
 });
 
+// 브라우저가 MIME을 비워 보내는 파일(.md 등)은 확장자로 보정 —
+// 그대로 octet-stream을 보내면 백엔드 허용 목록에서 거부된다.
+function guessMime(f) {
+  if (f.type && f.type !== 'application/octet-stream') return f.type;
+  const n = f.name.toLowerCase();
+  if (n.endsWith('.txt')) return 'text/plain';
+  if (n.endsWith('.md')) return 'text/markdown';
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+  if (n.endsWith('.webp')) return 'image/webp';
+  if (n.endsWith('.gif')) return 'image/gif';
+  return f.type || 'application/octet-stream';
+}
+
+// base64 인코딩이 용량을 4/3배로 부풀리므로, 합계가 이 값을 넘으면
+// Vercel 요청 바디 한도(4.5MB)에 걸려 413으로 거부된다. 사전 차단.
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
+
 function addFiles(files) {
   for (const f of files) {
     if (pendingFiles.length >= MAX_FILES) {
       alert('파일은 최대 3개까지 첨부할 수 있습니다.');
       break;
     }
-    const ok = f.type.startsWith('image/') ||
-               f.type === 'application/pdf' ||
-               f.type === 'text/plain' || f.type === 'text/markdown' ||
-               f.name.endsWith('.txt') || f.name.endsWith('.md');
+    const mime = guessMime(f);
+    const ok = mime.startsWith('image/') ||
+               mime === 'application/pdf' ||
+               mime === 'text/plain' || mime === 'text/markdown';
     if (!ok) {
       alert('지원하지 않는 파일 형식입니다: ' + f.name + '\n이미지(JPG/PNG), PDF, TXT 파일만 가능합니다.');
       continue;
     }
-    const maxMB = f.type.startsWith('image/') ? 3 : f.type === 'application/pdf' ? 3 : 1;
+    const maxMB = mime.startsWith('image/') ? 3 : mime === 'application/pdf' ? 3 : 1;
     if (f.size > maxMB * 1024 * 1024) {
       alert('파일이 너무 큽니다: ' + f.name + ' (최대 ' + maxMB + 'MB)');
+      continue;
+    }
+    const totalBytes = pendingFiles.reduce((s, p) => s + p.size, 0) + f.size;
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      alert('첨부 파일 용량 합계는 3MB 이하여야 합니다.\n(' + f.name + ' 추가 시 초과)');
       continue;
     }
     pendingFiles.push(f);
@@ -1356,7 +1380,7 @@ async function send() {
 
   let displayHtml = text ? text.replace(/</g, '&lt;').replace(/\n/g, '<br>') : '';
   if (pendingFiles.length > 0) {
-    const names = pendingFiles.map(f => f.name).join(', ');
+    const names = escHtml(pendingFiles.map(f => f.name).join(', '));  // \uD30C\uC77C\uBA85 XSS \uBC29\uC9C0
     if (displayHtml) displayHtml += '<br>';
     displayHtml += '<span style="font-size:12px;opacity:0.8">\uD83D\uDCCE ' + names + '</span>';
   }
@@ -1366,7 +1390,7 @@ async function send() {
   for (const f of pendingFiles) {
     attachments.push({
       filename: f.name,
-      content_type: f.type || 'application/octet-stream',
+      content_type: guessMime(f),
       data: await fileToBase64(f),
     });
   }
