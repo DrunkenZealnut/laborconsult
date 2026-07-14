@@ -19,8 +19,9 @@ data/bm25_corpus.json
 # pip 리다이렉트 오류 산출물 (예: `pip install 'pkg>=1.0'`에서 따옴표 누락 시 생성)
 =*
 
-# 환경변수
-.env
+# 환경변수 (.env.example 템플릿은 커밋 대상이라 제외)
+.env*
+!.env.example
 
 # Python
 __pycache__/

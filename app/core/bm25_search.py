@@ -28,7 +28,13 @@ _BM25_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 # gz(배포용 커밋 대상) 우선, raw json(로컬 빌드 산출물) 폴백 (DB-1)
 BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
                      _BM25_DATA_DIR / "bm25_corpus.json"]
-BM25_MAX_DOCS = 15000    # Vercel 메모리 제한 내 (256MB)
+# 실측(60,174건 전체 로드 시 BM25Okapi 인덱스까지 프로세스 RSS 약 815MB, 2026-07-14).
+# "여유"라 부를 수준은 아님 — Vercel 함수 메모리가 1GB라면 남는 건 ~185MB뿐이고,
+# 여기 도달하기 전에 이 프로세스 다른 부분(FastAPI·다른 SDK 클라이언트·GraphRAG 등)도
+# 메모리를 쓴다. 코퍼스가 커지면 이 상수와 실제 배포 메모리 한도를 함께 재검토할 것.
+# 소프트 MemoryError는 app/core/rag.py::search_hybrid()의 broad except가 잡아
+# Dense-only로 폴백하지만, OS 레벨 하드 OOM-kill은 코드로 방어 불가능하다.
+BM25_MAX_DOCS = 100_000
 
 
 # ── 한국어 토크나이저 ────────────────────────────────────────────────────
