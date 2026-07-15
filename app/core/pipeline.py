@@ -221,10 +221,31 @@ def _cap(text: str | None, limit: int) -> str | None:
 # ── LLM 스트리밍 (Claude → OpenAI → Gemini 폴백) ────────────────────────────
 
 def _flatten_content(content) -> str:
-    """Anthropic content blocks에서 텍스트만 추출"""
+    """Anthropic content blocks에서 텍스트만 추출.
+
+    이미지 블록은 OpenAI/Gemini 폴백 경로에서 전달할 수 없어 탈락하는데,
+    아무 안내 없이 버리면 모델이 이미지를 본 것처럼 답변을 지어낼 위험이
+    있다(급여명세서 사진 질문 등). 탈락 사실을 프롬프트에 명시해 모델이
+    "이미지를 확인할 수 없다"고 밝히고 텍스트 정보만으로 답하게 한다.
+    """
     if isinstance(content, str):
         return content
-    return "\n".join(b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text")
+    parts = []
+    dropped_images = 0
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") == "text":
+            parts.append(b["text"])
+        elif b.get("type") == "image":
+            dropped_images += 1
+    if dropped_images:
+        parts.insert(0, (
+            f"[안내: 사용자가 이미지 {dropped_images}건을 첨부했으나 현재 답변 엔진은 "
+            "이미지를 처리할 수 없습니다. 이미지 내용을 추측하지 말고, 이미지를 "
+            "확인할 수 없었음을 답변에 명시한 뒤 텍스트 정보만으로 답변하세요.]"
+        ))
+    return "\n".join(parts)
 
 
 def _stream_claude(messages: list, system: str, config: AppConfig):
@@ -1455,7 +1476,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                legal_articles_text, nlrc_text, graph_context,
            )}
 
-    has_attachments = attachments and len(attachments) > 0
+    has_attachments = bool(attachments)  # None/[] → False (metadata에 bool로 저장)
 
     # ── 정보 충돌 해결: 동일 법 조항 소스 간 우선순위 안내 ──
     conflict_note = None
@@ -1668,7 +1689,12 @@ def process_question(query: str, session: Session, config: AppConfig,
             if not used_provider:
                 used_provider = provider
                 if provider != "Claude":
-                    yield {"type": "status", "text": f"{provider}로 답변 생성 중..."}
+                    # 폴백 엔진은 이미지 미지원(_flatten_content에서 탈락) — 사용자에게 고지
+                    fallback_note = (
+                        f"{provider}로 답변 생성 중... (이미지 분석 미지원 — 첨부 이미지는 반영되지 않습니다)"
+                        if vision_blocks else f"{provider}로 답변 생성 중..."
+                    )
+                    yield {"type": "status", "text": fallback_note}
             full_text += text
             yield {"type": "chunk", "text": text}
     except RuntimeError:

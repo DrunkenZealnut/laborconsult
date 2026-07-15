@@ -220,6 +220,16 @@ def restore_session_data(sb: SupabaseClient, session_id: str) -> dict | None:
         return None
 
 
+def _safe_storage_name(filename: str) -> str:
+    """스토리지 키용 파일명 정제 — 경로 구분자·특수문자를 제거해 프리픽스
+    이탈(../ 등)을 차단하고 S3 안전 문자만 남긴다. 표시용 원본 파일명은
+    qa_attachments.filename에 따로 보존되므로 손실 없음."""
+    import re
+    base = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "file"
+    return safe[:100]  # 과도한 길이 방지
+
+
 def upload_attachment(
     sb: SupabaseClient,
     conversation_id: str,
@@ -229,7 +239,12 @@ def upload_attachment(
     file_data: bytes,
 ) -> str | None:
     """파일을 Supabase Storage에 업로드하고 qa_attachments에 메타 저장."""
-    storage_path = f"{session_id}/{conversation_id}/{filename}"
+    # uuid 프리픽스로 키를 고유화 — 같은 대화에 동일 파일명 2개 첨부 시
+    # 두 번째 업로드가 중복 키로 실패하던 문제 방지
+    storage_path = (
+        f"{session_id}/{conversation_id}/"
+        f"{uuid.uuid4().hex[:8]}_{_safe_storage_name(filename)}"
+    )
     try:
         sb.storage.from_("chat-attachments").upload(
             path=storage_path,

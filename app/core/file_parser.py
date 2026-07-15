@@ -59,7 +59,14 @@ def validate_file(data: bytes, content_type: str, filename: str) -> None:
             "이미지(JPG/PNG/WEBP/GIF), PDF, TXT 파일만 가능합니다."
         )
 
-    if content_type in MAGIC_BYTES:
+    if content_type == "image/webp":
+        # WEBP 시그니처는 RIFF(0~3) + WEBP(8~11) — RIFF만 검사하면 WAV/AVI 등
+        # 다른 RIFF 계열 파일이 통과한다
+        if not (data[:4] == b"RIFF" and data[8:12] == b"WEBP"):
+            raise FileValidationError(
+                f"파일 내용이 확장자와 일치하지 않습니다. ({filename})"
+            )
+    elif content_type in MAGIC_BYTES:
         prefixes = MAGIC_BYTES[content_type]
         if not any(data[:len(p)] == p for p in prefixes):
             raise FileValidationError(
@@ -87,7 +94,12 @@ def parse_image(data: bytes, content_type: str, filename: str) -> ParsedAttachme
 
 
 def parse_pdf(data: bytes, filename: str) -> ParsedAttachment:
-    from PyPDF2 import PdfReader
+    # pypdf 우선 (PyPDF2는 유지보수 종료 — 악성 PDF infinite-loop CVE 이력).
+    # 구환경 호환을 위해 PyPDF2 폴백 유지 (API 동일).
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        from PyPDF2 import PdfReader
 
     reader = PdfReader(io.BytesIO(data))
     if len(reader.pages) > MAX_PDF_PAGES:
