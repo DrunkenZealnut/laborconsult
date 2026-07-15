@@ -204,10 +204,11 @@
     border-bottom-right-radius: 4px;
   }
   .msg.assistant {
-    align-self: flex-start; background: #f8f7f5; border: 1px solid var(--border);
+    align-self: flex-start; width: 100%; background: #f8f7f5; border: 1px solid var(--border);
     border-bottom-left-radius: 4px;
   }
-  .msg.assistant :first-child { margin-top: 0; }
+  .msg.assistant > :first-child { margin-top: 0; }
+  .msg.assistant > :last-child { margin-bottom: 0; }
   .msg.status { align-self: center; background: transparent; color: var(--text-muted); font-size: 13px; padding: 4px 8px; }
 
   .sources { font-size: 12px; color: var(--text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -226,17 +227,21 @@
   .contact-chip a:hover { text-decoration: underline; }
 
   /* ── Markdown in assistant messages ── */
-  .msg.assistant h2 { font-size: 16px; margin: 14px 0 6px; }
-  .msg.assistant h3 { font-size: 15px; margin: 10px 0 4px; }
-  .msg.assistant p { margin: 6px 0; }
-  .msg.assistant ul, .msg.assistant ol { margin: 6px 0 6px 20px; }
-  .msg.assistant table { border-collapse: collapse; margin: 10px 0; font-size: 14px; width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--border); }
-  .msg.assistant th { background: var(--navy); color: #fff; font-weight: 600; padding: 8px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--navy-deep); }
-  .msg.assistant td { padding: 7px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 1px solid var(--border); }
+  .msg.assistant h2 { font-size: 18px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .msg.assistant h3 { font-size: 16px; margin: 14px 0 6px; }
+  .msg.assistant p { margin: 8px 0; }
+  .msg.assistant ul, .msg.assistant ol { margin: 8px 0 8px 22px; }
+  .msg.assistant li { margin: 3px 0; }
+  .msg.assistant li > ul { margin: 3px 0 3px 18px; }
+  .msg.assistant li > ul li { font-size: 14.5px; }
+  .msg.assistant .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; }
+  .msg.assistant table { border-collapse: collapse; font-size: 14px; width: 100%; margin: 0; }
+  .msg.assistant th { background: var(--navy); color: #fff; font-weight: 600; padding: 8px 12px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--navy-deep); }
+  .msg.assistant td { padding: 7px 12px; text-align: left; border: none; border-bottom: 1px solid var(--border); word-break: keep-all; }
   .msg.assistant tr:nth-child(even) td { background: var(--cream); }
   .msg.assistant tr:last-child td { border-bottom: none; }
   .msg.assistant tr.total-row td { font-weight: 700; border-top: 2px solid var(--navy); background: var(--co-legal-bg); }
-  .msg.assistant td.num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+  .msg.assistant td.num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .msg.assistant code { background: var(--cream); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
   .msg.assistant pre { background: var(--cream); padding: 10px; border-radius: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; }
   .msg.assistant pre code { background: none; padding: 0; }
@@ -253,12 +258,14 @@
   .msg.assistant .callout-danger .callout-title { color: var(--co-danger-icon); }
   .msg.assistant .callout-tip    .callout-title { color: var(--co-tip-icon); }
   .msg.assistant .summary-badge { background: var(--co-summary-bg); border-left: 5px solid var(--co-summary-border); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 10px 0; font-size: 15px; line-height: 1.7; }
-  .msg.assistant .summary-badge h2 { font-size: 16px; margin: 0 0 6px; color: var(--co-legal-icon); }
+  .msg.assistant .summary-badge h2 { font-size: 16px; margin: 0 0 6px; color: var(--co-legal-icon); border-bottom: none; padding-bottom: 0; }
   .msg.assistant .step-list { list-style: none; margin: 10px 0; padding: 0; counter-reset: step-counter; }
-  .msg.assistant .step-list li { counter-increment: step-counter; position: relative; padding: 8px 0 8px 40px; margin: 0; line-height: 1.5; font-size: 14px; }
-  .msg.assistant .step-list li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-  .msg.assistant .step-list li::after { content: ''; position: absolute; left: 12px; top: 36px; width: 2px; height: calc(100% - 28px); background: var(--border); }
-  .msg.assistant .step-list li:last-child::after { display: none; }
+  .msg.assistant .step-list > li { counter-increment: step-counter; position: relative; padding: 8px 0 8px 40px; margin: 0; line-height: 1.5; font-size: 14px; }
+  .msg.assistant .step-list > li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .msg.assistant .step-list > li::after { content: ''; position: absolute; left: 12px; top: 36px; width: 2px; height: calc(100% - 28px); background: var(--border); }
+  .msg.assistant .step-list > li:last-child::after { display: none; }
+  .msg.assistant .step-list ul { list-style: disc; margin: 4px 0 0 18px; padding: 0; }
+  .msg.assistant .step-list ul li { padding: 2px 0; }
   .msg.assistant hr { border: none; height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent); margin: 18px 0; }
   .msg.assistant .disclaimer-notice { font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; line-height: 1.5; }
   .msg.assistant .math-display { overflow-x: auto; margin: 10px 0; text-align: center; }
@@ -425,9 +432,13 @@
     .footer-info { font-size: 11px; }
     .msg.assistant .callout { padding: 8px 10px; margin: 8px 0; }
     .msg.assistant .summary-badge { padding: 10px 12px; }
-    .msg.assistant .step-list li { padding-left: 34px; }
-    .msg.assistant .step-list li::before { width: 22px; height: 22px; font-size: 11px; }
-    .msg.assistant .step-list li::after { left: 10px; top: 32px; }
+    .msg.assistant .step-list > li { padding-left: 34px; }
+    .msg.assistant .step-list > li::before { width: 22px; height: 22px; font-size: 11px; }
+    .msg.assistant .step-list > li::after { left: 10px; top: 32px; }
+    .msg.assistant table { font-size: 13px; }
+    .msg.assistant th, .msg.assistant td { padding: 6px 10px; }
+    .msg.assistant ul, .msg.assistant ol { margin-left: 18px; }
+    .msg.assistant li > ul { margin-left: 14px; }
   }
 </style>
 </head>
@@ -973,6 +984,32 @@ function inlineTransform(t) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => renderMdLink(txt, url));
 }
 
+function indentWidth(s) {
+  let w = 0;
+  for (const ch of s) w += ch === '\t' ? 2 : 1;
+  return w;
+}
+
+// 들여쓰기 스택 기반 중첩 <ul> 빌더. LLM 출력의 2·3·4칸 들여쓰기 혼용을 ±1칸
+// 허용치로 흡수하고, 과도한 깊이는 중첩 2단계(level 0·1·2)에서 캡한다.
+function buildNestedUl(items) {
+  const stack = [items[0].indent];
+  let html = '<ul>';
+  for (const { indent, text } of items) {
+    while (stack.length > 1 && indent < stack[stack.length - 1] - 1) {
+      html += '</ul></li>';
+      stack.pop();
+    }
+    if (indent > stack[stack.length - 1] + 1 && stack.length < 3 && html.endsWith('</li>')) {
+      html = html.slice(0, -5) + '<ul>';
+      stack.push(indent);
+    }
+    html += '<li>' + inlineTransform(text) + '</li>';
+  }
+  while (stack.length > 1) { html += '</ul></li>'; stack.pop(); }
+  return html + '</ul>';
+}
+
 const CALLOUT_MAP = [
   { pattern: /^(?:📘\s*)?(?:\*\*)?(?:법적\s*근거|관련\s*법조문|관련\s*법률|관련\s*판례|법령)(?:\*\*)?/i, type: 'legal', icon: '📘' },
   { pattern: /^(?:⚠️\s*)?(?:\*\*)?(?:주의사항|주의|유의|예외)(?:\*\*)?/i, type: 'warn', icon: '⚠️' },
@@ -999,7 +1036,7 @@ function md(text) {
 
   text = text.replace(/((?:^\|.+\|[ \t]*$\n?)+)/gm, block => {
     const rows = block.trim().split('\n');
-    let h = '<table>';
+    let h = '<div class="table-wrap"><table>';
     let headerDone = false;
     for (const row of rows) {
       if (/^\|[\s:|-]+\|$/.test(row.trim())) { headerDone = true; continue; }
@@ -1009,36 +1046,49 @@ function md(text) {
       h += '<tr' + (isTotal ? ' class="total-row"' : '') + '>';
       for (const c of cells) {
         const isNum = (tag === 'td') && /^[\d,]+(?:\.\d+)?(?:\s*원)?$/.test(c.replace(/\*\*/g, '').trim());
-        h += '<' + tag + (isNum ? ' class="num-cell"' : '') + '>' + c + '</' + tag + '>';
+        // 셀 내용에도 인라인 변환 적용 — 미적용 시 **볼드**가 별표 원문째 노출됨
+        h += '<' + tag + (isNum ? ' class="num-cell"' : '') + '>' + inlineTransform(c) + '</' + tag + '>';
       }
       h += '</tr>';
       if (!headerDone) headerDone = true;
     }
-    h += '</table>';
-    return stash(h);
+    h += '</table></div>';
+    return stash(h) + '\n';
   });
 
-  text = text.replace(/((?:^[ \t]*[-*] .+$\n?)+)/gm, block => {
-    // inlineTransform 적용 — 과거엔 누락되어 불릿 항목의 **볼드**·`코드`가 원문(별표)째 노출됐음
-    const items = block.trim().split('\n').map(l => '<li>' + inlineTransform(l.replace(/^[ \t]*[-*] /, '')) + '</li>');
-    return stash('<ul>' + items.join('') + '</ul>');
-  });
-
-  text = text.replace(/((?:^[ \t]*\d+\. .+(?:\n(?![ \t]*\d+\. )(?![ \t]*[-*] ).+)*$\n?)+)/gm, (block, _, offset) => {
+  // 번호 목록을 불릿보다 먼저 파싱 — 번호 항목에 딸린 들여쓴 하위 불릿을 항목 안에
+  // 직접 수용한다. 과거엔 불릿이 먼저 통째로 stash되어 placeholder가 다음 번호 줄과
+  // 붙는 바람에 ② 이후 항목이 ①에 병합되고 하위 불릿 내용은 미복원으로 소실됐음.
+  text = text.replace(/((?:^[ \t]*\d+\.[ \t].+(?:\n(?![ \t]*\d+\.[ \t])(?![-*][ \t]).+)*$\n?)+)/gm, (block, _, offset) => {
     const preceding = text.slice(Math.max(0, offset - 200), offset);
     const isStep = /(?:절차|방법|순서|과정|단계|대응|신청|진행)\s*$/m.test(preceding)
       || /^#{2,3}\s.*(?:절차|방법|순서|과정|단계|대응|신청|진행)/m.test(preceding);
-    // 번호 줄마다 새 항목 시작, 번호 없는 후속 줄(계산식 "→ ..." 등)은 직전 항목에 병합.
-    // 과거엔 항목 사이 continuation 줄이 리스트를 분절해 각 항목이 개별 <ol>이 되어
-    // 번호가 매번 1로 리셋됐음 — 하나의 <ol>로 묶어 순번(1·2·3)이 이어지게 한다.
+    // 번호 줄마다 새 항목 시작, 들여쓴 불릿 줄은 해당 항목의 하위 목록으로,
+    // 그 외 후속 줄(계산식 "→ ..." 등)은 직전 항목 본문에 병합해 순번(1·2·3)을 유지한다.
     const items = [];
     for (const line of block.replace(/\n+$/, '').split('\n')) {
-      const m = line.match(/^[ \t]*\d+\.\s+(.*)$/);
-      if (m) items.push(m[1]);
-      else if (items.length) items[items.length - 1] += '\n' + line.trim();
+      const num = line.match(/^[ \t]*\d+\.[ \t]+(.*)$/);
+      const sub = line.match(/^([ \t]+)[-*][ \t]+(.*)$/);
+      if (num) items.push({ text: num[1], subs: [] });
+      else if (sub && items.length) items[items.length - 1].subs.push({ indent: indentWidth(sub[1]), text: sub[2] });
+      else if (items.length) items[items.length - 1].text += '\n' + line.trim();
     }
-    const lis = items.map(it => '<li>' + inlineTransform(it).replace(/\n/g, '<br>') + '</li>').join('');
-    return stash(isStep ? '<ol class="step-list">' + lis + '</ol>' : '<ol>' + lis + '</ol>');
+    const lis = items.map(it => {
+      let inner = inlineTransform(it.text).replace(/\n/g, '<br>');
+      if (it.subs.length) inner += buildNestedUl(it.subs);
+      return '<li>' + inner + '</li>';
+    }).join('');
+    return stash(isStep ? '<ol class="step-list">' + lis + '</ol>' : '<ol>' + lis + '</ol>') + '\n';
+  });
+
+  text = text.replace(/((?:^[ \t]*[-*][ \t].+$\n?)+)/gm, block => {
+    // 들여쓰기 스택 기반 중첩 <ul> — 평탄화하던 과거와 달리 하위 항목 구조를 보존한다.
+    const items = block.replace(/\n+$/, '').split('\n').map(l => {
+      const m = l.match(/^([ \t]*)[-*][ \t]+(.*)$/);
+      return m && { indent: indentWidth(m[1]), text: m[2] };
+    }).filter(Boolean);
+    if (!items.length) return block;
+    return stash(buildNestedUl(items)) + '\n';
   });
 
   text = text.replace(/((?:^> .+$\n?)+)/gm, block => {
@@ -1049,10 +1099,10 @@ function md(text) {
       if (m) {
         const title = m[0].replace(/\*\*/g, '');
         const body = inlineTransform(joined.slice(m[0].length).replace(/^[\s:：\-]+/, '')).replace(/\n/g, '<br>');
-        return stash('<div class="callout callout-' + type + '"><div class="callout-title">' + icon + ' ' + title + '</div>' + body + '</div>');
+        return stash('<div class="callout callout-' + type + '"><div class="callout-title">' + icon + ' ' + title + '</div>' + body + '</div>') + '\n';
       }
     }
-    return stash('<blockquote>' + inlineTransform(joined).replace(/\n/g, '<br>') + '</blockquote>');
+    return stash('<blockquote>' + inlineTransform(joined).replace(/\n/g, '<br>') + '</blockquote>') + '\n';
   });
 
   let html = text
@@ -1072,8 +1122,16 @@ function md(text) {
     .replace(/^---$/gm, '<hr>');
 
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
-  html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
+  // 고정점 루프 복원 — stash된 블록 HTML 안에 다른 placeholder가 들어 있는 경우
+  // (번호 목록이 표·불릿 블록을 삼킨 케이스) 단일 패스로는 영구 미복원되어
+  // 내용이 소실되므로, 잔여 placeholder가 없어질 때까지 반복한다(순환 없음: DAG).
+  let prevHtml;
+  do {
+    prevHtml = html;
+    html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
+  } while (html !== prevHtml);
   html = '<p>' + html + '</p>';
+  html = html.replace(/<p><br>/g, '<p>');
   html = html.replace(/<p>\s*<\/p>/g, '');
   html = html.replace(/(<p>(?:⚠️\s*)?본\s*(?:답변|계산\s*결과|판정\s*결과)은?\s*참고용[\s\S]*?<\/p>)$/, '<div class="disclaimer-notice">$1</div>');
   return html;
@@ -1278,7 +1336,9 @@ function actionPDF() {
     'h1{font-size:20px;border-bottom:2px solid #1B2A4A;padding-bottom:8px;margin-bottom:16px;}' +
     '.q{background:#f0f4f8;padding:12px 16px;border-radius:8px;margin-bottom:12px;font-weight:600;}' +
     '.a{font-size:15px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #eee;}' +
-    'table{border-collapse:collapse;margin:10px 0;}th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;}th{background:#1B2A4A;color:#fff;}' +
+    'table{width:100%;border-collapse:collapse;margin:12px 0;}th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;}th{background:#1B2A4A;color:#fff;}' +
+    'tr:nth-child(even) td{background:#faf8f5;}td.num-cell{text-align:right;white-space:nowrap;}tr.total-row td{font-weight:700;background:#f5efe6;}' +
+    '.table-wrap{margin:12px 0;}ul ul{margin:2px 0 2px 18px;}li{margin:3px 0;}' +
     '.disclaimer{font-size:12px;color:#888;border-top:1px solid #ddd;margin-top:24px;padding-top:12px;}</style></head><body>' +
     '<h1>기초 노동상담</h1>' +
     answerHtml +
