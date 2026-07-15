@@ -6,7 +6,7 @@
 <title>기초 노동상담</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -34,6 +34,7 @@
     --radius-lg: 20px;
     --radius-pill: 50px;
     --font-display: 'Noto Serif KR', 'Georgia', serif;
+    --font-title: 'Do Hyeon', 'Noto Serif KR', sans-serif;  /* 로고/제목 전용 — 교체 시 이 한 줄만 수정 */
     --font-body: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     /* Callout colors (chat rendering) */
     --co-legal-bg: #eff6ff; --co-legal-border: #2563eb; --co-legal-icon: #1d4ed8;
@@ -78,7 +79,7 @@
     margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
   }
   .menu-logo {
-    font-family: var(--font-display); font-weight: 900; font-size: 17px; color: var(--navy);
+    font-family: var(--font-title); font-weight: 900; font-size: 17px; color: var(--navy);
   }
   .menu-close {
     width: 36px; height: 36px; border-radius: 50%; background: var(--cream);
@@ -110,9 +111,11 @@
     flex: 1; padding: 40px 20px 20px; text-align: center;
   }
   .landing-logo {
-    font-family: var(--font-display); font-size: 36px; font-weight: 900;
+    font-family: var(--font-title); font-size: 36px; font-weight: 900;
     color: var(--navy); margin-bottom: 32px; letter-spacing: -0.5px;
+    text-decoration: none; display: inline-block; transition: color 0.2s;
   }
+  .landing-logo:hover { color: var(--copper); }
 
   /* ── MAIN CONTENT ── */
   #main-content { }
@@ -488,12 +491,16 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       대화 저장
     </button>
+    <button class="menu-item" id="menu-reset-btn" onclick="resetChat(); closeMenu()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      대화 초기화
+    </button>
   </div>
 </nav>
 
 <!-- ═══ LANDING (Google-style) ═══ -->
 <div id="landing">
-  <div class="landing-logo">기초 노동상담</div>
+  <a href="/" class="landing-logo" aria-label="첫 화면으로 이동">기초 노동상담</a>
 
   <section id="chat-section">
     <div class="chat-container">
@@ -824,6 +831,31 @@ function expandChat() {
   // 액션바만 제거 (이전 대화는 유지)
   const oldActions = card.querySelector('.answer-actions');
   if (oldActions) oldActions.remove();
+}
+
+// ── 대화 초기화 (새 상담 시작) ──────────────────────────────────────────────
+function resetChat() {
+  if (chat.children.length && !confirm('현재 대화를 모두 지우고 새로 시작할까요?')) return;
+
+  // 세션 초기화 → 서버에서도 새 대화로 시작
+  sessionId = null;
+  try { sessionStorage.removeItem('chatSessionId'); } catch (e) { /* ignore */ }
+
+  // 채팅 영역을 랜딩(입력창만 보이는) 상태로 되돌림
+  const card = document.getElementById('chat-card');
+  card.classList.remove('active');
+  const actions = card.querySelector('.answer-actions');
+  if (actions) actions.remove();
+  chat.innerHTML = '';
+
+  // 입력·첨부 초기화
+  msgInput.value = '';
+  msgInput.style.height = 'auto';
+  pendingFiles = [];
+  renderPreview();
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  msgInput.focus();
 }
 
 // ── 메시지 ───────────────────────────────────────────────────────────────────
