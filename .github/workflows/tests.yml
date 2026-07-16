@@ -1,6 +1,6 @@
 name: Offline Tests
 
-# API 키 없이 도는 오프라인 스위트 — 계산 엔진 골든 + 파이프라인 배선 + 검색/인용 단위
+# API 키 없이 도는 오프라인 스위트 — 계산 엔진 골든 + 파이프라인 배선 + 검색/인용 단위 + 답변 렌더러 회귀
 on:
   push:
     branches: [main]
@@ -19,6 +19,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -30,3 +34,6 @@ jobs:
 
       - name: 검색·인용 모듈 단위 테스트
         run: python3 test_offline_units.py
+
+      - name: 답변 렌더러 회귀 테스트
+        run: node --test test_answer_renderer.js
