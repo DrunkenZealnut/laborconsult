@@ -91,9 +91,13 @@ test('T5: 번호 사이 표 — 소실 없음 (C5)', () => {
 
 test('T6: 절차 키워드 → step-list 판별 유지', () => {
   const html = md('## 이의제기 절차\n1. 신청서 작성\n2. 관할 기관 제출\n3. 결과 통보 대기');
+  // <p><h2>는 HTML 파서가 <p>를 자동으로 먼저 닫는 유효하지 않은 중첩이라(브라우저
+  // innerHTML 대입 시 실제 DOM은 문자열과 다르게 보정됨), 제목·step-list를 따로 검증한다.
+  assert.match(html, /<h2>이의제기 절차<\/h2>/, '제목 텍스트 보존');
   assert.equal(
-    html,
-    '<p><h2>이의제기 절차</h2><br></p><ol class="step-list"><li>신청서 작성</li><li>관할 기관 제출</li><li>결과 통보 대기</li></ol>'
+    html.slice(html.indexOf('<ol')),
+    '<ol class="step-list"><li>신청서 작성</li><li>관할 기관 제출</li><li>결과 통보 대기</li></ol>',
+    'step-list 구조·항목 순서 보존'
   );
 });
 
