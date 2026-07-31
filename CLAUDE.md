@@ -48,6 +48,7 @@ python3 calculator_batch_test.py         # Run all 102 batch test cases (output_
 python3 test_wage_golden.py       # 계산 엔진 골든 테스트
 python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-1/2/3)
 python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
+python3 test_abuse_guard.py       # 남용 가드(인젝션·스코프·쿼터·게시판 필터) 테스트
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
@@ -98,7 +99,7 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 
 **Endpoints** (all in `api/index.py`):
 
-*Chat:*
+*Chat:* (3경로 모두 `_guard_chat_request()` 선통과 — 아래 Abuse Guard 참조)
 - `GET /api/health` — health check
 - `GET /api/chat/stream?message=...` — SSE streaming (text only)
 - `POST /api/chat/stream` — SSE streaming (with file attachments as base64)
@@ -109,6 +110,8 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `GET /api/admin/stats` — totals + 30-day daily + category counts
 - `GET /api/admin/conversations` — paged, supports `search`/`category`/`date_from`/`date_to`
 - `GET /api/admin/conversations/{conv_id}` — 단일 대화 상세 (+ attachments)
+- `GET /api/admin/abuse?days=7` — 남용 이벤트 집계·최근 목록·활성 차단 (`abuse_summary` RPC)
+- `POST /api/admin/abuse/unblock` — 수동 차단 해제 (`abuse_unblock` RPC)
 
 *Public Q&A board* (all `_anonymize()` applied):
 - `GET /api/board/recent`, `GET /api/board/categories`, `GET /api/board/search?q=&category=`, `GET /api/board/{item_id}` — read AI conversations (`qa_conversations`) + user posts (`board_posts`), merged
@@ -137,6 +140,37 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `meta` — calc_result (프론트는 현재 미표시 — 수치 카드 UI는 제품 결정 대기)
 - `error` — error message
 - `done` — stream end marker
+
+### Abuse Guard (`app/core/abuse_guard.py`) — chatbot-security
+
+악의적 접근·노동법 외 용도 사용을 LLM 호출 전(또는 의도분석 1회 비용)에 차단하는 2단 가드.
+설계: `docs/02-design/features/chatbot-security.design.md`. **전 계층 fail-open** — 가드 내부
+예외나 Supabase 장애가 상담을 막지 않는다.
+
+**1단 (엔드포인트, `api/index.py::_guard_chat_request`)** — 반드시 `get_or_create_session()`·
+첨부 파싱보다 **먼저** 호출(session_id 검증이 세션 생성 전이어야 하고, 차단 대상이 파싱 비용을
+지불하지 않도록):
+1. `validate_message()` — 길이(기본 2,000자) · 제어문자 제거 · NFC · `session_id` 형식(`^[A-Za-z0-9-]{8,64}$`, 불일치 시 무시하고 신규 발급)
+2. `_check_rate_limit(store=_chat_rate)` — IP당 5회/60초. **인메모리라 Vercel 인스턴스별 베스트에포트**(총량 방어는 3의 쿼터가 담당)
+3. `check_guard()` — `chat_guard_check` RPC 1왕복(차단 조회 + 일일 쿼터 원자 증가, 기본 50/일)
+- 거절 시 `GuardRejection` → `/api/chat`은 HTTP 400/429, 스트림 2경로는 `_sse_error()`
+
+**2단 (파이프라인, `process_question(guard_ctx=...)`)** — `guard_ctx=None`이면 가드 전체 비활성
+(CLI·`benchmark_pipeline.py`·E2E 테스트 호출부 무변경):
+- `scan_injection()` — 정규식+가중치, **의도분석 이전**이라 차단 시 LLM 호출 0회
+- `scope_gate_decision()` — `analyze_intent`의 `is_labor_related`에 **편승**(추가 LLM 호출 0회). block 시 RAG·법령 API·답변 LLM 전부 생략
+- `scan_leak()` — 답변 완성 후 시스템 프롬프트 유출 감지 → 기존 `replace` 이벤트로 대체 + 저장 금지
+- 저장 게이팅 — block/leak은 미저장, monitor 의심은 `metadata.guard_flag` 기록 후 게시판 노출 제외
+
+**인젝션 패턴(`INJECTION_PATTERNS`) 수정 시 주의**: 노동상담 언어와 공격 언어는 어휘를 공유한다
+("무시"·"규칙"·"역할 변경"). `_BENIGN_ACTOR` 억제자가 "제3자(회사·상사) 주어 서술"을 무효화해
+오탐을 막으므로, 패턴 변경 시 `test_abuse_guard.py`의 코퍼스 회귀(공격 38건 차단율 ≥90%,
+정상 35건 오차단 0)를 반드시 통과시킬 것.
+
+**운영**: `ABUSE_GUARD_MODE`·`SCOPE_GATE_MODE`를 `monitor`로 배포해 1주 관측 → 오탐 0 확인 후
+`block` 전환. 즉시 완화는 `off`. Supabase 스키마는 `supabase_abuse_guard.sql`(테이블 3종 +
+SECURITY DEFINER RPC 4개). **fail-open은 조용하므로 배포 후 쿼터 양성 검증 필수**
+(`DAILY_CHAT_QUOTA=3`으로 4번째 요청이 실제 429인지).
 
 ### Pipeline Flow (`app/core/pipeline.py`)
 
@@ -260,6 +294,9 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - `api/index.py`의 파일 서빙 엔드포인트는 `os.path.commonpath` + `.html` allowlist로 path traversal 방지 필수.
 - `public/index.html`의 채팅 UI는 `expandChat()`으로 제어 — 초기에 입력창만 표시, 첫 메시지 전송 시 `.chat-card.active` 클래스 추가로 채팅 영역 확장.
 - 공개 게시판/대화 응답은 반드시 `_anonymize()`(이름·회사·전화·이메일 마스킹) 통과 후 반환. 신규 공개 엔드포인트 추가 시 동일 적용.
+- 신규 채팅 엔드포인트 추가 시 `_guard_chat_request()`를 세션 생성·첨부 파싱보다 먼저 호출하고, `process_question(guard_ctx=...)`으로 컨텍스트를 전달할 것.
+- `qa_conversations` 공개 조회(게시판)는 `_exclude_guard_flagged()` + `_drop_flagged()`를 거쳐 `metadata.guard_flag` 대화를 제외하고, select에 `metadata`를 포함해야 한다. **`board_posts`에는 적용 금지** — metadata 컬럼이 없어 PostgREST 400이 `try/except`에 삼켜져 사용자 게시글이 통째로 사라진다.
+- `abuse_events`/`block_list`/`chat_quota`는 RLS 활성 + 정책 무부여(anon 직접 접근 차단). 접근은 `SECURITY DEFINER` RPC로만 — 정책을 부여하면 클라이언트가 차단을 자가 해제할 수 있다.
 - 게시판 글쓰기 보안 체인 순서 고정: CAPTCHA(HMAC, `JWT_SECRET` 서명) → IP rate-limit → 입력 검증/금칙어 → bcrypt(rounds=12) 해싱 → INSERT. 삭제는 bcrypt `checkpw` 후 soft delete.
 - 이메일 발송(`/api/send-email`)은 전송 전 `_sanitize_html()`로 `<script>`/`on*=` 제거 필수, 분당 10건 인메모리 rate-limit.
 - 새 코퍼스 소스 추가 시 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 스크립트를 함께 추가/동기화.
