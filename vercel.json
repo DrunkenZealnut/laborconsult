@@ -34,23 +34,18 @@
       "dest": "/public/calculators.html"
     },
     {
-      "src": "/terms",
-      "dest": "/public/terms.html"
-    },
-    {
-      "src": "/privacy",
-      "dest": "/public/privacy.html"
-    },
-    {
-      "src": "/install",
-      "dest": "/public/install.html"
-    },
-    {
       "src": "/sw.js",
       "dest": "/public/sw.js",
       "headers": {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Service-Worker-Allowed": "/"
+      }
+    },
+    {
+      "src": "/notice.json",
+      "dest": "/public/notice.json",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
       }
     },
     {

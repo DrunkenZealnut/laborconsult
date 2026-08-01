@@ -1124,22 +1124,27 @@ def serve_calculators():
 
 
 @app.get("/board")
-@app.get("/terms")
-@app.get("/privacy")
-@app.get("/install")
 def serve_static_page(request: Request):
-    """정적 페이지의 확장자 없는 경로.
+    """정적 페이지의 확장자 없는 경로 — /board.
 
     프로덕션은 vercel.json 라우트가 먼저 처리하므로 이 핸들러까지 오지 않는다.
     로컬 `uvicorn api.index:app` 개발·검증 시 프로덕션과 같은 URL로 열기 위한 것.
-    라우트 목록을 늘릴 때는 vercel.json 과 반드시 함께 고칠 것.
+    /terms·/privacy·/install 은 sitemap·canonical·모든 내부 링크가 `.html` 버전만
+    참조해 확장자 없는 형태로는 어디서도 쓰이지 않으므로, vercel.json의 동일 라우트와
+    함께 제거했다(CodeRabbit 리뷰). 라우트 목록을 늘릴 때는 vercel.json 과 반드시 함께 고칠 것.
     """
     name = request.url.path.strip("/")
-    if name not in {"board", "terms", "privacy", "install"}:
+    if name != "board":
         raise HTTPException(status_code=404, detail="Not Found")
-    html_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "public", f"{name}.html"
+    # name이 고정 집합과 등호 비교만 거치므로 현재는 순회 위험이 없지만,
+    # 이 파일의 다른 파일 서빙 엔드포인트(serve_calculator_flow)와 패턴을
+    # 통일해 향후 라우트가 동적 인자를 받게 되어도 안전하도록 한다.
+    base_dir = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "public")
     )
+    html_path = os.path.abspath(os.path.join(base_dir, f"{name}.html"))
+    if os.path.commonpath([base_dir, html_path]) != base_dir or not html_path.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Not Found")
     if not os.path.isfile(html_path):
         raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(html_path, media_type="text/html")

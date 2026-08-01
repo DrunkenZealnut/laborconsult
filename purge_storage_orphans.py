@@ -18,7 +18,16 @@ Supabase는 `storage.objects`에 대한 직접 DELETE를 트리거로 차단한�
     python3 purge_storage_orphans.py --dry-run  # 지울 목록만 출력
     python3 purge_storage_orphans.py --limit 50 # 한 번에 처리할 건수(기본 200)
 
-필요 환경변수: SUPABASE_URL, SUPABASE_KEY (.env 또는 셸 환경)
+필요 환경변수: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (.env 또는 셸 환경)
+
+왜 anon 키(SUPABASE_KEY)가 아니라 service_role 키인가
+------------------------------------------------------
+supabase_schema.sql이 storage.objects에 부여하는 정책은 INSERT("Allow anon
+upload")와 SELECT("Allow anon read")뿐이고 DELETE 정책이 없다. RLS는 명시적으로
+허용하지 않은 동작을 기본 차단하므로, anon 키로 storage.remove()를 호출하면
+권한 오류로 실패한다. service_role 키는 RLS를 완전히 우회하므로 정책을 추가로
+열어 줄 필요가 없다. 이 키는 관리자 권한과 동등하므로 절대 브라우저로 보내지
+말고, 이 스크립트처럼 서버·로컬 배치 실행 전용으로만 사용할 것.
 
 권장 주기: pg_cron이 매일 04:00 KST에 큐를 채우므로, 그 이후 하루 1회.
 """
@@ -42,9 +51,15 @@ def _load_client():
         pass  # .env 없이 셸 환경변수만 쓰는 경우
 
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
+    # anon 키(SUPABASE_KEY)는 storage.objects DELETE 정책이 없어 삭제가 실패한다.
+    # service_role 키가 RLS를 우회해야 실제로 파일이 지워진다 — 모듈 docstring 참조.
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
-        sys.exit("SUPABASE_URL / SUPABASE_KEY 가 설정되지 않았습니다. .env 를 확인하세요.")
+        sys.exit(
+            "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.\n"
+            "  service_role 키는 Supabase 대시보드 → Project Settings → API → service_role에서 확인하세요.\n"
+            "  (anon 키는 storage.objects에 DELETE 정책이 없어 이 스크립트가 동작하지 않습니다.)"
+        )
 
     try:
         from supabase import create_client
@@ -95,8 +110,10 @@ def main() -> int:
                     "storage_purge_mark",
                     {"p_id": r["id"], "p_ok": False, "p_error": str(e)[:300]},
                 ).execute()
-            except Exception:
-                pass  # 마킹 실패는 다음 실행에서 재시도된다
+            except Exception as mark_err:
+                # 마킹 자체가 실패해도 다음 실행에서 재시도되므로 치명적이진 않지만,
+                # 로그가 없으면 큐가 계속 안 줄어드는 원인을 나중에 진단할 수 없다.
+                print(f"  ⚠ 마킹 실패 (id={r['id']}): {mark_err}", file=sys.stderr)
 
     print(f"완료 — 삭제 {ok}건, 실패 {failed}건")
     if failed:

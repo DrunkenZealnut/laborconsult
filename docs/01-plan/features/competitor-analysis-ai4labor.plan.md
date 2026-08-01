@@ -253,7 +253,7 @@ ai4labor.net 번들+HTML **1,861,349자 전수**에서:
 
 우리의 `analyze_intent`는 같은 정보를 **LLM으로 추출**한다(Sonnet 1회 비용 + 누락 시 재질문). 그들은 **폼으로 강제 수집**해 LLM 호출 없이 확보하고, 클라이언트에서 프롬프트를 조립해 넘긴다.
 
-```
+```text
 상담 분야: {대분류} ({소분류})
 업종: {업종}
 지역: {지역}
@@ -498,7 +498,8 @@ cweh-migrant.org는 같은 코드베이스로 훨씬 넓은 표면에 도달했�
 4. [ ] **`/pdca plan document-builder`** (P1) — 상담→행동 전환. 기존 RAG·계산 자산 재활용
 5. [ ] **`/pdca plan embed-widget`** (P1) — 배포 채널 확장. `/?q=` 진입점이 이미 있어(`index.html:1845-1850`) 구현 부담이 더 낮아짐
 6. [ ] 보류 3건(입력식 폼·통합검색 UI·지도)은 P1 완료 후 효과 측정 결과로 재평가
-7. [ ] 별도 티켓: **첨부 버킷 비공개 전환**(§6.3 — 개인정보처리방침 확정의 선행 조건), `CLAUDE.md` 수치 정정, 관리자 남용 대시보드 UI, `board_posts` 스키마 SQL화
+7. [x] ~~별도 티켓: 첨부 버킷 비공개 전환~~ → **완료**(§14.7, 2026-08-01) — 6번 항목에서 분리해 이번 사이클 안에서 처리
+8. [ ] 별도 티켓(미착수): `CLAUDE.md` 계산기 수치 정정(계산 28종·CLI 116·배치 500·이메일 5건/분 등, §3.3 참조 — 이번 사이클에서는 GitHub Pages 배포 절만 갱신함), 관리자 남용 대시보드 UI, `board_posts` 스키마 SQL화
 
 ---
 
@@ -577,10 +578,10 @@ cweh-migrant.org는 같은 코드베이스로 훨씬 넓은 표면에 도달했�
 | # | 항목 | 결정 | 처리 |
 |:-:|------|------|------|
 | 1 | 첨부 버킷 | **비공개** | §14.7 |
-| 2 | 보유기간 파기 스크립트 | **적용 완료**(운영자) | `supabase_retention_purge.sql` — pg_cron 등록됨. 방침 제5항이 실제로 이행됨 |
+| 2 | 보유기간 파기 스크립트 | **재적용 필요**(운영 검증 대기) | §14.5 참조 — 이 표는 v1.0 시점 기록이며, 이후 v1.1(반환 컬럼 확장)·v1.2(스토리지 큐 방식으로 재설계, `purge_storage_orphans.py` 신설)로 두 차례 바뀌었다. **아직 아래 항목이 확인되지 않아 "적용 완료"로 단언할 수 없다**: ① `SELECT * FROM purge_expired_data(365, 90);` 7개 반환 건수가 §2 미리보기와 일치하는지 ② `cron.job_run_details`에 성공 실행 기록이 있는지 ③ `storage_purge_queue`가 실제로 소진되는지 ④ `purge_storage_orphans.py`가 service_role 키로 주기 실행되도록 구성됐는지(CodeRabbit 리뷰로 anon→service_role 전환, §16.1) |
 | 3 | 공지 채널 | **배너 형식** | §14.8 |
 
-남은 것은 커밋·배포(요청 시에만)와 배포 후 Search Console·네이버 서치어드바이저에 사이트·`sitemap.xml` 등록뿐이다.
+남은 것은 커밋·배포(요청 시에만), 위 2번 항목의 운영 검증, 배포 후 Search Console·네이버 서치어드바이저에 사이트·`sitemap.xml` 등록이다.
 
 ### 14.7 첨부 버킷 비공개 전환
 
@@ -618,7 +619,7 @@ cweh-migrant.org는 같은 코드베이스로 훨씬 넓은 표면에 도달했�
 | `notice.json` | JSON 유효 ✅ |
 | **브라우저 실제 렌더** | Playwright — 배너 정상 표시 → 닫기 클릭 → **새로고침 후에도 숨김 유지** ✅ / `privacy.html` 표·콜아웃·타이포 정상 ✅ / **콘솔 오류·경고 0건** ✅ |
 | 회귀 | `test_answer_renderer.js` **8/8**, `test_wage_golden.py` 전량 통과 ✅ |
-| sitemap | 30 URL 유지, `terms.html`·`privacy.html` 포함 ✅ |
+| sitemap | 31 URL 유지(§14.1 — `install.html` 포함), `terms.html`·`privacy.html` 포함 ✅ |
 
 ---
 
@@ -661,7 +662,7 @@ cweh-migrant.org는 같은 코드베이스로 훨씬 넓은 표면에 도달했�
 
 ### 12.3 영향 받는 모듈
 
-```
+```text
 public/
 ├── index.html              # <head> 메타·og·JSON-LD 주입, Pretendard 실제 로드, 푸터 법적 링크 (P0)
 ├── board.html              # <head> 메타 (P0)
@@ -768,6 +769,47 @@ vercel.json                 # 신규 정적 파일·라우트 반영 (P0)
 2. **파기 양성 검증** — `abuse_events`·`chat_quota`·`block_list`는 RLS ON + 정책 0개다. SECURITY DEFINER 소유자가 테이블 소유자가 아니면 DELETE가 **에러 없이 0건**으로 끝난다(`chatbot-security`의 fail-open과 같은 함정). `SELECT * FROM purge_expired_data(365, 90);` 반환 건수로 확인할 것.
 3. ~~**G-5 결정**~~ → **해결(2026-08-01)**: 운영자가 **미러 미사용**을 확정. `.github/workflows/pages.yml` 삭제로 GitHub Pages 배포를 중단했고 `CLAUDE.md` 배포 절도 갱신했다. **배포처는 Vercel 단일.** 이미 게시된 Pages 사이트는 워크플로 삭제만으로 내려가지 않으므로 **GitHub 저장소 Settings → Pages 에서 Source 를 None 으로** 바꿔야 완전히 종료된다. `public/*.html`의 `github.io` 분기는 비-Vercel 호스트용 폴백으로 무해해 그대로 두었다.
 
+### 16.5 CodeRabbit 리뷰 대응 (PR #29, 2026-08-01)
+
+PR 생성 시 자동 트리거된 리뷰가 actionable 12건을 남겼다. 전부 코드와 대조 검증한 뒤 대응했다.
+
+**수정 완료(10건)**
+
+| 지적 | 조치 |
+|------|------|
+| **`purge_storage_orphans.py`가 anon 키(`SUPABASE_KEY`)를 사용 — storage.objects에 DELETE 정책이 없어 삭제가 실패한다** | `SUPABASE_SERVICE_ROLE_KEY`로 교체. `.env.example` 추가, `storage_purge_claim`/`storage_purge_mark`의 anon·authenticated 실행 권한도 함께 회수(더 이상 필요 없어진 불필요한 공격 표면) |
+| `api/index.py::serve_static_page`가 CLAUDE.md의 `commonpath`+`.html` allowlist 관례와 다른 패턴 | `serve_calculator_flow`와 동일한 검증 추가(현재 traversal 위험은 없으나 일관성·방어적 코딩) |
+| `purge_storage_orphans.py` 마킹 실패가 조용히 무시됨(S110) | 실패 로그 추가 |
+| `vercel.json`의 `/notice.json`이 CDN 캐시 제어 헤더 없이 일반 확장자 라우트로 처리됨 — 법적 고지 갱신 지연 위험 | `/sw.js`와 동일한 `no-cache, no-store, must-revalidate` 전용 라우트 추가 |
+| `vercel.json`의 `/terms`·`/privacy`·`/install`(확장자 없이)이 sitemap·canonical·모든 내부 링크 어디서도 쓰이지 않는 죽은 라우트 | 3개 라우트 제거. `api/index.py::serve_static_page`도 `/board`만 남기도록 정합화(로컬 uvicorn 개발용 — 프로덕션은 vercel.json 우선) |
+| 계산기 흐름도 25개 페이지에 `apple-touch-icon`·`manifest`·`twitter:*` 메타데이터 누락 | 25개 파일 전부에 추가 |
+| 계산기 흐름도 24개 페이지가 "근로기준법 기준"으로 획일 표기 — EITC(조세특례제한법)·육아휴직급여(고용보험법)·퇴직금(근로자퇴직급여보장법) 등 실제로 다른 법이 적용됨 | 계산기별 정확한 준거 법령으로 교체(24개 파일) |
+| `privacy.html` HTML 주석에 내부 파일 경로·함수명 노출(공개 소스에서 그대로 보임) | 의존관계 정보를 `CLAUDE.md`로 이관, 주석은 참조 안내로 축소. 동일 패턴이던 `terms.html`도 함께 정리 |
+| `privacy.html` head 메타데이터가 board·install·calculators와 패턴 불일치(apple-touch-icon·완전한 og/twitter·JSON-LD 없음) | 동일 패턴으로 통일(`WebSite`+`BreadcrumbList`). `terms.html`도 일관성 있게 동일 적용 |
+| Plan 문서 markdown fenced block 2곳에 언어 식별자 없음(MD040) | `text` 지정 |
+
+**문서 정확성 수정(4건 — Plan/Analysis 자기보고 오류)**
+
+| 지적 | 조치 |
+|------|------|
+| §10 Next Steps가 이미 완료된 "첨부 버킷 비공개 전환"(§14.7)을 미완료로 표시 | 완료 처리하고 6번 항목에서 분리. 나머지(CLAUDE.md 계산기 수치 정정·관리자 대시보드·board_posts SQL화)는 실제로 미착수 상태임을 확인해 유지 |
+| §14.6이 파기 스크립트를 "적용 완료"로 단언 — 이후 v1.1·v1.2로 두 차례 재설계됐고 최신판 실제 적용 여부는 미확인 | "재적용 필요(운영 검증 대기)"로 낮추고, 완료로 표기하려면 확인해야 할 4개 항목(반환 건수·cron 실행 이력·큐 소진·주기 실행 구성)을 명시 |
+| §14.9가 정정 전 "30 URL"을 그대로 인용 | 31로 수정 |
+| `analysis.md` 최상단이 v1.0 판정(84%)만 보여줘 Re-Check(100%)를 못 보고 오해하기 쉬움 | 최신 판정을 최상단에 배치하고, 기존 §1~§6은 "baseline 기록"임을 명시 |
+
+**검증 후 스킵(2건 — 근거 명시)**
+
+| 지적 | 스킵 사유 |
+|------|-----------|
+| `index.html`의 `innerHTML` 대입을 `textContent`+DOM API로 교체(정적분석 경고) | CodeRabbit 스스로 "💤 Low value"로 표시했고 XSS 위험이 낮다고 인정(모든 동적 값이 `esc()` 이스케이프 + origin 검증 완료). 렌더러 전체를 DOM API로 재작성하는 리스크가 방어 이득보다 크다 |
+| Plan 문서 front matter `version: 1.2`와 `Version History`(0.1~0.5) 불일치 | 이 프로젝트의 모든 plan 문서가 `template: plan\nversion: 1.2`를 템플릿 스키마 버전으로 공유한다(`plan.template.md` 정의) — 문서 개정 이력과는 별개 필드다. 이 문서만 바꾸면 40여 개 다른 plan 문서와의 관례에서 벗어난다 |
+
+**범위 밖으로 분류(1건 — 별도 과제)**
+
+| 지적 | 사유 |
+|------|------|
+| `app/core/storage.py::upload_attachment`이 Storage 업로드 성공 후 `qa_attachments` INSERT 실패 시 고아 파일을 남길 수 있음(outbox 패턴 등 실패 원자성 보장 필요) | 유효한 지적이나 이번 PR이 새로 만든 문제가 아니라 **기존 코드의 사전 존재 아키텍처 이슈**다. 해결에는 pending-metadata outbox + 조정(reconciliation) 메커니즘이 필요해 SEO/PWA/법적고지 P0 범위를 크게 벗어난다. 별도 사이클로 이관 — 현재는 `purge_expired_data()`의 파기 큐 적재 로직이 `qa_attachments` 조인 기준이라 이런 고아 파일을 찾지 못한다는 점도 함께 기록해 둔다 |
+
 ## Version History
 
 | Version | Date | Changes | Author |
@@ -777,3 +819,4 @@ vercel.json                 # 신규 정적 파일·라우트 반영 (P0)
 | 0.3 | 2026-08-01 | 운영자 확정값(보호책임자·보유기간 1년·서울 리전·공지사항·한도 공개) 반영, `supabase_retention_purge.sql` 신설(§14.5) | DrunkenZealnut |
 | 0.4 | 2026-08-01 | 배포 전 잔여 3건 해소 — 첨부 버킷 비공개 전환(§14.7), 공지사항 배너 신설(§14.8), 파기 스크립트 적용 확인. 브라우저 렌더 검증 추가(§14.9) | DrunkenZealnut |
 | 0.5 | 2026-08-01 | Check(84%) → Act-1 갭 수정 → Re-Check. §14 stale 행 현행화, §16 Act-1 실행 기록 추가 | DrunkenZealnut |
+| 0.6 | 2026-08-01 | PR #29 CodeRabbit 리뷰 대응(§16.5) — purge 스크립트 anon→service_role 키 전환(가장 중요), 흐름도 25개 법령 오기·메타데이터 누락 수정, 죽은 라우트 정리, privacy/terms 내부정보 노출 제거, §10·§14.6·§14.9 stale 서술 정정 | DrunkenZealnut |

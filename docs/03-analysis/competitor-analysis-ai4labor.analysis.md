@@ -9,10 +9,15 @@ project: laborconsult
 
 # competitor-analysis-ai4labor Gap Analysis (P0 구현분)
 
-> **판정**: Match Rate **84%** — 90% 기준 미달. Critical 0건, **High 3 / Medium 4 / Low 9**.
-> 구현 자체는 견고하나 **문서(§14)가 주장한 것과 실제가 어긋나는 항목이 6건** 있고,
-> FR-A1·A2가 명시한 요구 중 **근거 기록 없이 사라진 항목이 2건**(BreadcrumbList·설치 안내)이다.
-> 이와 별개로 Check 단계에서 **모바일 실기기 결함 1건을 발견해 즉시 수정**했다(G-0).
+> **최신 판정(2026-08-01, Act-1 이후)**: Match Rate **100%** — 잔여 갭 0건. 상세는 **§7 Re-Check** 참조.
+>
+> 아래 §1~§6은 **v1.0 최초 판정(baseline) 기록**이다 — Match Rate **84%**(Critical 0 / High 3 / Medium 4 / Low 9),
+> 구현은 견고하나 문서(§14)가 주장한 것과 실제가 어긋나는 항목 6건, FR-A1·A2 요구 중 근거 기록 없이 사라진 항목 2건
+> (BreadcrumbList·설치 안내)을 확인했다. 이 기록은 **개선 이력 추적을 위해 그대로 보존**하며, 이후 Act-1에서
+> High 3건을 포함해 15/16건을 수정하고 Re-Check(88% 독립 검증) → 잔여 처리(100%)로 이어졌다. **최신 상태를 확인하려면
+> §7로 건너뛸 것.**
+>
+> Check 단계(v1.0 작성 시점)에서 **모바일 실기기 결함 1건을 발견해 즉시 수정**했다(G-0, 아래 §0).
 >
 > **기준 문서**: [competitor-analysis-ai4labor.plan.md](../01-plan/features/competitor-analysis-ai4labor.plan.md) v0.4
 > — Design 문서 없음. §8.2(FR-A1/A2/A3만) · §8.3 · §12.2 · §12.3 · §13.2 · §14를 사양으로 사용
@@ -374,3 +379,4 @@ Plan §12.3이 명시했으나 `api/index.py`의 정적 서빙은 5종뿐. **프
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 2.0 | 2026-08-01 | Act-1 이후 Re-Check 반영 — 88%(독립) → 99%(후속 수정 후 산정). Act-1 신규 결함 5건(N-1·N-3·N-4·N-5·부수) 기록 및 조치, 브라우저 실측 7항목, 방법론 회고 추가 | DrunkenZealnut |
+| 2.1 | 2026-08-01 | 최상단 판정 요약을 최신 결과(100%) 우선으로 재배치 — v1.0 baseline(84%)이 최종 결과로 오독되던 문제 해소(PR #29 CodeRabbit 리뷰). 상세 대응은 Plan §16.5 | DrunkenZealnut |

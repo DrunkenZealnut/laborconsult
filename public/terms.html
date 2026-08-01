@@ -1,22 +1,5 @@
 <!DOCTYPE html>
-<!--
-  이용약관 — 코드 실측(2026-08-01) 기반.
-
-  [운영자 확정 완료]
-    - 서비스 변경·중단 및 약관 변경 공지: 서비스 내 "공지사항"
-    - 이용 한도: 수치 공개 (제5조에 명시)
-
-  [제5조 수치의 출처 — 변경 시 함께 고쳐야 함]
-    app/core/abuse_guard.py:25-32
-      MAX_MESSAGE_LENGTH=2000 / CHAT_RATE_LIMIT=5 / CHAT_RATE_WINDOW=60
-      DAILY_CHAT_QUOTA=50 / ABUSE_BLOCK_MINUTES=30
-    모두 환경변수로 덮어쓸 수 있으므로, 운영값을 바꾸면 약관 문구도 함께 갱신할 것.
-
-  [공지 채널 — 제3조·제7조의 이행 수단]
-    메인 화면 상단 배너. 내용은 public/notice.json 이 원본이고 렌더러는
-    index.html 의 #notice-banner + initNotice() 다. 공지 문구를 바꿀 때는
-    notices[].id 도 함께 바꿔야 이미 닫은 사용자에게 다시 표시된다.
--->
+<!-- 이용약관. 코드와의 의존관계(제5조 한도 수치·공지 채널 구현)는 CLAUDE.md "Key Conventions"에 기록되어 있으니, 문구를 바꾸기 전에 그쪽을 먼저 확인할 것. -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -27,8 +10,41 @@
 <meta name="robots" content="index,follow">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#1B2A4A">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="기초 노동상담">
+<meta property="og:title" content="이용약관 — 기초 노동상담">
+<meta property="og:description" content="기초 노동상담 서비스의 이용 조건, 답변의 법적 성격, 금지 행위, 책임의 한계를 안내합니다.">
+<meta property="og:url" content="https://laborconsult.vercel.app/terms.html">
+<meta property="og:image" content="https://laborconsult.vercel.app/og-image.png">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="이용약관 — 기초 노동상담">
+<meta name="twitter:description" content="기초 노동상담 서비스의 이용 조건, 답변의 법적 성격, 금지 행위, 책임의 한계를 안내합니다.">
+<meta name="twitter:image" content="https://laborconsult.vercel.app/og-image.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://laborconsult.vercel.app/#website",
+      "url": "https://laborconsult.vercel.app/",
+      "name": "기초 노동상담",
+      "inLanguage": "ko-KR"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "홈", "item": "https://laborconsult.vercel.app/" },
+        { "@type": "ListItem", "position": 2, "name": "이용약관", "item": "https://laborconsult.vercel.app/terms.html" }
+      ]
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">

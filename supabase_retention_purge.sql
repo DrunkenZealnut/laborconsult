@@ -89,13 +89,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION storage_purge_claim(INT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION storage_purge_mark(BIGINT, BOOLEAN, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION storage_purge_claim(INT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION storage_purge_mark(BIGINT, BOOLEAN, TEXT) TO anon, authenticated;
--- ※ 앱의 Supabase 키는 서버(FastAPI)에만 있고 브라우저로 나가지 않는다(app/config.py:78).
---   그래서 anon 실행 권한을 줘도 외부 노출 경로가 생기지 않는다. 두 함수 모두
---   임의 파일을 지정할 수 없고 큐에 이미 적재된 항목만 다룬다.
+-- anon/authenticated 에게는 실행 권한을 주지 않는다. purge_storage_orphans.py는
+-- service_role 키로 호출하므로(anon은 storage.objects DELETE 정책이 없어 파일을
+-- 못 지운다 — 상단 §0 안내 참조) 이 RPC들에 별도 권한이 필요 없다. service_role은
+-- 항상 모든 권한을 가지므로 REVOKE 대상이 아니다. 열어 두면 anon이 큐를 읽거나
+-- storage_purge_mark로 상태를 조작할 수 있는 불필요한 공격 표면이 된다.
+REVOKE ALL ON FUNCTION storage_purge_claim(INT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION storage_purge_mark(BIGINT, BOOLEAN, TEXT) FROM PUBLIC, anon, authenticated;
 
 
 -- ═══ §1. 파기 함수 ═══════════════════════════════════════════════════════════
@@ -289,6 +289,12 @@ ORDER BY start_time DESC LIMIT 10;
 
 
 -- ═══ §5. 스토리지 큐 현황 ════════════════════════════════════════════════════
+--
+-- ⚠️ "실패포기"(attempts >= 5) 항목은 storage_purge_claim이 더 이상 반환하지
+--    않으므로 영원히 재시도되지 않고 조용히 남는다. 이 값이 0보다 크면 개인정보
+--    처리방침 제5항의 파기 약속이 그 항목에 한해 지켜지지 않는 상태다. 정기
+--    실행(예: purge_storage_orphans.py 실행 직후)마다 이 쿼리를 함께 확인하거나,
+--    0보다 클 때 알리는 별도 모니터링을 운영 절차에 둘 것.
 /*
 SELECT
     count(*) FILTER (WHERE deleted_at IS NULL AND attempts < 5) AS 대기,
