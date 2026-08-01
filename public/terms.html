@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<!--
+  이용약관 — 코드 실측(2026-08-01) 기반.
+
+  [운영자 확정 완료]
+    - 서비스 변경·중단 및 약관 변경 공지: 서비스 내 "공지사항"
+    - 이용 한도: 수치 공개 (제5조에 명시)
+
+  [제5조 수치의 출처 — 변경 시 함께 고쳐야 함]
+    app/core/abuse_guard.py:25-32
+      MAX_MESSAGE_LENGTH=2000 / CHAT_RATE_LIMIT=5 / CHAT_RATE_WINDOW=60
+      DAILY_CHAT_QUOTA=50 / ABUSE_BLOCK_MINUTES=30
+    모두 환경변수로 덮어쓸 수 있으므로, 운영값을 바꾸면 약관 문구도 함께 갱신할 것.
+
+  [공지 채널 — 제3조·제7조의 이행 수단]
+    메인 화면 상단 배너. 내용은 public/notice.json 이 원본이고 렌더러는
+    index.html 의 #notice-banner + initNotice() 다. 공지 문구를 바꿀 때는
+    notices[].id 도 함께 바꿔야 이미 닫은 사용자에게 다시 표시된다.
+-->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>이용약관 — 기초 노동상담</title>
+<meta name="description" content="기초 노동상담 서비스의 이용 조건, 답변의 법적 성격, 금지 행위, 책임의 한계를 안내합니다.">
+<link rel="canonical" href="https://laborconsult.vercel.app/terms.html">
+<meta name="robots" content="index,follow">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
+<style>
+  :root {
+    --navy:#1B2A4A; --copper:#C08050; --cream:#F7F5F2;
+    --text:#2A2A2A; --muted:#6B6B6B; --border:#E3DED7;
+    --font-body:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    --font-title:'Noto Serif KR',serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:var(--font-body);background:var(--cream);color:var(--text);
+       max-width:800px;margin:0 auto;padding:0 20px 80px;line-height:1.75;
+       -webkit-font-smoothing:antialiased}
+  header{padding:36px 0 24px;border-bottom:2px solid var(--navy);margin-bottom:32px}
+  .home{display:inline-block;font-size:13px;color:var(--copper);text-decoration:none;font-weight:600;margin-bottom:14px}
+  .home:hover{text-decoration:underline}
+  h1{font-family:var(--font-title);font-size:28px;font-weight:900;color:var(--navy);letter-spacing:-0.5px}
+  .meta{margin-top:10px;font-size:13px;color:var(--muted)}
+  h2{font-family:var(--font-title);font-size:18px;font-weight:700;color:var(--navy);
+     margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  p,li{font-size:15px;color:var(--text)}
+  ul,ol{margin:10px 0 10px 20px}
+  li{margin-bottom:6px}
+  table{width:100%;border-collapse:collapse;margin:12px 0 16px;font-size:14px;display:block;overflow-x:auto}
+  th,td{border:1px solid var(--border);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#EFEAE3;font-weight:700;color:var(--navy);white-space:nowrap}
+  .callout{background:#FFF8F0;border-left:3px solid var(--copper);padding:14px 16px;margin:18px 0;font-size:14px;border-radius:0 6px 6px 0}
+  .callout strong{color:var(--navy)}
+  footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)}
+  footer a{color:var(--copper)}
+  @media (max-width:600px){body{padding:0 16px 60px}h1{font-size:23px}h2{font-size:16px}p,li{font-size:14px}}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="home" href="/">← 기초 노동상담으로 돌아가기</a>
+  <h1>이용약관</h1>
+  <div class="meta">시행일 2026년 8월 1일 · 청년노동자인권센터</div>
+</header>
+
+<h2>제1조 (목적)</h2>
+<p>이 약관은 청년노동자인권센터(이하 “센터”)가 제공하는 <strong>기초 노동상담</strong>(이하 “서비스”)의 이용 조건과 절차, 센터와 이용자의 권리·의무를 정하는 것을 목적으로 합니다.</p>
+
+<h2>제2조 (서비스의 성격)</h2>
+<ol>
+  <li>서비스는 근로기준법 등 노동 관계 법령과 판례·행정해석 자료를 바탕으로 인공지능이 생성한 <strong>일반적인 정보</strong>를 무료로 제공합니다.</li>
+  <li>서비스는 회원가입 없이 익명으로 이용할 수 있습니다.</li>
+  <li>서비스가 제공하는 임금 계산 결과는 이용자가 입력한 값에 근거한 <strong>추정치</strong>이며, 실제 지급액은 근로계약·취업규칙·단체협약과 개별 사실관계에 따라 달라질 수 있습니다.</li>
+</ol>
+
+<div class="callout">
+  <strong>중요.</strong> 서비스의 답변은 법률자문이 아니며 법적 효력이 없습니다. 센터와 이용자 사이에
+  변호사·공인노무사의 위임 관계가 성립하지 않습니다. 실제 진정·구제신청·소송 등 법적 절차를 진행하실 때에는
+  반드시 공인노무사 또는 변호사와 상담하시기 바랍니다.
+</div>
+
+<h2>제3조 (약관의 효력과 변경)</h2>
+<ol>
+  <li>이 약관은 서비스 화면에 게시함으로써 효력이 발생합니다.</li>
+  <li>센터는 필요한 경우 관련 법령을 위반하지 않는 범위에서 약관을 변경할 수 있으며, 변경 시 시행일과 변경 내용을 서비스 내 <strong>공지사항</strong>에 게시합니다.</li>
+  <li>이용자가 변경된 약관에 동의하지 않는 경우 서비스 이용을 중단할 수 있습니다.</li>
+</ol>
+
+<h2>제4조 (이용자의 의무)</h2>
+<p>이용자는 다음 각 호의 행위를 하여서는 안 됩니다.</p>
+<ul>
+  <li>타인의 개인정보를 무단으로 입력하거나 공개하는 행위</li>
+  <li>허위 사실, 명예훼손, 모욕, 차별·혐오 표현을 게시하는 행위</li>
+  <li>자동화 도구를 이용해 비정상적으로 대량의 요청을 발생시키는 행위</li>
+  <li>서비스의 지시문을 조작하거나 우회하여 본래 목적과 다른 용도로 사용하려는 행위</li>
+  <li>노동법 상담 목적과 무관한 용도로 서비스를 반복 이용하는 행위</li>
+  <li>서비스의 정상적인 운영을 방해하거나 시스템에 부하를 유발하는 행위</li>
+</ul>
+
+<h2>제5조 (이용의 제한)</h2>
+<ol>
+  <li>센터는 서비스의 안정적 운영과 비용 관리를 위해 동일 접속 경로에 대해 아래와 같이 이용을 제한합니다.
+    <table>
+      <tr><th>구분</th><th>기준</th></tr>
+      <tr><td>질문 1건의 길이</td><td>최대 2,000자</td></tr>
+      <tr><td>짧은 시간 내 요청</td><td>60초당 5회</td></tr>
+      <tr><td>하루 이용 횟수</td><td>50회</td></tr>
+      <tr><td>위반 누적 시 차단</td><td>30분간 이용 제한</td></tr>
+    </table>
+  </li>
+  <li>위 기준은 서비스 운영 상황에 따라 조정될 수 있으며, 변경 시 이 약관을 갱신합니다.</li>
+  <li>제4조를 위반한 것으로 판단되는 경우 센터는 사전 통지 없이 해당 접속에 대한 이용을 일시적으로 제한할 수 있습니다.</li>
+  <li>이용 제한에 이의가 있는 경우 제9조의 연락처로 문의할 수 있습니다.</li>
+</ol>
+
+<h2>제6조 (게시물의 관리)</h2>
+<ol>
+  <li>이용자가 질문게시판에 작성한 게시물의 저작권은 작성자에게 있습니다.</li>
+  <li>센터는 서비스 운영과 상담 사례 제공을 위해 게시물을 서비스 내에 표시·검색할 수 있습니다.</li>
+  <li>인공지능 상담 내용은 개인정보 자동 비식별화를 거쳐 질문게시판에 공개될 수 있습니다. 공개를 원하지 않으시면 제9조의 연락처로 삭제를 요청해 주십시오.</li>
+  <li>제4조를 위반한 게시물은 사전 통지 없이 삭제될 수 있습니다.</li>
+  <li>작성자는 작성 시 설정한 비밀번호로 본인 게시물을 직접 삭제할 수 있습니다.</li>
+</ol>
+
+<h2>제7조 (서비스의 변경과 중단)</h2>
+<ol>
+  <li>센터는 서비스의 내용을 변경하거나 제공을 중단할 수 있으며, 이 경우 변경·중단 사유와 일자를 서비스 내 <strong>공지사항</strong>에 미리 게시합니다.</li>
+  <li>시스템 점검, 외부 인공지능·검색 서비스의 장애, 천재지변 등 부득이한 사유가 있는 경우 서비스가 일시 중단될 수 있으며, 이 경우 사후에 공지사항으로 알립니다.</li>
+</ol>
+
+<h2>제8조 (책임의 한계)</h2>
+<ol>
+  <li>서비스는 무료로 제공되며, 센터는 답변의 정확성·완전성·최신성을 보증하지 않습니다.</li>
+  <li>인공지능의 특성상 사실과 다른 내용이 포함될 수 있습니다. 법령·판례는 개정·변경될 수 있으므로 이용자는 답변에 표시된 근거를 직접 확인하시기 바랍니다.</li>
+  <li>이용자가 서비스의 답변이나 계산 결과에만 의존하여 내린 판단과 그 결과에 대해 센터는 책임을 지지 않습니다.</li>
+  <li>센터는 제7조 제2항의 사유로 인한 서비스 중단에 대하여 책임을 지지 않습니다.</li>
+</ol>
+
+<h2>제9조 (문의 및 분쟁의 해결)</h2>
+<ol>
+  <li>서비스에 관한 문의는 <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a>로 접수합니다.</li>
+  <li>센터와 이용자 사이에 분쟁이 발생한 경우 상호 협의하여 해결하는 것을 원칙으로 하며, 협의가 이루어지지 않는 경우 관계 법령과 상관례에 따릅니다.</li>
+</ol>
+
+<footer>
+  <p><a href="/">기초 노동상담</a> · <a href="/privacy.html">개인정보처리방침</a></p>
+  <p style="margin-top:6px">청년노동자인권센터 · 서울시 종로구 성균관로12 5층 · admin@younglabor.kr</p>
+</footer>
+
+</body>
+</html>

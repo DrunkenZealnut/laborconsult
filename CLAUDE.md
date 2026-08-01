@@ -61,6 +61,14 @@ python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json.gz
 # NLRC 판정사례 번들 갱신 (odcloud API 키 필요, 주기 실행 후 커밋)
 python3 refresh_nlrc_cases.py     # odcloud → data/nlrc_cases.json
 
+# 보유기간 경과 첨부파일 파기 (개인정보처리방침 제5항 — 주기 실행 필요)
+# Supabase가 storage.objects 직접 DELETE를 차단하므로 2단계 구조다:
+#   ① pg_cron이 purge_expired_data()로 DB 행 삭제 + 파일 경로를 storage_purge_queue에 적재
+#   ② 이 스크립트가 Storage API로 실제 파일 삭제
+# 둘 다 돌아야 방침이 이행된다. 스키마·함수는 supabase_retention_purge.sql
+python3 purge_storage_orphans.py            # 큐 비우기
+python3 purge_storage_orphans.py --dry-run  # 대상만 확인
+
 # Environment check
 python3 check_env.py              # Validate all API keys configured
 ```
@@ -276,7 +284,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 ## Deployment
 
 - **Vercel**: `api/index.py` (FastAPI, `@vercel/python`) + `public/**` (static). Auto-deploy on push to main. Config in `vercel.json`.
-- **GitHub Pages**: `public/**` deployed via `.github/workflows/pages.yml` when changed.
+- **GitHub Pages 미러는 폐기됨**(2026-08-01). `.github/workflows/pages.yml` 삭제. 서브패스 서빙이라 `/manifest.webmanifest`·`/sw.js`·`/pwa.js`·`/icons/*` 등 루트 절대경로 자산이 전부 404였다. **배포처는 Vercel 단일.** `public/*.html`의 `location.hostname.includes('github.io')` 분기는 무해한 폴백으로 남아 있다(비-Vercel 호스트에서 열 때 API를 프로덕션으로 향하게 함).
 - All `app/core/*.py` files imported by `pipeline.py` **must** be committed to git — untracked files cause Vercel import errors (500).
 
 ## Key Conventions

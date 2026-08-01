@@ -3,7 +3,84 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>기초 노동상담</title>
+<title>기초 노동상담 — 노동법 AI 상담·임금계산</title>
+<meta name="description" content="임금체불·퇴직금·부당해고·연차·4대보험까지, 근로기준법과 판례·행정해석을 근거로 답하는 무료 AI 노동상담. 28종 임금 계산 엔진과 출처 표시·인용 검증을 제공합니다.">
+<meta name="keywords" content="노동상담,노동법,AI 노동상담,임금체불,퇴직금 계산,주휴수당,연차수당,부당해고,직장 내 괴롭힘,실업급여,4대보험,통상임금,평균임금,근로기준법">
+<link rel="canonical" href="https://laborconsult.vercel.app/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+
+<!-- ── PWA / 아이콘 ── -->
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1B2A4A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="노동상담">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<!-- ── 공유 카드 ── -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="기초 노동상담">
+<meta property="og:title" content="기초 노동상담 — 노동법 AI 상담·임금계산">
+<meta property="og:description" content="근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담. 28종 임금 계산 엔진과 출처 표시·인용 검증을 제공합니다.">
+<meta property="og:url" content="https://laborconsult.vercel.app/">
+<meta property="og:image" content="https://laborconsult.vercel.app/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="기초 노동상담 — 노동법 AI 상담·임금계산">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="기초 노동상담 — 노동법 AI 상담·임금계산">
+<meta name="twitter:description" content="근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담. 28종 임금 계산 엔진 제공.">
+<meta name="twitter:image" content="https://laborconsult.vercel.app/og-image.png">
+
+<!-- ── 구조화 데이터 ──
+     FAQPage는 의도적으로 넣지 않는다: FAQ_DATA는 질문 프롬프트만 있고 답변이 페이지에
+     노출되지 않아 구조화 데이터 정책(답변 가시성) 위반이 된다. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://laborconsult.vercel.app/#website",
+      "url": "https://laborconsult.vercel.app/",
+      "name": "기초 노동상담",
+      "description": "근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담과 임금 계산 서비스",
+      "inLanguage": "ko-KR",
+      "publisher": { "@id": "https://laborconsult.vercel.app/#org" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://laborconsult.vercel.app/#org",
+      "name": "청년노동자인권센터",
+      "url": "https://laborconsult.vercel.app/",
+      "email": "admin@younglabor.kr",
+      "logo": "https://laborconsult.vercel.app/icons/icon-512.png",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "종로구 성균관로12 5층",
+        "addressLocality": "서울시",
+        "addressCountry": "KR"
+      }
+    },
+    {
+      "@type": "WebApplication",
+      "@id": "https://laborconsult.vercel.app/#app",
+      "name": "기초 노동상담",
+      "url": "https://laborconsult.vercel.app/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "All",
+      "inLanguage": "ko-KR",
+      "isPartOf": { "@id": "https://laborconsult.vercel.app/#website" },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" }
+    }
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -440,6 +517,38 @@
     .msg.assistant ul, .msg.assistant ol { margin-left: 18px; }
     .msg.assistant li > ul { margin-left: 14px; }
   }
+
+  /* ── 공지사항 배너 ── */
+  #notice-banner {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin: 0 16px 4px; padding: 11px 14px;
+    border-radius: var(--radius-sm); border: 1px solid var(--copper-light);
+    background: #FFF8F0; font-size: 13.5px; line-height: 1.6; color: var(--text);
+  }
+  #notice-banner[hidden] { display: none; }
+  #notice-banner.level-warn { border-color: #E0A0A0; background: #FFF4F4; }
+  #notice-banner .notice-icon { flex-shrink: 0; font-size: 14px; line-height: 1.6; }
+  #notice-banner .notice-body { flex: 1; min-width: 0; }
+  #notice-banner .notice-link {
+    display: inline-block; margin-left: 6px; color: var(--copper);
+    font-weight: 600; text-decoration: underline; white-space: nowrap;
+  }
+  #notice-banner .notice-close {
+    flex-shrink: 0; background: none; border: none; cursor: pointer;
+    color: var(--text-secondary); font-size: 18px; line-height: 1;
+    padding: 0 2px; min-width: 24px; min-height: 24px;
+  }
+  #notice-banner .notice-close:hover { color: var(--navy); }
+  /* #site-header는 position:fixed(z-index 200)로 화면 우상단에 떠 있다. 뷰포트가 좁아지면
+     배너 오른쪽이 그 아래로 들어가 닫기 버튼이 눌리지 않으므로 우측 여백을 비워 둔다.
+     기준: 헤더 44px + right 16px + 간격 → 56px. */
+  @media (max-width: 900px) {
+    #notice-banner { padding-right: 56px; }
+  }
+  @media (max-width: 600px) {
+    #notice-banner { margin: 0 12px 4px; font-size: 13px; padding: 10px 56px 10px 12px; }
+    #notice-banner .notice-link { display: block; margin-left: 0; margin-top: 4px; }
+  }
 </style>
 </head>
 <body>
@@ -494,6 +603,10 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       최근 질문
     </button>
+    <button class="menu-item" data-pwa-install onclick="promptInstall(); closeMenu()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      홈 화면에 추가
+    </button>
   </div>
   <div class="menu-divider"></div>
   <div class="menu-section">
@@ -508,6 +621,11 @@
     </button>
   </div>
 </nav>
+
+<!-- ═══ 공지사항 배너 ═══
+     내용은 /notice.json 에서 읽는다. 파일이 없거나 표시 기간이 아니면 아무것도 그리지 않는다.
+     약관 제3·7조와 개인정보처리방침 제9항이 약속한 "서비스 내 공지사항"의 표시 위치. -->
+<div id="notice-banner" role="status" hidden></div>
 
 <!-- ═══ LANDING (Google-style) ═══ -->
 <div id="landing">
@@ -570,7 +688,7 @@
   <div class="footer-inner">
     <div class="footer-title">청년노동자인권센터</div>
     <div class="footer-info">서울시 종로구 성균관로12 5층 · <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a></div>
-    <div class="footer-links"><a href="#">개인정보처리방침</a> <a href="#">이용약관</a></div>
+    <div class="footer-links"><a href="/privacy.html">개인정보처리방침</a> <a href="/terms.html">이용약관</a> <a href="/install.html">앱 설치</a></div>
   </div>
 </footer>
 
@@ -1773,5 +1891,73 @@ initFAQ();
   }
 })();
 </script>
+
+<script>
+// ── 공지사항 배너 ────────────────────────────────────────────────────────────
+// /notice.json 을 읽어 표시 기간에 해당하는 첫 공지 하나를 띄운다.
+// 파일이 없거나 파싱에 실패하면 조용히 건너뛴다(상담 기능에 영향 없음).
+(function initNotice() {
+  const KEY = 'dismissedNotices';
+  const el = document.getElementById('notice-banner');
+  if (!el) return;
+
+  const dismissed = () => {
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; }
+  };
+  const inPeriod = (n, today) =>
+    (!n.startsAt || n.startsAt <= today) && (!n.endsAt || n.endsAt >= today);
+
+  fetch('/notice.json', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => {
+      const list = data && Array.isArray(data.notices) ? data.notices : [];
+      const today = new Date().toISOString().slice(0, 10);
+      const seen = dismissed();
+      const n = list.find(x => x && x.id && x.message && inPeriod(x, today) && !seen.includes(x.id));
+      if (!n) return;
+
+      const esc = s => String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+      const icon = n.level === 'warn' ? '⚠️' : '📢';
+      let html = `<span class="notice-icon" aria-hidden="true">${icon}</span>`
+               + `<span class="notice-body">${esc(n.message)}`;
+      // 링크는 사이트 내부 경로만 허용 — notice.json이 오염돼도 외부로 유도되지 않게.
+      // 정규식(`/^\/[^/]/`)으로는 부족하다: `/\evil.com` 은 통과하는데 브라우저의
+      // URL 파서가 특수 스킴에서 백슬래시를 슬래시로 정규화해 https://evil.com 이 된다.
+      // 실제 파서로 해석한 origin을 비교해야 한다.
+      let safeLink = null;
+      if (n.linkUrl) {
+        try {
+          const u = new URL(n.linkUrl, location.origin);
+          if (u.origin === location.origin) safeLink = u.pathname + u.search + u.hash;
+        } catch { /* 해석 불가 → 링크 생략 */ }
+      }
+      if (safeLink) {
+        html += `<a class="notice-link" href="${esc(safeLink)}">${esc(n.linkText || '자세히 보기')}</a>`;
+      }
+      html += '</span>';
+      if (n.dismissible !== false) {
+        html += '<button type="button" class="notice-close" aria-label="공지 닫기">&times;</button>';
+      }
+
+      el.className = 'level-' + (n.level === 'warn' ? 'warn' : 'info');
+      el.innerHTML = html;
+      el.hidden = false;
+
+      const closeBtn = el.querySelector('.notice-close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          el.hidden = true;
+          try { localStorage.setItem(KEY, JSON.stringify([...seen, n.id].slice(-20))); } catch {}
+        });
+      }
+    })
+    .catch(() => {});
+})();
+
+// PWA 등록·설치 프롬프트는 /pwa.js 로 분리했다 — board·calculators 도 같은 파일을 쓴다.
+</script>
+<script src="/pwa.js"></script>
 </body>
 </html>

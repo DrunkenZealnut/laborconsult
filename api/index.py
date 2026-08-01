@@ -615,8 +615,10 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
         .execute()
     )
 
-    # 첨부 URL은 요청 시점에 만료형 signed URL로 발급 (1시간) — 버킷을 비공개로
-    # 전환해도 관리자 조회가 동작하도록. 발급 실패 시 기존 public_url 폴백.
+    # 버킷은 비공개다(supabase_attachments_private.sql). 첨부 열람은 이 시점에
+    # 발급하는 1시간 만료 signed URL이 유일한 경로이며, 저장된 public_url은 항상
+    # NULL이다(storage.py::upload_attachment). 발급이 실패하면 URL 없이 내려가고
+    # admin.html이 "링크 발급 실패"로 표시한다.
     # 응답 키는 admin.html 호환을 위해 public_url 유지.
     att_rows = []
     for att in (attachments.data or []):
@@ -1118,6 +1120,28 @@ def serve_admin():
 @app.get("/calculators.html")
 def serve_calculators():
     html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "calculators.html")
+    return FileResponse(html_path, media_type="text/html")
+
+
+@app.get("/board")
+@app.get("/terms")
+@app.get("/privacy")
+@app.get("/install")
+def serve_static_page(request: Request):
+    """정적 페이지의 확장자 없는 경로.
+
+    프로덕션은 vercel.json 라우트가 먼저 처리하므로 이 핸들러까지 오지 않는다.
+    로컬 `uvicorn api.index:app` 개발·검증 시 프로덕션과 같은 URL로 열기 위한 것.
+    라우트 목록을 늘릴 때는 vercel.json 과 반드시 함께 고칠 것.
+    """
+    name = request.url.path.strip("/")
+    if name not in {"board", "terms", "privacy", "install"}:
+        raise HTTPException(status_code=404, detail="Not Found")
+    html_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "public", f"{name}.html"
+    )
+    if not os.path.isfile(html_path):
+        raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(html_path, media_type="text/html")
 
 
