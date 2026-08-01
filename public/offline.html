@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>오프라인 — 기초 노동상담</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#1B2A4A">
+<style>
+  :root { --navy:#1B2A4A; --copper:#C08050; --cream:#F7F5F2; --text:#2A2A2A; --muted:#6B6B6B; }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    background:var(--cream); color:var(--text); min-height:100dvh;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px; line-height:1.7;
+  }
+  .mark { width:72px; height:72px; margin-bottom:24px }
+  h1 { font-size:22px; font-weight:800; color:var(--navy); margin-bottom:10px }
+  p { font-size:15px; color:var(--muted); max-width:380px }
+  .actions { margin-top:26px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center }
+  a, button {
+    font-weight:600; font-size:14px; line-height:1; font-family:inherit; padding:11px 20px; border-radius:999px; cursor:pointer;
+    text-decoration:none; border:1px solid var(--navy); background:var(--navy); color:var(--cream);
+  }
+  a.secondary { background:transparent; color:var(--navy) }
+</style>
+</head>
+<body>
+  <img class="mark" src="/favicon.svg" alt="" aria-hidden="true">
+  <h1>지금은 연결이 끊겨 있습니다</h1>
+  <p>이 화면은 저장된 사본으로 열렸습니다. AI 상담과 검색은 인터넷 연결이 필요합니다. 연결을 확인한 뒤 다시 시도해 주세요.</p>
+  <div class="actions">
+    <button type="button" onclick="location.reload()">다시 시도</button>
+    <a class="secondary" href="/">첫 화면으로</a>
+  </div>
+</body>
+</html>

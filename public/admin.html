@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
 <title>AI 노동상담 관리자</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
@@ -386,8 +387,14 @@ async function openDetail(id) {
       const size = att.file_size > 1024*1024
         ? (att.file_size / 1024 / 1024).toFixed(1) + 'MB'
         : (att.file_size / 1024).toFixed(0) + 'KB';
+      // 버킷이 비공개라 URL은 조회 시점에 발급된 1시간 만료 signed URL이다.
+      // 발급 실패 시 null로 내려오므로 링크 대신 안내 문구를 보여준다.
+      const label = escapeHtml(att.filename);
+      const link = att.public_url
+        ? `<a href="${escapeHtml(att.public_url)}" target="_blank" rel="noopener">${label}</a>`
+        : `<span>${label}</span> <span class="file-size">— 링크 발급 실패</span>`;
       html += `<div class="attachment-item">
-        <a href="${att.public_url}" target="_blank">${escapeHtml(att.filename)}</a>
+        ${link}
         <span class="file-size">(${size})</span>
       </div>`;
     }
