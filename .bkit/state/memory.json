@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 7,
+  "sessionCount": 11,
   "lastSession": {
-    "startedAt": "2026-07-15T05:23:52.190Z",
+    "startedAt": "2026-08-02T04:40:52.986Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -36,5 +36,13 @@
     "startedAt": "2026-07-15T00:00:00Z",
     "archivedAt": "2026-07-16T00:00:00Z",
     "archivedTo": "docs/archive/2026-07/answer-ui-readability/"
+  },
+  "answer-renderer-test-harness": {
+    "phase": "archived",
+    "matchRate": 100,
+    "iterationCount": 0,
+    "startedAt": "2026-07-16T00:00:00Z",
+    "archivedAt": "2026-08-02T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/answer-renderer-test-harness/"
   }
 }
