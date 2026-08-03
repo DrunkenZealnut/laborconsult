@@ -191,6 +191,8 @@ def analyze_intent(
                 consultation_topic=inp.get("consultation_topic"),
                 precedent_keywords=inp.get("precedent_keywords", []),
                 worker_group=inp.get("worker_group"),
+                # 필드 누락 시 True — 스코프 게이트 fail-open (chatbot-security FR-05)
+                is_labor_related=inp.get("is_labor_related", True),
             )
 
     return AnalysisResult(question_summary=question)

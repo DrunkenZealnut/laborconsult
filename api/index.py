@@ -31,6 +31,8 @@ from app.core.storage import restore_session_data
 from app.core.pipeline import process_question
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
 from app.anonymize import anonymize as _anonymize
+from app.core import abuse_guard
+from app.core.abuse_guard import GuardContext, GuardRejection
 
 app = FastAPI(title="AI 노동상담 챗봇")
 
@@ -106,16 +108,116 @@ def health():
     return {"status": "ok"}
 
 
+# ── 챗봇 남용 가드 (chatbot-security) ────────────────────────────────────────
+
+_chat_rate: dict[str, list[float]] = {}   # 채팅 전용 버킷 (게시판·이메일과 분리)
+
+
+def _client_ip(request: Request) -> str:
+    """ProxyFix 없이 Vercel 프록시 뒤의 실 IP 추출 (기존 관례와 동일)."""
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if not ip:
+        ip = request.client.host if request.client else "unknown"
+    return ip
+
+
+def _guard_chat_request(
+    request: Request, message: str, session_id: str | None,
+) -> tuple[str, str | None, GuardContext]:
+    """채팅 3경로 공통 사전 검사 (Design §5.0).
+
+    반환: (정제된 message, 검증된 session_id|None, GuardContext)
+    거절 시 GuardRejection을 raise — 호출부가 HTTP 상태/SSE error로 변환한다.
+
+    반드시 get_or_create_session()·첨부 파싱보다 먼저 호출해야 한다:
+    session_id 형식 검증이 세션 생성 이전이어야 의미가 있고, 차단 대상이
+    base64 디코드·파일 파싱 비용을 지불하지 않도록 하기 위함이다.
+    """
+    client_ip = _client_ip(request)
+    subject_key = abuse_guard.subject_key_for(client_ip)
+
+    # Supabase 핸들 확보 (장애 시 None → 이벤트·쿼터 생략, fail-open)
+    sb = None
+    try:
+        sb = get_config().supabase
+    except Exception as e:
+        logging.warning("가드: config 로드 실패 (쿼터 생략): %s", e)
+
+    # 1. 입력 검증 (FR-01)
+    ok, cleaned, valid_sid, err = abuse_guard.validate_message(message, session_id)
+    if not ok:
+        # 길이 위반은 자동 차단 카운트 대상(FR-11)이라 반드시 기록한다
+        abuse_guard.record_violation(
+            sb, subject_key, "length", "",
+            f"len={len(message) if isinstance(message, str) else 0}", "block",
+        )
+        raise GuardRejection(400, err or abuse_guard.MSG_EMPTY)
+
+    # 2. Rate limit (FR-02) — 인메모리, Vercel 인스턴스별 베스트에포트
+    if not _check_rate_limit(
+        client_ip,
+        max_count=abuse_guard.CHAT_RATE_LIMIT,
+        window=abuse_guard.CHAT_RATE_WINDOW,
+        store=_chat_rate,
+    ):
+        # 의도적으로 DB 기록하지 않는다 — 이미 인메모리로 차단된 요청마다
+        # INSERT하면 요청 폭주가 그대로 DB 쓰기 증폭이 된다. 자동 차단 카운트
+        # 대상도 아니므로(RPC는 injection|quota|length만 집계) 로그로 충분하다.
+        logging.info("채팅 rate limit 초과: %s", subject_key)
+        raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED)
+
+    # 3. 차단 목록 + 일일 쿼터 (FR-03/11) — Supabase RPC 1왕복, 장애 시 fail-open
+    check = abuse_guard.check_guard(sb, subject_key)
+    if not check.allowed:
+        if check.reason == "blocked":
+            raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED, check.retry_after)
+        abuse_guard.record_violation(
+            sb, subject_key, "quota", valid_sid or "", f"count={check.count}", "block",
+        )
+        raise GuardRejection(429, abuse_guard.MSG_QUOTA_EXCEEDED)
+
+    ctx = GuardContext(
+        subject_key=subject_key,
+        session_id=valid_sid or "",
+        injection_mode=abuse_guard.get_injection_mode(),
+        scope_mode=abuse_guard.get_scope_mode(),
+    )
+    return cleaned, valid_sid, ctx
+
+
+def _sse_error(detail: str) -> StreamingResponse:
+    """가드 거절을 SSE error 이벤트로 반환 (기존 초기화 실패 패턴과 동일).
+
+    'detail'을 기본 인자로 바인딩 — 지연 실행되는 제너레이터가 지역변수를
+    참조하면 NameError가 나는 기존 관례를 따른다.
+    """
+    def error_gen(msg=detail):
+        yield f"data: {json.dumps({'type': 'error', 'text': msg}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        error_gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, request: Request):
     """동기 응답 — 전체 답변 한 번에 반환"""
+    try:
+        message, session_id, guard_ctx = _guard_chat_request(
+            request, req.message, req.session_id,
+        )
+    except GuardRejection as e:
+        headers = {"Retry-After": str(e.retry_after)} if e.retry_after else None
+        raise HTTPException(e.status, e.detail, headers=headers)
+
     config = get_config()
-    session, _ = get_or_create_session(req.session_id, _restore_fn)
+    session, _ = get_or_create_session(session_id, _restore_fn)
 
     full_text = ""
     calc_result = None
 
-    for event in process_question(req.message, session, config):
+    for event in process_question(message, session, config, guard_ctx=guard_ctx):
         if event["type"] == "meta":
             calc_result = event.get("calc_result")
         elif event["type"] == "chunk":
@@ -129,8 +231,13 @@ def chat(req: ChatRequest):
 
 
 @app.get("/api/chat/stream")
-def chat_stream(message: str, session_id: str | None = None):
+def chat_stream(request: Request, message: str, session_id: str | None = None):
     """SSE 스트리밍 응답 (텍스트 전용, 하위 호환)"""
+    try:
+        message, session_id, guard_ctx = _guard_chat_request(request, message, session_id)
+    except GuardRejection as e:
+        return _sse_error(e.detail)
+
     try:
         config = get_config()
         session, _ = get_or_create_session(session_id, _restore_fn)
@@ -149,7 +256,7 @@ def chat_stream(message: str, session_id: str | None = None):
     def event_generator():
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
         try:
-            for event in process_question(message, session, config):
+            for event in process_question(message, session, config, guard_ctx=guard_ctx):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패: %s\n%s", e, traceback.format_exc())
@@ -168,11 +275,20 @@ def chat_stream(message: str, session_id: str | None = None):
 
 
 @app.post("/api/chat/stream")
-def chat_stream_with_files(req: ChatWithFilesRequest):
+def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
     """SSE 스트리밍 응답 — 파일 첨부 지원"""
+    # 가드를 첨부 파싱(base64 디코드·파일 파싱)보다 먼저 수행 — 차단 대상이
+    # 파싱 비용을 지불하지 않도록(저비용→고비용 원칙, Design §2.2)
+    try:
+        message, session_id, guard_ctx = _guard_chat_request(
+            request, req.message, req.session_id,
+        )
+    except GuardRejection as e:
+        return _sse_error(e.detail)
+
     try:
         config = get_config()
-        session, _ = get_or_create_session(req.session_id, _restore_fn)
+        session, _ = get_or_create_session(session_id, _restore_fn)
     except Exception as e:
         logging.error("SSE(POST) 초기화 실패: %s\n%s", e, traceback.format_exc())
         err_text = "서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요."
@@ -213,8 +329,9 @@ def chat_stream_with_files(req: ChatWithFilesRequest):
             return
 
         try:
-            for event in process_question(req.message, session, config,
-                                           attachments=parsed_attachments):
+            for event in process_question(message, session, config,
+                                           attachments=parsed_attachments,
+                                           guard_ctx=guard_ctx):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패(POST): %s\n%s", e, traceback.format_exc())
@@ -233,6 +350,46 @@ def chat_stream_with_files(req: ChatWithFilesRequest):
 
 
 # ── 공용 보안 헬퍼 ────────────────────────────────────────────────────────────
+
+def _apply_guard_filter(query, apply_filter: bool = True):
+    """qa_conversations 조회에서 가드 의심(monitor flag) 대화를 제외 (FR-09).
+
+    ⚠️ qa_conversations 전용 — board_posts에는 metadata 컬럼이 없어 필터를
+    걸면 PostgREST 400이 나고, 호출부의 try/except에 삼켜져 사용자 게시글이
+    통째로 사라진다(Design §3.2).
+    """
+    return query.is_("metadata->>guard_flag", "null") if apply_filter else query
+
+
+def _drop_flagged(rows: list[dict] | None) -> list[dict]:
+    """Python 레벨 후처리 — 필터 성공 시엔 이중 안전망, 실패 시엔 유일한 방어선."""
+    out = []
+    for row in rows or []:
+        meta = row.get("metadata")
+        if isinstance(meta, dict) and meta.get("guard_flag"):
+            continue
+        out.append(row)
+    return out
+
+
+def _fetch_qa_public(build) -> tuple[list[dict], int | None]:
+    """qa_conversations 공개 조회 — 필터 실행이 실패하면 무필터로 재실행한다.
+
+    `.is_("metadata->>guard_flag", ...)`는 쿼리 빌드 시점엔 문자열을 붙일 뿐이라
+    예외를 던지지 않는다. 실제 거부는 `.execute()`의 PostgREST 400으로 나타나므로
+    빌드가 아니라 **실행까지** 감싸야 설계 §6.1의 "빈 목록·500 회피"가 성립한다.
+
+    build(apply_filter: bool) -> query   (execute() 직전 상태의 쿼리)
+    반환: (guard_flag 제거된 rows, count)
+    """
+    try:
+        res = build(True).execute()
+        return _drop_flagged(res.data), res.count
+    except Exception as e:
+        logging.warning("guard_flag 필터 조회 실패 — 무필터 재조회 후 Python 후처리: %s", e)
+        res = build(False).execute()
+        return _drop_flagged(res.data), res.count
+
 
 def _safe_like(term: str) -> str:
     """PostgREST ilike/or_ 필터용 검색어 새니타이즈 — 필터 인젝션 방지.
@@ -458,8 +615,10 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
         .execute()
     )
 
-    # 첨부 URL은 요청 시점에 만료형 signed URL로 발급 (1시간) — 버킷을 비공개로
-    # 전환해도 관리자 조회가 동작하도록. 발급 실패 시 기존 public_url 폴백.
+    # 버킷은 비공개다(supabase_attachments_private.sql). 첨부 열람은 이 시점에
+    # 발급하는 1시간 만료 signed URL이 유일한 경로이며, 저장된 public_url은 항상
+    # NULL이다(storage.py::upload_attachment). 발급이 실패하면 URL 없이 내려가고
+    # admin.html이 "링크 발급 실패"로 표시한다.
     # 응답 키는 admin.html 호환을 위해 public_url 유지.
     att_rows = []
     for att in (attachments.data or []):
@@ -476,6 +635,55 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
         att_rows.append(row)
 
     return {**result.data, "attachments": att_rows}
+
+
+# ── 관리자: 남용 현황 (chatbot-security FR-12) ───────────────────────────────
+
+class UnblockRequest(BaseModel):
+    subject_key: str
+
+
+@app.get("/api/admin/abuse")
+def admin_abuse(days: int = 7, limit: int = 100, _admin=Depends(require_admin)):
+    """남용 이벤트 집계·최근 목록·활성 차단 (관리자 전용).
+
+    abuse_events/block_list는 anon 직접 접근이 차단돼 있어 SECURITY DEFINER
+    RPC로만 조회한다.
+    """
+    sb = _get_supabase()
+    days = max(1, min(days, 90))
+    limit = max(1, min(limit, 500))
+    try:
+        resp = sb.rpc("abuse_summary", {"p_days": days, "p_limit": limit}).execute()
+        data = resp.data
+        if isinstance(data, list) and data:
+            data = data[0]
+        if not isinstance(data, dict):
+            data = {}
+        return {
+            "counts": data.get("counts") or {},
+            "events": data.get("events") or [],
+            "blocked": data.get("blocked") or [],
+            "days": days,
+        }
+    except Exception as e:
+        logging.warning("남용 현황 조회 실패: %s", e)
+        raise HTTPException(503, "남용 현황을 조회할 수 없습니다. DB 스키마(abuse_summary)를 확인하세요.")
+
+
+@app.post("/api/admin/abuse/unblock")
+def admin_abuse_unblock(body: UnblockRequest, _admin=Depends(require_admin)):
+    """수동 차단 해제 (오탐 대응)."""
+    sb = _get_supabase()
+    key = (body.subject_key or "").strip()
+    if not key:
+        raise HTTPException(400, "subject_key가 필요합니다")
+    try:
+        sb.rpc("abuse_unblock", {"p_subject_key": key}).execute()
+        return {"ok": True, "subject_key": key}
+    except Exception as e:
+        logging.warning("차단 해제 실패 (%s): %s", key, e)
+        raise HTTPException(503, "차단 해제에 실패했습니다")
 
 
 # ── 게시판 글쓰기 (CAPTCHA + 비밀번호) ─────────────────────────────────────────
@@ -695,16 +903,19 @@ def board_recent(page: int = 1, per_page: int = 10):
     per_page = min(per_page, 20)
     offset = (page - 1) * per_page
 
-    result = (
-        sb.table("qa_conversations")
-        .select("id, category, question_text, answer_text, created_at", count="exact")
-        .order("created_at", desc=True)
-        .range(offset, offset + per_page - 1)
-        .execute()
-    )
+    def _build(apply_filter: bool):
+        return _apply_guard_filter(
+            sb.table("qa_conversations").select(
+                "id, category, question_text, answer_text, created_at, metadata",
+                count="exact",
+            ),
+            apply_filter,
+        ).order("created_at", desc=True).range(offset, offset + per_page - 1)
+
+    rows, total_count = _fetch_qa_public(_build)
 
     items = []
-    for row in result.data or []:
+    for row in rows:
         q = _anonymize(row.get("question_text", ""))
         a = row.get("answer_text", "")
         a_preview = a[:300] + ("..." if len(a) > 300 else "") if a else ""
@@ -716,7 +927,7 @@ def board_recent(page: int = 1, per_page: int = 10):
             "created_at": row.get("created_at", ""),
         })
 
-    total = result.count or 0
+    total = total_count or 0
     return {
         "items": items,
         "total": total,
@@ -731,14 +942,16 @@ def board_recent(page: int = 1, per_page: int = 10):
 def board_categories():
     """사용 가능한 카테고리 목록 (건수 포함)"""
     sb = _get_supabase()
-    result = (
-        sb.table("qa_conversations")
-        .select("category")
-        .execute()
-    )
+
+    def _build(apply_filter: bool):
+        return _apply_guard_filter(
+            sb.table("qa_conversations").select("category, metadata"), apply_filter,
+        )
+
+    rows, _ = _fetch_qa_public(_build)
 
     counts: dict[str, int] = {}
-    for row in result.data or []:
+    for row in rows:
         cat = row.get("category", "일반상담") or "일반상담"
         counts[cat] = counts.get(cat, 0) + 1
 
@@ -756,18 +969,25 @@ def board_search(q: str = "", category: str = "", page: int = 1, per_page: int =
     sb = _get_supabase()
     per_page = min(per_page, 30)
 
-    # --- qa_conversations 조회 ---
-    qa_qb = sb.table("qa_conversations").select(
-        "id, category, question_text, answer_text, created_at", count="exact"
-    )
-    if category:
-        qa_qb = qa_qb.eq("category", category)
-    if q:
-        qa_qb = qa_qb.ilike("question_text", f"%{_safe_like(q)}%")
-    qa_result = qa_qb.order("created_at", desc=True).execute()
+    # --- qa_conversations 조회 (가드 flag 제외) ---
+    def _build(apply_filter: bool):
+        qb = _apply_guard_filter(
+            sb.table("qa_conversations").select(
+                "id, category, question_text, answer_text, created_at, metadata",
+                count="exact",
+            ),
+            apply_filter,
+        )
+        if category:
+            qb = qb.eq("category", category)
+        if q:
+            qb = qb.ilike("question_text", f"%{_safe_like(q)}%")
+        return qb.order("created_at", desc=True)
+
+    qa_rows, _qa_count = _fetch_qa_public(_build)
 
     all_items = []
-    for row in qa_result.data or []:
+    for row in qa_rows:
         question = _anonymize(row.get("question_text", ""))
         answer = row.get("answer_text", "")
         answer_preview = answer[:300] + ("..." if len(answer) > 300 else "") if answer else ""
@@ -833,15 +1053,19 @@ def board_detail(item_id: str):
     sb = _get_supabase()
 
     # 1) qa_conversations에서 먼저 조회
+    #    metadata를 함께 select해야 guard_flag 검사가 작동한다 (Design §3.2)
     result = (
         sb.table("qa_conversations")
-        .select("id, category, question_text, answer_text, created_at")
+        .select("id, category, question_text, answer_text, created_at, metadata")
         .eq("id", item_id)
         .maybe_single()
         .execute()
     )
     if result.data:
         row = result.data
+        meta = row.get("metadata")
+        if isinstance(meta, dict) and meta.get("guard_flag"):
+            return JSONResponse(status_code=404, content={"error": "Not found"})
         return {
             "id": row["id"],
             "category": row.get("category", ""),
@@ -896,6 +1120,33 @@ def serve_admin():
 @app.get("/calculators.html")
 def serve_calculators():
     html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "calculators.html")
+    return FileResponse(html_path, media_type="text/html")
+
+
+@app.get("/board")
+def serve_static_page(request: Request):
+    """정적 페이지의 확장자 없는 경로 — /board.
+
+    프로덕션은 vercel.json 라우트가 먼저 처리하므로 이 핸들러까지 오지 않는다.
+    로컬 `uvicorn api.index:app` 개발·검증 시 프로덕션과 같은 URL로 열기 위한 것.
+    /terms·/privacy·/install 은 sitemap·canonical·모든 내부 링크가 `.html` 버전만
+    참조해 확장자 없는 형태로는 어디서도 쓰이지 않으므로, vercel.json의 동일 라우트와
+    함께 제거했다(CodeRabbit 리뷰). 라우트 목록을 늘릴 때는 vercel.json 과 반드시 함께 고칠 것.
+    """
+    name = request.url.path.strip("/")
+    if name != "board":
+        raise HTTPException(status_code=404, detail="Not Found")
+    # name이 고정 집합과 등호 비교만 거치므로 현재는 순회 위험이 없지만,
+    # 이 파일의 다른 파일 서빙 엔드포인트(serve_calculator_flow)와 패턴을
+    # 통일해 향후 라우트가 동적 인자를 받게 되어도 안전하도록 한다.
+    base_dir = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "public")
+    )
+    html_path = os.path.abspath(os.path.join(base_dir, f"{name}.html"))
+    if os.path.commonpath([base_dir, html_path]) != base_dir or not html_path.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not os.path.isfile(html_path):
+        raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(html_path, media_type="text/html")
 
 

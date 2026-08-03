@@ -3,8 +3,70 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>질문게시판 — 노동OK</title>
+<title>질문게시판 — 기초 노동상담</title>
 <meta name="description" content="노동법 관련 질문과 AI 답변을 검색해보세요. 임금, 퇴직금, 해고, 실업급여 등 다양한 노동상담 사례를 확인할 수 있습니다.">
+<link rel="canonical" href="https://laborconsult.vercel.app/board">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1B2A4A">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="기초 노동상담">
+<meta property="og:title" content="질문게시판 — 기초 노동상담">
+<meta property="og:description" content="노동법 관련 질문과 AI 답변을 검색해보세요. 임금, 퇴직금, 해고, 실업급여 등 다양한 노동상담 사례를 확인할 수 있습니다.">
+<meta property="og:url" content="https://laborconsult.vercel.app/board">
+<meta property="og:image" content="https://laborconsult.vercel.app/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="질문게시판 — 기초 노동상담">
+<meta name="twitter:description" content="노동법 관련 질문과 AI 답변을 검색해보세요. 임금, 퇴직금, 해고, 실업급여 등 다양한 노동상담 사례.">
+<meta name="twitter:image" content="https://laborconsult.vercel.app/og-image.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://laborconsult.vercel.app/#website",
+      "url": "https://laborconsult.vercel.app/",
+      "name": "기초 노동상담",
+      "inLanguage": "ko-KR"
+    },
+    {
+      "@type": "CollectionPage",
+      "@id": "https://laborconsult.vercel.app/board#page",
+      "name": "질문게시판",
+      "description": "노동법 질문과 AI 답변 모음",
+      "url": "https://laborconsult.vercel.app/board",
+      "inLanguage": "ko-KR",
+      "isPartOf": {
+        "@id": "https://laborconsult.vercel.app/#website"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "홈",
+          "item": "https://laborconsult.vercel.app/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "질문게시판",
+          "item": "https://laborconsult.vercel.app/board"
+        }
+      ]
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -478,9 +540,11 @@
       <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a>
     </div>
     <div class="footer-links">
-      <a href="#">개인정보처리방침</a>
+      <a href="/privacy.html">개인정보처리방침</a>
       <span style="color:rgba(255,255,255,0.2)">|</span>
-      <a href="#">이용약관</a>
+      <a href="/terms.html">이용약관</a>
+      <span style="color:rgba(255,255,255,0.2)">|</span>
+      <a href="/install.html">앱 설치</a>
     </div>
   </div>
 </footer>
@@ -954,5 +1018,6 @@ loadBoard();
   }
 })();
 </script>
+<script src="/pwa.js"></script>
 </body>
 </html>

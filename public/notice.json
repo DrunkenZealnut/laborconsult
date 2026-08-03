@@ -1,0 +1,25 @@
+{
+  "_안내": "공지사항 배너 원본. 이 파일만 고쳐 배포하면 메인 화면 상단 배너가 바뀝니다. notices 배열이 비어 있으면 배너가 표시되지 않습니다.",
+  "_필드": {
+    "id": "필수. 닫기를 누른 사람에게 다시 안 띄우는 기준값. 내용을 바꾸면 id도 반드시 바꿀 것",
+    "level": "info | warn — 배너 색상 (구현: index.html 의 level-info / level-warn 2종)",
+    "message": "본문. 한 문장 권장",
+    "linkUrl": "선택. 자세히 보기 링크",
+    "linkText": "선택. 링크 문구(기본 '자세히 보기')",
+    "startsAt": "선택. YYYY-MM-DD. 이 날짜부터 노출",
+    "endsAt": "선택. YYYY-MM-DD. 이 날짜까지 노출(당일 포함)",
+    "dismissible": "선택. false면 닫기 버튼을 숨김(약관 변경 등 중요 공지)"
+  },
+  "notices": [
+    {
+      "id": "2026-08-01-legal-notice",
+      "level": "info",
+      "message": "이용약관과 개인정보처리방침을 새로 게시했습니다. 상담 내용의 보관 기간과 처리위탁 내역을 확인해 주세요.",
+      "linkUrl": "/privacy.html",
+      "linkText": "개인정보처리방침 보기",
+      "startsAt": "2026-08-01",
+      "endsAt": "2026-08-31",
+      "dismissible": true
+    }
+  ]
+}
