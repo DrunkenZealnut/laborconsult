@@ -1,6 +1,6 @@
 # 답변 UI 가독성 재점검 Gap 분석 (answer-ui-readability)
 
-> **Summary**: 설계 명세 16항목(변경 지점 14곳 + 구현 확정 D1~D4)을 `public/index.html` 구현과 대조한 결과 전 항목 완전 일치 — **Match Rate 100%**. 하네스 어서션 29건·브라우저 검증(데스크톱/모바일 375px) 전부 통과, 설계 외 무단 추가분 없음.
+> **Summary**: 설계 명세 16항목(변경 지점 14곳을 12개 주제로 그룹화 + 구현 확정 D1~D4)을 `public/index.html` 구현과 대조한 결과 전 항목 완전 일치 — **Match Rate 100%**. 하네스 어서션 29건·브라우저 검증(데스크톱/모바일 375px) 전부 통과, 설계 외 무단 추가분 없음.
 >
 > **Design**: docs/02-design/features/answer-ui-readability.design.md
 > **분석 주체**: gap-detector Agent + 하네스/브라우저 실측
@@ -13,7 +13,7 @@
 
 - 대상: answer-ui-readability (답변 UI 가독성 재점검)
 - 구현 파일: `public/index.html` (단일 변경 파일)
-- 방법: ① gap-detector가 설계 §5 변경 지점 14곳 + §8 D1~D4를 코드와 행 단위 대조 ② Node 하네스 어서션(T1~T8, 29건) ③ Playwright 브라우저 실측(B1~B6)
+- 방법: ① gap-detector가 설계 §5 변경 지점 14곳(관련 항목을 12개 주제로 그룹화) + §8 D1~D4를 코드와 행 단위 대조 ② Node 하네스 어서션(T1~T8, 29건) ③ Playwright 브라우저 실측(B1~B6)
 
 ## 2. 항목별 판정 (gap-detector)
 
