@@ -46,9 +46,11 @@
     "archivedTo": "docs/archive/2026-08/answer-renderer-test-harness/"
   },
   "llm-fallback-hardening": {
-    "phase": "check",
+    "phase": "archived",
     "matchRate": 99,
     "iterationCount": 1,
-    "startedAt": "2026-08-06T00:00:00Z"
+    "startedAt": "2026-08-06T00:00:00Z",
+    "archivedAt": "2026-08-06T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/llm-fallback-hardening/"
   }
 }
