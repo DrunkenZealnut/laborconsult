@@ -1,5 +1,11 @@
 # interactive-follow-up Analysis Report
 
+> ⚠️ **[2026-07-14 스테일 문서 주의]** 이 문서가 "구현됨"으로 기술하는 pending 흐름
+> (`session.save_pending()` → `merge_with_pending()`)은 현재 프로덕션 코드에서
+> **미배선 상태**다 — `save_pending()` 호출처가 없어 해당 분기는 도달 불가(죽은 코드).
+> 복원 vs 공식 폐기는 제품 결정 대기 항목
+> ([calc-db-integration-review.plan.md](../01-plan/features/calc-db-integration-review.plan.md) §4 참조).
+
 > **Analysis Type**: Gap Analysis (Design vs Implementation)
 >
 > **Project**: laborconsult (AI 노동상담 챗봇)

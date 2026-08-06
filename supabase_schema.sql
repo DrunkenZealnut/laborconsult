@@ -68,11 +68,17 @@ CREATE TRIGGER tr_qa_sessions_updated
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- 6. Storage 버킷 (SQL로 생성 — 또는 Supabase 대시보드에서 수동 생성)
+-- public = false: 상담 첨부에는 급여명세서·근로계약서 등 개인정보가 담긴다.
+-- 영구 공개 URL을 만들지 않고, 관리자 조회 시점의 1시간 만료 signed URL로만 연다.
+-- 기존 배포를 전환하려면 supabase_attachments_private.sql 을 실행할 것.
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('chat-attachments', 'chat-attachments', true)
+VALUES ('chat-attachments', 'chat-attachments', false)
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS: anon 업로드/읽기 허용
+-- ※ 이 anon 키는 서버(FastAPI)에만 있고 브라우저로 나가지 않는다(app/config.py:78).
+--   SELECT 정책은 signed URL 발급에 필요하므로 유지한다. 버킷이 비공개이므로
+--   정책이 있어도 키 없이 객체에 직접 접근할 수는 없다.
 CREATE POLICY "Allow anon upload" ON storage.objects FOR INSERT TO anon
     WITH CHECK (bucket_id = 'chat-attachments');
 CREATE POLICY "Allow anon read" ON storage.objects FOR SELECT TO anon

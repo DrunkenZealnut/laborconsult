@@ -57,6 +57,8 @@ NUMERIC_RANGES: dict[str, tuple[float, float]] = {
     "notice_days_given":      (0, 365),
     "parental_leave_months":  (1, 24),
     "arrear_amount":          (1, 10_000_000_000),
+    "shutdown_days":          (1, 366),
+    "public_holiday_days":    (1, 31),
     "reference_year":         (2020, 2030),
 }
 
@@ -73,6 +75,8 @@ _FIELD_LABELS: dict[str, str] = {
     "notice_days_given": "해고예고 일수",
     "parental_leave_months": "육아휴직 개월수",
     "arrear_amount": "체불임금액",
+    "shutdown_days": "휴업 일수",
+    "public_holiday_days": "유급 공휴일 일수",
     "reference_year": "기준연도",
 }
 
@@ -80,12 +84,15 @@ _FIELD_LABELS: dict[str, str] = {
 def _validate_numeric_params(
     extracted: dict,
     missing_info: list[str],
-) -> None:
+) -> list[str]:
     """LLM이 추출한 숫자 파라미터의 범위를 검증.
 
     범위 밖 값은 extracted에서 제거하고 missing_info에 사유를 추가한다.
-    extracted와 missing_info를 직접 변경(mutate)한다.
+    extracted와 missing_info를 직접 변경(mutate)하며, 제거한 라벨 목록을
+    반환한다 — 파이프라인이 missing_info를 코드 판정으로 교체해도
+    검증 경고가 유실되지 않도록 별도 보존(CALC-13).
     """
+    removed: list[str] = []
     for key, (lo, hi) in NUMERIC_RANGES.items():
         val = extracted.get(key)
         if val is None:
@@ -94,12 +101,15 @@ def _validate_numeric_params(
             num = float(val)
         except (TypeError, ValueError):
             del extracted[key]
-            missing_info.append(_FIELD_LABELS.get(key, key))
+            removed.append(_FIELD_LABELS.get(key, key))
             continue
 
         if num < lo or num > hi:
             del extracted[key]
-            missing_info.append(_FIELD_LABELS.get(key, key))
+            removed.append(_FIELD_LABELS.get(key, key))
+
+    missing_info.extend(removed)
+    return removed
 
 
 def analyze_intent(
@@ -131,7 +141,8 @@ def analyze_intent(
 
     # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
     # tool_choice 강제 + 스키마 제약으로 추출 결정성은 유지된다.
-    response = config.anthropic_client.messages.create(
+    # 임계경로 타임아웃 (DB-6) — 항상 실행되는 호출이라 지연 시 전체가 행(hang)하던 지점
+    response = config.anthropic_client.with_options(timeout=12.0).messages.create(
         model=config.analyzer_model,
         max_tokens=1024,
         system=system_prompt,
@@ -153,6 +164,7 @@ def analyze_intent(
                 "fixed_allowances", "monthly_wage", "annual_wage",
                 "notice_days_given", "parental_leave_months",
                 "arrear_amount", "arrear_due_date",
+                "shutdown_days", "public_holiday_days",
                 "use_minimum_wage", "reference_year",
                 "is_probation", "contract_months", "occupation_code",
                 "is_platform_worker",
@@ -166,7 +178,7 @@ def analyze_intent(
 
             # 숫자 범위 검증: 비현실적 값 제거 → missing_info에 추가
             missing_from_llm = inp.get("missing_info", [])
-            _validate_numeric_params(extracted, missing_from_llm)
+            validation_warnings = _validate_numeric_params(extracted, missing_from_llm)
 
             return AnalysisResult(
                 requires_calculation=inp.get("requires_calculation", False),
@@ -174,11 +186,14 @@ def analyze_intent(
                 extracted_info=extracted,
                 relevant_laws=inp.get("relevant_laws", []),
                 missing_info=missing_from_llm,
+                validation_warnings=validation_warnings,
                 question_summary=inp.get("question_summary", ""),
                 consultation_type=inp.get("consultation_type"),
                 consultation_topic=inp.get("consultation_topic"),
                 precedent_keywords=inp.get("precedent_keywords", []),
                 worker_group=inp.get("worker_group"),
+                # 필드 누락 시 True — 스코프 게이트 fail-open (chatbot-security FR-05)
+                is_labor_related=inp.get("is_labor_related", True),
             )
 
     return AnalysisResult(question_summary=question)

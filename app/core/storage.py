@@ -220,6 +220,16 @@ def restore_session_data(sb: SupabaseClient, session_id: str) -> dict | None:
         return None
 
 
+def _safe_storage_name(filename: str) -> str:
+    """스토리지 키용 파일명 정제 — 경로 구분자·특수문자를 제거해 프리픽스
+    이탈(../ 등)을 차단하고 S3 안전 문자만 남긴다. 표시용 원본 파일명은
+    qa_attachments.filename에 따로 보존되므로 손실 없음."""
+    import re
+    base = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "file"
+    return safe[:100]  # 과도한 길이 방지
+
+
 def upload_attachment(
     sb: SupabaseClient,
     conversation_id: str,
@@ -228,26 +238,36 @@ def upload_attachment(
     content_type: str,
     file_data: bytes,
 ) -> str | None:
-    """파일을 Supabase Storage에 업로드하고 qa_attachments에 메타 저장."""
-    storage_path = f"{session_id}/{conversation_id}/{filename}"
+    """파일을 Supabase Storage에 업로드하고 qa_attachments에 메타 저장. storage_path 반환.
+
+    chat-attachments 버킷은 비공개다(supabase_attachments_private.sql). 따라서
+    영구 공개 URL을 만들지도, 저장하지도 않는다 — 열람은 관리자 조회 시점에
+    발급하는 1시간 만료 signed URL로만 이루어진다(api/index.py::admin_conversation_detail).
+    public_url 컬럼은 admin.html 하위호환을 위해 남겨 두되 항상 NULL로 둔다.
+    """
+    # uuid 프리픽스로 키를 고유화 — 같은 대화에 동일 파일명 2개 첨부 시
+    # 두 번째 업로드가 중복 키로 실패하던 문제 방지
+    storage_path = (
+        f"{session_id}/{conversation_id}/"
+        f"{uuid.uuid4().hex[:8]}_{_safe_storage_name(filename)}"
+    )
     try:
         sb.storage.from_("chat-attachments").upload(
             path=storage_path,
             file=file_data,
             file_options={"content-type": content_type},
         )
-        public_url = sb.storage.from_("chat-attachments").get_public_url(storage_path)
 
         sb.table("qa_attachments").insert({
             "conversation_id": conversation_id,
             "filename": filename,
             "content_type": content_type,
             "storage_path": storage_path,
-            "public_url": public_url,
+            "public_url": None,
             "file_size": len(file_data),
         }).execute()
         logger.info("첨부파일 저장: %s (%d bytes)", filename, len(file_data))
-        return public_url
+        return storage_path
     except Exception as e:
         logger.warning("첨부파일 업로드 실패 (%s): %s", filename, e)
         return None

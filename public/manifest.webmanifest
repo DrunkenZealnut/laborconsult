@@ -1,0 +1,24 @@
+{
+  "name": "기초 노동상담 — 노동법 AI 상담·임금계산",
+  "short_name": "노동상담",
+  "description": "근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담과 28종 임금 계산 엔진을 제공합니다.",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F7F5F2",
+  "theme_color": "#1B2A4A",
+  "categories": ["education", "productivity", "utilities"],
+  "icons": [
+    { "src": "/icons/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "질문게시판", "url": "/board" },
+    { "name": "계산기 흐름도", "url": "/calculators" }
+  ]
+}

@@ -42,13 +42,32 @@ python3 summarize_analysis.py     # Aggregate analysis → stats JSON + design d
 python3 wage_calculator_cli.py           # Run all 32 test cases
 python3 wage_calculator_cli.py --case 1  # Run specific test case
 python3 wage_calculator_cli.py --interactive  # Interactive mode
-python3 calculator_batch_test.py         # Run all 102 batch test cases
+python3 calculator_batch_test.py         # Run all 102 batch test cases (output_qna/ 원문 필요)
+
+# Offline test suites (API 키 불요 — CI에서도 실행, .github/workflows/tests.yml)
+python3 test_wage_golden.py       # 계산 엔진 골든 테스트
+python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-1/2/3)
+python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
+python3 test_abuse_guard.py       # 남용 가드(인젝션·스코프·쿼터·게시판 필터) 테스트
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
-python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json
+# 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.json.gz 커밋 필수
+# (gz 미커밋 시 프로덕션 하이브리드 검색이 Dense-only로 폴백됨)
+python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json.gz
+
+# NLRC 판정사례 번들 갱신 (odcloud API 키 필요, 주기 실행 후 커밋)
+python3 refresh_nlrc_cases.py     # odcloud → data/nlrc_cases.json
+
+# 보유기간 경과 첨부파일 파기 (개인정보처리방침 제5항 — 주기 실행 필요)
+# Supabase가 storage.objects 직접 DELETE를 차단하므로 2단계 구조다:
+#   ① pg_cron이 purge_expired_data()로 DB 행 삭제 + 파일 경로를 storage_purge_queue에 적재
+#   ② 이 스크립트가 Storage API로 실제 파일 삭제
+# 둘 다 돌아야 방침이 이행된다. 스키마·함수는 supabase_retention_purge.sql
+python3 purge_storage_orphans.py            # 큐 비우기
+python3 purge_storage_orphans.py --dry-run  # 대상만 확인
 
 # Environment check
 python3 check_env.py              # Validate all API keys configured
@@ -88,7 +107,7 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 
 **Endpoints** (all in `api/index.py`):
 
-*Chat:*
+*Chat:* (3경로 모두 `_guard_chat_request()` 선통과 — 아래 Abuse Guard 참조)
 - `GET /api/health` — health check
 - `GET /api/chat/stream?message=...` — SSE streaming (text only)
 - `POST /api/chat/stream` — SSE streaming (with file attachments as base64)
@@ -99,6 +118,8 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `GET /api/admin/stats` — totals + 30-day daily + category counts
 - `GET /api/admin/conversations` — paged, supports `search`/`category`/`date_from`/`date_to`
 - `GET /api/admin/conversations/{conv_id}` — 단일 대화 상세 (+ attachments)
+- `GET /api/admin/abuse?days=7` — 남용 이벤트 집계·최근 목록·활성 차단 (`abuse_summary` RPC)
+- `POST /api/admin/abuse/unblock` — 수동 차단 해제 (`abuse_unblock` RPC)
 
 *Public Q&A board* (all `_anonymize()` applied):
 - `GET /api/board/recent`, `GET /api/board/categories`, `GET /api/board/search?q=&category=`, `GET /api/board/{item_id}` — read AI conversations (`qa_conversations`) + user posts (`board_posts`), merged
@@ -123,22 +144,53 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `chunk` / `text` — streaming / non-streamed answer text
 - `replace` — full answer replacement (after citation correction)
 - `contacts` — agency contact cards (노동위/고용센터/근로복지공단)
-- `sources` — RAG source list
-- `meta` — calc_result, sources
+- `sources` — 검색 출처 목록 (`_build_sources_payload()`, 상위 5건 {title, section, source_type, score, origin}) → 프론트 `renderSources()`가 답변 하단에 표시
+- `meta` — calc_result (프론트는 현재 미표시 — 수치 카드 UI는 제품 결정 대기)
 - `error` — error message
 - `done` — stream end marker
+
+### Abuse Guard (`app/core/abuse_guard.py`) — chatbot-security
+
+악의적 접근·노동법 외 용도 사용을 LLM 호출 전(또는 의도분석 1회 비용)에 차단하는 2단 가드.
+설계: `docs/02-design/features/chatbot-security.design.md`. **전 계층 fail-open** — 가드 내부
+예외나 Supabase 장애가 상담을 막지 않는다.
+
+**1단 (엔드포인트, `api/index.py::_guard_chat_request`)** — 반드시 `get_or_create_session()`·
+첨부 파싱보다 **먼저** 호출(session_id 검증이 세션 생성 전이어야 하고, 차단 대상이 파싱 비용을
+지불하지 않도록):
+1. `validate_message()` — 길이(기본 2,000자) · 제어문자 제거 · NFC · `session_id` 형식(`^[A-Za-z0-9-]{8,64}$`, 불일치 시 무시하고 신규 발급)
+2. `_check_rate_limit(store=_chat_rate)` — IP당 5회/60초. **인메모리라 Vercel 인스턴스별 베스트에포트**(총량 방어는 3의 쿼터가 담당)
+3. `check_guard()` — `chat_guard_check` RPC 1왕복(차단 조회 + 일일 쿼터 원자 증가, 기본 50/일)
+- 거절 시 `GuardRejection` → `/api/chat`은 HTTP 400/429, 스트림 2경로는 `_sse_error()`
+
+**2단 (파이프라인, `process_question(guard_ctx=...)`)** — `guard_ctx=None`이면 가드 전체 비활성
+(CLI·`benchmark_pipeline.py`·E2E 테스트 호출부 무변경):
+- `scan_injection()` — 정규식+가중치, **의도분석 이전**이라 차단 시 LLM 호출 0회
+- `scope_gate_decision()` — `analyze_intent`의 `is_labor_related`에 **편승**(추가 LLM 호출 0회). block 시 RAG·법령 API·답변 LLM 전부 생략
+- `scan_leak()` — 답변 완성 후 시스템 프롬프트 유출 감지 → 기존 `replace` 이벤트로 대체 + 저장 금지
+- 저장 게이팅 — block/leak은 미저장, monitor 의심은 `metadata.guard_flag` 기록 후 게시판 노출 제외
+
+**인젝션 패턴(`INJECTION_PATTERNS`) 수정 시 주의**: 노동상담 언어와 공격 언어는 어휘를 공유한다
+("무시"·"규칙"·"역할 변경"). `_BENIGN_ACTOR` 억제자가 "제3자(회사·상사) 주어 서술"을 무효화해
+오탐을 막으므로, 패턴 변경 시 `test_abuse_guard.py`의 코퍼스 회귀(공격 38건 차단율 ≥90%,
+정상 35건 오차단 0)를 반드시 통과시킬 것.
+
+**운영**: `ABUSE_GUARD_MODE`·`SCOPE_GATE_MODE`를 `monitor`로 배포해 1주 관측 → 오탐 0 확인 후
+`block` 전환. 즉시 완화는 `off`. Supabase 스키마는 `supabase_abuse_guard.sql`(테이블 3종 +
+SECURITY DEFINER RPC 4개). **fail-open은 조용하므로 배포 후 쿼터 양성 검증 필수**
+(`DAILY_CHAT_QUOTA=3`으로 4번째 요청이 실제 429인지).
 
 ### Pipeline Flow (`app/core/pipeline.py`)
 
 `process_question()` is the main orchestrator. It yields SSE events:
 
-1. **Intent analysis** → `analyzer.py` (Claude tool_use extracts params, `NUMERIC_RANGES` guardrails)
+1. **Intent analysis** → `analyzer.py` (Claude tool_use extracts params, `NUMERIC_RANGES` guardrails, timeout 12s)
 2. **Branching**:
-   - **Wage calculation**: `WageCalculator.from_analysis()` → calculators → formatted result
+   - **Wage calculation**: `_analysis_to_extract_params()` → `_run_calculator()` (extracted_info → `WageInput` 인라인 배선, `calculation_types` 전체를 union 라우팅) → calculators → formatted result. 계산 예외 시 오류 문자열 주입 없이 None(상담 경로 진행)
    - **Harassment assessment**: `harassment_assessor.assess_harassment()` → element scoring
    - **Legal consultation**: `legal_consultation.py` (topic→law mapping) + RAG + legal API
 3. **RAG search** → Adaptive complexity classification (`classify_complexity()` → SIMPLE/MODERATE/COMPLEX) → `query_decomposer.py` (LLM multi-query) → `rag.py::search_hybrid()` (BM25+Dense RRF fusion → Pinecone 2-group parallel) → `rerank_results()` (Cohere) → Self-RAG relevance filter (COMPLEX only, `self_rag.py`) + `graph.py` (GraphRAG multi-hop)
-4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (공공데이터포털 판정사례 360건 캐싱 + 법제처 판례 보강). `precedent_query.py::build_precedent_queries()` expands precedent search terms.
+4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (판정사례 360건 — `data/nlrc_cases.json` 번들 우선 로드, 부재 시에만 odcloud API 폴백; 갱신은 `refresh_nlrc_cases.py`). `precedent_query.py::build_precedent_queries()` expands precedent search terms.
 5. **Source conflict resolution** → `conflict_resolver.py::annotate_source_priority()` tags hits by source-type priority before they reach the LLM.
 6. **Agency contacts** → `labor_offices.py` / `employment_centers.py` / `comwel_offices.py` match the user's region to 노동위원회(14)/고용센터(133)/근로복지공단(63) and emit a `contacts` event.
 7. **LLM streaming** → Claude → OpenAI → Gemini fallback chain (`_stream_answer()` in `pipeline.py`)
@@ -162,7 +214,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - **Chunking**: Section-based (h2/h3) split, max 700 chars, 80 char overlap. Critical: `split_by_size` must have `end >= len(text): break` guard to prevent tiny trailing chunks.
 - **Embedding**: OpenAI text-embedding-3-small (1536 dim)
 - **Vector DB**: Pinecone Serverless (AWS us-east-1, cosine metric), 3 namespaces
-- **Hybrid Search**: `bm25_search.py` (BM25 keyword) + Dense (Pinecone) → Reciprocal Rank Fusion (`search_hybrid()` in `rag.py`). BM25 uses `rank_bm25` with Mecab tokenizer (fallback: regex). Corpus built by `build_bm25_corpus.py` → `data/bm25_corpus.json`. Graceful fallback to Dense-only if BM25 unavailable.
+- **Hybrid Search**: `bm25_search.py` (BM25 keyword, 쿼리별 검색 후 `rrf_merge_ranked_lists()` 병합) + Dense (Pinecone) → Reciprocal Rank Fusion (`search_hybrid()` in `rag.py`). BM25 uses `rank_bm25` with Mecab tokenizer (fallback: regex). Corpus built by `build_bm25_corpus.py` → `data/bm25_corpus.json.gz`(**커밋 대상** — 없으면 프로덕션이 Dense-only 폴백, raw json은 gitignore). Graceful fallback to Dense-only if BM25 unavailable.
 - **Adaptive Retrieval**: `classify_complexity()` in `query_decomposer.py` scores query complexity → SIMPLE (top_k=8, no decomposition) / MODERATE (top_k=15) / COMPLEX (top_k=20, force decomposition, Self-RAG enabled). `COMPLEXITY_PARAMS` dict drives all dynamic parameters.
 - **Multi-query**: `query_decomposer.py` decomposes user query via LLM, merged with rule-based queries, deduped. `force` param bypasses `_should_decompose()` for COMPLEX queries.
 - **Reranking**: Cohere Rerank v3.5 (optional, falls back to cosine score sorting)
@@ -181,10 +233,10 @@ wage_calculator/
 ├── result.py                # WageResult dataclass, format_result()
 ├── legal_hints.py           # Legal review point generation
 ├── facade/
-│   ├── __init__.py          # WageCalculator.calculate(), from_analysis()
+│   ├── __init__.py          # WageCalculator.calculate()
 │   ├── registry.py          # CALC_TYPES, CALC_TYPE_MAP, _STANDARD_CALCS dispatcher
 │   ├── helpers.py           # _pop_* result population, _merge()
-│   └── conversion.py        # _provided_info_to_input() — Korean labels → WageInput
+│   └── conversion.py        # 파싱 유틸 (_guess_start_date 등) — 변환은 pipeline 인라인이 정식
 └── calculators/
     ├── shared.py            # DateRange, AllowanceClassifier, MultiplierContext
     ├── ordinary_wage.py     # Base ordinary wage (foundation for all other calcs)
@@ -193,7 +245,7 @@ wage_calculator/
 
 **Key design decisions:**
 - `WageCalculator.calculate(inp, targets)` — pass `WageInput` + list of target calculator names. If `targets=None`, auto-detected from input fields.
-- `WageCalculator.from_analysis(calculation_type, provided_info)` — converts Korean analysis labels (e.g., "연장수당") to calculator targets via `CALC_TYPE_MAP` in `registry.py`. The `resolve_calc_type()` function handles exact match → slash/comma split → keyword fallback.
+- 웹 파이프라인의 유일한 변환 경로는 `pipeline.py::_run_calculator()` — 한국어 라벨은 `resolve_calc_type_strict()`(exact match → slash/comma split → keyword fallback, 미매칭 시 None)로 targets 변환. 구 `from_analysis()`/`_provided_info_to_input()`은 호출처가 없어 제거됨(calc-db-integration-review D1).
 - `calc_ordinary_wage()` runs first as the foundation — all other calculators depend on its result.
 - `_STANDARD_CALCS` in `registry.py` is the dispatcher: list of `(key, func, section_name, populate_fn, precondition)` tuples.
 - `AllowanceCondition` enum reflects Supreme Court ruling 2023다302838: NONE/ATTENDANCE/EMPLOYMENT are included in ordinary wage; PERFORMANCE is excluded.
@@ -232,13 +284,13 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 ## Deployment
 
 - **Vercel**: `api/index.py` (FastAPI, `@vercel/python`) + `public/**` (static). Auto-deploy on push to main. Config in `vercel.json`.
-- **GitHub Pages**: `public/**` deployed via `.github/workflows/pages.yml` when changed.
+- **GitHub Pages 미러는 폐기됨**(2026-08-01). `.github/workflows/pages.yml` 삭제. 서브패스 서빙이라 `/manifest.webmanifest`·`/sw.js`·`/pwa.js`·`/icons/*` 등 루트 절대경로 자산이 전부 404였다. **배포처는 Vercel 단일.** `public/*.html`의 `location.hostname.includes('github.io')` 분기는 무해한 폴백으로 남아 있다(비-Vercel 호스트에서 열 때 API를 프로덕션으로 향하게 함).
 - All `app/core/*.py` files imported by `pipeline.py` **must** be committed to git — untracked files cause Vercel import errors (500).
 
 ## Key Conventions
 
 - All monetary amounts in Korean Won (원), no decimal for display (use `{:,.0f}`)
-- Korean variable names used in `facade/conversion.py::_provided_info_to_input()` (e.g., `임금형태`, `임금액`) to match analysis output schema
+- 계산기 입력 params는 영문 키(`wage_type`, `wage_amount` 등, `pipeline.py::_run_calculator()` 규약) — 한국어는 계산 유형 라벨(`CALC_TYPE_MAP` 키, 예: "연장수당")에만 사용
 - Legal references follow format: "근로기준법 제N조" or "대법원 YYYY다NNNN"
 - Test cases in `wage_calculator_cli.py` numbered #1–#32; batch tests in `calculator_batch_test.py` with 102 cases
 - LLM provider fallback: Claude (primary) → OpenAI o3 → Gemini. If streaming starts then fails mid-stream, partial response is kept (no retry).
@@ -250,6 +302,12 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - `api/index.py`의 파일 서빙 엔드포인트는 `os.path.commonpath` + `.html` allowlist로 path traversal 방지 필수.
 - `public/index.html`의 채팅 UI는 `expandChat()`으로 제어 — 초기에 입력창만 표시, 첫 메시지 전송 시 `.chat-card.active` 클래스 추가로 채팅 영역 확장.
 - 공개 게시판/대화 응답은 반드시 `_anonymize()`(이름·회사·전화·이메일 마스킹) 통과 후 반환. 신규 공개 엔드포인트 추가 시 동일 적용.
+- 신규 채팅 엔드포인트 추가 시 `_guard_chat_request()`를 세션 생성·첨부 파싱보다 먼저 호출하고, `process_question(guard_ctx=...)`으로 컨텍스트를 전달할 것.
+- `qa_conversations` 공개 조회(게시판)는 `_exclude_guard_flagged()` + `_drop_flagged()`를 거쳐 `metadata.guard_flag` 대화를 제외하고, select에 `metadata`를 포함해야 한다. **`board_posts`에는 적용 금지** — metadata 컬럼이 없어 PostgREST 400이 `try/except`에 삼켜져 사용자 게시글이 통째로 사라진다.
+- `abuse_events`/`block_list`/`chat_quota`는 RLS 활성 + 정책 무부여(anon 직접 접근 차단). 접근은 `SECURITY DEFINER` RPC로만 — 정책을 부여하면 클라이언트가 차단을 자가 해제할 수 있다.
 - 게시판 글쓰기 보안 체인 순서 고정: CAPTCHA(HMAC, `JWT_SECRET` 서명) → IP rate-limit → 입력 검증/금칙어 → bcrypt(rounds=12) 해싱 → INSERT. 삭제는 bcrypt `checkpw` 후 soft delete.
 - 이메일 발송(`/api/send-email`)은 전송 전 `_sanitize_html()`로 `<script>`/`on*=` 제거 필수, 분당 10건 인메모리 rate-limit.
 - 새 코퍼스 소스 추가 시 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 스크립트를 함께 추가/동기화.
+- `public/privacy.html` 제5항(보유기간) 문구는 `supabase_retention_purge.sql`의 `purge_expired_data()` 기본값과, 제7항(첨부 접근통제) 문구는 `app/core/storage.py::upload_attachment`(public_url 미저장) + `api/index.py::admin_conversation_detail`(1시간 signed URL)과 반드시 함께 갱신할 것. 이 파일들이 바뀌면 방침이 지켜지지 않는 약속이 된다.
+- `public/terms.html` 제5조(이용 한도) 수치는 `app/core/abuse_guard.py:25-32`(`MAX_MESSAGE_LENGTH`·`CHAT_RATE_LIMIT`·`CHAT_RATE_WINDOW`·`DAILY_CHAT_QUOTA`·`ABUSE_BLOCK_MINUTES`)와 반드시 함께 갱신할 것. 공지 채널(제3·7조)의 실체는 `public/notice.json`(원본) + `public/index.html`의 `#notice-banner`/`initNotice()`(렌더러) — 공지 내용을 바꿀 때 `notices[].id`도 함께 바꿔야 이미 닫은 사용자에게 다시 노출된다.
+- 공개 페이지(`public/*.html`)의 HTML 주석에는 내부 파일 경로·함수명을 적지 말 것 — 소스 보기로 그대로 노출된다. 그런 유지보수 의존관계는 이 문서(CLAUDE.md)에 기록한다.

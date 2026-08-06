@@ -1,11 +1,11 @@
 """중앙노동위원회 주요판정사례 검색 + 법제처 판례 보강
 
-공공데이터포털(odcloud) API에서 360건 판정사례를 캐싱하고,
-사용자 질문 키워드와 매칭되는 사례를 찾은 뒤,
-법제처 API(law.go.kr)로 관련 판례를 웹검색하여 본문을 보강한다.
+번들 파일(data/nlrc_cases.json)에서 360건 판정사례를 즉시 로드하고
+(콜드스타트 네트워크 0회, DB-7), 번들이 없을 때만 공공데이터포털(odcloud)
+API에서 전량 조회한다. 번들 갱신은 refresh_nlrc_cases.py 수동 실행.
 
 흐름:
-  1. 최초 호출 시 odcloud API에서 전체 사례 로드 → 메모리 캐시
+  1. 최초 호출 시 번들 파일 로드 (폴백: odcloud API 전량 조회) → 메모리 캐시
   2. 질문 키워드 / precedent_keywords로 사례 제목 검색
   3. 매칭된 사례의 핵심 키워드를 법제처 API에 검색
   4. 판정사례 제목 + 법제처 판례 본문을 결합하여 반환
@@ -88,8 +88,29 @@ def _fetch_all_cases(api_key: str) -> list[dict]:
     return all_items
 
 
+def _load_bundle() -> list[dict]:
+    """번들 파일(data/nlrc_cases.json)에서 판정사례 로드 (DB-7).
+
+    콜드스타트마다 odcloud 전량 재조회하던 지연을 제거한다.
+    실패 시 빈 리스트 — 호출부가 네트워크 폴백.
+    """
+    from pathlib import Path
+    bundle_path = Path(__file__).resolve().parents[2] / "data" / "nlrc_cases.json"
+    try:
+        with open(bundle_path, encoding="utf-8") as f:
+            cases = json.load(f)
+        if isinstance(cases, list) and cases:
+            logger.info("NLRC 판정사례 번들 로드: %d건 (%s)", len(cases), bundle_path.name)
+            return cases
+    except FileNotFoundError:
+        logger.info("NLRC 번들 파일 없음 — odcloud API 폴백")
+    except Exception as e:
+        logger.warning("NLRC 번들 로드 실패 (odcloud API 폴백): %s", e)
+    return []
+
+
 def _get_cases(api_key: str) -> list[dict]:
-    """캐시된 판정사례 반환 (TTL 초과 시 재로드)."""
+    """캐시된 판정사례 반환 (번들 우선, 폴백 시 TTL 재로드)."""
     global _cases_cache, _cache_loaded_at
 
     now = time.time()
@@ -101,7 +122,7 @@ def _get_cases(api_key: str) -> list[dict]:
         if _cases_cache and (time.time() - _cache_loaded_at) < _CACHE_TTL:
             return _cases_cache
 
-        _cases_cache = _fetch_all_cases(api_key)
+        _cases_cache = _load_bundle() or _fetch_all_cases(api_key)
         _cache_loaded_at = time.time()
         return _cases_cache
 

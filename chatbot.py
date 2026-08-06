@@ -32,7 +32,8 @@ load_dotenv()
 EMBED_MODEL   = "text-embedding-3-small"
 CLAUDE_MODEL  = "claude-opus-4-6"
 EXTRACT_MODEL = "claude-haiku-4-5-20251001"
-INDEX_NAME    = os.getenv("PINECONE_INDEX_NAME", "laborconsult-bestqna")
+from app.config import resolve_index_name
+INDEX_NAME    = resolve_index_name()
 WRAP_WIDTH    = 80
 
 
@@ -389,9 +390,13 @@ def run_calculator(params: dict) -> str | None:
     if params.get("end_date"):
         inp.end_date = params["end_date"]
 
-    # targets 결정
-    calc_type = params.get("calculation_type", "임금계산")
-    targets = CALC_TYPE_MAP.get(calc_type, ["minimum_wage"])
+    # targets 결정 — 웹 파이프라인과 동일하게 묵시적 minimum_wage 폴백 제거 (CALC-11)
+    from wage_calculator.facade.registry import resolve_calc_type_strict
+    calc_type = params.get("calculation_type", "")
+    targets = resolve_calc_type_strict(calc_type) if calc_type else None
+    if not targets:
+        print(f"  (계산 유형 미확정: {calc_type!r} — 계산기 미실행)")
+        return None
 
     try:
         calc = WageCalculator()

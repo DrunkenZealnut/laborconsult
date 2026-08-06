@@ -3,10 +3,87 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>기초 노동상담</title>
+<title>기초 노동상담 — 노동법 AI 상담·임금계산</title>
+<meta name="description" content="임금체불·퇴직금·부당해고·연차·4대보험까지, 근로기준법과 판례·행정해석을 근거로 답하는 무료 AI 노동상담. 28종 임금 계산 엔진과 출처 표시·인용 검증을 제공합니다.">
+<meta name="keywords" content="노동상담,노동법,AI 노동상담,임금체불,퇴직금 계산,주휴수당,연차수당,부당해고,직장 내 괴롭힘,실업급여,4대보험,통상임금,평균임금,근로기준법">
+<link rel="canonical" href="https://laborconsult.vercel.app/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+
+<!-- ── PWA / 아이콘 ── -->
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1B2A4A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="노동상담">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<!-- ── 공유 카드 ── -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="기초 노동상담">
+<meta property="og:title" content="기초 노동상담 — 노동법 AI 상담·임금계산">
+<meta property="og:description" content="근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담. 28종 임금 계산 엔진과 출처 표시·인용 검증을 제공합니다.">
+<meta property="og:url" content="https://laborconsult.vercel.app/">
+<meta property="og:image" content="https://laborconsult.vercel.app/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="기초 노동상담 — 노동법 AI 상담·임금계산">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="기초 노동상담 — 노동법 AI 상담·임금계산">
+<meta name="twitter:description" content="근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담. 28종 임금 계산 엔진 제공.">
+<meta name="twitter:image" content="https://laborconsult.vercel.app/og-image.png">
+
+<!-- ── 구조화 데이터 ──
+     FAQPage는 의도적으로 넣지 않는다: FAQ_DATA는 질문 프롬프트만 있고 답변이 페이지에
+     노출되지 않아 구조화 데이터 정책(답변 가시성) 위반이 된다. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://laborconsult.vercel.app/#website",
+      "url": "https://laborconsult.vercel.app/",
+      "name": "기초 노동상담",
+      "description": "근로기준법·판례·행정해석을 근거로 답하는 무료 AI 노동상담과 임금 계산 서비스",
+      "inLanguage": "ko-KR",
+      "publisher": { "@id": "https://laborconsult.vercel.app/#org" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://laborconsult.vercel.app/#org",
+      "name": "청년노동자인권센터",
+      "url": "https://laborconsult.vercel.app/",
+      "email": "admin@younglabor.kr",
+      "logo": "https://laborconsult.vercel.app/icons/icon-512.png",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "종로구 성균관로12 5층",
+        "addressLocality": "서울시",
+        "addressCountry": "KR"
+      }
+    },
+    {
+      "@type": "WebApplication",
+      "@id": "https://laborconsult.vercel.app/#app",
+      "name": "기초 노동상담",
+      "url": "https://laborconsult.vercel.app/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "All",
+      "inLanguage": "ko-KR",
+      "isPartOf": { "@id": "https://laborconsult.vercel.app/#website" },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" }
+    }
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -34,6 +111,7 @@
     --radius-lg: 20px;
     --radius-pill: 50px;
     --font-display: 'Noto Serif KR', 'Georgia', serif;
+    --font-title: 'Do Hyeon', 'Noto Serif KR', sans-serif;  /* 로고/제목 전용 — 교체 시 이 한 줄만 수정 */
     --font-body: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     /* Callout colors (chat rendering) */
     --co-legal-bg: #eff6ff; --co-legal-border: #2563eb; --co-legal-icon: #1d4ed8;
@@ -78,7 +156,7 @@
     margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
   }
   .menu-logo {
-    font-family: var(--font-display); font-weight: 900; font-size: 17px; color: var(--navy);
+    font-family: var(--font-title); font-weight: 900; font-size: 17px; color: var(--navy);
   }
   .menu-close {
     width: 36px; height: 36px; border-radius: 50%; background: var(--cream);
@@ -110,9 +188,11 @@
     flex: 1; padding: 40px 20px 20px; text-align: center;
   }
   .landing-logo {
-    font-family: var(--font-display); font-size: 36px; font-weight: 900;
+    font-family: var(--font-title); font-size: 36px; font-weight: 900;
     color: var(--navy); margin-bottom: 32px; letter-spacing: -0.5px;
+    text-decoration: none; display: inline-block; transition: color 0.2s;
   }
+  .landing-logo:hover { color: var(--copper); }
 
   /* ── MAIN CONTENT ── */
   #main-content { }
@@ -201,15 +281,18 @@
     border-bottom-right-radius: 4px;
   }
   .msg.assistant {
-    align-self: flex-start; background: #f8f7f5; border: 1px solid var(--border);
+    align-self: flex-start; width: 100%; background: #f8f7f5; border: 1px solid var(--border);
     border-bottom-left-radius: 4px;
   }
-  .msg.assistant :first-child { margin-top: 0; }
+  .msg.assistant > :first-child { margin-top: 0; }
+  .msg.assistant > :last-child { margin-bottom: 0; }
   .msg.status { align-self: center; background: transparent; color: var(--text-muted); font-size: 13px; padding: 4px 8px; }
 
   .sources { font-size: 12px; color: var(--text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
   .sources a { color: var(--navy-light); text-decoration: none; }
   .sources a:hover { text-decoration: underline; }
+  .calc-result { margin: 0 0 12px; border: 1px solid #C08050; border-left: 3px solid #C08050; border-radius: 8px; background: #FAF7F2; overflow-x: auto; }
+  .calc-result-body { margin: 0; padding: 12px 14px; font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px; line-height: 1.55; color: #2A2A2A; white-space: pre; }
 
   /* Contact cards */
   .contact-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; max-width: 80%; }
@@ -221,17 +304,21 @@
   .contact-chip a:hover { text-decoration: underline; }
 
   /* ── Markdown in assistant messages ── */
-  .msg.assistant h2 { font-size: 16px; margin: 14px 0 6px; }
-  .msg.assistant h3 { font-size: 15px; margin: 10px 0 4px; }
-  .msg.assistant p { margin: 6px 0; }
-  .msg.assistant ul, .msg.assistant ol { margin: 6px 0 6px 20px; }
-  .msg.assistant table { border-collapse: collapse; margin: 10px 0; font-size: 14px; width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--border); }
-  .msg.assistant th { background: var(--navy); color: #fff; font-weight: 600; padding: 8px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--navy-deep); }
-  .msg.assistant td { padding: 7px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 1px solid var(--border); }
+  .msg.assistant h2 { font-size: 18px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .msg.assistant h3 { font-size: 16px; margin: 14px 0 6px; }
+  .msg.assistant p { margin: 8px 0; }
+  .msg.assistant ul, .msg.assistant ol { margin: 8px 0 8px 22px; }
+  .msg.assistant li { margin: 3px 0; }
+  .msg.assistant li > ul { margin: 3px 0 3px 18px; }
+  .msg.assistant li > ul li { font-size: 14.5px; }
+  .msg.assistant .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; }
+  .msg.assistant table { border-collapse: collapse; font-size: 14px; width: 100%; margin: 0; }
+  .msg.assistant th { background: var(--navy); color: #fff; font-weight: 600; padding: 8px 12px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--navy-deep); }
+  .msg.assistant td { padding: 7px 12px; text-align: left; border: none; border-bottom: 1px solid var(--border); word-break: keep-all; }
   .msg.assistant tr:nth-child(even) td { background: var(--cream); }
   .msg.assistant tr:last-child td { border-bottom: none; }
   .msg.assistant tr.total-row td { font-weight: 700; border-top: 2px solid var(--navy); background: var(--co-legal-bg); }
-  .msg.assistant td.num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+  .msg.assistant td.num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .msg.assistant code { background: var(--cream); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
   .msg.assistant pre { background: var(--cream); padding: 10px; border-radius: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; }
   .msg.assistant pre code { background: none; padding: 0; }
@@ -248,12 +335,14 @@
   .msg.assistant .callout-danger .callout-title { color: var(--co-danger-icon); }
   .msg.assistant .callout-tip    .callout-title { color: var(--co-tip-icon); }
   .msg.assistant .summary-badge { background: var(--co-summary-bg); border-left: 5px solid var(--co-summary-border); border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 10px 0; font-size: 15px; line-height: 1.7; }
-  .msg.assistant .summary-badge h2 { font-size: 16px; margin: 0 0 6px; color: var(--co-legal-icon); }
+  .msg.assistant .summary-badge h2 { font-size: 16px; margin: 0 0 6px; color: var(--co-legal-icon); border-bottom: none; padding-bottom: 0; }
   .msg.assistant .step-list { list-style: none; margin: 10px 0; padding: 0; counter-reset: step-counter; }
-  .msg.assistant .step-list li { counter-increment: step-counter; position: relative; padding: 8px 0 8px 40px; margin: 0; line-height: 1.5; font-size: 14px; }
-  .msg.assistant .step-list li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-  .msg.assistant .step-list li::after { content: ''; position: absolute; left: 12px; top: 36px; width: 2px; height: calc(100% - 28px); background: var(--border); }
-  .msg.assistant .step-list li:last-child::after { display: none; }
+  .msg.assistant .step-list > li { counter-increment: step-counter; position: relative; padding: 8px 0 8px 40px; margin: 0; line-height: 1.5; font-size: 14px; }
+  .msg.assistant .step-list > li::before { content: counter(step-counter); position: absolute; left: 0; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .msg.assistant .step-list > li::after { content: ''; position: absolute; left: 12px; top: 36px; width: 2px; height: calc(100% - 28px); background: var(--border); }
+  .msg.assistant .step-list > li:last-child::after { display: none; }
+  .msg.assistant .step-list ul { list-style: disc; margin: 4px 0 0 18px; padding: 0; }
+  .msg.assistant .step-list ul li { padding: 2px 0; }
   .msg.assistant hr { border: none; height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent); margin: 18px 0; }
   .msg.assistant .disclaimer-notice { font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; line-height: 1.5; }
   .msg.assistant .math-display { overflow-x: auto; margin: 10px 0; text-align: center; }
@@ -420,9 +509,45 @@
     .footer-info { font-size: 11px; }
     .msg.assistant .callout { padding: 8px 10px; margin: 8px 0; }
     .msg.assistant .summary-badge { padding: 10px 12px; }
-    .msg.assistant .step-list li { padding-left: 34px; }
-    .msg.assistant .step-list li::before { width: 22px; height: 22px; font-size: 11px; }
-    .msg.assistant .step-list li::after { left: 10px; top: 32px; }
+    .msg.assistant .step-list > li { padding-left: 34px; }
+    .msg.assistant .step-list > li::before { width: 22px; height: 22px; font-size: 11px; }
+    .msg.assistant .step-list > li::after { left: 10px; top: 32px; }
+    .msg.assistant table { font-size: 13px; }
+    .msg.assistant th, .msg.assistant td { padding: 6px 10px; }
+    .msg.assistant ul, .msg.assistant ol { margin-left: 18px; }
+    .msg.assistant li > ul { margin-left: 14px; }
+  }
+
+  /* ── 공지사항 배너 ── */
+  #notice-banner {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin: 0 16px 4px; padding: 11px 14px;
+    border-radius: var(--radius-sm); border: 1px solid var(--copper-light);
+    background: #FFF8F0; font-size: 13.5px; line-height: 1.6; color: var(--text);
+  }
+  #notice-banner[hidden] { display: none; }
+  #notice-banner.level-warn { border-color: #E0A0A0; background: #FFF4F4; }
+  #notice-banner .notice-icon { flex-shrink: 0; font-size: 14px; line-height: 1.6; }
+  #notice-banner .notice-body { flex: 1; min-width: 0; }
+  #notice-banner .notice-link {
+    display: inline-block; margin-left: 6px; color: var(--copper);
+    font-weight: 600; text-decoration: underline; white-space: nowrap;
+  }
+  #notice-banner .notice-close {
+    flex-shrink: 0; background: none; border: none; cursor: pointer;
+    color: var(--text-secondary); font-size: 18px; line-height: 1;
+    padding: 0 2px; min-width: 24px; min-height: 24px;
+  }
+  #notice-banner .notice-close:hover { color: var(--navy); }
+  /* #site-header는 position:fixed(z-index 200)로 화면 우상단에 떠 있다. 뷰포트가 좁아지면
+     배너 오른쪽이 그 아래로 들어가 닫기 버튼이 눌리지 않으므로 우측 여백을 비워 둔다.
+     기준: 헤더 44px + right 16px + 간격 → 56px. */
+  @media (max-width: 900px) {
+    #notice-banner { padding-right: 56px; }
+  }
+  @media (max-width: 600px) {
+    #notice-banner { margin: 0 12px 4px; font-size: 13px; padding: 10px 56px 10px 12px; }
+    #notice-banner .notice-link { display: block; margin-left: 0; margin-top: 4px; }
   }
 </style>
 </head>
@@ -478,6 +603,10 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       최근 질문
     </button>
+    <button class="menu-item" data-pwa-install onclick="promptInstall(); closeMenu()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      홈 화면에 추가
+    </button>
   </div>
   <div class="menu-divider"></div>
   <div class="menu-section">
@@ -486,12 +615,21 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       대화 저장
     </button>
+    <button class="menu-item" id="menu-reset-btn" onclick="resetChat(); closeMenu()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      대화 초기화
+    </button>
   </div>
 </nav>
 
+<!-- ═══ 공지사항 배너 ═══
+     내용은 /notice.json 에서 읽는다. 파일이 없거나 표시 기간이 아니면 아무것도 그리지 않는다.
+     약관 제3·7조와 개인정보처리방침 제9항이 약속한 "서비스 내 공지사항"의 표시 위치. -->
+<div id="notice-banner" role="status" hidden></div>
+
 <!-- ═══ LANDING (Google-style) ═══ -->
 <div id="landing">
-  <div class="landing-logo">기초 노동상담</div>
+  <a href="/" class="landing-logo" aria-label="첫 화면으로 이동">기초 노동상담</a>
 
   <section id="chat-section">
     <div class="chat-container">
@@ -500,12 +638,12 @@
         <div id="input-wrapper">
           <div id="file-preview"></div>
           <div id="input-area">
-            <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개)">
+            <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개 · 합계 3MB)">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
-            <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
+            <input type="file" id="file-input" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.txt,.md" hidden>
             <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." aria-label="노동법 관련 질문 입력" rows="1" autocomplete="off"></textarea>
             <button id="send-btn">전송</button>
           </div>
@@ -550,7 +688,7 @@
   <div class="footer-inner">
     <div class="footer-title">청년노동자인권센터</div>
     <div class="footer-info">서울시 종로구 성균관로12 5층 · <a href="mailto:admin@younglabor.kr">admin@younglabor.kr</a></div>
-    <div class="footer-links"><a href="#">개인정보처리방침</a> <a href="#">이용약관</a></div>
+    <div class="footer-links"><a href="/privacy.html">개인정보처리방침</a> <a href="/terms.html">이용약관</a> <a href="/install.html">앱 설치</a></div>
   </div>
 </footer>
 
@@ -727,23 +865,52 @@ document.addEventListener('drop', e => {
   addFiles(Array.from(e.dataTransfer.files));
 });
 
+// 브라우저가 MIME을 비워 보내는 파일(.md 등)은 확장자로 보정 —
+// 그대로 octet-stream을 보내면 백엔드 허용 목록에서 거부된다.
+function guessMime(f) {
+  if (f.type && f.type !== 'application/octet-stream') return f.type;
+  const n = f.name.toLowerCase();
+  if (n.endsWith('.txt')) return 'text/plain';
+  if (n.endsWith('.md')) return 'text/markdown';
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+  if (n.endsWith('.webp')) return 'image/webp';
+  if (n.endsWith('.gif')) return 'image/gif';
+  return f.type || 'application/octet-stream';
+}
+
+// base64 인코딩이 용량을 4/3배로 부풀리므로, 합계가 이 값을 넘으면
+// Vercel 요청 바디 한도(4.5MB)에 걸려 413으로 거부된다. 사전 차단.
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
+
+// 서버(file_parser.py) 허용 목록과 동일 — image/*로 느슨하게 받으면
+// svg/heic 등이 드래그앤드롭(accept 미적용)으로 통과 후 서버에서 거부된다
+const ALLOWED_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/markdown',
+]);
+
 function addFiles(files) {
   for (const f of files) {
     if (pendingFiles.length >= MAX_FILES) {
       alert('파일은 최대 3개까지 첨부할 수 있습니다.');
       break;
     }
-    const ok = f.type.startsWith('image/') ||
-               f.type === 'application/pdf' ||
-               f.type === 'text/plain' || f.type === 'text/markdown' ||
-               f.name.endsWith('.txt') || f.name.endsWith('.md');
+    const mime = guessMime(f);
+    const ok = ALLOWED_MIMES.has(mime);
     if (!ok) {
       alert('지원하지 않는 파일 형식입니다: ' + f.name + '\n이미지(JPG/PNG), PDF, TXT 파일만 가능합니다.');
       continue;
     }
-    const maxMB = f.type.startsWith('image/') ? 3 : f.type === 'application/pdf' ? 3 : 1;
+    const maxMB = mime.startsWith('image/') ? 3 : mime === 'application/pdf' ? 3 : 1;
     if (f.size > maxMB * 1024 * 1024) {
       alert('파일이 너무 큽니다: ' + f.name + ' (최대 ' + maxMB + 'MB)');
+      continue;
+    }
+    const totalBytes = pendingFiles.reduce((s, p) => s + p.size, 0) + f.size;
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      alert('첨부 파일 용량 합계는 3MB 이하여야 합니다.\n(' + f.name + ' 추가 시 초과)');
       continue;
     }
     pendingFiles.push(f);
@@ -793,6 +960,31 @@ function expandChat() {
   // 액션바만 제거 (이전 대화는 유지)
   const oldActions = card.querySelector('.answer-actions');
   if (oldActions) oldActions.remove();
+}
+
+// ── 대화 초기화 (새 상담 시작) ──────────────────────────────────────────────
+function resetChat() {
+  if (chat.children.length && !confirm('현재 대화를 모두 지우고 새로 시작할까요?')) return;
+
+  // 세션 초기화 → 서버에서도 새 대화로 시작
+  sessionId = null;
+  try { sessionStorage.removeItem('chatSessionId'); } catch (e) { /* ignore */ }
+
+  // 채팅 영역을 랜딩(입력창만 보이는) 상태로 되돌림
+  const card = document.getElementById('chat-card');
+  card.classList.remove('active');
+  const actions = card.querySelector('.answer-actions');
+  if (actions) actions.remove();
+  chat.innerHTML = '';
+
+  // 입력·첨부 초기화
+  msgInput.value = '';
+  msgInput.style.height = 'auto';
+  pendingFiles = [];
+  renderPreview();
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  msgInput.focus();
 }
 
 // ── 메시지 ───────────────────────────────────────────────────────────────────
@@ -910,6 +1102,32 @@ function inlineTransform(t) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => renderMdLink(txt, url));
 }
 
+function indentWidth(s) {
+  let w = 0;
+  for (const ch of s) w += ch === '\t' ? 2 : 1;
+  return w;
+}
+
+// 들여쓰기 스택 기반 중첩 <ul> 빌더. LLM 출력의 2·3·4칸 들여쓰기 혼용을 ±1칸
+// 허용치로 흡수하고, 과도한 깊이는 중첩 2단계(level 0·1·2)에서 캡한다.
+function buildNestedUl(items) {
+  const stack = [items[0].indent];
+  let html = '<ul>';
+  for (const { indent, text } of items) {
+    while (stack.length > 1 && indent < stack[stack.length - 1] - 1) {
+      html += '</ul></li>';
+      stack.pop();
+    }
+    if (indent > stack[stack.length - 1] + 1 && stack.length < 3 && html.endsWith('</li>')) {
+      html = html.slice(0, -5) + '<ul>';
+      stack.push(indent);
+    }
+    html += '<li>' + inlineTransform(text) + '</li>';
+  }
+  while (stack.length > 1) { html += '</ul></li>'; stack.pop(); }
+  return html + '</ul>';
+}
+
 const CALLOUT_MAP = [
   { pattern: /^(?:📘\s*)?(?:\*\*)?(?:법적\s*근거|관련\s*법조문|관련\s*법률|관련\s*판례|법령)(?:\*\*)?/i, type: 'legal', icon: '📘' },
   { pattern: /^(?:⚠️\s*)?(?:\*\*)?(?:주의사항|주의|유의|예외)(?:\*\*)?/i, type: 'warn', icon: '⚠️' },
@@ -936,7 +1154,7 @@ function md(text) {
 
   text = text.replace(/((?:^\|.+\|[ \t]*$\n?)+)/gm, block => {
     const rows = block.trim().split('\n');
-    let h = '<table>';
+    let h = '<div class="table-wrap"><table>';
     let headerDone = false;
     for (const row of rows) {
       if (/^\|[\s:|-]+\|$/.test(row.trim())) { headerDone = true; continue; }
@@ -946,36 +1164,49 @@ function md(text) {
       h += '<tr' + (isTotal ? ' class="total-row"' : '') + '>';
       for (const c of cells) {
         const isNum = (tag === 'td') && /^[\d,]+(?:\.\d+)?(?:\s*원)?$/.test(c.replace(/\*\*/g, '').trim());
-        h += '<' + tag + (isNum ? ' class="num-cell"' : '') + '>' + c + '</' + tag + '>';
+        // 셀 내용에도 인라인 변환 적용 — 미적용 시 **볼드**가 별표 원문째 노출됨
+        h += '<' + tag + (isNum ? ' class="num-cell"' : '') + '>' + inlineTransform(c) + '</' + tag + '>';
       }
       h += '</tr>';
       if (!headerDone) headerDone = true;
     }
-    h += '</table>';
-    return stash(h);
+    h += '</table></div>';
+    return stash(h) + '\n';
   });
 
-  text = text.replace(/((?:^[ \t]*[-*] .+$\n?)+)/gm, block => {
-    // inlineTransform 적용 — 과거엔 누락되어 불릿 항목의 **볼드**·`코드`가 원문(별표)째 노출됐음
-    const items = block.trim().split('\n').map(l => '<li>' + inlineTransform(l.replace(/^[ \t]*[-*] /, '')) + '</li>');
-    return stash('<ul>' + items.join('') + '</ul>');
-  });
-
-  text = text.replace(/((?:^[ \t]*\d+\. .+(?:\n(?![ \t]*\d+\. )(?![ \t]*[-*] ).+)*$\n?)+)/gm, (block, _, offset) => {
+  // 번호 목록을 불릿보다 먼저 파싱 — 번호 항목에 딸린 들여쓴 하위 불릿을 항목 안에
+  // 직접 수용한다. 과거엔 불릿이 먼저 통째로 stash되어 placeholder가 다음 번호 줄과
+  // 붙는 바람에 ② 이후 항목이 ①에 병합되고 하위 불릿 내용은 미복원으로 소실됐음.
+  text = text.replace(/((?:^[ \t]*\d+\.[ \t].+(?:\n(?![ \t]*\d+\.[ \t])(?![-*][ \t]).+)*$\n?)+)/gm, (block, _, offset) => {
     const preceding = text.slice(Math.max(0, offset - 200), offset);
     const isStep = /(?:절차|방법|순서|과정|단계|대응|신청|진행)\s*$/m.test(preceding)
       || /^#{2,3}\s.*(?:절차|방법|순서|과정|단계|대응|신청|진행)/m.test(preceding);
-    // 번호 줄마다 새 항목 시작, 번호 없는 후속 줄(계산식 "→ ..." 등)은 직전 항목에 병합.
-    // 과거엔 항목 사이 continuation 줄이 리스트를 분절해 각 항목이 개별 <ol>이 되어
-    // 번호가 매번 1로 리셋됐음 — 하나의 <ol>로 묶어 순번(1·2·3)이 이어지게 한다.
+    // 번호 줄마다 새 항목 시작, 들여쓴 불릿 줄은 해당 항목의 하위 목록으로,
+    // 그 외 후속 줄(계산식 "→ ..." 등)은 직전 항목 본문에 병합해 순번(1·2·3)을 유지한다.
     const items = [];
     for (const line of block.replace(/\n+$/, '').split('\n')) {
-      const m = line.match(/^[ \t]*\d+\.\s+(.*)$/);
-      if (m) items.push(m[1]);
-      else if (items.length) items[items.length - 1] += '\n' + line.trim();
+      const num = line.match(/^[ \t]*\d+\.[ \t]+(.*)$/);
+      const sub = line.match(/^([ \t]+)[-*][ \t]+(.*)$/);
+      if (num) items.push({ text: num[1], subs: [] });
+      else if (sub && items.length) items[items.length - 1].subs.push({ indent: indentWidth(sub[1]), text: sub[2] });
+      else if (items.length) items[items.length - 1].text += '\n' + line.trim();
     }
-    const lis = items.map(it => '<li>' + inlineTransform(it).replace(/\n/g, '<br>') + '</li>').join('');
-    return stash(isStep ? '<ol class="step-list">' + lis + '</ol>' : '<ol>' + lis + '</ol>');
+    const lis = items.map(it => {
+      let inner = inlineTransform(it.text).replace(/\n/g, '<br>');
+      if (it.subs.length) inner += buildNestedUl(it.subs);
+      return '<li>' + inner + '</li>';
+    }).join('');
+    return stash(isStep ? '<ol class="step-list">' + lis + '</ol>' : '<ol>' + lis + '</ol>') + '\n';
+  });
+
+  text = text.replace(/((?:^[ \t]*[-*][ \t].+$\n?)+)/gm, block => {
+    // 들여쓰기 스택 기반 중첩 <ul> — 평탄화하던 과거와 달리 하위 항목 구조를 보존한다.
+    const items = block.replace(/\n+$/, '').split('\n').map(l => {
+      const m = l.match(/^([ \t]*)[-*][ \t]+(.*)$/);
+      return m && { indent: indentWidth(m[1]), text: m[2] };
+    }).filter(Boolean);
+    if (!items.length) return block;
+    return stash(buildNestedUl(items)) + '\n';
   });
 
   text = text.replace(/((?:^> .+$\n?)+)/gm, block => {
@@ -986,10 +1217,10 @@ function md(text) {
       if (m) {
         const title = m[0].replace(/\*\*/g, '');
         const body = inlineTransform(joined.slice(m[0].length).replace(/^[\s:：\-]+/, '')).replace(/\n/g, '<br>');
-        return stash('<div class="callout callout-' + type + '"><div class="callout-title">' + icon + ' ' + title + '</div>' + body + '</div>');
+        return stash('<div class="callout callout-' + type + '"><div class="callout-title">' + icon + ' ' + title + '</div>' + body + '</div>') + '\n';
       }
     }
-    return stash('<blockquote>' + inlineTransform(joined).replace(/\n/g, '<br>') + '</blockquote>');
+    return stash('<blockquote>' + inlineTransform(joined).replace(/\n/g, '<br>') + '</blockquote>') + '\n';
   });
 
   let html = text
@@ -1009,8 +1240,16 @@ function md(text) {
     .replace(/^---$/gm, '<hr>');
 
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
-  html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
+  // 고정점 루프 복원 — stash된 블록 HTML 안에 다른 placeholder가 들어 있는 경우
+  // (번호 목록이 표·불릿 블록을 삼킨 케이스) 단일 패스로는 영구 미복원되어
+  // 내용이 소실되므로, 잔여 placeholder가 없어질 때까지 반복한다(순환 없음: DAG).
+  let prevHtml;
+  do {
+    prevHtml = html;
+    html = html.replace(/\x00B(\d+)\x00/g, (_, i) => '</p>' + blocks[+i] + '<p>');
+  } while (html !== prevHtml);
   html = '<p>' + html + '</p>';
+  html = html.replace(/<p><br>/g, '<p>');
   html = html.replace(/<p>\s*<\/p>/g, '');
   html = html.replace(/(<p>(?:⚠️\s*)?본\s*(?:답변|계산\s*결과|판정\s*결과)은?\s*참고용[\s\S]*?<\/p>)$/, '<div class="disclaimer-notice">$1</div>');
   return html;
@@ -1038,7 +1277,7 @@ function renderContacts(agencies, afterEl) {
   else wrapper.appendChild(bar);
 }
 
-async function readSSE(resp) {
+async function readSSE(resp, onActivity) {
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -1046,10 +1285,14 @@ async function readSSE(resp) {
   let assistantEl = null;
   let fullText = '';
   let pendingContacts = null;
+  let pendingSources = null;
+  let pendingCalc = null;
+  let streamDone = false;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (onActivity) onActivity();   // 데이터 수신 → idle 타이머 리셋
     buffer += decoder.decode(value, { stream: true });
 
     const lines = buffer.split('\n');
@@ -1059,7 +1302,10 @@ async function readSSE(resp) {
       if (!line.startsWith('data: ')) continue;
       const event = JSON.parse(line.slice(6));
 
-      if (event.type === 'session') {
+      if (event.type === 'done') {          // 완료 마커 (서버가 저장까지 마친 뒤 전송)
+        streamDone = true;
+        break;
+      } else if (event.type === 'session') {
         sessionId = event.session_id;
         try { sessionStorage.setItem('chatSessionId', sessionId); } catch (e) { /* ignore */ }
       } else if (event.type === 'status') {
@@ -1071,8 +1317,10 @@ async function readSSE(resp) {
         const el = addMsg('assistant', event.text);
         ensureCopyBtn(el);
         if (pendingContacts) renderContacts(pendingContacts, el);
-      } else if (event.type === 'sources' || event.type === 'meta') {
-        // handled in answer
+      } else if (event.type === 'sources') {
+        pendingSources = event.hits || null;   // 답변 완료 후 출처 표시
+      } else if (event.type === 'meta') {
+        if (event.calc_result) pendingCalc = event.calc_result;   // 답변 완료 후 정확 계산값 카드로 표시
       } else if (event.type === 'replace') {
         if (assistantEl) {
           fullText = event.text;
@@ -1091,10 +1339,17 @@ async function readSSE(resp) {
         chat.scrollTop = chat.scrollHeight;
       }
     }
+    if (streamDone) break;
+  }
+  // done 수신 = 서버가 저장을 마쳤다는 뜻. 스트림을 명시적으로 닫는다
+  if (streamDone) {
+    try { await reader.cancel(); } catch (_) { /* ignore */ }
   }
   // 마지막 assistant 메시지에 액션 바 표시
   var lastAssistant = assistantEl || chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant');
   if (lastAssistant) {
+    renderCalcResult(pendingCalc, lastAssistant);
+    renderSources(pendingSources, lastAssistant);
     if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
     showAnswerActions(lastAssistant);
@@ -1103,6 +1358,37 @@ async function readSSE(resp) {
     removeStatus();
     addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
   }
+}
+
+// ── 답변 출처 표시 (sources 이벤트) ──────────────────────────────────────────
+// 말풍선(innerHTML 교체 대상) 바깥에 붙여 replace 이벤트에도 보존된다.
+
+function renderSources(hits, el) {
+  if (!hits || !hits.length || !el) return;
+  var labels = { precedent: '판례', interpretation: '행정해석', regulation: '훈령·예규',
+                 counsel: '노무사 상담', qa: '상담 Q&A' };
+  var div = document.createElement('div');
+  div.className = 'sources';
+  div.textContent = '근거 자료: ' + hits.map(function (h) {
+    var label = labels[h.source_type] || h.source_type || '자료';
+    return '[' + label + '] ' + h.title + (h.section ? ' — ' + h.section : '');
+  }).join('  ·  ');
+  el.insertAdjacentElement('afterend', div);
+}
+
+// ── 정확 계산값 카드 (meta.calc_result) ──────────────────────────────────────
+// 계산기 산출값은 사전 포맷된 플레인 텍스트 — 정렬·줄바꿈 보존 위해 <pre>로 렌더.
+// LLM 답변의 수치 재현에 의존하지 않는 '결정적' 표시. 말풍선 바깥이라 replace에도 보존.
+
+function renderCalcResult(text, el) {
+  if (!text || !el) return;
+  var div = document.createElement('div');
+  div.className = 'calc-result';
+  var pre = document.createElement('pre');
+  pre.className = 'calc-result-body';
+  pre.textContent = text;   // textContent — XSS 안전, 원문 그대로
+  div.appendChild(pre);
+  el.insertAdjacentElement('beforebegin', div);   // 답변 위에 정확값 먼저
 }
 
 // ── 답변 완료 후 액션 바 ─────────────────────────────────────────────────────
@@ -1168,7 +1454,9 @@ function actionPDF() {
     'h1{font-size:20px;border-bottom:2px solid #1B2A4A;padding-bottom:8px;margin-bottom:16px;}' +
     '.q{background:#f0f4f8;padding:12px 16px;border-radius:8px;margin-bottom:12px;font-weight:600;}' +
     '.a{font-size:15px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #eee;}' +
-    'table{border-collapse:collapse;margin:10px 0;}th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;}th{background:#1B2A4A;color:#fff;}' +
+    'table{width:100%;border-collapse:collapse;margin:12px 0;}th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;}th{background:#1B2A4A;color:#fff;}' +
+    'tr:nth-child(even) td{background:#faf8f5;}td.num-cell{text-align:right;white-space:nowrap;}tr.total-row td{font-weight:700;background:#f5efe6;}' +
+    '.table-wrap{margin:12px 0;}ul ul{margin:2px 0 2px 18px;}li{margin:3px 0;}' +
     '.disclaimer{font-size:12px;color:#888;border-top:1px solid #ddd;margin-top:24px;padding-top:12px;}</style></head><body>' +
     '<h1>기초 노동상담</h1>' +
     answerHtml +
@@ -1307,7 +1595,7 @@ async function send() {
 
   let displayHtml = text ? text.replace(/</g, '&lt;').replace(/\n/g, '<br>') : '';
   if (pendingFiles.length > 0) {
-    const names = pendingFiles.map(f => f.name).join(', ');
+    const names = escHtml(pendingFiles.map(f => f.name).join(', '));  // \uD30C\uC77C\uBA85 XSS \uBC29\uC9C0
     if (displayHtml) displayHtml += '<br>';
     displayHtml += '<span style="font-size:12px;opacity:0.8">\uD83D\uDCCE ' + names + '</span>';
   }
@@ -1317,7 +1605,7 @@ async function send() {
   for (const f of pendingFiles) {
     attachments.push({
       filename: f.name,
-      content_type: f.type || 'application/octet-stream',
+      content_type: guessMime(f),
       data: await fileToBase64(f),
     });
   }
@@ -1330,12 +1618,17 @@ async function send() {
   await doSend(text, attachments);
 }
 
-const SEND_TIMEOUT_MS = 60000; // 응답 전체 대기 상한 — 무한 대기 방지(F-2d)
+const SEND_TIMEOUT_MS = 60000; // 무활동(idle) 상한 — 이벤트 수신마다 리셋, 진행 중 응답은 유지하고 진짜 멈춤만 감지(F-2d)
 
 async function doSend(text, attachments) {
   btn.disabled = true;
   const ctrl = new AbortController();
-  const timeoutId = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+  let timeoutId = null;
+  const resetIdleTimeout = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+  };
+  resetIdleTimeout();
 
   try {
     let resp;
@@ -1360,7 +1653,7 @@ async function doSend(text, attachments) {
       try { const body = await resp.json(); detail = body.detail || ''; } catch (_) {}
       throw new Error('서버 오류 (' + resp.status + ')' + (detail ? ': ' + detail : ''));
     }
-    await readSSE(resp);
+    await readSSE(resp, resetIdleTimeout);
   } catch (e) {
     removeStatus();
     const timedOut = e.name === 'AbortError';
@@ -1598,5 +1891,73 @@ initFAQ();
   }
 })();
 </script>
+
+<script>
+// ── 공지사항 배너 ────────────────────────────────────────────────────────────
+// /notice.json 을 읽어 표시 기간에 해당하는 첫 공지 하나를 띄운다.
+// 파일이 없거나 파싱에 실패하면 조용히 건너뛴다(상담 기능에 영향 없음).
+(function initNotice() {
+  const KEY = 'dismissedNotices';
+  const el = document.getElementById('notice-banner');
+  if (!el) return;
+
+  const dismissed = () => {
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; }
+  };
+  const inPeriod = (n, today) =>
+    (!n.startsAt || n.startsAt <= today) && (!n.endsAt || n.endsAt >= today);
+
+  fetch('/notice.json', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => {
+      const list = data && Array.isArray(data.notices) ? data.notices : [];
+      const today = new Date().toISOString().slice(0, 10);
+      const seen = dismissed();
+      const n = list.find(x => x && x.id && x.message && inPeriod(x, today) && !seen.includes(x.id));
+      if (!n) return;
+
+      const esc = s => String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+      const icon = n.level === 'warn' ? '⚠️' : '📢';
+      let html = `<span class="notice-icon" aria-hidden="true">${icon}</span>`
+               + `<span class="notice-body">${esc(n.message)}`;
+      // 링크는 사이트 내부 경로만 허용 — notice.json이 오염돼도 외부로 유도되지 않게.
+      // 정규식(`/^\/[^/]/`)으로는 부족하다: `/\evil.com` 은 통과하는데 브라우저의
+      // URL 파서가 특수 스킴에서 백슬래시를 슬래시로 정규화해 https://evil.com 이 된다.
+      // 실제 파서로 해석한 origin을 비교해야 한다.
+      let safeLink = null;
+      if (n.linkUrl) {
+        try {
+          const u = new URL(n.linkUrl, location.origin);
+          if (u.origin === location.origin) safeLink = u.pathname + u.search + u.hash;
+        } catch { /* 해석 불가 → 링크 생략 */ }
+      }
+      if (safeLink) {
+        html += `<a class="notice-link" href="${esc(safeLink)}">${esc(n.linkText || '자세히 보기')}</a>`;
+      }
+      html += '</span>';
+      if (n.dismissible !== false) {
+        html += '<button type="button" class="notice-close" aria-label="공지 닫기">&times;</button>';
+      }
+
+      el.className = 'level-' + (n.level === 'warn' ? 'warn' : 'info');
+      el.innerHTML = html;
+      el.hidden = false;
+
+      const closeBtn = el.querySelector('.notice-close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          el.hidden = true;
+          try { localStorage.setItem(KEY, JSON.stringify([...seen, n.id].slice(-20))); } catch {}
+        });
+      }
+    })
+    .catch(() => {});
+})();
+
+// PWA 등록·설치 프롬프트는 /pwa.js 로 분리했다 — board·calculators 도 같은 파일을 쓴다.
+</script>
+<script src="/pwa.js"></script>
 </body>
 </html>

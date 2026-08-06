@@ -1,10 +1,15 @@
 """요청/응답 스키마"""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+# 파싱 폭탄 백스톱 — 실제 길이 제한(기본 2,000자)은 abuse_guard가 담당한다.
+# 3경로 일관 응답을 위해 소프트 한도는 가드가, 하드캡만 여기서 처리(422 → 한국어 핸들러).
+MAX_MESSAGE_HARD_CAP = 20_000
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(max_length=MAX_MESSAGE_HARD_CAP)
     session_id: str | None = None
 
 
@@ -17,7 +22,7 @@ class Attachment(BaseModel):
 
 class ChatWithFilesRequest(BaseModel):
     """파일 첨부 가능한 채팅 요청"""
-    message: str
+    message: str = Field(max_length=MAX_MESSAGE_HARD_CAP)
     session_id: str | None = None
     attachments: list[Attachment] = []
 
@@ -29,6 +34,8 @@ class AnalysisResult(BaseModel):
     extracted_info: dict = {}
     relevant_laws: list[str] = []
     missing_info: list[str] = []
+    # 숫자 범위 검증이 제거한 파라미터 라벨 — 코드 판정 교체 후에도 보존 (CALC-13)
+    validation_warnings: list[str] = []
     question_summary: str = ""
     # 법률상담 전용 필드 (계산 불필요 + 괴롭힘 아닌 경우)
     consultation_type: str | None = None
@@ -37,3 +44,6 @@ class AnalysisResult(BaseModel):
     precedent_keywords: list[str] = []
     # 특수 근로자 그룹 (청소년, 외국인, 장애인, 산재)
     worker_group: str | None = None
+    # 노동법 스코프 판정 (chatbot-security FR-05)
+    # 기본값 True = analyzer 실패·필드 누락 시 fail-open(상담 허용)
+    is_labor_related: bool = True
