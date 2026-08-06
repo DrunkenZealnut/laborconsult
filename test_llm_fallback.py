@@ -148,14 +148,17 @@ def test_t6_all_providers_empty_raises() -> None:
 def test_provider_order_and_gemini_gating() -> None:
     """제공자 순서 규약 — Gemini는 키가 있을 때만, ANSWER_PROVIDER가 1순위 지정."""
     import os
-    names = [n for n, _ in pipeline._answer_providers(_cfg(gemini=True))]
-    assert names == ["Claude", "OpenAI", "Gemini"], names
-    names = [n for n, _ in pipeline._answer_providers(_cfg(gemini=False))]
-    assert names == ["Claude", "OpenAI"], names
 
-    prev = os.environ.get("ANSWER_PROVIDER")
-    os.environ["ANSWER_PROVIDER"] = "openai"
+    # 기본 순서 검증은 환경에 ANSWER_PROVIDER가 없어야 성립한다 — CI나 개발 셸에
+    # 값이 남아 있으면 코드 결함 없이 실패하므로 테스트 전체를 격리한다.
+    prev = os.environ.pop("ANSWER_PROVIDER", None)
     try:
+        names = [n for n, _ in pipeline._answer_providers(_cfg(gemini=True))]
+        assert names == ["Claude", "OpenAI", "Gemini"], names
+        names = [n for n, _ in pipeline._answer_providers(_cfg(gemini=False))]
+        assert names == ["Claude", "OpenAI"], names
+
+        os.environ["ANSWER_PROVIDER"] = "openai"
         names = [n for n, _ in pipeline._answer_providers(_cfg(gemini=True))]
         assert names[0] == "OpenAI", names
     finally:
@@ -355,6 +358,51 @@ def test_intent_cross_vendor_fallback() -> None:
     print("  ✅ 교차벤더 폴백: Claude 실패 → OpenAI가 계산 유형·임금·스코프를 채움")
 
 
+def test_intent_empty_tool_response_falls_back() -> None:
+    """Claude가 tool_use 없이 완료해도 폴백해야 한다 (CodeRabbit #4).
+
+    _stream_answer의 FR-01("빈 응답은 실패다")과 같은 규약이다. 예외 없이 None을
+    돌려주면 호출부의 except를 못 타서 OpenAI 폴백이 통째로 생략됐다.
+    """
+    from app.core import analyzer
+
+    fake = _FakeOpenAITool({
+        "requires_calculation": True,
+        "calculation_types": ["annual_leave"],
+        "is_labor_related": True,
+        "question_summary": "연차 문의",
+    })
+
+    class _EmptyResp:
+        content = []          # tool_use 블록 없음
+
+    class Cfg:
+        openai_client = fake
+        analyzer_model = "claude-sonnet-5"
+
+        class anthropic_client:
+            @staticmethod
+            def with_options(**kw):
+                class _M:
+                    class messages:
+                        @staticmethod
+                        def create(**kw):
+                            return _EmptyResp()
+                return _M
+
+    prev_level = logging.getLogger().manager.disable
+    logging.disable(logging.CRITICAL)
+    try:
+        result = analyzer.analyze_intent("연차 며칠인가요?", [], Cfg())
+    finally:
+        logging.disable(prev_level)
+
+    assert result.calculation_types == ["annual_leave"], \
+        f"빈 tool 응답에서 폴백이 생략됨: {result}"
+    assert result.intent_provider == "OpenAI", result.intent_provider
+    print("  ✅ 빈 tool 응답(tool_use 없음) → OpenAI 폴백 발동")
+
+
 def test_intent_fallback_disabled_degrades() -> None:
     """INTENT_FALLBACK_ENABLED=false면 폴백 없이 예외를 전파해 레거시로 강등 (FR-05)."""
     from app.core import analyzer
@@ -446,6 +494,51 @@ def test_analysis_result_vendor_neutral() -> None:
 
 # ── 교정 타임아웃 ─────────────────────────────────────────────────────────────
 
+def test_notices_survive_citation_correction() -> None:
+    """교정 결과가 절단·면책 고지를 떨어뜨려도 복원되는지 (CodeRabbit #8).
+
+    교정은 답변 전문을 외부 LLM에 재생성시키므로 말미 고지가 탈락할 수 있다.
+    그대로 replace로 내보내면 사용자가 이미 받은 고지가 사라진다.
+    """
+    from app.core.pipeline import (
+        _ensure_notices, DISCLAIMER_MARK, TRUNCATED_MARK,
+    )
+
+    stripped = "교정된 본문만 남고 말미 고지가 사라진 상태"
+
+    restored = _ensure_notices(stripped, truncated=True)
+    assert TRUNCATED_MARK in restored, "절단 고지가 복원되지 않음"
+    assert DISCLAIMER_MARK in restored, "면책 고지가 복원되지 않음"
+    assert restored.index(TRUNCATED_MARK) < restored.index(DISCLAIMER_MARK), \
+        "복원 순서가 원본(절단 → 면책)과 다름"
+
+    # 이미 고지가 있으면 중복 부착하지 않는다
+    twice = _ensure_notices(restored, truncated=True)
+    assert twice == restored, "고지가 중복 부착됨"
+
+    # 절단이 아니면 절단 고지는 붙이지 않는다
+    normal = _ensure_notices("정상 답변", truncated=False)
+    assert TRUNCATED_MARK not in normal and DISCLAIMER_MARK in normal, normal
+    print("  ✅ 교정 후 절단·면책 고지 복원(순서 유지, 중복 없음)")
+
+
+def test_rewrite_guard_rejects_empty_and_short() -> None:
+    """교정 결과 검증이 전 제공자에 균일 적용되는지 (CodeRabbit #6).
+
+    공백만 반환한 제공자를 성공으로 처리하면 replace 이벤트가 완성된 답변을
+    통째로 지운다 — 빈 응답은 다음 제공자로 넘겨야 한다.
+    """
+    from app.core.citation_validator import _is_valid_rewrite
+
+    original = "가" * 1000
+    assert not _is_valid_rewrite("", original), "빈 문자열이 통과"
+    assert not _is_valid_rewrite(None, original), "None이 통과"
+    assert not _is_valid_rewrite("   \n  ".strip(), original), "공백만이 통과"
+    assert not _is_valid_rewrite("가" * 500, original), "본문 절반 유실이 통과"
+    assert _is_valid_rewrite("가" * 950, original), "정상 교정이 거부됨"
+    print("  ✅ 교정 결과 가드: 빈 응답·공백·과도 축소 거부(전 제공자 공통)")
+
+
 def test_rewrite_timeout_scaling() -> None:
     """FR-07 — 교정 타임아웃이 입력 길이에 비례하고 상하한이 걸리는지."""
     from app.core.citation_validator import _rewrite_timeout
@@ -474,7 +567,7 @@ def test_citation_stage_budget() -> None:
     logging.disable(logging.CRITICAL)
     try:
         result = cv.correct_hallucinated_citations(
-            response_text="원본 답변", hallucinated=["2023다1234"],
+            response_text="원본 답변", hallucinated=["대법원 2023다1234"],
             anthropic_client=Exploding(), gemini_api_key="fake",
             openai_client=Exploding(),
             deadline=time.monotonic() - 1,     # 이미 소진된 예산
@@ -499,9 +592,12 @@ def main() -> None:
     test_llm_meta_payload()
     test_t8_tool_schema_conversion()
     test_intent_cross_vendor_fallback()
+    test_intent_empty_tool_response_falls_back()
     test_intent_fallback_disabled_degrades()
     test_intent_both_vendors_fail_keeps_fail_open()
     test_analysis_result_vendor_neutral()
+    test_notices_survive_citation_correction()
+    test_rewrite_guard_rejects_empty_and_short()
     test_rewrite_timeout_scaling()
     test_citation_stage_budget()
     print("\n✅ LLM 폴백 경화 테스트 전부 통과")

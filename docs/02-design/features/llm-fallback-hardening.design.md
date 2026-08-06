@@ -595,11 +595,11 @@ T1~T6은 `_stream_answer`를 직접 호출해 검증하고, T4의 절단 고지�
 
 | 리스크 | 완화 | 즉시 롤백 수단 |
 |--------|------|----------------|
-| `max_retries=0`이 일시적 429/5xx에 취약 | 3벤더 전환이 재시도를 대체. 전환이 재시도보다 빠름 | `ANSWER_MAX_RETRIES=1` |
+| `max_retries=0`이 일시적 429/5xx에 취약 | 3벤더 전환이 재시도를 대체. 전환이 재시도보다 빠름 | `ANSWER_MAX_RETRIES=1` (**상한 1로 클램프** — 2회 재시도는 무이벤트 75초로 프론트 idle 60초를 넘긴다. CodeRabbit #1 반영) |
 | `read=20s`가 대형 컨텍스트의 TTFT를 끊음 | RAG 컨텍스트 포함 실측 TTFT는 LLM 단독 기준 수 초. 20초는 충분한 여유 | `ANSWER_READ_TIMEOUT=30` |
 | 빈 응답 판정이 짧은 정상 답변을 오탐 | `strip()` 후 0자만 판정 — 1자라도 있으면 성공 | — |
 | OpenAI 폴백 분석 품질이 Claude보다 낮음 | 폴백 전용(정상 경로 무변경). `test_pipeline_wiring` 골든 케이스로 회귀 확인 | `INTENT_FALLBACK_ENABLED=false` |
-| 교정 타임아웃 상향이 응답 지연 증가 | 환각 감지 시에만 발동 + 단계 예산 60초 상한 + ping | `CITATION_STAGE_BUDGET=20` |
+| 교정 타임아웃 상향이 응답 지연 증가 | 환각 감지 시에만 발동 + 단계 예산 **45초** 상한 + ping. 교정 중에는 하트비트를 낼 수 없어 이 값이 곧 무이벤트 구간이므로 프론트 idle 60초보다 확실히 낮게 잡았다(CodeRabbit #9 반영) | `CITATION_STAGE_BUDGET=20` |
 | `gemini-pro-latest` 별칭이 향후 또 교체됨 | 별칭이라 모델 EOL에 자동 추종. 그래도 FR-10 계측이 있으면 다음엔 즉시 안다 | `GEMINI_MODEL` env |
 | `_PUBLIC_EXCLUDE_KEYS` 확장이 `board_posts`에 잘못 적용 | `_apply_guard_filter` docstring 경고 유지 + 호출부는 `qa_conversations` 전용 그대로 | — |
 | 절단 고지가 프론트 렌더러와 충돌 | 신규 SSE 타입 없이 기존 `chunk`로만 전달 | — |

@@ -35,7 +35,11 @@ EXTRACT_MODEL = "claude-sonnet-5"
 #      - public/index.html SEND_TIMEOUT_MS 60초 (무이벤트 구간이 넘으면 브라우저 abort)
 CONNECT_TIMEOUT = 5.0
 ANSWER_READ_TIMEOUT = float(os.getenv("ANSWER_READ_TIMEOUT", "20"))
-ANSWER_MAX_RETRIES = int(os.getenv("ANSWER_MAX_RETRIES", "0"))
+# 재시도 상한 1로 클램프한다. 하트비트는 **벤더 전환 시점에만** 나가므로 한 벤더가
+# 소비하는 시간이 그대로 무이벤트 구간이 된다: retries=1이면 2×25초=50초로 프론트
+# idle 60초 안에 들어오지만, retries=2면 75초가 되어 폴백 도달 전에 브라우저가
+# abort한다. 비상 완화 여지는 남기되 규약이 깨지는 값은 받지 않는다.
+ANSWER_MAX_RETRIES = max(0, min(1, int(os.getenv("ANSWER_MAX_RETRIES", "0"))))
 # 답변 생성 토큰 한도. citation_validator의 교정 한도와 묶여 있다 — 한쪽만 낮추면
 # 교정 결과가 0.7 길이 가드에 걸려 통째로 폐기되고 환각 판례가 그대로 남는다.
 ANSWER_MAX_TOKENS = 8192
@@ -53,7 +57,12 @@ INTENT_FALLBACK_MAX_TOKENS = 4096
 
 # 인용 교정 단계 전체 예산 (FR-07). 벤더 3곳 × 동적 타임아웃이 누적되면
 # maxDuration을 위협하므로 단계 데드라인으로 자른다.
-CITATION_STAGE_BUDGET = float(os.getenv("CITATION_STAGE_BUDGET", "60"))
+#
+# 교정은 동기 호출이라 **단계 내부에서는 하트비트를 낼 수 없다** — 시작 직전 ping
+# 하나가 전부다. 따라서 이 값이 곧 무이벤트 구간의 상한이고, 프론트 idle 60초보다
+# 확실히 낮아야 한다. 45초는 15초 마진. 하트비트를 낼 수 있게 교정 단계를
+# 제너레이터로 바꾸기 전까지는 이 값을 60 이상으로 올리지 말 것.
+CITATION_STAGE_BUDGET = min(45.0, float(os.getenv("CITATION_STAGE_BUDGET", "45")))
 
 # Pinecone 인덱스명 단일 출처 (DB-3) — 업로드·조회·테스트 스크립트가 모두 이 값을 공유한다.
 # 프로덕션 env(PINECONE_INDEX_NAME) 실값과 일치 확인 완료(R-1) — 레거시 인덱스명 그대로 유지.

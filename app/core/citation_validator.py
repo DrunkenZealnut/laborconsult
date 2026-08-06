@@ -36,6 +36,19 @@ def _remaining(deadline: float | None) -> float:
         return CITATION_STAGE_BUDGET
     return deadline - time.monotonic()
 
+
+def _is_valid_rewrite(text: str | None, original: str) -> bool:
+    """교정/퇴고 결과를 채택해도 되는지 판정 — 전 제공자 공통 가드.
+
+    빈 응답·공백만·과도하게 짧아진 결과를 **성공으로 처리하면 안 된다**. 이 결과는
+    `replace` 이벤트로 사용자가 이미 받은 완성 답변을 통째로 덮어쓰기 때문에,
+    통과시키면 답변이 사라진다. 실패로 판정해 다음 제공자로 넘기는 것이 옳다.
+
+    0.7 하한은 원문 대비 길이 비율 — 교정은 판례 번호만 제거하므로 길이가 크게
+    줄면 본문이 유실된 것이다.
+    """
+    return bool(text) and len(text) > len(original) * 0.7
+
 # 대법원/헌재 판례 번호 정규식
 # 예: "2023다302838", "대법원 2023다302838", "헌재 2021헌마1234"
 _PREC_PATTERN = re.compile(
@@ -290,7 +303,7 @@ def correct_hallucinated_citations(
                 messages=[{"role": "user", "content": prompt}],
             )
             text = resp.content[0].text.strip()
-            if text and len(text) > len(response_text) * 0.7:
+            if _is_valid_rewrite(text, response_text):
                 logger.info(
                     "Haiku 판례 교정 완료: %d개 환각 제거", len(hallucinated),
                 )
@@ -310,11 +323,12 @@ def correct_hallucinated_citations(
                 prompt,
                 request_options={"timeout": min(per_call, _remaining(deadline))},
             )
-            if resp.text:
+            text = (resp.text or "").strip()
+            if _is_valid_rewrite(text, response_text):
                 logger.info(
                     "Gemini 판례 교정 완료: %d개 환각 제거", len(hallucinated),
                 )
-                return resp.text
+                return text
         except Exception as e:
             logger.warning("Gemini 판례 교정 실패: %s", e)
 
@@ -334,8 +348,8 @@ def correct_hallucinated_citations(
                 # 답변 전문을 교정해 되돌려야 하므로 넉넉히 잡는다.
                 max_completion_tokens=ANSWER_MAX_TOKENS,
             )
-            text = resp.choices[0].message.content
-            if text:
+            text = (resp.choices[0].message.content or "").strip()
+            if _is_valid_rewrite(text, response_text):
                 logger.info(
                     "OpenAI 판례 교정 완료: %d개 환각 제거", len(hallucinated),
                 )
@@ -427,7 +441,7 @@ def micro_polish(
             }],
         )
         polished = resp.content[0].text.strip()
-        if polished and len(polished) > len(corrected_text) * 0.7:
+        if _is_valid_rewrite(polished, corrected_text):
             logger.info(
                 "마이크로 퇴고 완료: %d건 환각 교정 후 문맥 보정",
                 hallucinated_count,

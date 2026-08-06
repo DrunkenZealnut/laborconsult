@@ -453,7 +453,47 @@ def _stream_answer(
     raise RuntimeError(f"모든 AI 서비스 연결 실패: {last_error}")
 
 
-def _llm_meta(outcome: "AnswerOutcome", citation_fixed: bool | None = None) -> dict:
+# ── 시스템 고지 (코드가 보장 — LLM이 누락해도 붙는다) ────────────────────────
+# 인용 교정은 답변 전문을 외부 LLM으로 재생성하므로 이 고지들을 지워버릴 수 있다.
+# 교정 후 _ensure_notices()로 반드시 복원할 것 — 특히 면책 고지는 법적 필요다.
+
+DISCLAIMER_MARK = "법적 효력"
+DISCLAIMER = (
+    "\n\n---\n\n"
+    "⚠️ 본 답변은 참고용 정보 제공이며 법적 효력이 없습니다. "
+    "구체적인 사안은 관할 고용노동부(☎ 1350) 또는 공인노무사에게 상담하시기 바랍니다."
+)
+
+TRUNCATED_MARK = "답변 생성이 중간에 중단"
+TRUNCATED_NOTICE = (
+    "\n\n---\n\n"
+    "⚠️ 답변 생성이 중간에 중단되었습니다. 위 내용은 완결된 답변이 아니므로, "
+    "같은 질문을 다시 보내주시면 처음부터 다시 답변드리겠습니다."
+)
+
+
+def _ensure_notices(text: str, truncated: bool) -> str:
+    """교정/퇴고를 거친 답변에 시스템 고지가 남아 있는지 확인하고 복원.
+
+    `correct_hallucinated_citations`는 답변 전문을 외부 LLM에 재생성시킨다.
+    "나머지는 수정하지 말라"고 지시해도 말미 고지가 탈락할 수 있고, 그 결과를
+    replace 이벤트로 내보내면 **이미 사용자에게 전달한 절단·면책 고지가 사라진다**
+    (저장되는 답변도 같아진다). 순서는 원본과 동일하게 절단 → 면책.
+    """
+    if not text:
+        return text
+    if truncated and TRUNCATED_MARK not in text:
+        text += TRUNCATED_NOTICE
+    if DISCLAIMER_MARK not in text:
+        text += DISCLAIMER
+    return text
+
+
+def _llm_meta(
+    outcome: "AnswerOutcome",
+    citation_fixed: bool | None = None,
+    intent_provider: str | None = None,
+) -> dict:
     """qa_conversations.metadata.llm 페이로드 (FR-10).
 
     폴백은 조용히 일어난다 — 계측이 없으면 3순위 제공자가 통째로 죽어 있어도
@@ -469,6 +509,9 @@ def _llm_meta(outcome: "AnswerOutcome", citation_fixed: bool | None = None) -> d
         meta["truncated"] = True
     if citation_fixed is not None:
         meta["citation_fixed"] = citation_fixed
+    # 의도분석이 교차벤더로 넘어갔는지 — Anthropic 장애의 조기 신호다
+    if intent_provider and intent_provider != "Claude":
+        meta["intent_provider"] = intent_provider
     return meta
 
 
@@ -1912,24 +1955,14 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     # 6-0b. 절단 고지 (FR-02) — 면책 고지보다 먼저 붙여 "잘렸다"는 사실이 먼저 읽히게.
     #       고지 없이 두면 부분 응답에 면책 고지가 붙어 완결된 답변으로 오인된다.
-    if outcome.truncated and full_text:
-        _TRUNCATED = (
-            "\n\n---\n\n"
-            "⚠️ 답변 생성이 중간에 중단되었습니다. 위 내용은 완결된 답변이 아니므로, "
-            "같은 질문을 다시 보내주시면 처음부터 다시 답변드리겠습니다."
-        )
-        full_text += _TRUNCATED
-        yield {"type": "chunk", "text": _TRUNCATED}
+    if outcome.truncated and full_text and TRUNCATED_MARK not in full_text:
+        full_text += TRUNCATED_NOTICE
+        yield {"type": "chunk", "text": TRUNCATED_NOTICE}
 
     # 6-0. 면책 고지 강제 추가 — LLM이 누락해도 코드에서 보장
-    _DISCLAIMER = (
-        "\n\n---\n\n"
-        "⚠️ 본 답변은 참고용 정보 제공이며 법적 효력이 없습니다. "
-        "구체적인 사안은 관할 고용노동부(☎ 1350) 또는 공인노무사에게 상담하시기 바랍니다."
-    )
-    if full_text and "법적 효력" not in full_text:
-        full_text += _DISCLAIMER
-        yield {"type": "chunk", "text": _DISCLAIMER}
+    if full_text and DISCLAIMER_MARK not in full_text:
+        full_text += DISCLAIMER
+        yield {"type": "chunk", "text": DISCLAIMER}
 
     # 6-1. 판례 인용 검증 (환각 감지 + 사용자 경고)
     # 화이트리스트는 컨텍스트 조립과 동일 원천(whitelist_hits) 사용 —
@@ -1968,7 +2001,8 @@ def process_question(query: str, session: Session, config: AppConfig,
                 anthropic_client=config.claude_client,
                 deadline=stage_deadline,
             )
-            full_text = polished or corrected
+            # 교정 LLM이 말미 고지를 떨어뜨릴 수 있다 — replace로 내보내기 전에 복원
+            full_text = _ensure_notices(polished or corrected, outcome.truncated)
             yield {"type": "replace", "text": full_text}
             logger.info("환각 판례 교정 완료 — replace 이벤트 전송")
 
@@ -2014,11 +2048,13 @@ def process_question(query: str, session: Session, config: AppConfig,
     # api/index.py::_PUBLIC_EXCLUDE_KEYS가 이 키를 읽는다.
     if outcome.truncated:
         conv_metadata["truncated"] = True
-    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed)
+    intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
+    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
     logger.info(
-        "llm_outcome provider=%s attempts=%s empty=%s truncated=%s citation_fixed=%s",
+        "llm_outcome provider=%s attempts=%s empty=%s truncated=%s "
+        "citation_fixed=%s intent=%s",
         outcome.provider, outcome.attempts, outcome.empty_providers,
-        outcome.truncated, citation_fixed,
+        outcome.truncated, citation_fixed, intent_provider,
     )
 
     record = ConversationRecord(

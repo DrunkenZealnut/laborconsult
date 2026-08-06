@@ -1,9 +1,15 @@
 """Intent Analyzer — Claude tool_use로 노동상담 질문 분석 (실패 시 OpenAI 폴백)"""
 
+from __future__ import annotations
+
 import json
 import logging
 import re
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.config import AppConfig
 
 from app.config import (
     CRITICAL_MAX_RETRIES, INTENT_FALLBACK_ENABLED, INTENT_FALLBACK_MAX_TOKENS,
@@ -207,14 +213,19 @@ def _analyze_claude(messages: list[dict], system_prompt: str, config) -> dict | 
     )
     for block in response.content:
         if block.type == "tool_use":
+            if not block.input:
+                break          # 빈 입력도 실패로 취급 (아래 raise)
             return block.input
-    return None
+    # tool_use 없이 종료 = 빈 응답. 예외 없이 None을 돌려주면 호출부의 except를
+    # 타지 못해 OpenAI 폴백이 통째로 생략된다 — _stream_answer의 FR-01과 같은
+    # 규약("빈 응답은 실패다")을 여기에도 적용한다.
+    raise RuntimeError("Claude 의도분석이 tool_use를 반환하지 않음(빈 응답)")
 
 
 def analyze_intent(
     question: str,
     history: list[dict],
-    config: "AppConfig",
+    config: AppConfig,
     summary: str = "",
 ) -> AnalysisResult:
     """사용자 질문을 분석하여 계산 유형, 추출 정보, 누락 정보를 반환.
@@ -225,6 +236,7 @@ def analyze_intent(
     """
     messages = _build_messages(question, history, summary)
     system_prompt = ANALYZER_SYSTEM.format(today=date.today().isoformat())
+    used_fallback = False
 
     try:
         inp = _analyze_claude(messages, system_prompt, config)
@@ -243,8 +255,12 @@ def analyze_intent(
             timeout=INTENT_FALLBACK_TIMEOUT,
             max_tokens=INTENT_FALLBACK_MAX_TOKENS,
         )
+        if not inp:
+            # 폴백도 빈 응답 — 예외로 전파해 호출부가 레거시 경로로 강등하게 한다
+            raise RuntimeError(f"OpenAI({INTENT_FALLBACK_MODEL}) 의도분석이 빈 응답 반환")
         logger.info("의도분석 OpenAI 폴백 성공 (model=%s)", INTENT_FALLBACK_MODEL)
+        used_fallback = True
 
-    if not inp:
-        return AnalysisResult(question_summary=question)
-    return _build_analysis_result(inp)
+    result = _build_analysis_result(inp)
+    result.intent_provider = "OpenAI" if used_fallback else "Claude"
+    return result

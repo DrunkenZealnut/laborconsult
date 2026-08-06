@@ -294,7 +294,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 계산기 입력 params는 영문 키(`wage_type`, `wage_amount` 등, `pipeline.py::_run_calculator()` 규약) — 한국어는 계산 유형 라벨(`CALC_TYPE_MAP` 키, 예: "연장수당")에만 사용
 - Legal references follow format: "근로기준법 제N조" or "대법원 YYYY다NNNN"
 - Test cases in `wage_calculator_cli.py` numbered #1–#32; batch tests in `calculator_batch_test.py` with 102 cases
-- LLM provider fallback: Claude (primary) → OpenAI → Gemini (`_stream_answer`). **폴백 규약**(llm-fallback-hardening):
+- LLM provider fallback **기본 순서**: Claude → OpenAI → Gemini (`_stream_answer`). `ANSWER_PROVIDER`(claude|openai|gemini)를 설정하면 **그 제공자가 1순위로 재정렬**되고 나머지는 기본 순서를 유지한다 — 장애 시 무배포 롤백 수단이다. Gemini는 `GEMINI_API_KEY`가 있을 때만 목록에 들어간다. **폴백 규약**(llm-fallback-hardening):
   - **빈 응답은 실패다** — 예외 없이 실질 0자로 끝난 제공자는 성공이 아니라 다음 제공자로 전환한다. reasoning 모델이 추론으로 토큰 한도를 소진해 본문 0자를 반환하는 사례가 실측됐다.
   - **절단은 고지한다** — 첫 청크 이후 실패 시 부분 응답을 유지하되(재시도 없음) 사용자에게 절단 고지를 붙이고, `metadata.truncated`로 저장해 공개 게시판에서 제외한다(`api/index.py::_PUBLIC_EXCLUDE_KEYS`). 고지 없이 두면 잘린 답변에 면책 고지가 붙어 완결된 답변으로 오인된다.
   - **전환 구간은 하트비트를 낸다** — `_stream_answer`가 `(provider, "")` 빈 텍스트를 흘리면 호출부가 `ping`으로 변환한다. 무이벤트 구간이 프론트 idle(60초, `public/index.html`)을 넘으면 폴백이 도달하기 전에 브라우저가 abort한다.
