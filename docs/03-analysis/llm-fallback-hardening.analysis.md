@@ -256,7 +256,7 @@ Match Rate 91% ≥ 90%로 `[Check]` 기준은 통과했다. 다만 **GAP-1·GAP-
 
 | 갭 | 사유 |
 |----|------|
-| **GAP-4** (Medium) | V4(프로덕션 계측 양성 확인)는 **배포 후에만 가능**. V1~V3은 로컬 실행·기록 완료(§6-1). 배포 후 `select metadata->'llm'->>'provider' from qa_conversations ...` 실행이 남는다 |
+| **GAP-4** (Low로 하향) | V4(프로덕션 계측 양성 확인)는 **배포 후에만 가능**. V1~V3은 로컬 실행·기록 완료(§6-1). 배포 후 `select metadata->'llm'->>'provider' from qa_conversations ...` 실행이 남는다.<br>**2026-08-06 갱신**: Plan 오픈 항목이던 "프로덕션 `GEMINI_API_KEY` 미확인"은 운영자가 로컬·Vercel 양쪽을 갱신해 **해소**됐다. 따라서 V4에 남은 목적은 "계측이 프로덕션에서 실제로 기록되는지" 하나뿐이며, V2(3순위 실체 판별)는 로컬 실동작 검증(`provider=Gemini`, 9.1초)으로 대체됐다 |
 | **GAP-7** (Low) | `chatbot.py` CLI 경로는 **설계 범위 밖**(웹 파이프라인 한정). 후속 사이클에서 `process_question` 통합으로 처리 권고 |
 
 ### 12-3. Act-1 후 Match Rate
