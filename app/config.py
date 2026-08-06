@@ -13,10 +13,13 @@ from supabase import create_client, Client as SupabaseClient
 load_dotenv()
 
 EMBED_MODEL = "text-embedding-3-small"
-CLAUDE_MODEL = "claude-sonnet-4-6"
-OPENAI_CHAT_MODEL = "o3"
+CLAUDE_MODEL = "claude-sonnet-5"
+# OPENAI_CHAT_MODEL만 환경변수로 오버라이드 가능 — 모델 A/B 비교 및 무배포 롤백용.
+# CLAUDE_MODEL/EXTRACT_MODEL은 상수로 고정한다: 셸 프로필에 낡은 CLAUDE_MODEL이
+# export되어 있는 개발 환경에서 존재하지 않는 모델로 덮여 404가 나기 때문.
+OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "o3")
 GEMINI_MODEL = "gemini-2.5-pro"
-EXTRACT_MODEL = "claude-sonnet-4-6"
+EXTRACT_MODEL = "claude-sonnet-5"
 
 # Pinecone 인덱스명 단일 출처 (DB-3) — 업로드·조회·테스트 스크립트가 모두 이 값을 공유한다.
 # 프로덕션 env(PINECONE_INDEX_NAME) 실값과 일치 확인 완료(R-1) — 레거시 인덱스명 그대로 유지.

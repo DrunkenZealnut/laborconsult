@@ -139,11 +139,12 @@ def analyze_intent(
     today = date.today().isoformat()
     system_prompt = ANALYZER_SYSTEM.format(today=today)
 
+    # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
+    # tool_choice 강제 + 스키마 제약으로 추출 결정성은 유지된다.
     # 임계경로 타임아웃 (DB-6) — 항상 실행되는 호출이라 지연 시 전체가 행(hang)하던 지점
     response = config.anthropic_client.with_options(timeout=12.0).messages.create(
         model=config.analyzer_model,
         max_tokens=1024,
-        temperature=0,
         system=system_prompt,
         tools=[ANALYZE_TOOL],
         tool_choice={"type": "tool", "name": "analyze_labor_question"},
