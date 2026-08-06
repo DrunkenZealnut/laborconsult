@@ -6,8 +6,14 @@ import anthropic
 
 import logging
 import os
+import time
+from dataclasses import dataclass, field
 
-from app.config import AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL
+from app.config import (
+    AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL,
+    ANSWER_MAX_RETRIES, ANSWER_MAX_TOKENS, ANSWER_READ_TIMEOUT, CONNECT_TIMEOUT,
+    CITATION_STAGE_BUDGET, CRITICAL_MAX_RETRIES, EXTRACT_TIMEOUT,
+)
 from app.core.file_parser import ParsedAttachment
 from app.core.analyzer import analyze_intent
 # compose_follow_up은 더 이상 파이프라인에서 사용하지 않음
@@ -276,18 +282,37 @@ def _flatten_content(content) -> str:
     return "\n".join(parts)
 
 
+@dataclass
+class AnswerOutcome:
+    """답변 생성 결과 메타 — 호출부가 절단 고지·저장 게이팅·계측에 사용한다 (FR-10).
+
+    _stream_answer에 넘기면 스트리밍이 끝난 뒤 채워져 있다.
+    """
+    provider: str | None = None                                # 실질 텍스트를 낸 제공자
+    attempts: list[str] = field(default_factory=list)          # 시도한 제공자 순서
+    empty_providers: list[str] = field(default_factory=list)   # 0자를 반환한 제공자
+    truncated: bool = False                                    # 실질 청크 후 스트림 중단
+    error: str | None = None
+
+
 def _stream_claude(messages: list, system: str, config: AppConfig):
-    """Claude 스트리밍 — read 30s는 토큰 간 무진행 감지 (DB-6).
+    """Claude 스트리밍 — read 타임아웃은 토큰 간 무진행 감지 (DB-6).
 
     첫 청크 전 실패 → _stream_answer가 OpenAI/Gemini로 폴백,
     스트림 도중 실패 → 부분 응답 유지(기존 규약, 재시도 없음).
+    재시도를 0으로 둔 이유는 config.ANSWER_MAX_RETRIES 주석 참고.
     """
     import httpx
-    timeout = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
-    with config.claude_client.with_options(timeout=timeout).messages.stream(
+    timeout = httpx.Timeout(
+        connect=CONNECT_TIMEOUT, read=ANSWER_READ_TIMEOUT,
+        write=ANSWER_READ_TIMEOUT, pool=CONNECT_TIMEOUT,
+    )
+    with config.claude_client.with_options(
+        timeout=timeout, max_retries=ANSWER_MAX_RETRIES,
+    ).messages.stream(
         model=CLAUDE_MODEL,
         # 한국어 2048 토큰은 대략 1,500~2,000자로 긴 상담 답변이 잘린다.
-        max_tokens=8192,
+        max_tokens=ANSWER_MAX_TOKENS,
         system=system,
         messages=messages,
     ) as stream:
@@ -297,18 +322,27 @@ def _stream_claude(messages: list, system: str, config: AppConfig):
 
 def _stream_openai(messages: list, system: str, config: AppConfig):
     """OpenAI 스트리밍 (o3·gpt-5.x 등 reasoning 모델 호환)"""
+    import httpx
     oai_msgs = [{"role": "developer", "content": system}]
     for m in messages:
         oai_msgs.append({"role": m["role"], "content": _flatten_content(m["content"])})
 
-    stream = config.openai_client.chat.completions.create(
+    # 타임아웃 미지정 시 SDK 기본값은 read 600초 — maxDuration(300초)보다 길어
+    # 플랫폼이 먼저 함수를 죽인다. 명시 지정으로 폴백 예산 안에 가둔다 (FR-04).
+    stream = config.openai_client.with_options(
+        timeout=httpx.Timeout(
+            connect=CONNECT_TIMEOUT, read=ANSWER_READ_TIMEOUT,
+            write=ANSWER_READ_TIMEOUT, pool=CONNECT_TIMEOUT,
+        ),
+        max_retries=ANSWER_MAX_RETRIES,
+    ).chat.completions.create(
         # 매 호출 시 환경변수를 다시 읽어 무재시작 모델 교체(A/B 비교)를 허용
         model=os.getenv("OPENAI_CHAT_MODEL", OPENAI_CHAT_MODEL),
         messages=oai_msgs,
         # reasoning 모델은 추론 토큰과 출력 토큰이 이 한도를 함께 쓴다.
         # 2048에서는 추론이 한도를 모두 소진해 본문이 빈 문자열로 반환되는
         # 사례가 실측됐다(o3·gpt-5.6-luna 모두 finish_reason=length, 본문 0자).
-        max_completion_tokens=8192,
+        max_completion_tokens=ANSWER_MAX_TOKENS,
         stream=True,
     )
     for chunk in stream:
@@ -317,7 +351,7 @@ def _stream_openai(messages: list, system: str, config: AppConfig):
 
 
 def _stream_gemini(messages: list, system: str, config: AppConfig):
-    """Google Gemini 스트리밍"""
+    """Google Gemini 스트리밍 — 3순위 폴백"""
     import google.generativeai as genai
     genai.configure(api_key=config.gemini_api_key)
     model = genai.GenerativeModel(GEMINI_MODEL, system_instruction=system)
@@ -327,17 +361,20 @@ def _stream_gemini(messages: list, system: str, config: AppConfig):
         role = "model" if m["role"] == "assistant" else "user"
         contents.append({"role": role, "parts": [_flatten_content(m["content"])]})
 
-    response = model.generate_content(contents, stream=True)
+    # request_options 없이는 무제한 대기 — 3순위가 함수 전체를 잡아먹는다 (FR-04).
+    response = model.generate_content(
+        contents, stream=True,
+        request_options={"timeout": ANSWER_READ_TIMEOUT + CONNECT_TIMEOUT},
+    )
     for chunk in response:
         if chunk.text:
             yield chunk.text
 
 
-def _stream_answer(messages: list, system: str, config: AppConfig):
-    """Claude → OpenAI → Gemini 순서로 폴백하며 스트리밍 답변 생성.
+def _answer_providers(config: AppConfig) -> list[tuple[str, object]]:
+    """답변 제공자 목록을 폴백 순서대로 반환.
 
-    Yields: (provider_name, text_chunk) 튜플
-    Raises: RuntimeError if all providers fail
+    ANSWER_PROVIDER로 1순위를 지정할 수 있다 (기본: Claude, 장애 시 무배포 롤백용).
     """
     providers = [
         ("Claude", _stream_claude),
@@ -346,29 +383,93 @@ def _stream_answer(messages: list, system: str, config: AppConfig):
     if config.gemini_api_key:
         providers.append(("Gemini", _stream_gemini))
 
-    # ANSWER_PROVIDER로 1순위 제공자 지정 (기본: Claude). 나머지는 폴백 순서 유지.
     primary = os.getenv("ANSWER_PROVIDER", "").strip().lower()
     if primary:
         providers.sort(key=lambda p: p[0].lower() != primary)
+    return providers
 
+
+def _stream_answer(
+    messages: list, system: str, config: AppConfig,
+    outcome: "AnswerOutcome | None" = None,
+):
+    """Claude → OpenAI → Gemini 순서로 폴백하며 스트리밍 답변 생성.
+
+    Yields:
+        (provider_name, text_chunk) 튜플. **text가 빈 문자열이면 전환 하트비트**로,
+        내용이 없고 "다음 제공자를 시도 중"이라는 뜻이다. 호출부는 이를 ping으로
+        변환해 프론트 idle 타이머(60초)를 리셋해야 한다 (FR-03).
+    Raises:
+        RuntimeError — 모든 제공자가 실패했거나 전부 빈 응답일 때 (FR-01)
+
+    실패 판정 규약 (FR-01·FR-02):
+      - 예외 없이 실질 0자로 끝난 제공자는 **성공이 아니다** — 다음 제공자로 전환.
+        (reasoning 토큰이 한도를 모두 소진해 본문 0자가 오는 사례가 실측됐다)
+      - 실질 청크를 낸 뒤 끊긴 경우만 절단으로 보고 폴백하지 않는다(부분 응답 유지).
+    """
+    outcome = outcome if outcome is not None else AnswerOutcome()
     last_error = None
-    for name, stream_fn in providers:
+
+    for idx, (name, stream_fn) in enumerate(_answer_providers(config)):
+        if idx:
+            # 2순위부터: 전환 하트비트. 벤더 전환 구간이 통째로 무이벤트가 되면
+            # 폴백이 도달하기 전에 브라우저가 먼저 abort한다 (FR-03).
+            yield (name, "")
+        outcome.attempts.append(name)
+        chars = 0
+        pending: list[str] = []   # 첫 실질 청크 이전의 공백 청크 — 전송 보류
         try:
-            started = False
             for text in stream_fn(messages, system, config):
-                started = True
+                if not chars:
+                    if not text.strip():
+                        # 공백만 내다 죽는 제공자의 공백이 프론트로 새지 않게 보류
+                        pending.append(text)
+                        continue
+                    outcome.provider = name
+                    for held in pending:
+                        yield (name, held)
+                    pending.clear()
+                chars += len(text.strip())
                 yield (name, text)
-            return  # 성공 — 종료
         except Exception as e:
-            if started:
-                # 부분 응답 수신 후 실패 — 재시도하지 않음
-                logger.warning("%s 스트리밍 중 오류 (부분 응답 유지): %s", name, e)
+            if chars:
+                # 실질 응답 수신 후 실패 — 재시도·폴백하지 않고 부분 응답 유지
+                outcome.truncated = True
+                logger.warning("%s 스트리밍 중 절단 (부분 응답 유지): %s", name, e)
                 return
             logger.warning("%s 답변 생성 실패, 다음 제공자로 전환: %s", name, e)
             last_error = e
             continue
 
+        if chars:
+            return  # 성공 — 종료
+
+        # FR-01: 예외 없이 실질 0자로 종료 → 실패로 승격하고 다음 제공자로
+        outcome.empty_providers.append(name)
+        logger.warning("%s 빈 응답(실질 0자) — 다음 제공자로 전환", name)
+        last_error = last_error or RuntimeError(f"{name} returned an empty response")
+
+    outcome.error = str(last_error) if last_error else "no provider available"
     raise RuntimeError(f"모든 AI 서비스 연결 실패: {last_error}")
+
+
+def _llm_meta(outcome: "AnswerOutcome", citation_fixed: bool | None = None) -> dict:
+    """qa_conversations.metadata.llm 페이로드 (FR-10).
+
+    폴백은 조용히 일어난다 — 계측이 없으면 3순위 제공자가 통째로 죽어 있어도
+    아무도 모른다(실제로 gemini-2.5-pro가 404로 죽어 있던 것을 이 사이클에서야
+    발견했다). 스키마 변경 없이 기존 metadata 컬럼에 얹는다.
+    """
+    meta: dict = {"provider": outcome.provider, "attempts": outcome.attempts}
+    if outcome.empty_providers:
+        meta["empty"] = outcome.empty_providers
+    if len(outcome.attempts) > 1:
+        meta["fallback"] = True
+    if outcome.truncated:
+        meta["truncated"] = True
+    if citation_fixed is not None:
+        meta["citation_fixed"] = citation_fixed
+    return meta
 
 
 # ── 임금계산기 ────────────────────────────────────────────────────────────────
@@ -524,7 +625,9 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
     try:
         # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
         # 임계경로 타임아웃 (DB-6) — 지연 시 폴백 경로로 진행
-        resp = client.with_options(timeout=10.0).messages.create(
+        resp = client.with_options(
+            timeout=EXTRACT_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
+        ).messages.create(
             model=EXTRACT_MODEL,
             max_tokens=512,
             tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL],
@@ -1765,6 +1868,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 6. 스트리밍 답변 (Claude → OpenAI → Gemini 순차 폴백)
     full_text = ""
     used_provider = None
+    outcome = AnswerOutcome()
     try:
         from datetime import date as _date
         # 인젝션 저항 접미는 .format() 이후에 결합한다 (FR-06) —
@@ -1775,7 +1879,11 @@ def process_question(query: str, session: Session, config: AppConfig,
         else:
             system_prompt = SYSTEM_PROMPT_TEMPLATE.format(today=_date.today().isoformat())
         system_prompt = system_prompt + INJECTION_RESISTANCE
-        for provider, text in _stream_answer(messages, system_prompt, config):
+        for provider, text in _stream_answer(messages, system_prompt, config, outcome):
+            if not text:
+                # 전환 하트비트 — 내용 없음. 프론트 idle 타이머만 리셋한다 (FR-03).
+                yield {"type": "ping"}
+                continue
             if not used_provider:
                 used_provider = provider
                 if provider != "Claude":
@@ -1802,6 +1910,17 @@ def process_question(query: str, session: Session, config: AppConfig,
         yield {"type": "done"}
         return
 
+    # 6-0b. 절단 고지 (FR-02) — 면책 고지보다 먼저 붙여 "잘렸다"는 사실이 먼저 읽히게.
+    #       고지 없이 두면 부분 응답에 면책 고지가 붙어 완결된 답변으로 오인된다.
+    if outcome.truncated and full_text:
+        _TRUNCATED = (
+            "\n\n---\n\n"
+            "⚠️ 답변 생성이 중간에 중단되었습니다. 위 내용은 완결된 답변이 아니므로, "
+            "같은 질문을 다시 보내주시면 처음부터 다시 답변드리겠습니다."
+        )
+        full_text += _TRUNCATED
+        yield {"type": "chunk", "text": _TRUNCATED}
+
     # 6-0. 면책 고지 강제 추가 — LLM이 누락해도 코드에서 보장
     _DISCLAIMER = (
         "\n\n---\n\n"
@@ -1820,11 +1939,17 @@ def process_question(query: str, session: Session, config: AppConfig,
     citation_check = validate_response_citations(
         full_text, available_precs, available_admins,
     )
+    citation_fixed = None
     if citation_check["hallucinated"]:
         logger.warning(
             "⚠️ 환각 판례 감지 — query=%r, hallucinated=%s, valid=%s",
             query[:80], citation_check["hallucinated"], citation_check["valid"],
         )
+        # 교정은 답변 전문을 재생성하므로 최대 수십 초가 걸린다 — 그 구간이
+        # 통째로 무이벤트가 되지 않게 하트비트를 먼저 보낸다 (FR-07).
+        yield {"type": "ping"}
+        # 단계 데드라인: 벤더 3곳이 각자 타임아웃을 소진하면 maxDuration을 위협한다.
+        stage_deadline = time.monotonic() + CITATION_STAGE_BUDGET
         # 다른 LLM으로 환각 판례 교정
         corrected = correct_hallucinated_citations(
             response_text=full_text,
@@ -1832,13 +1957,16 @@ def process_question(query: str, session: Session, config: AppConfig,
             anthropic_client=config.claude_client,
             gemini_api_key=config.gemini_api_key,
             openai_client=config.openai_client,
+            deadline=stage_deadline,
         )
+        citation_fixed = bool(corrected)
         if corrected:
             # FR-03: 환각 3건+ 시 마이크로 퇴고로 문맥 자연스러움 보정
             polished = micro_polish(
                 corrected_text=corrected,
                 hallucinated_count=len(citation_check["hallucinated"]),
                 anthropic_client=config.claude_client,
+                deadline=stage_deadline,
             )
             full_text = polished or corrected
             yield {"type": "replace", "text": full_text}
@@ -1882,6 +2010,16 @@ def process_question(query: str, session: Session, config: AppConfig,
     conv_metadata: dict = {"has_attachments": has_attachments}
     if guard_flag:
         conv_metadata["guard_flag"] = guard_flag
+    # 절단 답변은 저장하되 공개 게시판에서 제외한다 (FR-02) —
+    # api/index.py::_PUBLIC_EXCLUDE_KEYS가 이 키를 읽는다.
+    if outcome.truncated:
+        conv_metadata["truncated"] = True
+    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed)
+    logger.info(
+        "llm_outcome provider=%s attempts=%s empty=%s truncated=%s citation_fixed=%s",
+        outcome.provider, outcome.attempts, outcome.empty_providers,
+        outcome.truncated, citation_fixed,
+    )
 
     record = ConversationRecord(
         session_id=session.id,

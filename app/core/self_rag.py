@@ -16,6 +16,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import anthropic
 
+from app.config import CRITICAL_MAX_RETRIES
+
 logger = logging.getLogger(__name__)
 
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
@@ -43,7 +45,11 @@ def judge_relevance(
         True = relevant, False = irrelevant
     """
     try:
-        resp = client.messages.create(
+        # timeout은 시도당 적용 — max_retries 미지정 시 SDK 기본 2회 재시도로
+        # 문서 수만큼 곱해져 검색 단계 예산을 크게 넘긴다 (design §3.4 L6).
+        resp = client.with_options(
+            timeout=JUDGE_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
+        ).messages.create(
             model=JUDGE_MODEL,
             max_tokens=10,
             temperature=0,
@@ -54,7 +60,6 @@ def judge_relevance(
                     document=document[:1000],  # 토큰 제한
                 ),
             }],
-            timeout=JUDGE_TIMEOUT,
         )
         answer = resp.content[0].text.strip().lower().rstrip(".")
         return answer == "relevant"

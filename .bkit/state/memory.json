@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 11,
+  "sessionCount": 12,
   "lastSession": {
-    "startedAt": "2026-08-02T04:40:52.986Z",
+    "startedAt": "2026-08-06T07:04:44.455Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -44,5 +44,11 @@
     "startedAt": "2026-07-16T00:00:00Z",
     "archivedAt": "2026-08-02T00:00:00Z",
     "archivedTo": "docs/archive/2026-08/answer-renderer-test-harness/"
+  },
+  "llm-fallback-hardening": {
+    "phase": "check",
+    "matchRate": 99,
+    "iterationCount": 1,
+    "startedAt": "2026-08-06T00:00:00Z"
   }
 }

@@ -18,8 +18,42 @@ CLAUDE_MODEL = "claude-sonnet-5"
 # CLAUDE_MODEL/EXTRACT_MODEL은 상수로 고정한다: 셸 프로필에 낡은 CLAUDE_MODEL이
 # export되어 있는 개발 환경에서 존재하지 않는 모델로 덮여 404가 나기 때문.
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "o3")
-GEMINI_MODEL = "gemini-2.5-pro"
+# 2026-08-06 실측: gemini-2.5-pro는 404("no longer available to new users")를 반환해
+# 3순위 폴백(답변 생성·인용 교정 2순위)이 통째로 죽어 있었다. 폴백 계측이 없어
+# 아무도 몰랐던 사각지대다(llm-fallback-hardening G7). gemini-pro-latest는 별칭이라
+# 모델 EOL을 자동 추종하므로 같은 사고가 재발하지 않는다.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro-latest")
 EXTRACT_MODEL = "claude-sonnet-5"
+
+# ── LLM 타임아웃·재시도 예산 (llm-fallback-hardening FR-04) ───────────────────
+# 원칙: 재시도보다 벤더 전환이 빠르고 안전하다 — 동일 벤더 재시도는 같은 장애를
+# 다시 만나지만, 전환은 다른 결과를 만든다. 그래서 임계경로는 retries=0이다.
+#
+# ⚠️ 값 변경 시 docs/02-design/features/llm-fallback-hardening.design.md §3.4
+#    예산표를 함께 갱신할 것. 최악 누적이 두 상한을 동시에 만족해야 한다:
+#      - vercel.json maxDuration 300초 (초과 시 함수 강제 종료)
+#      - public/index.html SEND_TIMEOUT_MS 60초 (무이벤트 구간이 넘으면 브라우저 abort)
+CONNECT_TIMEOUT = 5.0
+ANSWER_READ_TIMEOUT = float(os.getenv("ANSWER_READ_TIMEOUT", "20"))
+ANSWER_MAX_RETRIES = int(os.getenv("ANSWER_MAX_RETRIES", "0"))
+# 답변 생성 토큰 한도. citation_validator의 교정 한도와 묶여 있다 — 한쪽만 낮추면
+# 교정 결과가 0.7 길이 가드에 걸려 통째로 폐기되고 환각 판례가 그대로 남는다.
+ANSWER_MAX_TOKENS = 8192
+
+INTENT_TIMEOUT = 12.0           # analyze_intent (임계경로, DB-6에서 도입)
+INTENT_FALLBACK_TIMEOUT = 10.0  # OpenAI 교차벤더 폴백 (실측 2.7초)
+EXTRACT_TIMEOUT = 10.0          # _extract_params 레거시 경로
+CRITICAL_MAX_RETRIES = 0        # analyzer/extract/decomposer/self_rag 공통
+
+# 의도분석 교차벤더 폴백 (FR-05). 비추론 모델을 기본값으로 둔다 — o3·gpt-5.x 계열은
+# reasoning 토큰이 max_completion_tokens를 잠식해 tool_call이 빈 채로 끊길 수 있다.
+INTENT_FALLBACK_ENABLED = os.getenv("INTENT_FALLBACK_ENABLED", "true").lower() != "false"
+INTENT_FALLBACK_MODEL = os.getenv("INTENT_FALLBACK_MODEL", "gpt-4.1")
+INTENT_FALLBACK_MAX_TOKENS = 4096
+
+# 인용 교정 단계 전체 예산 (FR-07). 벤더 3곳 × 동적 타임아웃이 누적되면
+# maxDuration을 위협하므로 단계 데드라인으로 자른다.
+CITATION_STAGE_BUDGET = float(os.getenv("CITATION_STAGE_BUDGET", "60"))
 
 # Pinecone 인덱스명 단일 출처 (DB-3) — 업로드·조회·테스트 스크립트가 모두 이 값을 공유한다.
 # 프로덕션 env(PINECONE_INDEX_NAME) 실값과 일치 확인 완료(R-1) — 레거시 인덱스명 그대로 유지.
