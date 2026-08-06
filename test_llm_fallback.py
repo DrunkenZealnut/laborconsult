@@ -374,7 +374,7 @@ def test_intent_empty_tool_response_falls_back() -> None:
     })
 
     class _EmptyResp:
-        content = []          # tool_use 블록 없음
+        content = ()          # tool_use 블록 없음 (불변 — RUF012)
 
     class Cfg:
         openai_client = fake
@@ -501,25 +501,41 @@ def test_notices_survive_citation_correction() -> None:
     그대로 replace로 내보내면 사용자가 이미 받은 고지가 사라진다.
     """
     from app.core.pipeline import (
-        _ensure_notices, DISCLAIMER_MARK, TRUNCATED_MARK,
+        _ensure_notices, DISCLAIMER, DISCLAIMER_MARK,
+        TRUNCATED_MARK, TRUNCATED_NOTICE,
     )
 
-    stripped = "교정된 본문만 남고 말미 고지가 사라진 상태"
+    def _ordered(text: str) -> bool:
+        return text.index(TRUNCATED_MARK) < text.index(DISCLAIMER_MARK)
 
-    restored = _ensure_notices(stripped, truncated=True)
+    # ① 두 고지가 모두 탈락한 경우
+    restored = _ensure_notices("교정된 본문만 남고 말미 고지가 사라진 상태", truncated=True)
     assert TRUNCATED_MARK in restored, "절단 고지가 복원되지 않음"
     assert DISCLAIMER_MARK in restored, "면책 고지가 복원되지 않음"
-    assert restored.index(TRUNCATED_MARK) < restored.index(DISCLAIMER_MARK), \
-        "복원 순서가 원본(절단 → 면책)과 다름"
+    assert _ordered(restored), "복원 순서가 원본(절단 → 면책)과 다름"
 
-    # 이미 고지가 있으면 중복 부착하지 않는다
-    twice = _ensure_notices(restored, truncated=True)
-    assert twice == restored, "고지가 중복 부착됨"
+    # ② 면책 고지만 살아남은 경우 — 단순 append면 절단이 뒤에 붙어 역순이 된다
+    only_disclaimer = _ensure_notices("교정된 본문" + DISCLAIMER, truncated=True)
+    assert _ordered(only_disclaimer), f"면책만 남은 입력에서 순서 역전: {only_disclaimer[-80:]!r}"
+    assert only_disclaimer.count(DISCLAIMER_MARK) == 1, "면책 고지 중복"
 
-    # 절단이 아니면 절단 고지는 붙이지 않는다
+    # ③ 절단 고지만 살아남은 경우
+    only_truncated = _ensure_notices("교정된 본문" + TRUNCATED_NOTICE, truncated=True)
+    assert _ordered(only_truncated), only_truncated[-80:]
+    assert only_truncated.count(TRUNCATED_MARK) == 1, "절단 고지 중복"
+
+    # ④ 멱등 — 여러 번 통과시켜도 같은 결과
+    assert _ensure_notices(restored, truncated=True) == restored, "고지가 중복 부착됨"
+
+    # ⑤ 절단이 아니면 절단 고지는 붙이지 않는다
     normal = _ensure_notices("정상 답변", truncated=False)
     assert TRUNCATED_MARK not in normal and DISCLAIMER_MARK in normal, normal
-    print("  ✅ 교정 후 절단·면책 고지 복원(순서 유지, 중복 없음)")
+
+    # ⑥ LLM이 자체 면책 고지를 쓴 경우 우리 고지를 중복 부착하지 않는다
+    #    (시스템 프롬프트가 면책 고지 작성을 지시하므로 실제로 흔한 경우다)
+    llm_own = _ensure_notices("본문\n\n⚠️ 본 답변은 참고용이며 법적 효력이 없습니다.", truncated=False)
+    assert llm_own.count(DISCLAIMER_MARK) == 1, f"면책 고지 중복 부착: {llm_own!r}"
+    print("  ✅ 교정 후 고지 정규화(부분 잔존·역순·중복·멱등 전부 처리)")
 
 
 def test_rewrite_guard_rejects_empty_and_short() -> None:

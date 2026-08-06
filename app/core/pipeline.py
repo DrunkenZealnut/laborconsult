@@ -473,20 +473,34 @@ TRUNCATED_NOTICE = (
 
 
 def _ensure_notices(text: str, truncated: bool) -> str:
-    """교정/퇴고를 거친 답변에 시스템 고지가 남아 있는지 확인하고 복원.
+    """교정/퇴고를 거친 답변의 시스템 고지를 정해진 순서로 정규화.
 
     `correct_hallucinated_citations`는 답변 전문을 외부 LLM에 재생성시킨다.
     "나머지는 수정하지 말라"고 지시해도 말미 고지가 탈락할 수 있고, 그 결과를
     replace 이벤트로 내보내면 **이미 사용자에게 전달한 절단·면책 고지가 사라진다**
-    (저장되는 답변도 같아진다). 순서는 원본과 동일하게 절단 → 면책.
+    (저장되는 답변도 같아진다).
+
+    단순히 "없으면 뒤에 붙이기"로는 부족하다 — 교정이 면책 고지만 남기면 절단
+    고지가 그 **뒤에** 붙어 순서(절단 → 면책)가 뒤집힌다. 그래서 우리가 붙인
+    고지를 일단 전부 걷어낸 뒤 정해진 순서로 다시 붙인다.
+
+    면책 고지는 `DISCLAIMER_MARK` 유무로 판정한다. 시스템 프롬프트가 LLM에게
+    면책 고지 작성을 지시하므로(app/templates/prompts.py), 마커를 우리 문구로
+    좁히면 대부분의 답변에 면책 고지가 중복된다.
     """
     if not text:
         return text
-    if truncated and TRUNCATED_MARK not in text:
-        text += TRUNCATED_NOTICE
-    if DISCLAIMER_MARK not in text:
-        text += DISCLAIMER
-    return text
+
+    body = text
+    for notice in (TRUNCATED_NOTICE, DISCLAIMER):
+        body = body.replace(notice, "")
+    body = body.rstrip()
+
+    if truncated:
+        body += TRUNCATED_NOTICE
+    if DISCLAIMER_MARK not in body:
+        body += DISCLAIMER
+    return body
 
 
 def _llm_meta(
