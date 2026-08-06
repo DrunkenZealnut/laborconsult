@@ -6,6 +6,7 @@ LLM 응답에서 환각된 판례 번호를 감지한다.
 
 from __future__ import annotations
 
+import os
 import re
 import logging
 
@@ -241,7 +242,9 @@ def correct_hallucinated_citations(
             import httpx
             resp = anthropic_client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=3000,
+                # 답변 전문을 교정해 되돌리므로 답변 생성 한도(8192)와 맞춘다.
+                # 부족하면 아래 0.7 길이 가드에 걸려 교정이 통째로 폐기된다.
+                max_tokens=8192,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}],
                 timeout=httpx.Timeout(5.0),
@@ -274,12 +277,15 @@ def correct_hallucinated_citations(
     if openai_client:
         try:
             resp = openai_client.chat.completions.create(
-                model="o3",
+                # 답변 생성 모델과 동일 설정을 따라간다 (A/B 교체 시 함께 전환)
+                model=os.getenv("OPENAI_CHAT_MODEL", "o3"),
                 messages=[
                     {"role": "developer", "content": "당신은 텍스트 교정 도우미입니다."},
                     {"role": "user", "content": prompt},
                 ],
-                max_completion_tokens=3000,
+                # reasoning 토큰이 이 한도를 함께 소비한다 (pipeline._stream_openai 주석 참고).
+                # 답변 전문을 교정해 되돌려야 하므로 넉넉히 잡는다.
+                max_completion_tokens=8192,
             )
             text = resp.choices[0].message.content
             if text:
@@ -338,7 +344,8 @@ def micro_polish(
     try:
         resp = anthropic_client.messages.create(
             model=MICRO_POLISH_MODEL,
-            max_tokens=3000,
+            # 답변 전문을 다듬어 되돌리므로 답변 생성 한도(8192)와 맞춘다.
+            max_tokens=8192,
             temperature=0,
             system=_MICRO_POLISH_SYSTEM,
             messages=[{

@@ -5,6 +5,7 @@ from __future__ import annotations
 import anthropic
 
 import logging
+import os
 
 from app.config import AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL
 from app.core.file_parser import ParsedAttachment
@@ -141,7 +142,8 @@ def _stream_claude(messages: list, system: str, config: AppConfig):
     """Claude 스트리밍"""
     with config.claude_client.messages.stream(
         model=CLAUDE_MODEL,
-        max_tokens=2048,
+        # 한국어 2048 토큰은 대략 1,500~2,000자로 긴 상담 답변이 잘린다.
+        max_tokens=8192,
         system=system,
         messages=messages,
     ) as stream:
@@ -150,15 +152,19 @@ def _stream_claude(messages: list, system: str, config: AppConfig):
 
 
 def _stream_openai(messages: list, system: str, config: AppConfig):
-    """OpenAI 스트리밍 (o3 등 reasoning 모델 호환)"""
+    """OpenAI 스트리밍 (o3·gpt-5.x 등 reasoning 모델 호환)"""
     oai_msgs = [{"role": "developer", "content": system}]
     for m in messages:
         oai_msgs.append({"role": m["role"], "content": _flatten_content(m["content"])})
 
     stream = config.openai_client.chat.completions.create(
-        model=OPENAI_CHAT_MODEL,
+        # 매 호출 시 환경변수를 다시 읽어 무재시작 모델 교체(A/B 비교)를 허용
+        model=os.getenv("OPENAI_CHAT_MODEL", OPENAI_CHAT_MODEL),
         messages=oai_msgs,
-        max_completion_tokens=2048,
+        # reasoning 모델은 추론 토큰과 출력 토큰이 이 한도를 함께 쓴다.
+        # 2048에서는 추론이 한도를 모두 소진해 본문이 빈 문자열로 반환되는
+        # 사례가 실측됐다(o3·gpt-5.6-luna 모두 finish_reason=length, 본문 0자).
+        max_completion_tokens=8192,
         stream=True,
     )
     for chunk in stream:
@@ -195,6 +201,11 @@ def _stream_answer(messages: list, system: str, config: AppConfig):
     ]
     if config.gemini_api_key:
         providers.append(("Gemini", _stream_gemini))
+
+    # ANSWER_PROVIDER로 1순위 제공자 지정 (기본: Claude). 나머지는 폴백 순서 유지.
+    primary = os.getenv("ANSWER_PROVIDER", "").strip().lower()
+    if primary:
+        providers.sort(key=lambda p: p[0].lower() != primary)
 
     last_error = None
     for name, stream_fn in providers:
@@ -367,10 +378,10 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
     from app.core.analyzer import _correct_date_year
     today = _date.today().isoformat()
     try:
+        # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
         resp = client.messages.create(
             model=EXTRACT_MODEL,
             max_tokens=512,
-            temperature=0,
             tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL],
             tool_choice={"type": "any"},
             messages=[{
