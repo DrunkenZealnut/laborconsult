@@ -49,6 +49,7 @@ python3 test_wage_golden.py       # 계산 엔진 골든 테스트
 python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-1/2/3)
 python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
 python3 test_abuse_guard.py       # 남용 가드(인젝션·스코프·쿼터·게시판 필터) 테스트
+python3 test_llm_fallback.py      # LLM 폴백(빈응답·절단·전환 하트비트·교차벤더) 테스트
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
@@ -83,7 +84,7 @@ Defined in `.env` (see `.env.example`):
 - `ANTHROPIC_API_KEY` — primary LLM (Claude) + intent analysis
 
 **Optional:**
-- `GEMINI_API_KEY` — tertiary LLM fallback (Gemini 2.5 Pro)
+- `GEMINI_API_KEY` — tertiary LLM fallback (모델은 `GEMINI_MODEL`, 기본 `gemini-pro-latest`)
 - `SUPABASE_URL` / `SUPABASE_KEY` — session persistence + conversation storage
 - `LAW_API_KEY` — 법제처 법령 API
 - `ODCLOUD_API_KEY` — 공공데이터포털 API (중앙노동위원회 판정사례)
@@ -97,7 +98,7 @@ Defined in `.env` (see `.env.example`):
 - `MAIL_SMTP_HOST` (default `smtp.gmail.com`) / `MAIL_SMTP_PORT` (default `587`, STARTTLS)
 - `MAIL_FROM_EMAIL` (defaults to username) / `MAIL_FROM_NAME` (default `기초 노동상담`)
 
-**Model config** in `app/config.py`: Claude Sonnet 4.6 (primary), OpenAI o3 (fallback), Gemini 2.5 Pro (tertiary).
+**Model config** in `app/config.py`: `claude-sonnet-5` (primary, 상수 고정), `o3` (fallback, `OPENAI_CHAT_MODEL`로 교체 가능), `gemini-pro-latest` (tertiary, `GEMINI_MODEL`). 타임아웃·재시도 예산도 같은 파일이 단일 출처다 — 값 변경 시 `docs/02-design/features/llm-fallback-hardening.design.md` §3.4 예산표를 함께 갱신할 것.
 
 ## Architecture
 
@@ -293,7 +294,14 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 계산기 입력 params는 영문 키(`wage_type`, `wage_amount` 등, `pipeline.py::_run_calculator()` 규약) — 한국어는 계산 유형 라벨(`CALC_TYPE_MAP` 키, 예: "연장수당")에만 사용
 - Legal references follow format: "근로기준법 제N조" or "대법원 YYYY다NNNN"
 - Test cases in `wage_calculator_cli.py` numbered #1–#32; batch tests in `calculator_batch_test.py` with 102 cases
-- LLM provider fallback: Claude (primary) → OpenAI o3 → Gemini. If streaming starts then fails mid-stream, partial response is kept (no retry).
+- LLM provider fallback **기본 순서**: Claude → OpenAI → Gemini (`_stream_answer`). `ANSWER_PROVIDER`(claude|openai|gemini)를 설정하면 **그 제공자가 1순위로 재정렬**되고 나머지는 기본 순서를 유지한다 — 장애 시 무배포 롤백 수단이다. Gemini는 `GEMINI_API_KEY`가 있을 때만 목록에 들어간다. **폴백 규약**(llm-fallback-hardening):
+  - **빈 응답은 실패다** — 예외 없이 실질 0자로 끝난 제공자는 성공이 아니라 다음 제공자로 전환한다. reasoning 모델이 추론으로 토큰 한도를 소진해 본문 0자를 반환하는 사례가 실측됐다.
+  - **절단은 고지한다** — 첫 청크 이후 실패 시 부분 응답을 유지하되(재시도 없음) 사용자에게 절단 고지를 붙이고, `metadata.truncated`로 저장해 공개 게시판에서 제외한다(`api/index.py::_PUBLIC_EXCLUDE_KEYS`). 고지 없이 두면 잘린 답변에 면책 고지가 붙어 완결된 답변으로 오인된다.
+  - **전환 구간은 하트비트를 낸다** — `_stream_answer`가 `(provider, "")` 빈 텍스트를 흘리면 호출부가 `ping`으로 변환한다. 무이벤트 구간이 프론트 idle(60초, `public/index.html`)을 넘으면 폴백이 도달하기 전에 브라우저가 abort한다.
+  - **재시도보다 전환** — 답변 경로는 `max_retries=0`. 동일 벤더 재시도는 같은 장애를 다시 만난다.
+  - **모델명은 별칭으로** — 고정 버전은 모델 폐기 시 조용히 404가 된다(실제로 `gemini-2.5-pro`가 그렇게 죽어 있었고, 폴백 계측이 없어 아무도 몰랐다).
+- 의도분석(`analyze_intent`)은 Claude 실패 시 OpenAI function calling으로 폴백한다. 후처리는 `_build_analysis_result` 단일 출처를 두 벤더가 공유해야 추출 결과가 갈라지지 않는다. 어댑터는 `app/core/llm_fallback.py` — `analyzer.py`가 `pipeline.py`를 import하면 순환이 되므로 하위 모듈에 둔 것이다.
+- 폴백 결과는 `qa_conversations.metadata.llm`(provider·attempts·fallback·empty·truncated·citation_fixed)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.**
 - All `app/core/*.py` modules use `from __future__ import annotations` for forward reference support.
 - Legal API (`legal_api.py`) has circuit breaker pattern: 3 consecutive failures → 30s cooldown. L1 in-memory → L2 Supabase → L3 API call.
 - Citation validator (`citation_validator.py`) regex patterns: `대법원 YYYY[가-힣]NNNN` for precedents, `[부서명]과-NNNN` for administrative interpretations.

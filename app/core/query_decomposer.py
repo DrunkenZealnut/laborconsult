@@ -16,6 +16,8 @@ from enum import Enum
 
 import anthropic
 
+from app.config import CRITICAL_MAX_RETRIES
+
 logger = logging.getLogger(__name__)
 
 DECOMPOSE_MODEL = "claude-haiku-4-5-20251001"
@@ -191,13 +193,16 @@ def decompose_query(
 
     start = time.monotonic()
     try:
-        resp = client.messages.create(
+        # timeout은 시도당 적용 — max_retries를 함께 주지 않으면 SDK 기본 2회
+        # 재시도로 실효 소요가 예산의 3배가 된다 (design §3.4 L6).
+        resp = client.with_options(
+            timeout=DECOMPOSE_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
+        ).messages.create(
             model=DECOMPOSE_MODEL,
             max_tokens=256,
             temperature=0.3,
             system=DECOMPOSE_SYSTEM,
             messages=[{"role": "user", "content": user_msg}],
-            timeout=DECOMPOSE_TIMEOUT,
         )
         raw = resp.content[0].text.strip()
 

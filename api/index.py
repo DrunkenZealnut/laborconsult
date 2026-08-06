@@ -351,25 +351,33 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
 
 # ── 공용 보안 헬퍼 ────────────────────────────────────────────────────────────
 
+# metadata에 이 키가 있으면 공개 게시판에서 제외한다.
+#   guard_flag — 가드 의심(monitor) 대화 (chatbot-security FR-09)
+#   truncated  — 스트림 절단으로 완결되지 않은 답변 (llm-fallback-hardening FR-02)
+_PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated")
+
+
 def _apply_guard_filter(query, apply_filter: bool = True):
-    """qa_conversations 조회에서 가드 의심(monitor flag) 대화를 제외 (FR-09).
+    """qa_conversations 조회에서 공개 부적합 대화를 제외.
 
     ⚠️ qa_conversations 전용 — board_posts에는 metadata 컬럼이 없어 필터를
     걸면 PostgREST 400이 나고, 호출부의 try/except에 삼켜져 사용자 게시글이
     통째로 사라진다(Design §3.2).
     """
-    return query.is_("metadata->>guard_flag", "null") if apply_filter else query
+    if not apply_filter:
+        return query
+    for key in _PUBLIC_EXCLUDE_KEYS:
+        query = query.is_(f"metadata->>{key}", "null")
+    return query
+
+
+def _is_public_excluded(meta) -> bool:
+    return isinstance(meta, dict) and any(meta.get(k) for k in _PUBLIC_EXCLUDE_KEYS)
 
 
 def _drop_flagged(rows: list[dict] | None) -> list[dict]:
     """Python 레벨 후처리 — 필터 성공 시엔 이중 안전망, 실패 시엔 유일한 방어선."""
-    out = []
-    for row in rows or []:
-        meta = row.get("metadata")
-        if isinstance(meta, dict) and meta.get("guard_flag"):
-            continue
-        out.append(row)
-    return out
+    return [row for row in (rows or []) if not _is_public_excluded(row.get("metadata"))]
 
 
 def _fetch_qa_public(build) -> tuple[list[dict], int | None]:
@@ -1053,7 +1061,7 @@ def board_detail(item_id: str):
     sb = _get_supabase()
 
     # 1) qa_conversations에서 먼저 조회
-    #    metadata를 함께 select해야 guard_flag 검사가 작동한다 (Design §3.2)
+    #    metadata를 함께 select해야 공개 제외 검사가 작동한다 (Design §3.2)
     result = (
         sb.table("qa_conversations")
         .select("id, category, question_text, answer_text, created_at, metadata")
@@ -1063,8 +1071,7 @@ def board_detail(item_id: str):
     )
     if result.data:
         row = result.data
-        meta = row.get("metadata")
-        if isinstance(meta, dict) and meta.get("guard_flag"):
+        if _is_public_excluded(row.get("metadata")):
             return JSONResponse(status_code=404, content={"error": "Not found"})
         return {
             "id": row["id"],

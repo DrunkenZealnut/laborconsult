@@ -47,3 +47,6 @@ class AnalysisResult(BaseModel):
     # 노동법 스코프 판정 (chatbot-security FR-05)
     # 기본값 True = analyzer 실패·필드 누락 시 fail-open(상담 허용)
     is_labor_related: bool = True
+    # 의도분석을 실제로 수행한 제공자 (llm-fallback-hardening FR-10 계측).
+    # "OpenAI"면 Anthropic 장애로 교차벤더 폴백이 발동했다는 뜻이다.
+    intent_provider: str | None = None

@@ -584,9 +584,15 @@ def test_scope_gate_schema() -> None:
     # 기본값 True = fail-open
     assert AnalysisResult().is_labor_related is True
 
-    # analyzer가 실제로 값을 채우는지 (누락 시 게이트가 영구 무력화됨)
-    assert "is_labor_related" in inspect.getsource(analyzer.analyze_intent), \
-        "analyzer.analyze_intent가 is_labor_related를 반환하지 않음"
+    # analyzer가 실제로 값을 채우는지 (누락 시 게이트가 영구 무력화됨).
+    # 후처리는 벤더 중립 함수로 분리돼 Claude·OpenAI 폴백이 공유한다
+    # (llm-fallback-hardening FR-05) — 배선 검사도 그 함수를 가리킨다.
+    assert "is_labor_related" in inspect.getsource(analyzer._build_analysis_result), \
+        "analyzer._build_analysis_result가 is_labor_related를 반환하지 않음"
+    assert "_build_analysis_result" in inspect.getsource(analyzer.analyze_intent), \
+        "analyze_intent가 후처리 단일 출처를 경유하지 않음"
+    # 값이 실제로 전달되는지 동작으로도 확인
+    assert analyzer._build_analysis_result({"is_labor_related": False}).is_labor_related is False
     print("  ✅ 스코프 게이트 스키마: tool·required·AnalysisResult·analyzer")
 
 
@@ -620,8 +626,14 @@ def test_board_guard_filter() -> None:
         src = inspect.getsource(getattr(index, fn_name))
         assert "_fetch_qa_public" in src, f"{fn_name}이 실행 폴백 헬퍼를 경유하지 않음"
         assert "_apply_guard_filter" in src, f"{fn_name}에 guard_flag 필터 없음"
-    assert "guard_flag" in inspect.getsource(index.board_detail), \
-        "board_detail에 guard_flag 검사 없음"
+    assert "_is_public_excluded" in inspect.getsource(index.board_detail), \
+        "board_detail에 공개 제외 검사 없음"
+    # 제외 키 집합이 guard_flag를 계속 포함하는지 (llm-fallback-hardening이
+    # truncated를 추가하면서 공용 헬퍼로 바뀐 지점 — guard_flag가 빠지면 무력화)
+    assert "guard_flag" in index._PUBLIC_EXCLUDE_KEYS, \
+        "_PUBLIC_EXCLUDE_KEYS에서 guard_flag가 빠짐"
+    assert index._is_public_excluded({"guard_flag": "scope_monitor"})
+    assert not index._is_public_excluded({"has_attachments": True})
 
     # qa_conversations select에 metadata가 있어야 필터·후처리가 작동한다
     qa_select = re.compile(r'table\(\s*"qa_conversations"\s*\)\s*\.select\(\s*([^)]*)\)', re.S)
