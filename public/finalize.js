@@ -50,8 +50,8 @@
   /* 섹션 종료 마커 — heading 이 아닌데도 "여기서부터는 접으면 안 되는 것"들.
    *
    * ALWAYS_OPEN 은 heading 텍스트만 검사한다. 그런데 프롬프트는 주의사항을
-   * 블록쿼트(`> ⚠️ **주의사항**:`)로, 면책 고지를 평문으로 지시한다
-   * (app/templates/prompts.py). 답변 구조도 "⑥ 실무 안내(절차) → ⑦ 주의사항 +
+   * 블록쿼트(`> ⚠️ **주의사항**:`)로, 면책 고지를 평문으로 지시한다.
+   * 답변 구조도 "⑥ 실무 안내(절차) → ⑦ 주의사항 +
    * 면책" 순서라, `## 절차`가 마지막 heading 이면 그 뒤의 주의사항·구분선·면책이
    * 통째로 <details> 안으로 빨려 들어가 기본 접힘 상태로 숨는다.
    * heading 단위 방어만으로는 못 막는 구멍이라 여기서 따로 끊는다. */
@@ -161,7 +161,10 @@
     jumpBtn = document.createElement('button');
     jumpBtn.id = 'glance-jump-core';
     jumpBtn.type = 'button';
-    jumpBtn.textContent = '⚖️ 핵심으로';
+    // 정적 문자열만 넣는다(사용자 입력 없음)
+    jumpBtn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">'
+      + '<path d="M12 4v16M7 8h10M5 8l-2.5 6h5zM19 8l2.5 6h-5z"/>'
+      + '</svg> 핵심으로';
     jumpBtn.setAttribute('aria-label', '핵심 답변으로 이동');
     jumpBtn.addEventListener('click', function () {
       if (jumpTarget) jumpTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });

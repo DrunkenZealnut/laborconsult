@@ -12,7 +12,8 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#1B2A4A">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="기초 노동상담">
 <meta property="og:title" content="임금계산기 흐름도 25종 — 기초 노동상담">
@@ -220,48 +221,47 @@
   ]
 }
 </script>
+<link rel="stylesheet" href="/tokens.css">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <style>
-  :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --sidebar-w: 280px; --accent-hover: #eff6ff; }
+  :root { --sidebar-w: 280px; }   /* 레이아웃 값 — 색 토큰은 공유 스타일시트가 정의한다 */
   /* 푸터 — 운영주체·법적고지 표기(FR-A3). 레이아웃이 100vh 고정이라 문서 흐름 뒤에 붙인다. */
-  #site-footer { border-top: 1px solid var(--border); background: var(--card); padding: 20px 24px; text-align: center; }
-  #site-footer .footer-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-  #site-footer .footer-info { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-  #site-footer .footer-info a { color: var(--muted); }
-  #site-footer .footer-links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; font-size: 12px; }
-  #site-footer .footer-links a { color: var(--primary); text-decoration: none; }
+  #site-footer { border-top: 1px solid var(--color-border); background: var(--color-surface); padding: 20px var(--space-3); text-align: center; }
+  #site-footer .footer-title { font-size: var(--text-label); font-weight: 700; color: var(--color-text); margin-bottom: var(--space-half); }
+  #site-footer .footer-info { font-size: var(--text-label); color: var(--color-text-muted); margin-bottom: var(--space-1); }
+  #site-footer .footer-info a { color: var(--color-text-muted); }
+  #site-footer .footer-links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; font-size: var(--text-label); }
+  #site-footer .footer-links a { color: var(--color-text); text-decoration: none; }
   #site-footer .footer-links a:hover { text-decoration: underline; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent-hover: #1e3a5f; }
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
 
   /* ── Header ── */
-  header { background: var(--card); border-bottom: 1px solid var(--border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  header h1 { font-size: 18px; font-weight: 700; }
-  header .back-link { font-size: 13px; color: var(--primary); text-decoration: none; margin-left: auto; }
+  header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header h1 { font-size: var(--text-h3); font-weight: 700; }
+  header .back-link { font-size: var(--text-label); color: var(--color-text); text-decoration: none; margin-left: auto; }
   header .back-link:hover { text-decoration: underline; }
 
   /* ── Main layout ── */
   .layout { flex: 1; display: flex; overflow: hidden; }
 
   /* ── Sidebar ── */
-  .sidebar { width: var(--sidebar-w); flex-shrink: 0; background: var(--card); border-right: 1px solid var(--border); overflow-y: auto; padding: 12px 0; }
-  .sidebar .cat-label { font-size: 12px; font-weight: 600; color: var(--muted); padding: 12px 16px 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
-  .sidebar .cat-label .cat-icon { font-size: 14px; }
-  .sidebar .menu-item { display: block; padding: 8px 16px 8px 28px; font-size: 14px; color: var(--text); text-decoration: none; cursor: pointer; border-left: 3px solid transparent; transition: background 0.15s, border-color 0.15s; }
-  .sidebar .menu-item:hover { background: var(--accent-hover); }
-  .sidebar .menu-item.active { background: var(--accent-hover); border-left-color: var(--primary); font-weight: 600; color: var(--primary); }
-  .sidebar .menu-item .item-desc { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; font-weight: 400; }
-  .sidebar .divider { height: 1px; background: var(--border); margin: 8px 16px; }
+  .sidebar { width: var(--sidebar-w); flex-shrink: 0; background: var(--color-surface); border-right: 1px solid var(--color-border); overflow-y: auto; padding: 12px 0; }
+  .sidebar .cat-label { font-size: var(--text-label); font-weight: 600; color: var(--color-text-muted); padding: 12px var(--space-2) 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+  .sidebar .cat-label .cat-icon { display: inline-flex; }
+  .sidebar .menu-item { display: block; padding: var(--space-1) var(--space-2) var(--space-1) 28px; font-size: var(--text-sm); color: var(--color-text); text-decoration: none; cursor: pointer; border-left: 3px solid transparent; }
+  .sidebar .menu-item:hover { background: var(--color-surface); }
+  .sidebar .menu-item.active { background: var(--color-surface); border-left-color: var(--accent); font-weight: 600; color: var(--color-text); }
+  .sidebar .menu-item .item-desc { display: block; font-size: var(--text-label); color: var(--color-text-muted); margin-top: 1px; font-weight: 400; }
+  .sidebar .divider { height: 1px; background: var(--color-border); margin: var(--space-1) var(--space-2); }
 
   /* ── Viewer ── */
   .viewer { flex: 1; display: flex; flex-direction: column; }
   .viewer iframe { flex: 1; border: none; width: 100%; }
-  .viewer .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); gap: 12px; }
-  .viewer .empty-state .empty-icon { font-size: 48px; opacity: 0.4; }
-  .viewer .empty-state p { font-size: 15px; }
-  .viewer .empty-state .empty-sub { font-size: 13px; }
+  .viewer .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--color-text-muted); gap: 12px; }
+  .viewer .empty-state .empty-icon { opacity: 0.4; }
+  .viewer .empty-state .empty-icon .icon { width: 48px; height: 48px; }
+  .viewer .empty-state p { font-size: var(--text-sm); }
+  .viewer .empty-state .empty-sub { font-size: var(--text-label); }
 
   /* ── Mobile ── */
   @media (max-width: 768px) {
@@ -270,7 +270,7 @@
     .layout.viewing .sidebar { display: none; }
     .layout.viewing .viewer { display: flex; }
     .layout:not(.viewing) .viewer { display: none; }
-    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px 16px; background: var(--card); border: none; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--primary); cursor: pointer; font-weight: 600; width: 100%; font-family: inherit; }
+    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px var(--space-2); background: var(--color-surface); border: none; border-bottom: 1px solid var(--color-border); font-size: var(--text-sm); color: var(--color-text); cursor: pointer; font-weight: 600; width: 100%; font-family: inherit; }
     .mobile-back svg { width: 16px; height: 16px; }
   }
   @media (min-width: 769px) {
@@ -289,7 +289,7 @@
   <!-- Sidebar Menu -->
   <nav class="sidebar" id="sidebar">
 
-    <div class="cat-label"><span class="cat-icon">📊</span> 전체 구조</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V11M12 21V4M19 21v-6"/></svg></span> 전체 구조</div>
     <a class="menu-item" data-src="calculator_flow/wage_calculator_dependency_map.html">
       계산기 의존관계 맵
       <span class="item-desc">25개 계산기 간 연결 구조</span>
@@ -297,7 +297,7 @@
 
     <div class="divider"></div>
 
-    <div class="cat-label"><span class="cat-icon">💰</span> 기본 임금</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/></svg></span> 기본 임금</div>
     <a class="menu-item" data-src="calculator_flow/ordinary_wage_calculation_flow.html">
       통상임금 계산
       <span class="item-desc">모든 수당의 기초 — 핵심 5단계</span>
@@ -317,7 +317,7 @@
 
     <div class="divider"></div>
 
-    <div class="cat-label"><span class="cat-icon">⏰</span> 수당 계산</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></span> 수당 계산</div>
     <a class="menu-item" data-src="calculator_flow/overtime_night_holiday_pay_calc.html">
       연장·야간·휴일수당
       <span class="item-desc">근로기준법 제56조 가산율 적용</span>
@@ -337,7 +337,7 @@
 
     <div class="divider"></div>
 
-    <div class="cat-label"><span class="cat-icon">🏢</span> 퇴직·해고</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V4h11v17M15 9h5v12M4 21h16M8 7h3M8 11h3M8 15h3"/></svg></span> 퇴직·해고</div>
     <a class="menu-item" data-src="calculator_flow/severance_pay_calculation_flow.html">
       퇴직금 계산
       <span class="item-desc">1년 이상 근속 시 지급</span>
@@ -353,7 +353,7 @@
 
     <div class="divider"></div>
 
-    <div class="cat-label"><span class="cat-icon">🛡️</span> 보험·세금·연금</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9.5C7.4 20.3 4 16.5 4 12V6z"/></svg></span> 보험·세금·연금</div>
     <a class="menu-item" data-src="calculator_flow/insurance_income_tax_calc.html">
       4대보험·소득세
       <span class="item-desc">국민연금·건강·고용·산재 + 소득세</span>
@@ -381,7 +381,7 @@
 
     <div class="divider"></div>
 
-    <div class="cat-label"><span class="cat-icon">👶</span> 휴직·급여</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.1 2.7-5.4 6-5.4s6 2.3 6 5.4"/><circle cx="17.5" cy="10.5" r="2.2"/><path d="M16.5 15.4c2.4 0 4.5 1.8 4.5 4.6"/></svg></span> 휴직·급여</div>
     <a class="menu-item" data-src="calculator_flow/maternity_leave_benefit_flow.html">
       출산휴가급여
       <span class="item-desc">90일(다태 120일) 급여 산정</span>
@@ -397,7 +397,7 @@
 
     <div class="divider"></div>
 
-    <div class="cat-label"><span class="cat-icon">⚙️</span> 근로조건</div>
+    <div class="cat-label"><span class="cat-icon"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span> 근로조건</div>
     <a class="menu-item" data-src="calculator_flow/flexible_work_hours_calc.html">
       탄력근무 시간계산
       <span class="item-desc">2주/3개월 단위 평균 근로시간</span>
@@ -424,7 +424,7 @@
       목록으로 돌아가기
     </button>
     <div class="empty-state" id="emptyState">
-      <div class="empty-icon">📐</div>
+      <div class="empty-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5L17.5 3l3.5 3.5L6.5 21z"/><path d="M8 12l2 2M12 8l2 2"/></svg></div>
       <p>좌측 메뉴에서 계산기를 선택하세요</p>
       <p class="empty-sub">각 계산기의 단계별 흐름을 시각적으로 확인할 수 있습니다</p>
     </div>

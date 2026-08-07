@@ -134,7 +134,7 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 *Static serving:* `GET /` (index.html), `/admin` (admin.html), `/calculators`+`/calculators.html`, `/calculator_flow/{filename}` (`.html` allowlist + `commonpath` traversal guard)
 
 **Static pages:**
-- `public/index.html` — 메인페이지(~1,470줄, 단일 파일): Google 스타일 중앙 랜딩(로고 `#landing` + 채팅 입력창). 첫 메시지 전송 시 `expandChat()`이 `.chat-card.active`를 추가해 채팅 영역 확장. FAQ(6 카테고리, `FAQ_DATA`)와 질문게시판(`#board-section`)은 인라인이 아니라 **햄버거 슬라이드 메뉴**(`.slide-menu`)에서 접근. 각 답변 하단 액션 버튼: `actionCopy`/`actionPDF`/`actionMarkdown`/`actionEmail`(이메일은 `prompt()`로 주소 입력 → `POST /api/send-email`). 디자인: Noto Serif KR + Pretendard, 네이비(#1B2A4A) + 코퍼(#C08050), `body` max-width 800px.
+- `public/index.html` — 메인페이지(~1,470줄, 단일 파일): Google 스타일 중앙 랜딩(로고 `#landing` + 채팅 입력창). 첫 메시지 전송 시 `expandChat()`이 `.chat-card.active`를 추가해 채팅 영역 확장. FAQ(6 카테고리, `FAQ_DATA`)와 질문게시판(`#board-section`)은 인라인이 아니라 **햄버거 슬라이드 메뉴**(`.slide-menu`)에서 접근. 각 답변 하단 액션 버튼: `actionCopy`/`actionPDF`/`actionMarkdown`/`actionEmail`(이메일은 `prompt()`로 주소 입력 → `POST /api/send-email`). 디자인: Swiss Modernism 2.0 (아래 참조).
 - `public/calculators.html` — 25개 계산기 흐름도 메뉴 (사이드바 + iframe 뷰어)
 - `public/calculator_flow/` — 25개 standalone HTML 계산기 시각화 (SVG 플로우차트)
 - `public/admin.html` — 관리자 대시보드 (라우트: `/admin`, `/admin.html`은 404)
@@ -318,7 +318,15 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 새 코퍼스 소스 추가 시 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 스크립트를 함께 추가/동기화.
 - `public/privacy.html` 제5항(보유기간) 문구는 `supabase_retention_purge.sql`의 `purge_expired_data()` 기본값과, 제7항(첨부 접근통제) 문구는 `app/core/storage.py::upload_attachment`(public_url 미저장) + `api/index.py::admin_conversation_detail`(1시간 signed URL)과 반드시 함께 갱신할 것. 이 파일들이 바뀌면 방침이 지켜지지 않는 약속이 된다.
 - `public/terms.html` 제5조(이용 한도) 수치는 `app/core/abuse_guard.py:25-32`(`MAX_MESSAGE_LENGTH`·`CHAT_RATE_LIMIT`·`CHAT_RATE_WINDOW`·`DAILY_CHAT_QUOTA`·`ABUSE_BLOCK_MINUTES`)와 반드시 함께 갱신할 것. 공지 채널(제3·7조)의 실체는 `public/notice.json`(원본) + `public/index.html`의 `#notice-banner`/`initNotice()`(렌더러) — 공지 내용을 바꿀 때 `notices[].id`도 함께 바꿔야 이미 닫은 사용자에게 다시 노출된다.
-- 공개 페이지(`public/*.html`)의 HTML 주석에는 내부 파일 경로·함수명을 적지 말 것 — 소스 보기로 그대로 노출된다. 그런 유지보수 의존관계는 이 문서(CLAUDE.md)에 기록한다.
+- 공개 페이지(`public/*.html`)의 HTML 주석에는 내부 파일 경로·함수명을 적지 말 것 — 소스 보기로 그대로 노출된다. 그런 유지보수 의존관계는 이 문서(CLAUDE.md)에 기록한다. `public/finalize.js`·`public/pwa.js` 등 공개 JS 주석도 같다.
+- **디자인 시스템은 `public/tokens.css`가 단일 출처**(Swiss Modernism 2.0). 색·간격·서체·모션 값을 페이지 인라인 `<style>`에 리터럴로 두지 말 것 — 공개 8페이지가 모두 `<link rel="stylesheet" href="/tokens.css">`로 참조하며, **인라인 `<style>`보다 반드시 앞에** 와야 페이지 고유 레이아웃이 토큰을 덮는다. 규범·근거는 `docs/02-design/features/swiss-modernism-design-system.design.md`가 관리하며, 값을 바꿀 때 그 문서를 먼저 갱신한다. 강제 규칙 중 대비 계산에서 나온 것들:
+  - **라이트 모드에서 액센트(코퍼 `#C08050`)를 텍스트 색으로 쓰지 말 것** — 흰 배경 3.26:1, 서피스 2.99:1로 WCAG AA 미달이다. 링크는 색이 아니라 밑줄로 구분한다. 다크 모드 액센트(`#D9A273`)는 8.42:1이라 텍스트 사용이 가능하다.
+  - **액센트 면 위의 글자는 `--accent-on`(`#111111`)이다. 흰색 금지** — 흰 글씨 3.26:1 미달, 오프블랙 5.80:1 통과.
+  - **액센트 hover는 밝아진다**(`#C58A5E`). 규격의 "8% 어둡게"를 따르면 오프블랙 라벨과의 대비가 4.31:1로 떨어져 미달한다.
+  - 애니메이션은 `transform`·`opacity`만. `background-position`·`width` 전이 금지.
+- 계산기 흐름도 25종(`public/calculator_flow/*.html`)은 **아직 미전환**이다. 6색 의미 체계(`c-blue`/`c-teal`/`c-amber`/`c-coral`/`c-purple`/`c-gray`)를 데이터시각화 예외로 유지하기로 확정했고 매핑표는 설계 문서 §8.1에 있다. 그 결과 `calculators.html`(무채색)과 iframe 안 흐름도(기존 색) 사이에 시각적 이음매가 있다 — 후속 사이클에서 해소.
+- `public/index.html`의 콜아웃 판정(`CALLOUT_MAP`)·핵심답변 판정·면책 고지 판정과 `public/finalize.js`의 `isTerminator`는 **정규식에 이모지(📘⚠️🚨💡⚖️📋)를 포함한다.** LLM 출력의 이모지 접두사를 벗겨 내는 용도이므로 "UI 이모지 제거" 작업 시에도 **지우면 안 된다** — 지우면 콜아웃이 평문이 되고 면책 고지가 접힌 채 숨는다. 표시용 아이콘만 인라인 SVG(`.icon`)로 교체한다.
+- `public/sw.js`의 `ASSET_PATTERN`은 css·js를 포함하므로 **배포마다 `VERSION`을 올릴 것.** 안 올리면 낡은 스타일·스크립트가 cache-first로 남아 새 디자인이 적용되지 않는다(실패가 조용하다). `SHELL_URLS`에 `/tokens.css`가 있어야 오프라인 화면이 무스타일로 뜨지 않는다.
 - **프론트 `fetch`는 반드시 `resp.ok`를 검사할 것.** `fetch`는 네트워크 실패에만 reject하고 4xx·5xx는 정상 이행하므로, `.then(r => r.json())`으로 바로 넘기면 **오류 본문이 정상 데이터로 흘러가 화면에 `undefined`가 찍힌다**(2026-08-07 실장애: `CAPTCHA_SECRET` 미설정 → `/api/captcha` 503 → "보안문자: undefined" → 이메일 발송·게시판 등록 불가). 200이어도 필수 필드 존재를 함께 확인한다. 사용자 안내에는 서버 `detail`(예: "서버 설정 오류")을 노출하지 말고 고정 문구를 쓴다. 회귀는 `test_public_fetch.js`가 공개 페이지 전 `fetch`를 훑어 고정한다.
 - CAPTCHA로 게이팅되는 제출 버튼(`index.html` 이메일 모달, `board.html` 글쓰기)은 **토큰 확보 전까지 비활성**을 유지해야 한다. `board.html`은 버튼 상태를 만지는 지점이 셋(`loadCaptcha` 성공, `submitPost`의 429 타이머, `finally`)이라 **단일 불변식으로 통일**돼 있다 — "토큰이 있고 rate limit이 풀렸을 때만 열린다"(`!captchaToken || Date.now() < rateLimitedUntil`). 한 지점만 무조건 `false`로 바꾸면 나머지 둘의 게이팅이 무력화된다. 403 재로딩은 `await loadCaptcha()`로 순서를 확정할 것 — `await` 없이 호출하면 `finally`가 먼저 실행돼 잠금을 덮는다.
 - **답변 조망 레이어**(`public/finalize.js`, answer-at-a-glance): 완성된 답변 DOM에만 적용하는 순수 후처리(목차·`<details>` 접기·핵심 복귀 버튼). `index.html`(`readSSE` 말미, 스트리밍 완료 후 1회)과 `board.html`(`renderDetail` 렌더 직후)이 공유하며, `pwa.js`와 같은 정적 파일 분리 방식이다. 주의점:
