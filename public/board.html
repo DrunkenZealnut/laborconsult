@@ -896,6 +896,8 @@ document.getElementById('search-input').addEventListener('input', function(e) {
 
 // ── Write Modal ──
 var captchaToken = '';
+// 429 잠금 해제 시각(ms). 모달을 닫았다 열어도 유지된다 — rate limit은 서버 기준이다.
+var rateLimitedUntil = 0;
 
 function openWriteModal() {
   document.getElementById('write-modal').classList.add('active');
@@ -916,15 +918,28 @@ function updateCharCount() {
 
 async function loadCaptcha() {
   var qEl = document.getElementById('captcha-q');
+  var submitBtn = document.getElementById('w-submit');
   qEl.textContent = '로딩 중...';
+  // captchaToken은 모듈 전역이라 실패해도 이전 값이 남는다 — 먼저 비운다.
+  captchaToken = '';
+  // 보안문자를 확보하기 전에는 제출을 막는다. 안 막으면 서버가 403으로 거절하고
+  // 여기서 재시도하는데, 발급 자체가 안 되는 상황이면 그 루프가 끝나지 않는다.
+  submitBtn.disabled = true;
   try {
     var resp = await fetch(API_BASE + '/api/captcha');
+    // fetch는 4xx·5xx에 reject하지 않는다 — 이 검사가 없으면 오류 본문이
+    // 정상 데이터로 흘러가 문제 자리에 undefined가 찍힌다.
+    if (!resp.ok) throw new Error('captcha ' + resp.status);
     var data = await resp.json();
+    if (!data || !data.token || !data.question) throw new Error('captcha payload');
     qEl.textContent = data.question;
     captchaToken = data.token;
     document.getElementById('w-captcha').value = '';
+    // rate limit 잠금 중이면 보안문자를 새로 받아도 열지 않는다(불변식 통일)
+    submitBtn.disabled = Date.now() < rateLimitedUntil;
   } catch (e) {
-    qEl.textContent = '오류 — 새로고침';
+    qEl.textContent = '불러오지 못했습니다 — 잠시 후 새로고침(↻)';
+    submitBtn.disabled = true;
   }
 }
 
@@ -956,10 +971,20 @@ async function submitPost(e) {
     if (!resp.ok) {
       errEl.textContent = data.error || '오류가 발생했습니다';
       errEl.style.display = 'block';
-      if (resp.status === 403) loadCaptcha();
+      // await로 재로딩 결과를 먼저 확정한다 — 안 그러면 아래 finally가
+      // 게이팅을 덮어써서 보안문자 없이 버튼이 열린다.
+      if (resp.status === 403) await loadCaptcha();
       if (resp.status === 429) {
+        // 잠금 해제 시각을 상태로 남긴다. 아래 finally가 return 직후 실행되므로
+        // disabled=true 만으로는 같은 틱에 덮여 30초 잠금이 죽는다.
+        rateLimitedUntil = Date.now() + 30000;
         submitBtn.disabled = true;
-        setTimeout(function() { submitBtn.disabled = false; }, 30000);
+        setTimeout(function () {
+          rateLimitedUntil = 0;
+          // 30초가 지나도 보안문자가 없으면 열지 않는다 — finally와 같은 불변식.
+          // 무조건 false로 열면 그 사이 CAPTCHA가 실패했을 때 토큰 없이 버튼이 열린다.
+          submitBtn.disabled = !captchaToken;
+        }, 30000);
       }
       return;
     }
@@ -973,7 +998,8 @@ async function submitPost(e) {
     errEl.textContent = '네트워크 오류가 발생했습니다';
     errEl.style.display = 'block';
   } finally {
-    submitBtn.disabled = false;
+    // 무조건 열지 않는다 — 보안문자 미확보 또는 rate limit 잠금 중이면 유지한다
+    submitBtn.disabled = !captchaToken || Date.now() < rateLimitedUntil;
     submitBtn.textContent = '질문 등록하기';
   }
   return false;
