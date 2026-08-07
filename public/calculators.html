@@ -227,7 +227,7 @@
   :root { --sidebar-w: 280px; }   /* 레이아웃 값 — 색 토큰은 공유 스타일시트가 정의한다 */
   /* 푸터 — 운영주체·법적고지 표기(FR-A3). 레이아웃이 100vh 고정이라 문서 흐름 뒤에 붙인다. */
   #site-footer { border-top: 1px solid var(--color-border); background: var(--color-surface); padding: 20px var(--space-3); text-align: center; }
-  #site-footer .footer-title { font-size: var(--text-label); font-weight: 700; color: var(--color-text); margin-bottom: var(--space-half); }
+  #site-footer .footer-title { font-size: var(--text-label); font-weight: var(--weight-bold); color: var(--color-text); margin-bottom: var(--space-half); }
   #site-footer .footer-info { font-size: var(--text-label); color: var(--color-text-muted); margin-bottom: var(--space-1); }
   #site-footer .footer-info a { color: var(--color-text-muted); }
   #site-footer .footer-links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; font-size: var(--text-label); }
@@ -237,7 +237,7 @@
 
   /* ── Header ── */
   header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(20px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  header h1 { font-size: var(--text-h3); font-weight: 700; }
+  header h1 { font-size: var(--text-h3); font-weight: var(--weight-bold); }
   header .back-link { font-size: var(--text-label); color: var(--color-text); text-decoration: none; margin-left: auto; }
   header .back-link:hover { text-decoration: underline; }
 
@@ -246,12 +246,12 @@
 
   /* ── Sidebar ── */
   .sidebar { width: var(--sidebar-w); flex-shrink: 0; background: var(--color-surface); border-right: 1px solid var(--color-border); overflow-y: auto; padding: 12px 0; }
-  .sidebar .cat-label { font-size: var(--text-label); font-weight: 600; color: var(--color-text-muted); padding: 12px var(--space-2) 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+  .sidebar .cat-label { font-size: var(--text-label); font-weight: var(--weight-semibold); color: var(--color-text-muted); padding: 12px var(--space-2) 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
   .sidebar .cat-label .cat-icon { display: inline-flex; }
   .sidebar .menu-item { display: block; padding: var(--space-1) var(--space-2) var(--space-1) 28px; font-size: var(--text-sm); color: var(--color-text); text-decoration: none; cursor: pointer; border-left: 3px solid transparent; }
   .sidebar .menu-item:hover { background: var(--color-surface); }
-  .sidebar .menu-item.active { background: var(--color-surface); border-left-color: var(--accent); font-weight: 600; color: var(--color-text); }
-  .sidebar .menu-item .item-desc { display: block; font-size: var(--text-label); color: var(--color-text-muted); margin-top: 1px; font-weight: 400; }
+  .sidebar .menu-item.active { background: var(--color-surface); border-left-color: var(--accent); font-weight: var(--weight-semibold); color: var(--color-text); }
+  .sidebar .menu-item .item-desc { display: block; font-size: var(--text-label); color: var(--color-text-muted); margin-top: 1px; font-weight: var(--weight-normal); }
   .sidebar .divider { height: 1px; background: var(--color-border); margin: var(--space-1) var(--space-2); }
 
   /* ── Viewer ── */
@@ -270,7 +270,7 @@
     .layout.viewing .sidebar { display: none; }
     .layout.viewing .viewer { display: flex; }
     .layout:not(.viewing) .viewer { display: none; }
-    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px var(--space-2); background: var(--color-surface); border: none; border-bottom: 1px solid var(--color-border); font-size: var(--text-sm); color: var(--color-text); cursor: pointer; font-weight: 600; width: 100%; font-family: inherit; }
+    .mobile-back { display: flex !important; align-items: center; gap: 6px; padding: 10px var(--space-2); background: var(--color-surface); border: none; border-bottom: 1px solid var(--color-border); font-size: var(--text-sm); color: var(--color-text); cursor: pointer; font-weight: var(--weight-semibold); width: 100%; font-family: inherit; }
     .mobile-back svg { width: 16px; height: 16px; }
   }
   @media (min-width: 769px) {

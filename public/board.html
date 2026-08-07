@@ -75,7 +75,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <link rel="stylesheet" href="/tokens.css">
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
-<!-- 본문 스크립트보다 먼저 실행돼야 딥링크 첫 렌더에도 적용된다 -->
+<!-- 본문 스크립트보다 먼저 와야 딥링크로 연 첫 화면에도 적용된다 -->
 <script src="/finalize.js"></script>
 <style>
   body { min-height: 100dvh; max-width: var(--reading-max); margin: 0 auto; }
@@ -89,7 +89,7 @@
     padding: max(10px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 10px max(20px, env(safe-area-inset-left));
   }
   .header-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
-  .header-logo { font-family: var(--font-body); font-weight: 900; font-size: var(--text-h2); color: var(--color-text); text-decoration: none; letter-spacing: -0.5px; flex-shrink: 0; }
+  .header-logo { font-family: var(--font-body); font-weight: var(--weight-bold); font-size: var(--text-h2); color: var(--color-text); text-decoration: none; letter-spacing: -0.5px; flex-shrink: 0; }
   .header-logo span { color: var(--color-text); }
   .header-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
   .header-nav a {
@@ -105,12 +105,12 @@
     background: var(--color-surface); border: 1px solid var(--color-border);
     padding: var(--space-4) var(--space-3); border-radius: var(--radius); text-align: center;
   }
-  #board-hero h1 { font-size: var(--text-h1); font-weight: 700; }
+  #board-hero h1 { font-size: var(--text-h1); font-weight: var(--weight-bold); }
   #board-hero h1 em { font-style: normal; text-decoration: underline;
                       text-decoration-thickness: 3px; text-underline-offset: 0.15em; }
   #board-hero p { color: var(--color-text-muted); font-size: var(--text-body); margin-top: var(--space-1); }
   #board-stats { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: var(--space-2); }
-  #board-stats strong { font-weight: 700; font-size: var(--text-h3); }
+  #board-stats strong { font-weight: var(--weight-bold); font-size: var(--text-h3); }
 
   /* ── SEARCH ── */
   #search-section { padding: var(--space-3) 20px 0; }
@@ -151,7 +151,7 @@
   }
   .board-cat {
     background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);
-    font-size: var(--text-label); font-weight: 600; padding: 3px 10px;
+    font-size: var(--text-label); font-weight: var(--weight-semibold); padding: 3px 10px;
     border-radius: var(--radius-pill); white-space: nowrap; flex-shrink: 0;
   }
   .board-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -163,7 +163,7 @@
   #detail-view.active { display: block; }
   .detail-back {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 10px 0; font-size: var(--text-sm); color: var(--color-text); font-weight: 600;
+    padding: 10px 0; font-size: var(--text-sm); color: var(--color-text); font-weight: var(--weight-semibold);
     cursor: pointer; background: none; border: none; font-family: var(--font-body);
   }
   .detail-back:hover { text-decoration: underline; }
@@ -179,7 +179,7 @@
   .msg-wrap.bot-side { align-items: flex-start; }
   .msg-bubble {
     max-width: 85%; padding: 14px 18px; border-radius: 14px;
-    font-size: var(--text-sm); line-height: 1.7; word-break: break-word;
+    font-size: var(--text-sm); line-height: var(--leading-relaxed); word-break: break-word;
   }
   .msg-bubble.user {
     background: var(--color-text); color: var(--color-bg); border-bottom-right-radius: 4px;
@@ -193,29 +193,27 @@
   .msg-bubble.bot p { margin: 6px 0; }
   .msg-bubble.bot ul, .msg-bubble.bot ol { margin: 6px 0 6px 20px; }
   .msg-bubble.bot table { border-collapse: collapse; margin: 10px 0; font-size: var(--text-sm); width: auto; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--color-border); }
-  .msg-bubble.bot th { background: var(--color-text); color: var(--color-bg); font-weight: 600; padding: var(--space-1) 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--color-surface); }
+  .msg-bubble.bot th { background: var(--color-text); color: var(--color-bg); font-weight: var(--weight-semibold); padding: var(--space-1) 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 2px solid var(--color-surface); }
   .msg-bubble.bot td { padding: 7px 14px; text-align: left; white-space: nowrap; border: none; border-bottom: 1px solid var(--color-border); }
   .msg-bubble.bot tr:nth-child(even) td { background: var(--color-bg); }
   .msg-bubble.bot tr:last-child td { border-bottom: none; }
-  .msg-bubble.bot strong { font-weight: 600; color: var(--color-text); }
+  .msg-bubble.bot strong { font-weight: var(--weight-semibold); color: var(--color-text); }
   .msg-bubble.bot blockquote { border-left: 3px solid var(--accent); padding-left: 10px; color: var(--color-text-muted); margin: 6px 0; }
   .msg-bubble.bot code { background: var(--color-bg); padding: 1px var(--space-half); border-radius: 3px; font-size: var(--text-label); }
   .msg-bubble.bot pre { background: var(--color-bg); padding: 10px; border-radius: 6px; overflow-x: auto; margin: var(--space-1) 0; }
   .msg-bubble.bot pre code { background: none; padding: 0; }
   .msg-bubble.bot hr { border: none; border-top: 1px solid var(--color-border); margin: 12px 0; }
 
-  /* 답변 조망 레이어 (answer-at-a-glance) — /finalize.js 가 생성한다.
-     index.html과 동일 규칙이되 선택자만 .msg-bubble.bot 기준이다.
-     board는 md()를 쓰지 않아 .summary-badge가 없고, 접기 제외는 finalize.js의
-     텍스트 화이트리스트(ALWAYS_OPEN)가 클래스와 무관하게 방어한다. */
+  /* 답변 상단 목차와 접기 UI. 선택자는 .msg-bubble.bot 기준이다.
+     게시판은 요약 배지 클래스가 없으므로 heading 텍스트만으로 동작해야 한다. */
   .answer-outline { position: sticky; top: 8px; z-index: 4; display: flex; gap: 6px; overflow-x: auto; margin: 0 0 12px; padding: var(--space-1) 0; background: var(--color-bg); border-bottom: 1px solid var(--color-border); scrollbar-width: none; }
   .answer-outline::-webkit-scrollbar { display: none; }
-  .outline-chip { flex: 0 0 auto; max-width: 160px; min-height: 32px; display: inline-flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: var(--space-half) 10px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text-muted); font-size: var(--text-label); text-decoration: none; line-height: 1.6; }
+  .outline-chip { flex: 0 0 auto; max-width: 160px; min-height: 32px; display: inline-flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: var(--space-half) 10px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text-muted); font-size: var(--text-label); text-decoration: none; line-height: var(--leading-normal); }
   .outline-chip:hover { color: var(--color-text); border-color: var(--color-text-muted); }
   .outline-chip:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 2px; }
   .msg-bubble.bot details { margin: 10px 0; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-surface); }
   /* 터치 타겟 44px 확보 */
-  .msg-bubble.bot details > summary { cursor: pointer; padding: 10px 14px; min-height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: 600; color: var(--color-text); line-height: 1.5; list-style: none; }
+  .msg-bubble.bot details > summary { cursor: pointer; padding: 10px 14px; min-height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--color-text); line-height: var(--leading-base); list-style: none; }
   .msg-bubble.bot details > summary::-webkit-details-marker { display: none; }
   .msg-bubble.bot details > summary::before { content: '▸'; flex: 0 0 auto; color: var(--color-text); transition: transform 0.15s; }
   .msg-bubble.bot details[open] > summary::before { transform: rotate(90deg); }
@@ -223,7 +221,7 @@
   .msg-bubble.bot details > *:not(summary) { margin-left: 14px; margin-right: 14px; }
   .msg-bubble.bot details > *:last-child { margin-bottom: 12px; }
   /* opacity만으로 숨기면 보이지 않는 채 탭 순서에 남는다 */
-  #glance-jump-core { position: fixed; bottom: 24px; right: 24px; z-index: 90; padding: var(--space-1) 14px; min-height: 44px; border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); box-shadow: var(--shadow-lift); cursor: pointer; font-size: var(--text-label); font-weight: 600; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s, visibility 0.2s; }
+  #glance-jump-core { position: fixed; bottom: 24px; right: 24px; z-index: 90; padding: var(--space-1) 14px; min-height: 44px; border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); box-shadow: var(--shadow-lift); cursor: pointer; font-size: var(--text-label); font-weight: var(--weight-semibold); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out); }
   #glance-jump-core.show { opacity: 1; visibility: visible; pointer-events: auto; }
   #glance-jump-core:hover { border-color: var(--color-text-muted); }
   .msg-label { font-size: var(--text-label); color: var(--color-text-muted); margin-bottom: var(--space-half); padding: 0 var(--space-half); }
@@ -234,7 +232,7 @@
   }
   .board-ask-btn {
     display: inline-flex; align-items: center; gap: 6px;
-    color: var(--color-text); font-size: var(--text-label); font-weight: 600; cursor: pointer;
+    color: var(--color-text); font-size: var(--text-label); font-weight: var(--weight-semibold); cursor: pointer;
     background: rgba(192,128,80,0.08); border: 1px solid rgba(192,128,80,0.2);
     border-radius: var(--radius-pill); padding: var(--space-1) 18px;
     font-family: var(--font-body); transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); text-decoration: none;
@@ -273,7 +271,7 @@
   /* ── FOOTER ── */
   #site-footer {
     background: var(--color-surface); color: var(--color-text-muted); padding: 12px var(--space-3);
-    font-size: var(--text-label); line-height: 1.7; border-radius: var(--radius) var(--radius) 0 0;
+    font-size: var(--text-label); line-height: var(--leading-relaxed); border-radius: var(--radius) var(--radius) 0 0;
     margin-top: var(--space-4);
   }
   .footer-inner { max-width: 800px; margin: 0 auto; text-align: center; }
@@ -301,7 +299,7 @@
   .write-btn {
     display: inline-flex; align-items: center; gap: 6px;
     padding: var(--space-1) 18px; border: 1px solid var(--accent); border-radius: var(--radius-pill);
-    background: var(--accent); color: var(--accent-on); font-size: var(--text-label); font-weight: 600;
+    background: var(--accent); color: var(--accent-on); font-size: var(--text-label); font-weight: var(--weight-semibold);
     font-family: var(--font-body); cursor: pointer; transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); white-space: nowrap;
   }
   .write-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -321,16 +319,16 @@
   }
   .modal-close {
     position: absolute; top: 16px; right: 16px; background: none; border: none;
-    font-size: var(--text-h2); color: var(--color-text-muted); cursor: pointer; line-height: 1;
+    font-size: var(--text-h2); color: var(--color-text-muted); cursor: pointer; line-height: var(--leading-none);
   }
   .modal-close:hover { color: var(--color-text); }
   .modal-title {
-    font-family: var(--font-body); font-size: var(--text-h2); font-weight: 700;
+    font-family: var(--font-body); font-size: var(--text-h2); font-weight: var(--weight-bold);
     color: var(--color-text); margin-bottom: 20px;
   }
   .form-group { margin-bottom: var(--space-2); }
   .form-label {
-    display: block; font-size: var(--text-label); font-weight: 600; color: var(--color-text);
+    display: block; font-size: var(--text-label); font-weight: var(--weight-semibold); color: var(--color-text);
     margin-bottom: 6px;
   }
   .form-label .required { color: var(--color-text); margin-left: 2px; }
@@ -349,7 +347,7 @@
   .captcha-row { display: flex; align-items: center; gap: 10px; }
   .captcha-question {
     background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius);
-    padding: 10px var(--space-2); font-size: var(--text-body); font-weight: 700; color: var(--color-text);
+    padding: 10px var(--space-2); font-size: var(--text-body); font-weight: var(--weight-bold); color: var(--color-text);
     white-space: nowrap; letter-spacing: 1px;
   }
   .captcha-input { width: 80px; text-align: center; }
@@ -363,9 +361,9 @@
   /* Submit */
   .submit-btn {
     width: 100%; padding: 14px; border: none; border-radius: var(--radius);
-    background: var(--accent); color: var(--accent-on); font-size: var(--text-body); font-weight: 500;
+    background: var(--accent); color: var(--accent-on); font-size: var(--text-body); font-weight: var(--weight-medium);
     font-family: var(--font-body); cursor: pointer; margin-top: var(--space-1);
-    transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+    transition: transform var(--dur-fast) var(--ease-out);
   }
   .submit-btn:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-lift); }
   .submit-btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
@@ -383,7 +381,7 @@
 
   /* SOURCE BADGE */
   .board-source {
-    font-size: var(--text-label); font-weight: 600; padding: 2px var(--space-1);
+    font-size: var(--text-label); font-weight: var(--weight-semibold); padding: 2px var(--space-1);
     border-radius: var(--radius-pill); white-space: nowrap; flex-shrink: 0;
   }
   .board-source.user { background: rgba(52,152,219,0.1); color: #2980b9; }
@@ -410,9 +408,9 @@
   .delete-prompt input:focus { border-color: var(--accent); }
   .delete-prompt button {
     padding: 6px 14px; border: none; border-radius: var(--radius);
-    font-size: var(--text-label); font-family: var(--font-body); cursor: pointer; font-weight: 600;
+    font-size: var(--text-label); font-family: var(--font-body); cursor: pointer; font-weight: var(--weight-semibold);
   }
-  .delete-confirm { background: var(--color-text); color: var(--color-bg); font-weight: 700; }
+  .delete-confirm { background: var(--color-text); color: var(--color-bg); font-weight: var(--weight-bold); }
   .delete-cancel { background: var(--color-border); color: var(--color-text); }
 
   @media print {
@@ -787,8 +785,7 @@ function renderDetail(data) {
     html += '</div>';
   }
   chatArea.innerHTML = html;
-  // 답변 조망 레이어(목차·접기) — /finalize.js, index.html과 같은 파일을 쓴다.
-  // 게시판은 스트리밍이 없어 렌더 직후 바로 호출하면 된다.
+  // 목차·접기 적용. 게시판은 스트리밍이 없어 렌더 직후 바로 호출하면 된다.
   if (window.answerGlance) {
     window.answerGlance.finalize(chatArea.querySelector('.msg-bubble.bot'));
   }

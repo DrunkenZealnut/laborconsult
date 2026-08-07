@@ -13,7 +13,7 @@
 
   /* Header */
   header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 12px var(--space-3); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
-  header h1 { font-size: var(--text-h3); font-weight: 700; }
+  header h1 { font-size: var(--text-h3); font-weight: var(--weight-bold); }
   .nav-links { display: flex; gap: var(--space-1); align-items: center; }
   .nav-links button { background: none; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 6px 14px; font-size: var(--text-label); cursor: pointer; color: var(--color-text); }
   .nav-links button:hover { border-color: var(--accent); color: var(--color-text); }
@@ -37,7 +37,7 @@
   .stat-card { grid-column: span 3; }
   .stat-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-2) 20px; }
   .stat-card .label { font-size: var(--text-label); color: var(--color-text-muted); margin-bottom: var(--space-half); }
-  .stat-card .value { font-size: var(--text-h2); font-weight: 700; }
+  .stat-card .value { font-size: var(--text-h2); font-weight: var(--weight-bold); }
   .charts { display: grid; grid-template-columns: repeat(var(--grid-columns), 1fr); gap: var(--grid-gap); margin-bottom: var(--space-3); }
   .charts > :first-child { grid-column: span 8; }
   .charts > :last-child  { grid-column: span 4; }
@@ -53,13 +53,18 @@
   .filters input, .filters select { padding: var(--space-1) 12px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: var(--text-label); outline: none; }
   .filters input:focus, .filters select:focus { border-color: var(--accent); }
   .filters input[type="text"] { flex: 1; min-width: 200px; }
+  .search-btn { padding: var(--space-1) var(--space-2); background: var(--accent); color: var(--accent-on);
+    border: none; border-radius: var(--radius); cursor: pointer; font-size: var(--text-label);
+    font-family: inherit; transition: transform var(--dur-fast) var(--ease-out); }
+  .search-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+  .search-btn:active { transform: translateY(0); }
   .conv-list { display: flex; flex-direction: column; gap: var(--space-1); }
   .conv-item { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px var(--space-2); cursor: pointer; }
   .conv-item:hover { border-color: var(--accent); }
   .conv-item .conv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .conv-item .conv-cat { display: inline-block; padding: 2px var(--space-1); border-radius: var(--radius); font-size: var(--text-label); font-weight: 600; background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); }
+  .conv-item .conv-cat { display: inline-block; padding: 2px var(--space-1); border-radius: var(--radius); font-size: var(--text-label); font-weight: var(--weight-semibold); background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); }
   .conv-item .conv-date { font-size: var(--text-label); color: var(--color-text-muted); }
-  .conv-item .conv-question { font-size: var(--text-sm); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-item .conv-question { font-size: var(--text-sm); line-height: var(--leading-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: var(--space-2); }
   .pagination button { padding: 6px 14px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-surface); cursor: pointer; font-size: var(--text-label); }
   .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -79,18 +84,18 @@
   .detail-meta span { font-size: var(--text-label); color: var(--color-text-muted); background: var(--color-bg); padding: var(--space-half) 10px; border-radius: var(--radius); }
   .detail-section { margin-bottom: var(--space-2); }
   .detail-section h4 { font-size: var(--text-label); color: var(--color-text-muted); margin-bottom: var(--space-1); display: flex; align-items: center; gap: 6px; }
-  .detail-question { background: var(--accent); color: var(--accent-on); padding: 12px var(--space-2); border-radius: var(--radius); font-size: var(--text-sm); line-height: 1.6; }
-  .detail-answer { background: var(--color-bg); border: 1px solid var(--color-border); padding: 14px var(--space-2); border-radius: var(--radius); font-size: var(--text-sm); line-height: 1.7; }
+  .detail-question { background: var(--accent); color: var(--accent-on); padding: 12px var(--space-2); border-radius: var(--radius); font-size: var(--text-sm); line-height: var(--leading-normal); }
+  .detail-answer { background: var(--color-bg); border: 1px solid var(--color-border); padding: 14px var(--space-2); border-radius: var(--radius); font-size: var(--text-sm); line-height: var(--leading-relaxed); }
   .detail-answer h2 { font-size: var(--text-body); margin: 14px 0 6px; }
   .detail-answer h3 { font-size: var(--text-sm); margin: 10px 0 var(--space-half); }
   .detail-answer p { margin: 6px 0; }
   .detail-answer ul, .detail-answer ol { margin: 6px 0 6px 20px; }
   .detail-answer table { border-collapse: collapse; margin: var(--space-1) 0; font-size: var(--text-label); }
   .detail-answer th, .detail-answer td { border: 1px solid var(--color-border); padding: 6px 10px; text-align: left; }
-  .detail-answer th { background: var(--color-bg); font-weight: 600; }
+  .detail-answer th { background: var(--color-bg); font-weight: var(--weight-semibold); }
   .detail-answer code { background: var(--color-surface); padding: 1px var(--space-half); border-radius: var(--radius); font-size: var(--text-label); }
   .detail-answer pre { background: var(--color-surface); padding: 10px; border-radius: var(--radius); overflow-x: auto; margin: var(--space-1) 0; }
-  .detail-answer strong { font-weight: 600; }
+  .detail-answer strong { font-weight: var(--weight-semibold); }
   .detail-answer blockquote { border-left: 3px solid var(--accent); padding-left: 10px; color: var(--color-text-muted); margin: 6px 0; }
   .attachment-list { display: flex; flex-direction: column; gap: 6px; }
   .attachment-item { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) 12px; background: var(--color-bg); border-radius: var(--radius); font-size: var(--text-label); }
@@ -146,7 +151,7 @@
     </select>
     <input type="date" id="filter-from" onchange="loadConversations(1)">
     <input type="date" id="filter-to" onchange="loadConversations(1)">
-    <button onclick="loadConversations(1)" style="padding:8px 16px;background:var(--accent);color:var(--accent-on);border:none;border-radius:6px;cursor:pointer;font-size:13px;">검색</button>
+    <button onclick="loadConversations(1)" class="search-btn">검색</button>
   </div>
   <div class="conv-list" id="conv-list"></div>
   <div class="pagination" id="pagination"></div>
@@ -301,7 +306,8 @@ async function loadStats() {
   // 카테고리 차트
   const catCtx = document.getElementById('category-chart').getContext('2d');
   if (categoryChart) categoryChart.destroy();
-  const colors = ['#185FA5','#0F6E56','#854F0B','#993C1D','#534AB7','#5F5E5A','#3D7CB8','#2E8B6F','#A6741F','#B25537','#6F66C9','#807E79'];
+  // 범주 구분은 기능이므로 다색을 유지하되, 값은 테마 토큰에서 읽는다
+  const colors = [1,2,3,4,5,6].map(i => cssVar('--chart-' + i));
   categoryChart = new Chart(catCtx, {
     type: 'doughnut',
     data: {
