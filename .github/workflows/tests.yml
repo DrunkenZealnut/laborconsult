@@ -44,3 +44,6 @@ jobs:
 
       - name: 답변 렌더러 회귀 테스트
         run: node --test test_answer_renderer.js
+
+      - name: 답변 조망 레이어 테스트
+        run: node --test test_answer_glance.js
