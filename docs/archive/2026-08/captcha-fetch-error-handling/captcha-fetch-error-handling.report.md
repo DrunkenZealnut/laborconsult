@@ -26,7 +26,7 @@
 사용자 신고를 받고 직접 조사한 결과 두 계층의 결함이 겹쳐 있었다:
 
 **① 서버 계층 (운영 이슈, 코드 결함 아님)**
-```
+```text
 Vercel 프로덕션에 CAPTCHA_HMAC_SECRET / ADMIN_JWT_SECRET / ADMIN_PASSWORD 미설정
 → api/index.py:419 CAPTCHA_SECRET이 빈 문자열
 → api/index.py:798 if not CAPTCHA_SECRET: raise HTTPException(503, "서버 설정 오류")
@@ -99,7 +99,7 @@ fetch(API_BASE + '/api/captcha')
 - GAP-3 (P3, 선행 결함): `return`이 `finally` 트리거 → 429 잠금이 즉시 무효화
 
 **Act-1: 버튼 상태를 단일 불변식으로 통일**
-```
+```text
 "토큰이 있고 rate limit이 풀렸을 때만 열린다"
 ```
 이를 위해 `rateLimitedUntil` 상태 도입, 버튼을 만지는 3개 지점(loadCaptcha 성공, 429 타이머, finally)이 모두 같은 조건식 사용.
@@ -225,7 +225,7 @@ fetch(API_BASE + '/api/captcha')
 
 ### 3.4 테스트 결과
 
-```
+```text
 ✅ test_public_fetch.js      6/6 pass
 ✅ test_answer_glance.js     16/16 pass (기존 회귀 없음)
 ✅ test_answer_renderer.js   8/8 pass
@@ -322,7 +322,7 @@ $ curl -s https://laborconsult.vercel.app/api/captcha
 **결과**: 429 이후 30초 내 CAPTCHA가 실패해도 타이머가 무조건적으로 버튼을 열어 **토큰 없이 제출 가능한 상태**가 됐다.
 
 **해결**: 버튼 상태를 **단일 불변식**으로 통일
-```
+```text
 "토큰이 있고 rate limit이 풀렸을 때만 열린다"
 ```
 이제 세 지점 모두가 같은 조건식을 쓴다 (Act-1).

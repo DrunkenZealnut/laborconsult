@@ -48,7 +48,7 @@
 
 ### 2.1 Plan (2026-08-06)
 
-**문서**: [answer-at-a-glance.plan.md](../../01-plan/features/answer-at-a-glance.plan.md) v0.2  
+**문서**: [answer-at-a-glance.plan.md](./answer-at-a-glance.plan.md) v0.2  
 **핵심 결정**: §8 사용자 확정 — 적용 대상을 "챗봇만"에서 "챗봇+게시판 동시" 확대, FR-6 신설.
 
 | 기능 | 우선순위 | 상태 |
@@ -62,7 +62,7 @@
 
 ### 2.2 Design (2026-08-06)
 
-**문서**: [answer-at-a-glance.design.md](../../02-design/features/answer-at-a-glance.design.md) v0.2·v0.3  
+**문서**: [answer-at-a-glance.design.md](./answer-at-a-glance.design.md) v0.2·v0.3  
 **핵심 발견**: 
 
 1. **헤딩 밀도 차이** — 두 시스템 프롬프트(`SYSTEM_PROMPT_TEMPLATE` vs `CONSULTATION_SYSTEM_PROMPT`)의 `##` 헤딩 지시가 크게 다름. 계산기 답변은 헤딩이 많지만 법률상담은 프롬프트가 법적 근거·판례를 블록쿼트로 강제해 핵심 답변+절차만 헤딩. Plan의 "3개+" 임계값은 후자에서 사실상 발동 안 함.
@@ -83,7 +83,7 @@
 
 ### 2.4 Check (2026-08-06)
 
-**분석 문서**: [answer-at-a-glance.analysis.md](../../03-analysis/answer-at-a-glance.analysis.md) v1.1  
+**분석 문서**: [answer-at-a-glance.analysis.md](./answer-at-a-glance.analysis.md) v1.1  
 **초기 Match Rate**: 87% (FR-1·FR-2 부분구현, 갭 12건 발견)
 
 #### 발견된 갭

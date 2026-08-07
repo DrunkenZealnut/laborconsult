@@ -4,8 +4,8 @@
 >
 > **Project**: laborconsult
 > **Date**: 2026-08-07
-> **Plan**: [captcha-fetch-error-handling.plan.md](../01-plan/features/captcha-fetch-error-handling.plan.md) (v0.1)
-> **Design**: [captcha-fetch-error-handling.design.md](../02-design/features/captcha-fetch-error-handling.design.md) (v0.2 — 초안 분석은 v0.1 기준, Act-1에서 v0.2로 갱신)
+> **Plan**: [captcha-fetch-error-handling.plan.md](./captcha-fetch-error-handling.plan.md) (v0.1)
+> **Design**: [captcha-fetch-error-handling.design.md](./captcha-fetch-error-handling.design.md) (v0.2 — 초안 분석은 v0.1 기준, Act-1에서 v0.2로 갱신)
 > **분석 방식**: gap-detector 에이전트 대조 + P0·P2 실측 재검증(추적 상태 확인, 타이머 경합 시뮬레이션)
 
 ---

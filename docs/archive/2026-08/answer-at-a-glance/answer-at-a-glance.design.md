@@ -6,7 +6,7 @@
 > **Author**: DrunkenZealnut
 > **Date**: 2026-08-06
 > **Status**: Draft
-> **Planning Doc**: [answer-at-a-glance.plan.md](../../01-plan/features/answer-at-a-glance.plan.md) (v0.2)
+> **Planning Doc**: [answer-at-a-glance.plan.md](./answer-at-a-glance.plan.md) (v0.2)
 
 ---
 
@@ -197,7 +197,7 @@ function trackJumpToCore(el) {
 
 `public/index.html::readSSE()`(`:1280`)의 흐름을 실측 확인했다:
 
-```
+```text
 for (line of lines) { ... }        // chunk/replace 이벤트 처리 — replace도 이 루프 안에서 발생
 if (streamDone) break;
 ...

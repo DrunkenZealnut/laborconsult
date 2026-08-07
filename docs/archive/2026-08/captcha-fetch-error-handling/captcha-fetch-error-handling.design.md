@@ -6,7 +6,7 @@
 > **Author**: DrunkenZealnut
 > **Date**: 2026-08-07
 > **Status**: Draft
-> **Planning Doc**: [captcha-fetch-error-handling.plan.md](../../01-plan/features/captcha-fetch-error-handling.plan.md) (v0.1)
+> **Planning Doc**: [captcha-fetch-error-handling.plan.md](./captcha-fetch-error-handling.plan.md) (v0.1)
 
 ---
 
