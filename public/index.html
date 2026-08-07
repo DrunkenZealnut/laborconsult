@@ -348,6 +348,37 @@
   .msg.assistant .math-display { overflow-x: auto; margin: 10px 0; text-align: center; }
   .msg.assistant .math-inline { display: inline; }
 
+  /* 답변 조망 레이어 (answer-at-a-glance) — 목차·접기. /finalize.js 가 생성한다.
+     sticky는 **모바일에서만 유효**하다. #chat은 base가 overflow:hidden이고 활성 시
+     overflow-y:visible이라, 명세상 visible이 auto로 계산돼 이미 스크롤 컨테이너다.
+     그런데 데스크톱은 height:auto라 내부 스크롤이 생기지 않아 붙을 스크롤포트가
+     없다(모바일만 height:50vh라 동작). 그래서 전 환경 경로로 #glance-jump-core
+     버튼을 함께 둔다 — 둘 중 하나만 남기지 말 것.
+     배경색은 .msg.assistant와 같아야 본문이 목차 뒤로 비쳐 보이지 않는다. */
+  .answer-outline { position: sticky; top: 8px; z-index: 4; display: flex; gap: 6px; overflow-x: auto; margin: 0 0 12px; padding: 8px 0; background: #f8f7f5; border-bottom: 1px solid var(--border); scrollbar-width: none; }
+  .answer-outline::-webkit-scrollbar { display: none; }
+  .outline-chip { flex: 0 0 auto; max-width: 180px; min-height: 32px; display: inline-flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--warm-white); color: var(--text-muted); font-size: 12px; text-decoration: none; line-height: 1.6; }
+  .outline-chip:hover { color: var(--navy); border-color: var(--navy-light); }
+  .outline-chip:focus-visible { outline: 2px solid var(--navy-light); outline-offset: 2px; }
+  .msg.assistant details { margin: 10px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--warm-white); }
+  /* 터치 타겟 44px 확보 (Plan NFR) */
+  .msg.assistant details > summary { cursor: pointer; padding: 10px 14px; min-height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--navy); line-height: 1.5; list-style: none; }
+  .msg.assistant details > summary::-webkit-details-marker { display: none; }
+  .msg.assistant details > summary::before { content: '▸'; flex: 0 0 auto; color: var(--copper); transition: transform 0.15s; }
+  .msg.assistant details[open] > summary::before { transform: rotate(90deg); }
+  .msg.assistant details > summary:focus-visible { outline: 2px solid var(--navy-light); outline-offset: -2px; }
+  .msg.assistant details > *:not(summary) { margin-left: 14px; margin-right: 14px; }
+  /* 표·콜아웃은 특이도가 더 높은 자기 규칙(.table-wrap 등)을 가져 위 규칙에 지므로
+     따로 맞춰준다 — 안 하면 접힌 섹션 안에서 이것들만 좌측에 붙는다 */
+  .msg.assistant details > .table-wrap,
+  .msg.assistant details > .callout { margin-left: 14px; margin-right: 14px; }
+  .msg.assistant details > *:last-child { margin-bottom: 12px; }
+  /* #back-to-top(bottom:24px, 44px)의 바로 위에 쌓는다 — 겹치면 둘 다 못 누른다.
+     opacity만으로 숨기면 보이지 않는 채 탭 순서에 남으므로 visibility를 함께 끈다. */
+  #glance-jump-core { position: fixed; bottom: 76px; right: 24px; z-index: 90; padding: 8px 14px; min-height: 44px; border-radius: var(--radius-pill); background: var(--warm-white); color: var(--navy); border: 1px solid var(--border); box-shadow: var(--shadow-md); cursor: pointer; font-size: 13px; font-weight: 600; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s, visibility 0.2s; }
+  #glance-jump-core.show { opacity: 1; visibility: visible; pointer-events: auto; }
+  #glance-jump-core:hover { border-color: var(--navy-light); }
+
   /* Copy button */
   .msg-wrapper { display: flex; flex-direction: column; }
   .msg-wrapper.user-side { align-items: flex-end; }
@@ -512,6 +543,8 @@
     .msg.assistant .step-list > li { padding-left: 34px; }
     .msg.assistant .step-list > li::before { width: 22px; height: 22px; font-size: 11px; }
     .msg.assistant .step-list > li::after { left: 10px; top: 32px; }
+    .outline-chip { max-width: 128px; font-size: 11px; }
+    #glance-jump-core { bottom: 72px; right: 16px; padding: 6px 12px; font-size: 12px; }
     .msg.assistant table { font-size: 13px; }
     .msg.assistant th, .msg.assistant td { padding: 6px 10px; }
     .msg.assistant ul, .msg.assistant ol { margin-left: 18px; }
@@ -1353,6 +1386,10 @@ async function readSSE(resp, onActivity) {
     if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
     showAnswerActions(lastAssistant);
+    // 조망 레이어(목차·접기)는 답변 확정 후 1회만 — 스트리밍 중엔 heading이 미완성이라
+    // 목차가 어긋난다. replace(인용 교정) 이벤트도 이 루프 안에서 이미 처리됐으므로
+    // 여기서는 항상 최종 텍스트를 본다.
+    if (window.answerGlance) window.answerGlance.finalize(lastAssistant);
   }
   if (!assistantEl && !lastAssistant && !document.querySelector('.msg.status + .msg.assistant')) {
     removeStatus();
@@ -1425,7 +1462,13 @@ function getQAPair() {
     if (a) {
       const aMd = a.dataset.md || a.textContent.trim();
       fullMd += '\n\n## 답변\n\n' + aMd;
-      fullHtml += '<div class="q">' + escHtml(lastQuestion || '') + '</div><div class="a">' + a.innerHTML + '</div>';
+      // PDF·이메일은 렌더된 HTML을 쓴다. 접힌 <details>가 그대로 나가면 내용이
+      // 빠진 것처럼 보이므로 사본에서 강제로 펼치고 목차는 뺀다(라이브 DOM 불변).
+      // answerMd는 원문 마크다운이라 이 처리와 무관하다(복사·마크다운 저장 경로).
+      const aHtml = window.answerGlance
+        ? window.answerGlance.expandForExport(a.innerHTML)
+        : a.innerHTML;
+      fullHtml += '<div class="q">' + escHtml(lastQuestion || '') + '</div><div class="a">' + aHtml + '</div>';
     }
   });
   return { question: lastQuestion, answerMd: fullMd.trim(), answerHtml: fullHtml };
@@ -1957,7 +2000,9 @@ initFAQ();
 })();
 
 // PWA 등록·설치 프롬프트는 /pwa.js 로 분리했다 — board·calculators 도 같은 파일을 쓴다.
+// 답변 조망 레이어(목차·접기)는 /finalize.js — board 도 같은 파일을 쓴다.
 </script>
 <script src="/pwa.js"></script>
+<script src="/finalize.js"></script>
 </body>
 </html>

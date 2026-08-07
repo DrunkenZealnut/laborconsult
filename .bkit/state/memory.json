@@ -52,5 +52,11 @@
     "startedAt": "2026-08-06T00:00:00Z",
     "archivedAt": "2026-08-06T00:00:00Z",
     "archivedTo": "docs/archive/2026-08/llm-fallback-hardening/"
+  },
+  "answer-at-a-glance": {
+    "phase": "check",
+    "iterationCount": 1,
+    "startedAt": "2026-08-06T00:00:00Z",
+    "matchRate": 100
   }
 }
