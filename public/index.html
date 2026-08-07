@@ -92,7 +92,7 @@
 
   /* ── HEADER (minimal) ── */
   #site-header {
-    position: fixed; top: 16px; right: 16px; z-index: 200;
+    position: fixed; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); z-index: 200;
   }
   .hamburger-btn {
     width: 44px; height: 44px; border-radius: 50%;
@@ -109,7 +109,7 @@
     box-shadow: -8px 0 32px rgba(0,0,0,0.1);
     transform: translateX(100%);
     transition: transform var(--dur-base) var(--ease-out);
-    padding: var(--space-3); overflow-y: auto;
+    padding: max(24px, env(safe-area-inset-top)) var(--space-3) var(--space-3); overflow-y: auto;
   }
   .slide-menu.open { transform: translateX(0); }
   .slide-overlay {
