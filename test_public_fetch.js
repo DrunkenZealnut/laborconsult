@@ -45,8 +45,13 @@ test('CAPTCHA 로딩이 응답 상태와 페이로드를 검사한다', () => {
     if (!m) continue;   // 해당 페이지에 CAPTCHA 없음(admin)
     assert.match(m[0], /\.ok\b/,
       `${name}: CAPTCHA fetch에 응답 상태 검사 없음 — 503이 undefined로 위장된다`);
-    assert.match(m[0], /\.token/,
-      `${name}: 토큰 존재 검사 없음 — 200인데 필드가 빠지면 같은 증상`);
+    // `.token` 출현만 보면 `emailModalToken = data.token`(대입)에도 통과한다.
+    // 200인데 필드가 빠지는 경우를 막으려면 **거부하는 가드**가 있어야 하고,
+    // 화면에 찍히는 건 question이므로 둘 다 확인해야 한다.
+    assert.match(m[0], /!data\.token/,
+      `${name}: 토큰 부재를 거부하는 가드 없음 — 200인데 필드가 빠지면 같은 증상`);
+    assert.match(m[0], /!data\.question/,
+      `${name}: question 부재를 거부하는 가드 없음 — 화면에 undefined가 찍힌다`);
   }
 });
 

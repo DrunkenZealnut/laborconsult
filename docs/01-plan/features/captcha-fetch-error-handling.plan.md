@@ -40,7 +40,7 @@ project: laborconsult
 
 **① 서버 측 (운영 이슈, 코드 결함 아님)**
 
-```
+```python
 api/index.py:416  ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 api/index.py:417  JWT_SECRET     = os.environ.get("ADMIN_JWT_SECRET", ADMIN_PASSWORD)
 api/index.py:419  CAPTCHA_SECRET = os.environ.get("CAPTCHA_HMAC_SECRET") or JWT_SECRET
@@ -49,7 +49,7 @@ api/index.py:798  if not CAPTCHA_SECRET: raise HTTPException(503, "서버 설정
 
 Vercel 프로덕션에 세 변수가 모두 없어 `CAPTCHA_SECRET`이 빈 문자열이 됐다. 프로덕션 직접 확인:
 
-```
+```http
 GET https://laborconsult.vercel.app/api/captcha → HTTP 503 {"detail":"서버 설정 오류"}
 ```
 
@@ -202,7 +202,7 @@ fetch(API_BASE + '/api/captcha')
 
 ### 6.3 변경 대상 파일 (예상)
 
-```
+```text
 수정: public/index.html      (이메일 모달 CAPTCHA 로딩 + 버튼 상태)
       public/board.html      (글쓰기 CAPTCHA 로딩)
       test_answer_glance.js  (FR-5 회귀 테스트 — 공개 페이지 검사 파일이 이미 여기 있음)

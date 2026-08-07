@@ -5,7 +5,7 @@
 > **Project**: laborconsult
 > **Date**: 2026-08-07
 > **Plan**: [captcha-fetch-error-handling.plan.md](../01-plan/features/captcha-fetch-error-handling.plan.md) (v0.1)
-> **Design**: [captcha-fetch-error-handling.design.md](../02-design/features/captcha-fetch-error-handling.design.md) (v0.1)
+> **Design**: [captcha-fetch-error-handling.design.md](../02-design/features/captcha-fetch-error-handling.design.md) (v0.2 — 초안 분석은 v0.1 기준, Act-1에서 v0.2로 갱신)
 > **분석 방식**: gap-detector 에이전트 대조 + P0·P2 실측 재검증(추적 상태 확인, 타이머 경합 시뮬레이션)
 
 ---
@@ -104,7 +104,7 @@ FR 축 = 4.06 / 4.4 = 92.3%
 
 **(B) 잔여 타이머가 게이팅을 덮음 — FR-3 위반 (시뮬레이션 재현)**
 
-```
+```text
 t=0   429 수신 → 타이머 예약 → finally가 버튼 재활성 (열림)
 t=1s  모달 재오픈 → loadCaptcha 실패 → 토큰='' , 버튼 잠김 ✅
 t=30s 잔여 타이머 발화 → disabled = false      ← 토큰 없이 열림 ❌
@@ -129,7 +129,7 @@ t=30s 잔여 타이머 발화 → disabled = false      ← 토큰 없이 열림
 
 ### 4.5 전수 검사가 실제로 위반을 잡는가 — **미탐 경로 있음**
 
-조건: `/\.ok\b/.test(window) || /catch\s*[({]/.test(window)` (600자)
+조건: `/\.ok\b/.test(window) || /catch\s*[({]/.test(window)` (초안 600자 → Act-1에서 800자)
 
 **미탐 1 — `catch(` 허용이 원 결함을 통과시킨다.** 변경 전 `loadCaptcha`는 `try { fetch → resp.json() } catch(e) {}` 형태였다. `catch (e)`가 윈도우 안에 있으므로 **이 코드는 전수 검사를 통과한다.** 즉 2026-08-07 실장애를 일으킨 코드 형태가 검사망을 빠져나간다.
 
@@ -137,7 +137,7 @@ CAPTCHA 2곳은 테스트 1(`/\.ok\b/` 명시 요구)이 별도로 막으므로 
 
 **미탐 2 — 윈도우 침범.** `index.html:1688`과 `:1701`은 `:1703`의 `if (!resp.ok)` 하나를 공유한다(정상 설계). 여기 근처에 가드 없는 fetch를 추가하면 통과한다.
 
-**오탐 여유 얇음**: 최장 거리 `:1688 → :1703`이 약 520자로 한도 600의 87%. POST 본문에 필드 몇 개만 추가돼도 정상 코드가 실패한다.
+**오탐 여유 얇음**: 최장 거리 `:1688 → :1703`이 약 520자로 한도 600의 87%였다 → Act-1에서 800자로 완화(여유 65%).
 
 **변이 정적 검증** (설계 §4.3의 3종 + 2종)
 
@@ -202,7 +202,7 @@ CAPTCHA 2곳은 테스트 1(`/\.ok\b/` 명시 요구)이 별도로 막으므로 
 
 ### 🔴 GAP-1 — `test_public_fetch.js`가 untracked인데 CI가 실행한다 (**P0, 릴리스 차단**)
 
-```
+```text
 git status --porcelain → ?? test_public_fetch.js
 .github/workflows/tests.yml:52 → run: node --test test_public_fetch.js
 ```
