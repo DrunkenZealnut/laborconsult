@@ -207,6 +207,19 @@ test('생성 요소의 CSS 가 양쪽 페이지에 정의돼 있다', () => {
   }
 });
 
+test('공개 페이지 HTML 주석이 내부 경로·함수명을 노출하지 않는다', () => {
+  // CLAUDE.md 규약 — 소스 보기로 그대로 공개된다. 유지보수 의존관계는 CLAUDE.md에 적는다.
+  const leaky = /\.(?:js|py|html|json|sql)\b|::|function\s+\w+|\w+\(\)/;
+  for (const [name, src] of [['index.html', INDEX], ['board.html', BOARD]]) {
+    const comments = src.match(/<!--[\s\S]*?-->/g) || [];
+    for (const c of comments) {
+      if (c.startsWith('<!--[if') || c.includes('═══')) continue;  // 조건부 주석·섹션 구분선
+      assert.ok(!leaky.test(c),
+        `${name} 의 HTML 주석에 내부 경로/함수명 노출:\n${c.trim().slice(0, 160)}`);
+    }
+  }
+});
+
 test('내보내기 경로가 접힌 섹션을 강제로 편다 (D7)', () => {
   // 접힌 채 PDF/이메일로 나가면 내용이 빠진 것처럼 보인다.
   assert.match(INDEX, /window\.answerGlance\.expandForExport\(a\.innerHTML\)/,

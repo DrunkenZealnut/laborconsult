@@ -319,3 +319,10 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - `public/privacy.html` 제5항(보유기간) 문구는 `supabase_retention_purge.sql`의 `purge_expired_data()` 기본값과, 제7항(첨부 접근통제) 문구는 `app/core/storage.py::upload_attachment`(public_url 미저장) + `api/index.py::admin_conversation_detail`(1시간 signed URL)과 반드시 함께 갱신할 것. 이 파일들이 바뀌면 방침이 지켜지지 않는 약속이 된다.
 - `public/terms.html` 제5조(이용 한도) 수치는 `app/core/abuse_guard.py:25-32`(`MAX_MESSAGE_LENGTH`·`CHAT_RATE_LIMIT`·`CHAT_RATE_WINDOW`·`DAILY_CHAT_QUOTA`·`ABUSE_BLOCK_MINUTES`)와 반드시 함께 갱신할 것. 공지 채널(제3·7조)의 실체는 `public/notice.json`(원본) + `public/index.html`의 `#notice-banner`/`initNotice()`(렌더러) — 공지 내용을 바꿀 때 `notices[].id`도 함께 바꿔야 이미 닫은 사용자에게 다시 노출된다.
 - 공개 페이지(`public/*.html`)의 HTML 주석에는 내부 파일 경로·함수명을 적지 말 것 — 소스 보기로 그대로 노출된다. 그런 유지보수 의존관계는 이 문서(CLAUDE.md)에 기록한다.
+- **답변 조망 레이어**(`public/finalize.js`, answer-at-a-glance): 완성된 답변 DOM에만 적용하는 순수 후처리(목차·`<details>` 접기·핵심 복귀 버튼). `index.html`(`readSSE` 말미, 스트리밍 완료 후 1회)과 `board.html`(`renderDetail` 렌더 직후)이 공유하며, `pwa.js`와 같은 정적 파일 분리 방식이다. 주의점:
+  - **h2 태그만 근거로 동작해야 한다** — `board.html`은 `md()`가 아니라 `marked.parse()`만 써서 콜아웃·`.summary-badge` 클래스가 없다. `md()` 전용 클래스에 의존하면 게시판에서 깨진다.
+  - **접기 종료 마커를 지우지 말 것**(`isTerminator`) — 프롬프트는 주의사항을 블록쿼트로, 면책 고지를 평문으로 지시하므로(`app/templates/prompts.py`) heading 단위 방어만으로는 마지막 접기 섹션이 이들을 통째로 흡수해 **면책 고지가 접힌 채 숨는다**.
+  - **목차 id는 답변 시퀀스 접두사가 필수** — 채팅은 후속 답변이 누적되므로 인덱스만 쓰면 `getElementById`가 항상 첫 답변을 잡는다.
+  - `board.html`에서는 `<script src="/finalize.js">`가 본문 인라인 스크립트보다 **앞**에 있어야 `?id=` 딥링크의 첫 상세 렌더에도 적용된다.
+  - sticky 목차는 **모바일에서만 유효**하다(`#chat`이 데스크톱에서 `height:auto`라 스크롤포트가 없음). 플로팅 복귀 버튼이 전 환경 경로이므로 둘 중 하나만 남기지 말 것.
+  - PDF·이메일 내보내기는 `expandForExport`로 접힌 섹션을 강제로 편 사본을 쓴다 — 접힌 채 나가면 내용 누락으로 보인다. 복사·마크다운 저장은 원문(`dataset.md`)을 쓰므로 무관하다.
