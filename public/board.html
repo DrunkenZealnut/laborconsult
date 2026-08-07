@@ -68,9 +68,6 @@
   ]
 }
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <link rel="stylesheet" href="/tokens.css">
@@ -233,11 +230,11 @@
   .board-ask-btn {
     display: inline-flex; align-items: center; gap: 6px;
     color: var(--color-text); font-size: var(--text-label); font-weight: var(--weight-semibold); cursor: pointer;
-    background: rgba(192,128,80,0.08); border: 1px solid rgba(192,128,80,0.2);
+    background: rgba(var(--accent-rgb), 0.08); border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: var(--radius-pill); padding: var(--space-1) 18px;
     font-family: var(--font-body); transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); text-decoration: none;
   }
-  .board-ask-btn:hover { background: rgba(192,128,80,0.15); }
+  .board-ask-btn:hover { background: rgba(var(--accent-rgb), 0.15); }
 
   /* ── PAGINATION ── */
   #pagination {
@@ -384,7 +381,7 @@
     font-size: var(--text-label); font-weight: var(--weight-semibold); padding: 2px var(--space-1);
     border-radius: var(--radius-pill); white-space: nowrap; flex-shrink: 0;
   }
-  .board-source.user { background: rgba(52,152,219,0.1); color: #2980b9; }
+  .board-source.user { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
 
   /* TOAST */
   #toast {
@@ -678,7 +675,7 @@ async function loadBoard() {
     var info = document.getElementById('result-info');
     var catLabel = boardState.category ? ' (' + escHtml(boardState.category) + ')' : '';
     info.innerHTML = '<span>총 ' + data.total.toLocaleString() + '건' + catLabel + '</span>' +
-      '<button class="write-btn" onclick="openWriteModal()">&#9998; 질문하기</button>';
+      '<button class="write-btn" onclick="openWriteModal()"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg> 질문하기</button>';
 
     // Render items
     data.items.forEach(function(item) {
@@ -800,7 +797,7 @@ function renderDetail(data) {
       askLabel +
     '</a>';
   if (data.source === 'user') {
-    actHtml += '<button class="board-delete-btn" onclick="showDeletePrompt(\'' + data.id + '\',this)">&#128465; 삭제</button>';
+    actHtml += '<button class="board-delete-btn" onclick="showDeletePrompt(\'' + data.id + '\',this)"><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg> 삭제</button>';
   }
   actionsArea.innerHTML = actHtml;
 }
