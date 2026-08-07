@@ -70,9 +70,11 @@
     "archivedTo": "docs/archive/2026-08/captcha-fetch-error-handling/"
   },
   "swiss-modernism-design-system": {
-    "phase": "completed",
-    "startedAt": "2026-08-07T00:00:00Z",
+    "phase": "archived",
+    "matchRate": 91,
     "iterationCount": 1,
-    "matchRate": 91
+    "startedAt": "2026-08-07T00:00:00Z",
+    "archivedAt": "2026-08-07T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/swiss-modernism-design-system/"
   }
 }
