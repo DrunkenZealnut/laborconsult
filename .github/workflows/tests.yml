@@ -47,3 +47,6 @@ jobs:
 
       - name: 답변 조망 레이어 테스트
         run: node --test test_answer_glance.js
+
+      - name: 공개 페이지 fetch 오류 처리 테스트
+        run: node --test test_public_fetch.js

@@ -1550,15 +1550,24 @@ function openEmailModal(btn) {
   emailInput.focus();
 
   fetch(API_BASE + '/api/captcha')
-    .then(r => r.json())
+    .then(r => {
+      // fetch는 4xx·5xx에 reject하지 않는다. 이 검사가 없으면 오류 응답 본문이
+      // 정상 데이터로 흘러가 화면에 "보안문자: undefined"가 찍히고, 토큰 없이
+      // 버튼만 열려 "눌리는데 아무 일도 안 나는" 상태가 된다.
+      if (!r.ok) throw new Error('captcha ' + r.status);
+      return r.json();
+    })
     .then(data => {
+      // 200인데 필드가 빠지는 경우(스키마 변경·프록시 개입)도 같은 증상을 만든다
+      if (!data || !data.token || !data.question) throw new Error('captcha payload');
       emailModalToken = data.token;
       captchaQ.textContent = '보안문자: ' + data.question;
       submitBtn.disabled = false;
     })
     .catch(() => {
-      captchaQ.textContent = '보안문자 로딩 실패';
-      errorEl.textContent = '보안문자를 불러오지 못했습니다. 다시 열어주세요.';
+      // submitBtn은 위에서 이미 disabled=true — 실패 경로에서 열지 않는다
+      captchaQ.textContent = '보안문자를 불러오지 못했습니다';
+      errorEl.textContent = '일시적인 문제로 보안문자를 표시할 수 없습니다. 잠시 후 다시 시도해주세요.';
     });
 }
 

@@ -58,5 +58,11 @@
     "iterationCount": 1,
     "startedAt": "2026-08-06T00:00:00Z",
     "matchRate": 100
+  },
+  "captcha-fetch-error-handling": {
+    "phase": "check",
+    "iterationCount": 1,
+    "startedAt": "2026-08-07T00:00:00Z",
+    "matchRate": 100
   }
 }
