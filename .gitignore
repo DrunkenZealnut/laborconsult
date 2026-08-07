@@ -45,3 +45,6 @@ venv/
 
 # 임시
 *.tmp
+
+# Playwright 검증 산출물 (페이지 스냅샷·콘솔 로그·스크린샷)
+.playwright-mcp/

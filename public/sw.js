@@ -9,14 +9,18 @@
 
 // 배포마다 올릴 것. 이 값이 그대로면 sw.js 바이트가 동일해 브라우저가 업데이트를
 // 감지하지 못하고 셸 캐시가 영구히 낡은 상태로 남는다.
-const VERSION = 'v2-2026-08-01';
+const VERSION = 'v3-2026-08-07';
 const SHELL_CACHE = `shell-${VERSION}`;
 const ASSET_CACHE = `asset-${VERSION}`;
 
-// 오프라인에서도 최소한 열려야 하는 화면
-const SHELL_URLS = ['/', '/board', '/calculators', '/offline.html'];
+// 오프라인에서도 최소한 열려야 하는 화면.
+// 디자인 토큰을 함께 담는 이유: 오프라인 화면이 외부 스타일시트에 의존하므로
+// 설치 시점에 확보하지 않으면 캐시가 차기 전까지 무스타일로 렌더된다.
+const SHELL_URLS = ['/', '/board', '/calculators', '/offline.html', '/tokens.css'];
 
-const ASSET_PATTERN = /\.(?:png|svg|ico|webmanifest)$/i;
+// css·js 포함 — 정적 스타일·스크립트도 cache-first 대상이다.
+// 배포마다 VERSION 을 올려야 activate 가 낡은 캐시를 비운다.
+const ASSET_PATTERN = /\.(?:css|js|png|svg|ico|webmanifest)$/i;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

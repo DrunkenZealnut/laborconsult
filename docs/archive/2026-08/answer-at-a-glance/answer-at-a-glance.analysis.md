@@ -5,8 +5,8 @@
 > **Project**: laborconsult
 > **Date**: 2026-08-06
 > **Status**: Draft
-> **Plan**: [answer-at-a-glance.plan.md](../01-plan/features/answer-at-a-glance.plan.md) (v0.2)
-> **Design**: [answer-at-a-glance.design.md](../02-design/features/answer-at-a-glance.design.md) (v0.2)
+> **Plan**: [answer-at-a-glance.plan.md](./answer-at-a-glance.plan.md) (v0.2)
+> **Design**: [answer-at-a-glance.design.md](./answer-at-a-glance.design.md) (v0.2)
 > **분석 방식**: gap-detector 에이전트 대조 + High 2건·CSS 용량 실측 재검증
 
 ---
@@ -137,7 +137,7 @@ Plan §3.1 우선순위를 가중치로 환산(High = 1.5, Medium = 1.0).
 - `prompts.py:415` — 절차는 `## 절차`/`## 신청 방법` heading → `finalize.js:35` COLLAPSIBLE에 매칭
 
 **재현 시나리오** (CONSULTATION 경로의 전형)
-```
+```text
 ## ⚖️ 핵심 답변        ← summary-badge, 접기 제외
 > 📘 법적 근거: …
 ## 절차                ← COLLAPSIBLE 매칭, 뒤에 h2 없음
@@ -269,7 +269,7 @@ Match Rate **87%** — 설계 준수도 자체는 높다. D1~D9는 9/9 준수했
 
 ### 다음 단계
 
-```
+```text
 /pdca iterate answer-at-a-glance
 ```
 G1·G2 수정 후 FR-1/FR-2가 1.00으로 회복되면 Match Rate는 100%(8.0/8.0)가 된다. Medium/Low 갭은 FR 달성도가 아니라 NFR 부문에 반영된다.

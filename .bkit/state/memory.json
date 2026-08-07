@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 12,
+  "sessionCount": 14,
   "lastSession": {
-    "startedAt": "2026-08-06T07:04:44.455Z",
+    "startedAt": "2026-08-07T06:38:37.352Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -54,15 +54,25 @@
     "archivedTo": "docs/archive/2026-08/llm-fallback-hardening/"
   },
   "answer-at-a-glance": {
-    "phase": "check",
+    "phase": "archived",
     "iterationCount": 1,
     "startedAt": "2026-08-06T00:00:00Z",
-    "matchRate": 100
+    "matchRate": 100,
+    "archivedAt": "2026-08-07T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/answer-at-a-glance/"
   },
   "captcha-fetch-error-handling": {
-    "phase": "check",
+    "phase": "archived",
     "iterationCount": 1,
     "startedAt": "2026-08-07T00:00:00Z",
-    "matchRate": 100
+    "matchRate": 100,
+    "archivedAt": "2026-08-07T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/captcha-fetch-error-handling/"
+  },
+  "swiss-modernism-design-system": {
+    "phase": "completed",
+    "startedAt": "2026-08-07T00:00:00Z",
+    "iterationCount": 1,
+    "matchRate": 91
   }
 }
