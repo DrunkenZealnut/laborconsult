@@ -320,6 +320,12 @@ def main() -> None:
         embeddings = embed_texts([c["embed_text"] for c in chunks], openai_client)
         time.sleep(0.2)
 
+        # zip은 길이가 다르면 남는 쪽을 조용히 버린다 — 부분 임베딩은 오류로 처리.
+        # 결정적 벡터 ID라 재실행이 안전하므로 즉시 중단이 맞다.
+        if len(embeddings) != len(chunks):
+            sys.exit(f"[오류] 임베딩 수 불일치: {len(embeddings)} != {len(chunks)} "
+                     f"({fn}) — 업로드 중단, 재실행으로 재개")
+
         for chunk, emb in zip(chunks, embeddings):
             meta = {
                 "source_type": SOURCE_TYPE,
@@ -340,9 +346,10 @@ def main() -> None:
                 "metadata": meta,
             })
 
-        if len(pending) >= UPSERT_BATCH:
-            index.upsert(vectors=pending, namespace=NAMESPACE)
-            pending = []
+        # 파일 단위로 쌓이므로 배치 크기를 넘길 수 있다 — 정확히 잘라서 전송.
+        while len(pending) >= UPSERT_BATCH:
+            index.upsert(vectors=pending[:UPSERT_BATCH], namespace=NAMESPACE)
+            pending = pending[UPSERT_BATCH:]
             time.sleep(0.1)
 
     if pending and not args.dry_run:

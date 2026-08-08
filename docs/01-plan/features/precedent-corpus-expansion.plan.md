@@ -93,7 +93,7 @@
 `upload_new_precedents.py::convert_to_markdown()`이 쓰는 기존 포맷을 따르되
 `원문` 필드를 추가한다 (기존 nodong.kr 포맷과 합류):
 
-```
+```markdown
 # {사건명}
 
 | 항목 | 내용 |
@@ -117,7 +117,7 @@
 ...
 ```
 
-- 파일명: `{사건번호}_{사건명 80자}.md` — 기존 B포맷과 동일(사건번호가 앞에 와야
+- 파일명: `{사건번호}_{사건명 60자}.md` — 기존 B포맷과 동일(사건번호가 앞에 와야
   중복 검사가 파일명만으로도 동작)
 - 저장 위치: `output_판례_보강/` (`.gitignore`의 `output_*/` 패턴에 자동 포함)
 - `<br/>` 태그 → 개행 변환, HTML 엔티티 언이스케이프
@@ -131,6 +131,11 @@
 | L3 | Pinecone 벡터 | `chunk_id = f"precedent_{사건번호}_chunk_{i}"` — 사건번호 기반 **결정적 ID**라 재실행해도 upsert가 덮어쓴다(중복 벡터 불가) |
 
 ### Phase 4 — 임베딩 업로드 (`pinecone_upload_legal.py` 확장)
+
+> **설계 단계 정정**: 기존 스크립트 확장은 폐기됐다. `extract_post_id()`의
+> macOS NFD 파일명 버그로 이 데이터 601건 중 259건(43%)이 벡터 ID 충돌로
+> 소실되는 것이 실측돼, **신규 `pinecone_upload_court_precedents.py`로 ID
+> 생성을 직접 통제**한다(설계 §2). 아래 원안은 이력 보존용.
 
 - `LEGAL_SOURCES`에 `{"directory": "output_판례_보강", "namespace": "laborlaw-v2",
   "source_type": "precedent", "label": "법제처 판례 보강"}` 추가
@@ -205,5 +210,5 @@
 - [x] 601건 중 500건 마크다운 생성, 정확일치 검증 통과 (실측 500건, 잔여 98건 복구 불가 + 기존 중복 3건)
 - [x] 중복 재삽입 0건 (기존 코퍼스 사건번호와 교집합 공집합 — L2 대표 사건번호 대조 + L3 결정적 벡터 ID)
 - [x] `laborlaw-v2` 벡터 수가 업로드 전후로 예상 증분만큼 증가 (9,088 → 10,989 = +1,901, 기대치 정확 일치)
-- [ ] `data/bm25_corpus.json.gz` 재빌드 및 커밋 (재빌드 완료 62,075건 — **커밋 대기**, Gap G1)
+- [x] `data/bm25_corpus.json.gz` 재빌드 및 커밋 (62,075건, 커밋 `d9c4c64` / PR #42 — main 머지 시 프로덕션 반영)
 - [x] 교재 인용 판례로 검색 시 실제 히트 확인 (Dense 쟁점 질의 3종 + BM25 키워드 질의 2종 양성)

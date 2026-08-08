@@ -46,8 +46,9 @@ EXISTING_DIRS = [
     OUTPUT_DIR,
 ]
 
-LAW_SEARCH_URL = "http://www.law.go.kr/DRF/lawSearch.do"
-LAW_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
+# https 필수 — OC 파라미터에 API 키가 실리므로 평문 전송 금지 (legal_api.py와 동일)
+LAW_SEARCH_URL = "https://www.law.go.kr/DRF/lawSearch.do"
+LAW_SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
 
 REQUEST_DELAY = 0.3     # 초 — 법제처 레이트 리밋이 문서화되어 있지 않아 보수적으로
 MAX_RETRIES = 3

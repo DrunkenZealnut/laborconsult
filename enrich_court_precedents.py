@@ -185,8 +185,13 @@ def main() -> None:
         with open(os.path.join(PRECEDENT_DIR, fn), encoding="utf-8") as f:
             md = f.read()
         no = file_case_no(md, fn)
-        if no:
-            docs[no] = (fn, md)
+        if not no:
+            continue
+        if no in docs:
+            # 조용히 덮어쓰면 앞 파일만 태깅에서 빠지고 로그에 안 남는다.
+            print(f"  [경고] 사건번호 중복 파일: {docs[no][0]} ↔ {fn} — 첫 파일 기준으로 태깅")
+            continue
+        docs[no] = (fn, md)
 
     body = unicodedata.normalize("NFC", load_body(SOURCE_FILE))
     index = build_case_topic_index(body, set(docs), OCR_FIXES)

@@ -30,19 +30,20 @@ T1~T13 회귀로 고정됨.
 프로덕션은 신규 판례 500건이 없는 **구 gz(2026-07-14 커밋)를 서빙 중**.
 설계 §4가 `[관련 쟁점: …]` 프리픽스를 저장 텍스트에 넣은 이유가 BM25 색인인데,
 구 gz에는 그 텍스트가 없어 **쟁점 태깅의 키워드 검색 절반이 무효** — 실패가
-조용하다(Dense-only 폴백). → **커밋으로 해소** (사용자 커밋 지시 대기).
+조용하다(Dense-only 폴백).
+→ **해소됨**: 커밋 `d9c4c64`(PR #42)에 신규 gz 포함. main 머지 시 프로덕션 반영 완료.
 
 ### 🔴 G2. 코드 4종 untracked + tests.yml만 tracked (HIGH)
 
 `tests.yml`만 먼저 커밋되면 CI가 `ModuleNotFoundError`로 즉시 red.
-→ 스크립트 4종 + tests.yml + CLAUDE.md + gz를 **단일 커밋**으로 묶을 것.
+→ **해소됨**: 스크립트 4종 + tests.yml + CLAUDE.md + gz를 단일 커밋 `d9c4c64`로 묶음(PR #42).
 
 ### 🟡 G3. enrich의 미문서화 의존 (MEDIUM)
 
 `enrich_court_precedents.py`가 `pinecone_upload_textbook.py`(다른 기능의
 untracked 파일)의 `load_body`를 import. enrich만 커밋하면 신규 클론에서 실행
 불가(지연 import라 CI 테스트는 통과 — 실패가 안 잡힘).
-→ **`pinecone_upload_textbook.py`를 같은 커밋에 포함** + 설계 §4에 의존 1줄 기재(정정 완료).
+→ **해소됨**: `pinecone_upload_textbook.py`가 `d9c4c64`에 포함 + 설계 §4에 의존 기재.
 
 ### 🟡 G4. Plan §7 완료 기준 550건 vs 실측 500건 (MEDIUM)
 

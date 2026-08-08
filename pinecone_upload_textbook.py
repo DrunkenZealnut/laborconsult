@@ -162,7 +162,10 @@ def embed_texts(texts: list[str], client: OpenAI) -> list[list[float]]:
 def main():
     parser = argparse.ArgumentParser(description="Win 노동법 교재 Pinecone 업로드")
     parser.add_argument("--dry-run", action="store_true", help="청킹만 수행")
-    parser.add_argument("--reset", action="store_true", help="네임스페이스 초기화 후 재업로드")
+    # --reset 없음: laborlaw-v2는 판례 등 다른 소스와 공유하는 네임스페이스라
+    # delete_all이 전체를 날린다. Pinecone Serverless는 메타데이터 필터 삭제를
+    # 지원하지 않으므로 source_type별 부분 삭제도 불가 — 재업로드는 결정적
+    # chunk_id의 upsert 덮어쓰기로 해결한다.
     args = parser.parse_args()
 
     if not os.path.exists(SOURCE_FILE):
@@ -183,11 +186,6 @@ def main():
         from app.config import resolve_index_name
         pc = Pinecone(api_key=pinecone_key)
         index = pc.Index(resolve_index_name())
-
-        if args.reset:
-            print(f"네임스페이스 초기화: '{NAMESPACE}' (source_type='{SOURCE_TYPE}'만 대상 아님 — 전체 삭제 후 재업로드 필요 시 수동 확인)")
-            index.delete(delete_all=True, namespace=NAMESPACE)
-            time.sleep(1)
 
     body = load_body(SOURCE_FILE)
     sections = parse_sections(body)
@@ -216,8 +214,15 @@ def main():
             continue
 
         texts = [c["embed_text"] for c in chunks]
-        embeddings = embed_texts(texts, openai_client)
-        time.sleep(0.2)
+        embeddings = []
+        for i in range(0, len(texts), EMBED_BATCH):
+            embeddings.extend(embed_texts(texts[i:i + EMBED_BATCH], openai_client))
+            time.sleep(0.2)
+
+        # zip은 길이가 다르면 남는 쪽을 조용히 버린다 — 부분 성공은 오류로 처리.
+        if len(embeddings) != len(chunks):
+            sys.exit(f"[오류] 임베딩 수 불일치: {len(embeddings)} != {len(chunks)} "
+                     f"(섹션 '{section['heading'][:30]}') — 업로드 중단")
 
         for chunk, emb in zip(chunks, embeddings):
             all_vectors.append({
@@ -233,9 +238,9 @@ def main():
                 },
             })
 
-        if len(all_vectors) >= UPSERT_BATCH:
-            index.upsert(vectors=all_vectors, namespace=NAMESPACE)
-            all_vectors = []
+        while len(all_vectors) >= UPSERT_BATCH:
+            index.upsert(vectors=all_vectors[:UPSERT_BATCH], namespace=NAMESPACE)
+            all_vectors = all_vectors[UPSERT_BATCH:]
             time.sleep(0.1)
 
     if all_vectors and not args.dry_run:
