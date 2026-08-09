@@ -447,6 +447,25 @@ def t14_nfd_bug_sealed() -> None:
           newprec.case_no_to_ascii("2011헌바395") == "2011heonba395",
           newprec.case_no_to_ascii("2011헌바395"))
 
+    # T14-i: hex 폴백은 절단하지 않는다 — 앞 바이트를 공유하는 두 사건이
+    # 같은 ID로 충돌하면 upsert가 서로를 덮어쓴다.
+    a = newprec.case_no_to_ascii("2020훼123456")
+    b = newprec.case_no_to_ascii("2020훼123457")
+    check("T14-i hex 폴백 절단 없음(앞바이트 공유 사건 구분)", a != b, f"{a} == {b}")
+    la = legal.extract_post_id("2020훼123456_x.md", "precedent")
+    lb = legal.extract_post_id("2020훼123457_x.md", "precedent")
+    check("T14-i2 legal도 동일", la != lb, f"{la} == {lb}")
+
+    # T14-j: NFC/NFD 입력이 같은 hex ID를 생성한다 — 호출 경로에 따라
+    # 같은 사건이 다른 ID를 갖게 되면 결정성이 깨진다.
+    nfc_in = "2020훼1234"
+    nfd_in = unicodedata.normalize("NFD", nfc_in)
+    check("T14-j hex 폴백 NFC/NFD 동일",
+          newprec.case_no_to_ascii(nfc_in) == newprec.case_no_to_ascii(nfd_in))
+    check("T14-j2 legal도 동일",
+          legal.extract_post_id(f"{nfc_in}_x.md", "precedent")
+          == legal.extract_post_id(unicodedata.normalize("NFD", f"{nfc_in}_x.md"), "precedent"))
+
 
 def t15_cases_mode() -> None:
     """--cases 명시 대상 모드 (Track B §2.2)."""

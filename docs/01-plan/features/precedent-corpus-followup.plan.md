@@ -86,7 +86,7 @@ BM25 사본(`data/bm25_corpus.json.gz` = laborlaw-v2 전체 복제)으로 전수
    대상 디렉토리가 이미 `output_판례_보강/`)
 3. `pinecone_upload_court_precedents.py` 재실행 → `precedent_{사건번호}` ID로
    laborlaw-v2 업로드 (기존 500건은 동일 ID 덮어쓰기라 무해)
-4. **ctx 구벡터 삭제** (신규 소형 스크립트 `cleanup_ctx_precedents.py`):
+4. **ctx 구벡터 삭제** (신규 스크립트 — 설계에서 `sync_overlap_precedents.py --delete-ctx`로 확정, 대상 산출과 매핑 로직 단일 소유):
    법제처 수집에 **성공한 사건만** 대응 `ctx_precedent_{게시글ID}_c*` ID를
    BM25 사본에서 뽑아 `index.delete(ids=...)`. 수집 실패분은 ctx 유지(폴백).
    실행 전 대상 ID 목록을 파일로 출력하고 `--dry-run` 제공
@@ -126,7 +126,7 @@ BM25 사본(`data/bm25_corpus.json.gz` = laborlaw-v2 전체 복제)으로 전수
 |--------|------|:---:|
 | NFD 수정 | `pinecone_upload_legal.py`, `upload_new_precedents.py` | ✅ |
 | 명시 대상 모드 | `fetch_court_precedents.py` (`--cases`) | ✅ |
-| ctx 정리 스크립트 | `cleanup_ctx_precedents.py` | ✅ |
+| ctx 정리 스크립트 | `sync_overlap_precedents.py` (설계에서 이름 확정) | ✅ |
 | 회귀 테스트 | `test_precedent_ingest.py` (T14~) | ✅ |
 | 재수집 판례 ~250건 | `output_판례_보강/` | ❌ (gitignore) |
 | BM25 코퍼스 | `data/bm25_corpus.json.gz` | ✅ 필수 |

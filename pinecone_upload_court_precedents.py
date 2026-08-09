@@ -357,11 +357,18 @@ def main() -> None:
 
     if not args.dry_run:
         # 벡터 수 스냅샷(V1) — 4시점 검증(설계 §2.4)의 자동 출력분.
-        # stats는 반영에 수 초 지연이 있을 수 있어 참고값으로 표기한다.
+        # stats 반영 지연을 흡수하기 위해 5초 간격 3회 조회, 연속 동일 값이면
+        # 안정화로 간주하고 마지막 값을 스냅샷으로 표기한다.
         try:
-            time.sleep(3)
-            count = index.describe_index_stats().namespaces[NAMESPACE].vector_count
-            print(f"\n업로드 후 {NAMESPACE} 벡터 수: {count:,} (stats 지연 가능 — 참고값)")
+            count = prev = None
+            for _ in range(3):
+                time.sleep(5)
+                count = index.describe_index_stats().namespaces[NAMESPACE].vector_count
+                if count == prev:
+                    break
+                prev = count
+            print(f"\n업로드 후 {NAMESPACE} 벡터 수: {count:,}"
+                  f"{'' if count == prev else ' (stats 미안정 — 참고값)'}")
         except Exception as e:
             print(f"\n벡터 수 조회 실패(무시): {e}")
 

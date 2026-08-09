@@ -127,7 +127,8 @@ def extract_post_id(filepath: str, source_type: str) -> str:
         if ascii_id is not None:
             return ascii_id
     # ④ 매핑 불가 부호: 종전처럼 비ASCII를 조용히 지우면 연도 충돌이 재발하므로
-    #    사건번호의 결정적 hex 표기로 폴백 (예: case_x{utf8hex[:16]})
+    #    NFC 사건번호 전체의 hex 표기로 폴백 (예: case_x{nfc_utf8hex}) —
+    #    절단 금지: 앞 바이트를 공유하는 사건끼리 ID가 충돌한다
 ```
 
 `_case_no_to_ascii`·`_CASE_CODE_MAP`은 `pinecone_upload_court_precedents.py`의

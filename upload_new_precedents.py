@@ -76,12 +76,15 @@ def case_no_to_ascii(case_no: str) -> str:
     chunk_id가 충돌한다('2011헌바395'→'2011395' vs '2011구합395'→'2011395').
     미매핑 부호는 결정적 hex 표기로 폴백해 충돌을 차단한다.
     """
-    result = unicodedata.normalize("NFC", case_no)
+    nfc = unicodedata.normalize("NFC", case_no)
+    result = nfc
     for kr in _KR_KEYS:
         if kr in result:
             result = result.replace(kr, KR_TO_ASCII[kr])
     if re.search(r"[^\x00-\x7F]", result):
-        hex_id = case_no.encode("utf-8").hex()[:24]
+        # 절단 금지(앞 바이트 공유 사건끼리 충돌) + 반드시 NFC 기준 인코딩
+        # (원본이 NFD면 같은 사건이 호출 경로에 따라 다른 ID를 갖게 된다).
+        hex_id = nfc.encode("utf-8").hex()
         print(f"  [경고] 미매핑 사건부호, hex ID 폴백: {case_no!r} → case_x{hex_id}")
         return f"case_x{hex_id}"
     return result

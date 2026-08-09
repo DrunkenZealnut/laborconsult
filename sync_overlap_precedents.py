@@ -169,19 +169,41 @@ def delete_ctx(dry_run: bool) -> None:
     from app.config import resolve_index_name
     index = Pinecone(api_key=os.getenv("PINECONE_API_KEY")).Index(resolve_index_name())
 
-    # 라이브 prefix 나열 + 정규식 재검증 (설계 §2.3 규칙 2)
     # index.list()는 SDK 버전에 따라 배치를 list[str], list[ListItem],
     # ListResponse(이터러블)로 준다 — 항목 단위로 id를 뽑아 전부 흡수한다.
-    plan: dict[str, list[str]] = {}
-    for case_no, post_id in selected:
-        ids: list[str] = []
-        for batch in index.list(prefix=f"ctx_precedent_{post_id}_", namespace=NAMESPACE):
+    def _list_ids(prefix: str) -> list[str]:
+        out: list[str] = []
+        for batch in index.list(prefix=prefix, namespace=NAMESPACE):
             for item in batch:
                 vid = item if isinstance(item, str) else getattr(item, "id", None)
-                if isinstance(vid, str) and valid_ctx_id(vid, post_id):
-                    ids.append(vid)
+                if isinstance(vid, str):
+                    out.append(vid)
+        return out
+
+    from pinecone_upload_court_precedents import UnknownCaseCode, case_no_to_ascii
+
+    # 라이브 prefix 나열 + 정규식 재검증 (설계 §2.3 규칙 2)
+    # + 대체 벡터 존재 확인 — 수집 성공(fetched)은 업로드 성공을 함의하지
+    #   않으므로, laborlaw-v2에 precedent_{사건번호} 벡터가 실재할 때만
+    #   해당 건의 ctx를 삭제 대상에 넣는다. 미확인 건은 ctx가 유일한 검색
+    #   경로일 수 있어 보류한다.
+    plan: dict[str, list[str]] = {}
+    held_back: list[str] = []
+    for case_no, post_id in selected:
+        try:
+            ascii_no = case_no_to_ascii(case_no)
+        except UnknownCaseCode:
+            held_back.append(case_no)
+            continue
+        if not _list_ids(f"precedent_{ascii_no}_chunk_"):
+            held_back.append(case_no)
+            continue
+        ids = [vid for vid in _list_ids(f"ctx_precedent_{post_id}_")
+               if valid_ctx_id(vid, post_id)]
         if ids:
             plan[case_no] = sorted(ids)
+    if held_back:
+        print(f"대체 벡터 미확인으로 보류: {len(held_back)}건 — {held_back[:5]}")
 
     total = sum(len(v) for v in plan.values())
     print(f"라이브 확인: {len(plan)}건 / 벡터 {total}개")
@@ -199,8 +221,17 @@ def delete_ctx(dry_run: bool) -> None:
 
     before = index.describe_index_stats().namespaces[NAMESPACE].vector_count
     all_ids = [vid for ids in plan.values() for vid in ids]
+    # 배치 중 실패해도 별도 원장은 두지 않는다 — Pinecone 삭제는 멱등이고,
+    # 이 스크립트는 매 실행마다 라이브 ID를 다시 나열하므로 재실행하면
+    # 이미 지워진 벡터는 목록에서 빠지고 남은 것만 다시 삭제된다.
     for i in range(0, len(all_ids), DELETE_BATCH):
-        index.delete(ids=all_ids[i:i + DELETE_BATCH], namespace=NAMESPACE)
+        try:
+            index.delete(ids=all_ids[i:i + DELETE_BATCH], namespace=NAMESPACE)
+        except Exception as e:
+            done = i
+            sys.exit(f"[오류] 배치 삭제 실패(완료 {done}/{len(all_ids)}개): {e}\n"
+                     f"      전체 계획은 {DELETED_LOG}에 기록돼 있다. 재실행하면 "
+                     f"남은 라이브 벡터만 다시 나열·삭제된다(멱등).")
         time.sleep(0.2)
 
     # stats 반영 지연 재시도 (설계 §2.4)

@@ -201,8 +201,10 @@ def extract_post_id(filepath: str, source_type: str) -> str:
         if ascii_id is not None:
             return ascii_id
         # 매핑 불가 부호: 숫자 폴백으로 내려가면 연도 충돌이 재발하므로
-        # 사건번호의 결정적 hex 표기로 폴백.
-        hex_id = case_m.group(1).encode("utf-8").hex()[:24]
+        # 사건번호 전체의 결정적 hex 표기로 폴백. 절단 금지 — 앞 바이트가
+        # 같은 두 사건('…123456'/'…123457')이 동일 ID로 충돌한다.
+        # basename이 이미 NFC라 hex도 정규화 형식에 대해 결정적이다.
+        hex_id = case_m.group(1).encode("utf-8").hex()
         print(f"  [경고] 미매핑 사건부호, hex ID 폴백: {case_m.group(1)!r} → case_x{hex_id}")
         return f"case_x{hex_id}"
     # 기존 숫자ID 패턴 (예: 1219473_제목)
@@ -210,7 +212,7 @@ def extract_post_id(filepath: str, source_type: str) -> str:
     if m:
         return m.group(1)
     fallback = re.sub(r"[^\x00-\x7F]", "", basename[:30])
-    return fallback or f"doc_x{basename.encode('utf-8').hex()[:24]}"
+    return fallback or f"doc_x{basename[:40].encode('utf-8').hex()}"
 
 
 # ── 청킹 ─────────────────────────────────────────────────────────────────────
