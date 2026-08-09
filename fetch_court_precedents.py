@@ -348,6 +348,18 @@ def extract_representative_case_no(text: str, filename: str) -> str | None:
     return m.group(1) if m else None
 
 
+def resolve_existing(cases_mode: bool) -> set[str]:
+    """L2 중복검사에 쓸 기존 사건번호 집합.
+
+    --cases(명시 대상 재수집 모드)에서는 있는 걸 알고 재수집하는 것이므로
+    L2를 통째로 생략한다 — 빈 집합이면 어떤 사건도 중복으로 스킵되지 않는다.
+    재개(_progress.json)는 별도 경로라 중복 API 호출은 그대로 방지된다.
+    """
+    if cases_mode:
+        return set()
+    return collect_existing_case_numbers(EXISTING_DIRS)
+
+
 def collect_existing_case_numbers(dirs: list[str]) -> set[str]:
     """기존 코퍼스에서 '수록된' 사건번호 집합.
 
@@ -398,28 +410,36 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="처리할 최대 건수")
     parser.add_argument("--dry-run", action="store_true", help="조회만, 파일 미저장")
     parser.add_argument("--force", action="store_true", help="진행상황 무시하고 재수집")
+    parser.add_argument("--cases", metavar="CSV",
+                        help="명시 대상 CSV(사건번호,법원[,추가컬럼 무시]). "
+                             "기존 코퍼스 중복검사(L2)를 생략한다 — 이미 있는 걸 "
+                             "알고 재수집하는 모드(예: 겹침분 laborlaw-v2 통일)")
     args = parser.parse_args()
 
     api_key = os.getenv("LAW_API_KEY")
     if not api_key:
         sys.exit("[오류] LAW_API_KEY가 설정되지 않았습니다.")
-    if not os.path.exists(INPUT_CSV):
-        sys.exit(f"[오류] 입력 CSV가 없습니다: {INPUT_CSV}")
+    input_csv = args.cases or INPUT_CSV
+    if not os.path.exists(input_csv):
+        sys.exit(f"[오류] 입력 CSV가 없습니다: {input_csv}")
 
     print("API 키 검증 중...", end=" ", flush=True)
     if not probe_api_key(api_key):
         sys.exit("실패\n[오류] LAW_API_KEY로 판례를 조회할 수 없습니다. 키 등록 상태를 확인하세요.")
     print("정상")
 
-    with open(INPUT_CSV, encoding="utf-8-sig") as f:
+    with open(input_csv, encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
 
     progress = {"fetched": {}, "not_found": {}} if args.force else load_progress()
-    existing = collect_existing_case_numbers(EXISTING_DIRS)
+    existing = resolve_existing(cases_mode=bool(args.cases))
 
     print(f"\n{'=' * 62}")
-    print(f"법제처 판례 수집 {'(DRY RUN)' if args.dry_run else ''}")
-    print(f"대상: {len(rows)}건  |  기존 코퍼스 사건번호: {len(existing)}개")
+    print(f"법제처 판례 수집 {'(DRY RUN)' if args.dry_run else ''}"
+          f"{'  [명시 대상 모드]' if args.cases else ''}")
+    print(f"입력: {input_csv}")
+    print(f"대상: {len(rows)}건  |  기존 코퍼스 사건번호: "
+          f"{'L2 생략' if args.cases else f'{len(existing)}개'}")
     print(f"이미 수집됨: {len(progress['fetched'])}건  |  기존 미발견: {len(progress['not_found'])}건")
     print(f"{'=' * 62}\n")
 

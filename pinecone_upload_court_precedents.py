@@ -355,6 +355,23 @@ def main() -> None:
     if pending and not args.dry_run:
         index.upsert(vectors=pending, namespace=NAMESPACE)
 
+    if not args.dry_run:
+        # 벡터 수 스냅샷(V1) — 4시점 검증(설계 §2.4)의 자동 출력분.
+        # stats 반영 지연을 흡수하기 위해 5초 간격 3회 조회, 연속 동일 값이면
+        # 안정화로 간주하고 마지막 값을 스냅샷으로 표기한다.
+        try:
+            count = prev = None
+            for _ in range(3):
+                time.sleep(5)
+                count = index.describe_index_stats().namespaces[NAMESPACE].vector_count
+                if count == prev:
+                    break
+                prev = count
+            print(f"\n업로드 후 {NAMESPACE} 벡터 수: {count:,}"
+                  f"{'' if count == prev else ' (stats 미안정 — 참고값)'}")
+        except Exception as e:
+            print(f"\n벡터 수 조회 실패(무시): {e}")
+
     print(f"처리 파일: {len(md_files) - len(skipped)}개")
     print(f"총 청크: {total_chunks}개")
     print(f"고유 벡터 ID: {len(seen_ids)}개  (충돌 {total_chunks - len(seen_ids)}건)")
