@@ -29,6 +29,14 @@ python3 pinecone_upload.py --reset  # Reset index and re-upload
 python3 pinecone_upload_legal.py  # 법원 노동판례 업로드 (다른 변형: _2025/_imgum/_counsel/_contextual)
 python3 upload_new_precedents.py  # 신규 판례 증분 업로드
 
+# 법제처 API 판례 보강 (사건번호 목록 → 원문 수집 → 쟁점 태깅 → 업로드)
+python3 fetch_court_precedents.py              # output_노동법교재/누락_판례목록.csv → output_판례_보강/
+python3 fetch_court_precedents.py --limit 20   # 부분 수집(재개 지원, _progress.json)
+python3 enrich_court_precedents.py             # 교재 목차에서 '관련 쟁점' 태깅 (멱등, 저작권 경계는 스크립트 docstring)
+python3 pinecone_upload_court_precedents.py --dry-run  # 청킹 검증
+python3 pinecone_upload_court_precedents.py    # laborlaw-v2 업로드
+python3 test_precedent_ingest.py               # 오프라인 회귀 테스트 (API 키 불요)
+
 # Chatbot
 python3 chatbot.py                # Interactive RAG chatbot
 python3 chatbot.py --search-only  # Vector search only (no Claude)
@@ -207,8 +215,13 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - `crawl_bestqna.py` → `output/` (BEST Q&A, ~274 posts)
 - `crawl_qna.py` → `output_qna/` (general Q&A, ~10K posts, resumable via saved file detection)
 - `crawl_2025.py`, `crawl_imgum.py`, `crawl_boards.py` — variant crawlers for other board sections (2025 Q&A, 임금/근로감독 자료, 자료실)
-- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`, `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`
-- Each source has a matching `generate_metadata_*.py` and `pinecone_upload_*.py` (e.g. `_2025`, `_imgum`, `_legal`, `_counsel`, `_contextual`) — keep the three in sync when adding a source
+- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`, `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`, `output_판례_보강/`
+- 코퍼스 소스는 두 계열로 나뉜다 — **게시판 크롤 계열**(`output/`·`output_2025/`·`output_imgum/`)은 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 세트를 유지하고, **문서·API 계열**(판례·행정해석·훈령예규·counsel·`output_판례_보강/`)은 metadata.json 단계 없이 수집 스크립트 + `pinecone_upload_*` 2종이 관례다(upload가 `.md`를 직접 파싱). 새 소스 추가 시 해당 계열의 세트를 함께 추가/동기화할 것
+- **`output_판례_보강/`는 크롤러가 아니라 법제처 Open API로 채운다** (`fetch_court_precedents.py`). 사건번호 목록만 있으면 원문을 받아올 수 있는 유일한 경로다 — nodong.kr 크롤러들은 게시판 순회 방식이라 특정 사건을 지목할 수 없다. 설계·실측 근거는 `docs/02-design/features/precedent-corpus-expansion.design.md`. 주의점 셋(전부 **조용히** 실패한다):
+  - **법제처 검색은 사건명 기준 fuzzy 매칭**이라 사건번호로 조회해도 무관한 판례를 반환한다(실측: `90누9421` → 6건 반환, 요청 사건 없음). 응답 XML의 `<사건번호>` 정확일치 게이트 없이 채택하면 엉뚱한 판례가 코퍼스에 섞인다.
+  - **판례 중복 판정은 파일당 대표 사건번호 1개로 해야 한다.** 본문 전체를 정규식으로 긁으면 참조판례 인용까지 잡혀 "A가 B를 인용"을 "B가 코퍼스에 있음"으로 오판한다(실측: 836개 파일에서 819개가 아니라 2,450개가 잡혀 수집 대상 601건 중 133건이 부당 스킵).
+  - **`prec`(법원)와 `detc`(헌재)는 XML 스키마가 다르다** — 결과 태그 대소문자(`prec`/`Detc`), `판결요지`↔`결정요지`, `판례내용`↔`전문`, `선고일자`↔`종국일자`. 법원명·판결유형은 detc에 없다.
+- **macOS 파일명은 NFD(자모 분해)로 저장된다.** 사건번호를 파일명에서 뽑는 코드는 `unicodedata.normalize("NFC", ...)`를 먼저 걸어야 한다 — `[다두도가누]` 같은 완성형 문자 클래스는 NFD 문자열에 절대 매치되지 않고, 폴백이 연도만 잡으면 같은 해 판례들이 동일 ID로 충돌해 Pinecone에서 서로를 덮어쓴다. `pinecone_upload_legal.py::extract_post_id()`가 실제로 이 버그를 갖고 있다(판례 836개 → 고유 post_id 362개, 474개 덮어쓰기). 해당 `precedent` 네임스페이스는 현재 프로덕션 검색 대상이 아니라 사용자 영향은 없으나, 그 NS를 살릴 계획이면 선행 수정 필요.
 
 ### RAG Pipeline
 

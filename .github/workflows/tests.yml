@@ -1,7 +1,7 @@
 name: Offline Tests
 
 # API 키 없이 도는 오프라인 스위트 — 계산 엔진 골든 + 파이프라인 배선 + 검색/인용 단위
-# + 남용 가드(인젝션·스코프·쿼터) + LLM 폴백 경화 + 답변 렌더러 회귀
+# + 남용 가드(인젝션·스코프·쿼터) + LLM 폴백 경화 + 판례 수집 + 답변 렌더러 회귀
 on:
   push:
     branches: [main]
@@ -41,6 +41,9 @@ jobs:
 
       - name: LLM 폴백 경화 테스트
         run: python3 test_llm_fallback.py
+
+      - name: 판례 수집·업로드 테스트
+        run: python3 test_precedent_ingest.py
 
       - name: 답변 렌더러 회귀 테스트
         run: node --test test_answer_renderer.js
