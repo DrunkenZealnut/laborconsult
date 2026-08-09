@@ -386,6 +386,113 @@ def t13_topic_enrichment() -> None:
           idx.get("95다53188"))
 
 
+def t14_nfd_bug_sealed() -> None:
+    """기존 업로드 스크립트 2종의 NFD·정규식 결함이 봉인됐는지 (Track A)."""
+    import pinecone_upload_legal as legal
+    import upload_new_precedents as newprec
+
+    # T14-a: NFD 파일명에서 post_id 추출
+    nfd = unicodedata.normalize("NFD", "2020다242423_추가 법정수당.md")
+    check("T14-a legal NFD 파일명", legal.extract_post_id(nfd, "precedent") == "2020da242423",
+          legal.extract_post_id(nfd, "precedent"))
+
+    # T14-b: 2자리 연도·복합 부호
+    for raw, want in [("90누9421_제목.md", "90nu9421"),
+                      ("86다카24445_제목.md", "86daka24445"),
+                      ("2011헌바395_제목.md", "2011heonba395")]:
+        got = legal.extract_post_id(unicodedata.normalize("NFD", raw), "precedent")
+        check(f"T14-b {raw.split('_')[0]}", got == want, got)
+
+    # T14-c: 고유성 시뮬레이션 — CSV가 있으면 601건 전량, 없으면 부호 픽스처.
+    # 전부 NFD 파일명으로 변환해 macOS 실환경을 재현한다.
+    cases, src = _target_case_numbers()
+    ids = {}
+    for c in cases:
+        case = fetch.OCR_FIXES.get(c, c)
+        pid = legal.extract_post_id(
+            unicodedata.normalize("NFD", f"{case}_제목.md"), "precedent")
+        ids.setdefault(pid, []).append(case)
+    collisions = {k: v for k, v in ids.items() if len(v) > 1}
+    check(f"T14-c post_id 충돌 0 ({len(cases)}건 — {src})", not collisions,
+          list(collisions.items())[:3])
+    check("T14-d 미매핑 부호는 hex 폴백(숫자 폴백 금지)",
+          legal.extract_post_id("2020훼1234_x.md", "precedent").startswith("case_x"),
+          legal.extract_post_id("2020훼1234_x.md", "precedent"))
+
+    # T14-e: upload_new_precedents 대표 사건번호 — NFD 원문·NFD 파일명을
+    # 정규화 없이 그대로 넘겨 내부 NFC 처리를 검증한다.
+    doc_nfd = unicodedata.normalize("NFD", """# 제목
+
+| 항목 | 내용 |
+| --- | --- |
+| 사건번호 | 86다카24445 |
+
+---
+본문에서 대법원 2010. 3. 11. 선고 2009다82244 판결을 인용한다.
+""")
+    # 메타필드는 호출부(collect_existing_case_numbers)가 NFC 정규화 후 넘기는
+    # 계약이므로 NFC 경로 검증 + 파일명 폴백은 NFD 그대로 넘겨 내부 처리 검증.
+    rep = newprec._representative_case_no(
+        unicodedata.normalize("NFC", doc_nfd), "86다카24445_제목.md")
+    check("T14-e newprec 대표 사건번호(다카)", rep == "86다카24445", rep)
+    rep_fn = newprec._representative_case_no(
+        "메타 없음", unicodedata.normalize("NFD", "2011헌바395_제목.md"))
+    check("T14-e2 newprec NFD 파일명 폴백(헌바)", rep_fn == "2011헌바395", rep_fn)
+    check("T14-f newprec 정규식 2자리 연도",
+          newprec.CASE_NO_PATTERN.search("90누9421") is not None)
+    check("T14-g newprec chunk_id 미매핑 부호 hex 폴백",
+          newprec.case_no_to_ascii("2020훼1234").startswith("case_x"),
+          newprec.case_no_to_ascii("2020훼1234"))
+    check("T14-h newprec chunk_id 복합 부호",
+          newprec.case_no_to_ascii("2011헌바395") == "2011heonba395",
+          newprec.case_no_to_ascii("2011헌바395"))
+
+
+def t15_cases_mode() -> None:
+    """--cases 명시 대상 모드 (Track B §2.2)."""
+    import sync_overlap_precedents as sync
+
+    # T15-a: 대상 CSV 파싱 — 게시글ID 빈 값 허용·추가 컬럼 무시는
+    # csv.DictReader 사용 계약이므로 select_deletion_targets로 검증
+    targets = [
+        {"사건번호": "2020다1111", "법원": "대법원", "게시글ID": "403778", "메모": "무시"},
+        {"사건번호": "2020다2222", "법원": "대법원", "게시글ID": ""},
+    ]
+    fetched = {"2020다1111": "f1.md", "2020다2222": "f2.md"}
+    sel = sync.select_deletion_targets(targets, fetched)
+    check("T15-a 게시글ID 빈 값은 삭제 제외", sel == [("2020다1111", "403778")], sel)
+
+    # T15-b: --cases 모드의 L2 생략을 함수 반환값으로 검증 (문자열 매칭 아님)
+    orig = fetch.collect_existing_case_numbers
+    try:
+        fetch.collect_existing_case_numbers = lambda dirs: {"2020다9999"}
+        check("T15-b cases 모드 → 빈 집합(L2 생략)",
+              fetch.resolve_existing(cases_mode=True) == set())
+        check("T15-c 기본 모드 → 수집기 호출",
+              fetch.resolve_existing(cases_mode=False) == {"2020다9999"})
+    finally:
+        fetch.collect_existing_case_numbers = orig
+
+
+def t16_ctx_deletion_safety() -> None:
+    """ctx 삭제 안전 규칙 (설계 §2.3)."""
+    import sync_overlap_precedents as sync
+
+    targets = [
+        {"사건번호": "2020다1111", "법원": "대법원", "게시글ID": "403778"},   # 성공+ID
+        {"사건번호": "2020다2222", "법원": "대법원", "게시글ID": "403779"},   # 수집 실패
+        {"사건번호": "2020다3333", "법원": "대법원", "게시글ID": ""},         # ID 없음
+    ]
+    fetched = {"2020다1111": "a.md", "2020다3333": "c.md"}
+    sel = sync.select_deletion_targets(targets, fetched)
+    check("T16-a 성공∩게시글ID 교집합만", sel == [("2020다1111", "403778")], sel)
+
+    check("T16-b 정상 ID 통과", sync.valid_ctx_id("ctx_precedent_403778_c3", "403778"))
+    check("T16-c 부분일치 오폭 거부", not sync.valid_ctx_id("ctx_precedent_4037789_c0", "403778"))
+    check("T16-d 접미 변형 거부", not sync.valid_ctx_id("ctx_precedent_403778_c3x", "403778"))
+    check("T16-e 타 소스 거부", not sync.valid_ctx_id("ctx_interpretation_403778_c0", "403778"))
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -393,7 +500,8 @@ def main() -> int:
                t6_detc_field_mapping, t7_text_cleaning,
                t8_chunk_excludes_full_text, t9_markdown_roundtrip,
                t10_dedup_ignores_citations, t11_target_routing,
-               t12_merged_case_number, t13_topic_enrichment):
+               t12_merged_case_number, t13_topic_enrichment,
+               t14_nfd_bug_sealed, t15_cases_mode, t16_ctx_deletion_safety):
         print(f"\n[{fn.__name__}]")
         fn()
 

@@ -17,6 +17,7 @@ import re
 import sys
 import time
 import argparse
+import unicodedata
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -145,34 +146,71 @@ def extract_legal_body(md_content: str) -> str:
     return clean_text(md_content)
 
 
-# 한글 → ASCII 매핑 (Pinecone ID는 ASCII만 허용)
-_KR_TO_ASCII = {
-    "다": "da", "두": "du", "도": "do", "가": "ga", "누": "nu",
-    "나": "na", "마": "ma", "추": "chu", "재": "jae", "허": "heo",
+# 사건부호 → ASCII 매핑 (Pinecone ID는 ASCII만 허용).
+# pinecone_upload_court_precedents.py의 사본 — 업로드 스크립트 간 유틸 복사가
+# 리포 관례(CLAUDE.md 2계열 규칙). 긴 부호가 먼저 치환돼야 '다카'→'daka'가 된다.
+_CASE_CODE_MAP = {
+    "다카": "daka", "헌바": "heonba", "헌마": "heonma", "헌가": "heonga",
+    "헌라": "heonra", "헌사": "heonsa", "재두": "jaedu", "재다": "jaeda",
+    "가합": "gahap", "가단": "gadan", "가소": "gaso",
+    "구합": "guhap", "구단": "gudan", "나합": "nahap",
+    "다": "da", "두": "du", "누": "nu", "도": "do", "가": "ga",
+    "나": "na", "마": "ma", "라": "ra", "바": "ba", "카": "ka",
+    "자": "ja", "차": "cha", "모": "mo", "므": "meu", "브": "beu",
+    "즈": "jeu", "추": "chu", "초": "cho", "오": "o", "우": "u",
+    "허": "heo", "후": "hu", "그": "geu", "노": "no", "고": "go",
+    "구": "gu", "단": "dan", "합": "hap", "재": "jae", "머": "meo",
+    "인": "in", "감": "gam", "코": "ko", "토": "to", "푸": "pu",
 }
+_CODE_KEYS = sorted(_CASE_CODE_MAP, key=len, reverse=True)
 
 
-def _korean_to_ascii(text: str) -> str:
-    """한글 문자를 ASCII로 변환 (Pinecone ID용)."""
-    for kr, en in _KR_TO_ASCII.items():
-        text = text.replace(kr, en)
-    return re.sub(r"[^\x00-\x7F]", "", text)
+def _case_no_to_ascii(case_no: str) -> str | None:
+    """사건번호를 ASCII로 변환. 매핑에 없는 부호가 남으면 None.
+
+    (구버전은 비ASCII를 조용히 제거해 미매핑 부호가 연도 숫자만 남는
+    ID 뭉개짐을 일으켰다 — 2020년 판례 78건이 전부 'precedent_2020_chunk_N'으로
+    충돌해 서로를 덮어쓴 실측 사고의 원인.)
+    """
+    s = case_no
+    for code in _CODE_KEYS:
+        if code in s:
+            s = s.replace(code, _CASE_CODE_MAP[code])
+    if re.search(r"[^\x00-\x7F]", s):
+        return None
+    return s
 
 
 def extract_post_id(filepath: str, source_type: str) -> str:
-    """파일명에서 post_id 추출 (Pinecone ID용 ASCII 변환 포함)."""
-    basename = os.path.splitext(os.path.basename(filepath))[0]
+    """파일명에서 post_id 추출 (Pinecone ID용 ASCII 변환 포함).
+
+    macOS는 파일명을 NFD(자모 분해)로 저장한다 — NFC 정규화 없이는 한글
+    문자 클래스가 절대 매치되지 않아 숫자 폴백이 연도만 잡고, 같은 해
+    판례들이 동일 post_id로 충돌한다(CLAUDE.md Crawlers 절).
+    """
+    basename = unicodedata.normalize(
+        "NFC", os.path.splitext(os.path.basename(filepath))[0])
     if source_type == "legal_case":
         # case_001_제목 → case_001
         m = re.match(r"(case_\d+)", basename)
         return m.group(1) if m else basename[:20]
-    # 사건번호 패턴 (예: 2019다297496, 2017마5737) → ASCII 변환
-    case_m = re.match(r"(\d{4}[다두도가누마재추허][A-Za-z가-힣]*\d+)", basename)
+    # 사건번호 패턴 — 2자리 연도(90누9421)·복합 부호(다카/헌바) 포함
+    case_m = re.match(r"(\d{2,4}[가-힣]{1,4}\d+)", basename)
     if case_m:
-        return _korean_to_ascii(case_m.group(1))
+        ascii_id = _case_no_to_ascii(case_m.group(1))
+        if ascii_id is not None:
+            return ascii_id
+        # 매핑 불가 부호: 숫자 폴백으로 내려가면 연도 충돌이 재발하므로
+        # 사건번호의 결정적 hex 표기로 폴백.
+        hex_id = case_m.group(1).encode("utf-8").hex()[:24]
+        print(f"  [경고] 미매핑 사건부호, hex ID 폴백: {case_m.group(1)!r} → case_x{hex_id}")
+        return f"case_x{hex_id}"
     # 기존 숫자ID 패턴 (예: 1219473_제목)
     m = re.match(r"(\d+)", basename)
-    return m.group(1) if m else _korean_to_ascii(basename[:30])
+    if m:
+        return m.group(1)
+    fallback = re.sub(r"[^\x00-\x7F]", "", basename[:30])
+    return fallback or f"doc_x{basename.encode('utf-8').hex()[:24]}"
 
 
 # ── 청킹 ─────────────────────────────────────────────────────────────────────

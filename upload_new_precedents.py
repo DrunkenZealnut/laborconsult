@@ -21,6 +21,7 @@ import sys
 import time
 import shutil
 import argparse
+import unicodedata
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -45,22 +46,44 @@ CATEGORY_DIRS = ["근로기준", "노동조합", "산재보상", "비정규직",
 YEAR_DIRS = [f"대법원_{y}" for y in range(2020, 2027)]
 
 # ── 사건번호 패턴 ────────────────────────────────────────────────────────────
-CASE_NO_PATTERN = re.compile(r"(\d{4}[다두도가누][A-Za-z가-힣]*\d+)")
+# 2자리 연도(90누9421)·복합 부호(다카/헌바/헌마)를 포함해야 한다 — 구패턴
+# [다두도가누]는 다카 27건·헌바 16건·헌마 9건을 놓쳐 중복 재삽입을 일으킨다.
+CASE_NO_PATTERN = re.compile(r"(\d{2,4}[가-힣]{1,4}\d+)")
 
-# 한글 → ASCII 매핑 (Pinecone ID용)
+# 사건부호 → ASCII 매핑 (Pinecone ID용).
+# pinecone_upload_court_precedents.py의 사본 — 업로드 스크립트 간 유틸 복사가
+# 리포 관례(CLAUDE.md 2계열 규칙). 긴 부호가 먼저 치환돼야 '다카'→'daka'가 된다.
 KR_TO_ASCII = {
-    "다": "da", "두": "du", "도": "do", "가": "ga", "누": "nu",
-    "나": "na", "마": "ma", "추": "chu", "재": "jae", "허": "heo",
+    "다카": "daka", "헌바": "heonba", "헌마": "heonma", "헌가": "heonga",
+    "헌라": "heonra", "헌사": "heonsa", "재두": "jaedu", "재다": "jaeda",
+    "가합": "gahap", "가단": "gadan", "가소": "gaso",
+    "구합": "guhap", "구단": "gudan", "나합": "nahap",
+    "다": "da", "두": "du", "누": "nu", "도": "do", "가": "ga",
+    "나": "na", "마": "ma", "라": "ra", "바": "ba", "카": "ka",
+    "자": "ja", "차": "cha", "모": "mo", "므": "meu", "브": "beu",
+    "즈": "jeu", "추": "chu", "초": "cho", "오": "o", "우": "u",
+    "허": "heo", "후": "hu", "그": "geu", "노": "no", "고": "go",
+    "구": "gu", "단": "dan", "합": "hap", "재": "jae", "머": "meo",
+    "인": "in", "감": "gam", "코": "ko", "토": "to", "푸": "pu",
 }
+_KR_KEYS = sorted(KR_TO_ASCII, key=len, reverse=True)
 
 
 def case_no_to_ascii(case_no: str) -> str:
-    """사건번호의 한글을 ASCII로 변환 (Pinecone ID용)."""
-    result = case_no
-    for kr, en in KR_TO_ASCII.items():
-        result = result.replace(kr, en)
-    # 남은 비ASCII 문자 제거
-    result = re.sub(r"[^\x00-\x7F]", "", result)
+    """사건번호의 한글을 ASCII로 변환 (Pinecone ID용).
+
+    비ASCII를 조용히 지우면 미매핑 부호가 연도 숫자만 남아 서로 다른 판례의
+    chunk_id가 충돌한다('2011헌바395'→'2011395' vs '2011구합395'→'2011395').
+    미매핑 부호는 결정적 hex 표기로 폴백해 충돌을 차단한다.
+    """
+    result = unicodedata.normalize("NFC", case_no)
+    for kr in _KR_KEYS:
+        if kr in result:
+            result = result.replace(kr, KR_TO_ASCII[kr])
+    if re.search(r"[^\x00-\x7F]", result):
+        hex_id = case_no.encode("utf-8").hex()[:24]
+        print(f"  [경고] 미매핑 사건부호, hex ID 폴백: {case_no!r} → case_x{hex_id}")
+        return f"case_x{hex_id}"
     return result
 
 # ── 카테고리 분류 키워드 ─────────────────────────────────────────────────────
@@ -87,8 +110,28 @@ CATEGORY_KEYWORDS = {
 
 # ── 1단계: 기존 사건번호 수집 ─────────────────────────────────────────────────
 
+def _representative_case_no(content: str, fname: str) -> str | None:
+    """문서 1건이 '다루는' 대표 사건번호 하나.
+
+    본문 전체를 finditer로 긁으면 안 된다 — 판례 본문의 참조판례 인용까지
+    잡혀 "A가 B를 인용"을 "B가 코퍼스에 있음"으로 오판해 신규 판례를 부당
+    스킵한다(CLAUDE.md Crawlers 절, 실측 133/601건 부당 스킵).
+    우선순위: 메타 테이블 → 파일명 → 본문 앞 1500자.
+    """
+    meta = re.search(r"\|\s*사건번호\s*\|\s*([^|]+?)\s*\|", content)
+    if meta:
+        m = CASE_NO_PATTERN.search(meta.group(1))
+        if m:
+            return m.group(1)
+    m = CASE_NO_PATTERN.search(unicodedata.normalize("NFC", fname))
+    if m:
+        return m.group(1)
+    m = CASE_NO_PATTERN.search(content[:1500])
+    return m.group(1) if m else None
+
+
 def collect_existing_case_numbers() -> set[str]:
-    """기존 카테고리 폴더의 .md 파일에서 모든 사건번호 추출."""
+    """기존 카테고리 폴더의 .md 파일에서 파일당 대표 사건번호 추출."""
     existing = set()
     for cat in CATEGORY_DIRS:
         cat_dir = os.path.join(PRECEDENT_DIR, cat)
@@ -99,9 +142,12 @@ def collect_existing_case_numbers() -> set[str]:
                 continue
             filepath = os.path.join(cat_dir, fname)
             with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-            for m in CASE_NO_PATTERN.finditer(content):
-                existing.add(m.group(1))
+                # macOS NFD 자모 분해 흡수 — 정규화 없이는 한글 문자 클래스가
+                # 파일명·본문 어느 쪽에도 매치되지 않는다.
+                content = unicodedata.normalize("NFC", f.read())
+            case_no = _representative_case_no(content, fname)
+            if case_no:
+                existing.add(case_no)
     return existing
 
 
