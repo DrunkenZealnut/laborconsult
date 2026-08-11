@@ -369,11 +369,19 @@ def _read_ledger() -> dict[str, list[str]]:
     Pinecone Serverless는 메타데이터 필터 삭제를 지원하지 않아 이 목록이
     유일한 복구 수단이다. 빈 파일은 정상(최초 실행)으로 본다.
     """
+    backup = UPLOADED_IDS_FILE + ".bak"
+
     if not os.path.exists(UPLOADED_IDS_FILE) or os.path.getsize(UPLOADED_IDS_FILE) == 0:
+        # .bak만 남아 있다는 건 직전 실행이 손상을 감지하고 격리했다는 뜻이다.
+        # 여기서 {}를 반환하면 이전 ID를 잃고 기존 고아 벡터를 영영 정리하지
+        # 못한다 — 사람이 복구하거나 명시적으로 초기화할 때까지 막는다.
+        if os.path.exists(backup):
+            sys.exit(f"[오류] 손상 격리된 롤백 기록이 있습니다: {backup}\n"
+                     f"       내용을 확인해 {UPLOADED_IDS_FILE}로 복구하거나, "
+                     f"의도적 초기화라면 .bak을 삭제한 뒤 재실행하세요.")
         return {}
 
     def _abort(reason: str):
-        backup = UPLOADED_IDS_FILE + ".bak"
         os.replace(UPLOADED_IDS_FILE, backup)
         sys.exit(f"[오류] 롤백 기록이 올바르지 않습니다 ({reason}). "
                  f"원본을 {backup}로 보존했습니다 — 확인 후 재실행하세요.")
@@ -389,12 +397,16 @@ def _read_ledger() -> dict[str, list[str]]:
     if not isinstance(data, dict):
         _abort(f"최상위가 dict가 아님: {type(data).__name__}")
     for book_id, ids in data.items():
+        if not _BOOK_ID_RE.match(str(book_id)):
+            _abort(f"book_id 형식 위반: {book_id!r}")
         if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
             _abort(f"'{book_id}' 항목이 문자열 리스트가 아님")
-        prefix = f"textbook_{book_id}_"
-        bad = [i for i in ids if not i.startswith(prefix)]
+        # 접두사만 보면 textbook_win_x_y 같은 잘못된 ID가 통과한다.
+        # chunk_id 규격 전체를 확인한다: textbook_{book_id}_{section:04d}_{chunk}
+        id_re = re.compile(rf"^textbook_{re.escape(book_id)}_\d{{4}}_\d+$")
+        bad = [i for i in ids if not id_re.match(i)]
         if bad:
-            _abort(f"'{book_id}' 항목에 접두사 불일치 ID {len(bad)}건 (예: {bad[:2]})")
+            _abort(f"'{book_id}' 항목에 chunk_id 규격 위반 {len(bad)}건 (예: {bad[:2]})")
     return data
 
 

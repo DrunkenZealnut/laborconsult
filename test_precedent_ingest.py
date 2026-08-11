@@ -661,7 +661,11 @@ def t17_textbook_chunk_id_scope() -> None:
         # 어긋나면 엉뚱한 벡터를 지운다. 삭제는 되돌릴 수 없다.
         for bad, label in ((["not", "a", "dict"], "최상위 리스트"),
                            ({"win": "문자열"}, "값이 문자열"),
-                           ({"win": ["textbook_juhae3_0000_0"]}, "타 서적 ID 혼입")):
+                           ({"win": ["textbook_juhae3_0000_0"]}, "타 서적 ID 혼입"),
+                           ({"win": ["textbook_win_x_y"]}, "섹션 인덱스 비숫자"),
+                           ({"win": ["textbook_win_12_0"]}, "섹션 인덱스 자릿수"),
+                           ({"win": ["textbook_win_0000"]}, "청크 인덱스 누락"),
+                           ({"my_book": ["textbook_my_book_0000_0"]}, "book_id 밑줄")):
             with open(ledger, "w", encoding="utf-8") as f:
                 _json.dump(bad, f)
             rejected = False
@@ -672,6 +676,22 @@ def t17_textbook_chunk_id_scope() -> None:
             check(f"T17-r 손상 원장 거부 ({label})", rejected)
             if os.path.exists(ledger + ".bak"):
                 os.replace(ledger + ".bak", ledger)   # 다음 케이스용 복원
+
+        # .bak만 남은 상태로 재실행하면 이전 ID를 잃고 고아를 영영 못 지운다 —
+        # 사람이 복구하거나 명시 초기화할 때까지 막아야 한다.
+        for leftover in (ledger, ledger + ".bak"):
+            if os.path.exists(leftover):
+                os.unlink(leftover)
+        with open(ledger + ".bak", "w", encoding="utf-8") as f:
+            f.write("{}")
+        blocked = False
+        try:
+            tb._read_ledger()
+        except SystemExit:
+            blocked = True
+        check("T17-u .bak만 남으면 재실행 차단", blocked)
+        os.unlink(ledger + ".bak")
+        check("T17-v .bak 없으면 최초 실행으로 통과", tb._read_ledger() == {})
 
         # 원자적 쓰기 — 중단 시 빈 파일이 남으면 이전 ID를 통째로 잃는다.
         tb._write_ledger({"win": sorted(current)})
