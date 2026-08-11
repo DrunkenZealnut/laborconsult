@@ -49,8 +49,29 @@ CASE_RE = re.compile(rf"(?<![0-9])(\d{{2,4}})\s*({CASE_CODES})\s*(\d+)(?![0-9])"
 _HEONJAE_RE = re.compile(r"^\d{2,4}헌")
 
 
+def normalize_body(body: str) -> str:
+    """추출 전 본문 정규화 — NFC → OCR 오인식 정정.
+
+    **치환은 반드시 추출 이전, 본문 단계**여야 한다. 추출 결과에 사후 remap을
+    걸면 아무것도 고치지 못한다 — 오인식 부호('대', '도다')는 CASE_CODES
+    화이트리스트에 없어 애초에 추출되지 않기 때문이다(실측: Win 본문에 오인식
+    표기가 6회 있으나 사후 remap으로는 0건 정정).
+
+    NFC가 치환보다 먼저다 — OCR_FIXES 키가 NFC라 NFD 원문에는 매치되지 않는다.
+    이 프로젝트는 NFD로 474벡터를 잃은 전력이 있다(CLAUDE.md).
+
+    생산 흐름과 테스트가 **같은 함수**를 써야 순서 역전이 회귀로 잡힌다.
+    """
+    from fetch_court_precedents import OCR_FIXES
+
+    body = unicodedata.normalize("NFC", body)
+    for wrong, right in OCR_FIXES.items():
+        body = body.replace(wrong, right)
+    return body
+
+
 def extract_cases(body: str) -> Counter:
-    """본문 → {사건번호: 인용횟수}."""
+    """본문 → {사건번호: 인용횟수}. 정규화는 normalize_body()가 담당한다."""
     body = unicodedata.normalize("NFC", body)
     return Counter(f"{y}{code}{n}" for y, code, n in CASE_RE.findall(body))
 
@@ -81,9 +102,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from pinecone_upload_textbook import BOOKS, load_body
-    from fetch_court_precedents import (
-        OCR_FIXES, collect_existing_case_numbers, EXISTING_DIRS,
-    )
+    from fetch_court_precedents import collect_existing_case_numbers, EXISTING_DIRS
 
     if args.book and args.book not in BOOKS:
         sys.exit(f"[오류] 알 수 없는 서적: {args.book} (가능: {', '.join(sorted(BOOKS))})")
@@ -99,17 +118,7 @@ def main() -> None:
     for book in books:
         if not os.path.exists(book.path):
             sys.exit(f"[오류] 원본이 없습니다: {book.path}")
-        # 교재 OCR이 '다'를 '대'로 오인식한 건들 — fetch와 동일 사전 재사용.
-        # 치환은 반드시 **추출 이전, 본문 단계**에서 해야 한다. 추출 결과에
-        # 사후 remap을 걸면 아무것도 고치지 못한다 — 오인식 부호('대', '도다')는
-        # CASE_CODES 화이트리스트에 없어 애초에 추출되지 않기 때문이다.
-        # (실측: Win 본문에 오인식 표기가 6회 있으나 사후 remap으로는 0건 정정)
-        # NFC를 치환보다 먼저 — OCR_FIXES 키가 NFC라 NFD 원문에는 매치되지
-        # 않는다. 이 프로젝트는 NFD로 474벡터를 잃은 전력이 있다(CLAUDE.md).
-        body = unicodedata.normalize("NFC", load_body(book))
-        for wrong, right in OCR_FIXES.items():
-            body = body.replace(wrong, right)
-        cases = extract_cases(body)
+        cases = extract_cases(normalize_body(load_body(book)))
         print(f"  {book.book_id}: 고유 {len(cases)}건 / 총인용 {sum(cases.values())}회")
         freq.update(cases)
         for c in cases:
@@ -131,7 +140,9 @@ def main() -> None:
 
     targets.sort(key=lambda c: (-freq[c], c))
 
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    out_dir = os.path.dirname(args.out)
+    if out_dir:                      # 파일명만 주면 dirname이 ""라 makedirs가 죽는다
+        os.makedirs(out_dir, exist_ok=True)
     with open(args.out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["사건번호", "법원", "인용횟수", "출처서적"])

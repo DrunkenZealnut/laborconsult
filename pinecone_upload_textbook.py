@@ -362,7 +362,7 @@ def embed_texts(texts: list[str], client: OpenAI) -> list[list[float]]:
     return []
 
 
-def record_uploaded_ids(book_id: str, ids: list[str]) -> None:
+def record_uploaded_ids(book_id: str, ids: list[str]) -> set[str]:
     """업로드 예정 벡터 ID를 서적별로 기록(롤백용, 설계 §9).
 
     **upsert보다 먼저** 호출한다 — 업로드 도중 죽으면 이미 적재된 벡터가
@@ -372,6 +372,10 @@ def record_uploaded_ids(book_id: str, ids: list[str]) -> None:
 
     같은 이유로 기존 기록과 **합집합**을 취한다. 청킹이 바뀌어 ID가 줄면
     교체 방식은 이전 실행의 고아 벡터를 추적 대상에서 지워버린다.
+
+    Returns:
+        이전 기록 ID 집합 — 업로드 성공 후 prune_stale_vectors()가 차집합을
+        삭제하는 데 쓴다.
     """
     data: dict[str, list[str]] = {}
     if os.path.exists(UPLOADED_IDS_FILE):
@@ -385,17 +389,49 @@ def record_uploaded_ids(book_id: str, ids: list[str]) -> None:
             sys.exit(f"[오류] 롤백 기록을 읽을 수 없습니다 ({e}). "
                      f"원본을 {backup}로 보존했습니다 — 확인 후 재실행하세요.")
 
-    merged = sorted(set(data.get(book_id, [])) | set(ids))
+    previous = set(data.get(book_id, []))
+    merged = sorted(previous | set(ids))
     data[book_id] = merged
     with open(UPLOADED_IDS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     print(f"  벡터 ID {len(ids)}건 기록(누적 {len(merged)}): {UPLOADED_IDS_FILE}")
+    return previous
+
+
+def prune_stale_vectors(book: Book, current_ids: list[str], previous_ids: set[str],
+                        index) -> None:
+    """이번 업로드에 없는 이전 chunk_id 벡터를 삭제한다.
+
+    청킹이 줄면(`ocr_fixes` 추가로 섹션이 병합되는 등) 이전 실행의 벡터가
+    Pinecone에 남아 **검색 결과에 계속 섞인다.** upsert는 덮어쓸 뿐 지우지
+    않으므로 차집합을 명시 삭제해야 한다.
+
+    업로드가 전부 성공한 뒤에만 호출한다 — 중간 실패 시 삭제하면 아직
+    올리지 못한 벡터를 지울 수 있다.
+    """
+    stale = sorted(previous_ids - set(current_ids))
+    if not stale:
+        return
+
+    # 대량 삭제는 청킹 규격이 통째로 바뀐 신호다. 조용히 지우면 되돌릴 수 없다.
+    if len(stale) > len(current_ids) * 0.5:
+        sys.exit(
+            f"[오류] '{book.book_id}' 고아 벡터가 {len(stale)}건으로 현재 청크"
+            f"({len(current_ids)})의 50%를 넘습니다 — chunk_id 규격이 바뀌었을 수 "
+            f"있습니다. 의도한 변경이면 {UPLOADED_IDS_FILE}에서 해당 서적 항목을 "
+            f"비우고 재실행하세요."
+        )
+
+    for i in range(0, len(stale), UPSERT_BATCH):
+        index.delete(ids=stale[i:i + UPSERT_BATCH], namespace=NAMESPACE)
+    print(f"  고아 벡터 {len(stale)}건 삭제 (예: {stale[:2]})")
 
 
 def upload_book(book: Book, chunks: list[dict], openai_client: OpenAI, index) -> None:
     """청크 → 임베딩 → upsert."""
     # 롤백 기록이 먼저다 — 중간에 죽어도 적재분이 추적 대상에 남는다.
-    record_uploaded_ids(book.book_id, [c["chunk_id"] for c in chunks])
+    chunk_ids = [c["chunk_id"] for c in chunks]
+    previous_ids = record_uploaded_ids(book.book_id, chunk_ids)
 
     pending: list[dict] = []
 
@@ -431,6 +467,10 @@ def upload_book(book: Book, chunks: list[dict], openai_client: OpenAI, index) ->
 
     if pending:
         index.upsert(vectors=pending, namespace=NAMESPACE)
+
+    # 전량 성공 후에만 정리 — upsert는 덮어쓸 뿐 지우지 않으므로, 청킹이 줄면
+    # 이전 실행의 벡터가 남아 검색에 계속 섞인다.
+    prune_stale_vectors(book, chunk_ids, previous_ids, index)
 
 
 # ── 메인 ──────────────────────────────────────────────────────────────────────

@@ -162,6 +162,18 @@ def _merge_search_queries(
     return merged[:max_total]
 
 
+def uses_textbook(precedent_meta: list[dict] | None) -> bool:
+    """LLM 컨텍스트에 저작권 있는 해설서가 실렸는가.
+
+    인용 가드 G1~G3 부착과 G6(공개 게시판 제외)의 **공용 판정**이다.
+    두 곳이 각자 판정하면 한쪽만 어긋나 "가드는 붙는데 게시판엔 올라가는"
+    상태가 생긴다. 테스트도 이 함수를 호출해야 판정 변경이 회귀로 잡힌다.
+    """
+    return any(
+        (m or {}).get("source_type") == "textbook" for m in (precedent_meta or [])
+    )
+
+
 def _build_sources_payload(
     precedent_meta: list[dict] | None,
     consultation_hits: list[dict] | None,
@@ -1928,9 +1940,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 공개 게시판 제외 두 곳이 이 값을 쓴다. precedent_meta는 여기 도달하기
     # 전에 확정된다(RAG 또는 법제처 폴백). 판정을 두 곳에 복제하면 한쪽만
     # 어긋나 조용히 새므로 단일 변수로 둔다.
-    used_textbook = any(
-        (m or {}).get("source_type") == "textbook" for m in (precedent_meta or [])
-    )
+    used_textbook = uses_textbook(precedent_meta)
     full_text = ""
     used_provider = None
     outcome = AnswerOutcome()

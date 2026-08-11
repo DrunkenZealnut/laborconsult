@@ -587,6 +587,33 @@ def t17_textbook_chunk_id_scope() -> None:
             raised = True
         check("T17-h 폐기율 상한 초과 시 중단", raised)
 
+    # 청킹이 줄면 이전 실행의 벡터가 Pinecone에 남아 검색에 계속 섞인다 —
+    # upsert는 덮어쓸 뿐 지우지 않는다(CodeRabbit #46 지적).
+    class _FakeIndex:
+        def __init__(self): self.deleted = []
+        def delete(self, ids, namespace): self.deleted.extend(ids)
+
+    book = tb.BOOKS["win"]
+    idx = _FakeIndex()
+    current = [f"textbook_win_{i:04d}_0" for i in range(10)]
+    previous = set(current) | {"textbook_win_0010_0", "textbook_win_0011_0"}
+    tb.prune_stale_vectors(book, current, previous, idx)
+    check("T17-j 사라진 이전 ID만 삭제",
+          sorted(idx.deleted) == ["textbook_win_0010_0", "textbook_win_0011_0"], idx.deleted)
+
+    idx2 = _FakeIndex()
+    tb.prune_stale_vectors(book, current, set(current), idx2)
+    check("T17-k 차집합 없으면 삭제 0", idx2.deleted == [], idx2.deleted)
+
+    # 대량 삭제는 chunk_id 규격이 바뀐 신호다 — 조용히 지우면 되돌릴 수 없다.
+    idx3 = _FakeIndex()
+    raised = False
+    try:
+        tb.prune_stale_vectors(book, current, set(f"old_{i}" for i in range(50)), idx3)
+    except SystemExit:
+        raised = True
+    check("T17-l 50% 초과 고아는 중단", raised and idx3.deleted == [], idx3.deleted)
+
     check("T17-f book_id 정규식은 밑줄 거부", not tb._BOOK_ID_RE.match("my_book"))
     check("T17-g book_id 정규식은 소문자·숫자 허용", bool(tb._BOOK_ID_RE.match("juhae3")))
 
@@ -678,10 +705,9 @@ def t19b_citation_rules_attachment() -> None:
     check("T19b-c 규칙 상수에 G2(단독 근거 금지)", "해설서만을 근거로" in TEXTBOOK_CITATION_RULES)
     check("T19b-d 규칙 상수에 G3(서명 표기)", "서명을 표기" in TEXTBOOK_CITATION_RULES)
 
-    # 부착 판정식 — pipeline.py:1943과 동일 형태. precedent_meta의 스키마가
-    # 바뀌면 여기서 걸린다.
-    def attaches(meta):
-        return any((m or {}).get("source_type") == "textbook" for m in meta)
+    # 생산 코드의 공용 판정을 그대로 호출한다 — 테스트가 판정식을 재구현하면
+    # pipeline이 바뀌어도 통과해버려 회귀를 못 잡는다(CodeRabbit #46 지적).
+    from app.core.pipeline import uses_textbook as attaches
 
     check("T19b-e 해설서 있으면 부착",
           attaches([{"source_type": "precedent"}, {"source_type": "textbook"}]))
@@ -741,11 +767,17 @@ def t20_textbook_case_extraction() -> None:
     for wrong, right in fetch.OCR_FIXES.items():
         check(f"T20-j 사후 remap으로는 정정 불가 {wrong}",
               not ex.extract_cases(wrong), dict(ex.extract_cases(wrong)))
-        body = f"대법원 {wrong} 판결"
-        for w, r in fetch.OCR_FIXES.items():
-            body = body.replace(w, r)
-        check(f"T20-k 본문 선치환이면 정정됨 {wrong}→{right}",
-              right in ex.extract_cases(body), list(ex.extract_cases(body)))
+        # 생산 흐름과 같은 helper를 호출한다 — 여기서 치환을 재구현하면
+        # extract_textbook_cases가 순서를 되돌려도 테스트가 통과한다.
+        got = ex.extract_cases(ex.normalize_body(f"대법원 {wrong} 판결"))
+        check(f"T20-k 생산 정규화 경로가 정정 {wrong}→{right}",
+              right in got, list(got))
+
+    import unicodedata
+    nfd = unicodedata.normalize("NFD", "대법원 2000대8127 판결")
+    check("T20-l NFD 본문도 정정됨(NFC 선행)",
+          "2000다8127" in ex.extract_cases(ex.normalize_body(nfd)),
+          list(ex.extract_cases(ex.normalize_body(nfd))))
 
     # fetch의 추출 정규식과 부호 커버리지가 어긋나면 수집 단계에서 탈락한다.
     for case in ("87다카2803", "98헌마141", "2006다64245", "90누9421"):
