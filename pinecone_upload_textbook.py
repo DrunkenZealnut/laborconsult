@@ -371,19 +371,46 @@ def _read_ledger() -> dict[str, list[str]]:
     """
     if not os.path.exists(UPLOADED_IDS_FILE) or os.path.getsize(UPLOADED_IDS_FILE) == 0:
         return {}
-    try:
-        with open(UPLOADED_IDS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
+
+    def _abort(reason: str):
         backup = UPLOADED_IDS_FILE + ".bak"
         os.replace(UPLOADED_IDS_FILE, backup)
-        sys.exit(f"[오류] 롤백 기록을 읽을 수 없습니다 ({e}). "
+        sys.exit(f"[오류] 롤백 기록이 올바르지 않습니다 ({reason}). "
                  f"원본을 {backup}로 보존했습니다 — 확인 후 재실행하세요.")
+
+    try:
+        with open(UPLOADED_IDS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        _abort(str(e))
+
+    # 스키마 검증 — 이 값은 index.delete()로 들어간다. 형태가 어긋나면 엉뚱한
+    # 벡터를 지우게 되고, 삭제는 되돌릴 수 없다.
+    if not isinstance(data, dict):
+        _abort(f"최상위가 dict가 아님: {type(data).__name__}")
+    for book_id, ids in data.items():
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            _abort(f"'{book_id}' 항목이 문자열 리스트가 아님")
+        prefix = f"textbook_{book_id}_"
+        bad = [i for i in ids if not i.startswith(prefix)]
+        if bad:
+            _abort(f"'{book_id}' 항목에 접두사 불일치 ID {len(bad)}건 (예: {bad[:2]})")
+    return data
 
 
 def _write_ledger(data: dict[str, list[str]]) -> None:
-    with open(UPLOADED_IDS_FILE, "w", encoding="utf-8") as f:
+    """원자적 교체로 기록 — 쓰기 중 죽어도 원장이 비지 않는다.
+
+    truncate 후 쓰는 방식은 중단 시 빈 파일을 남기고, _read_ledger()가 그것을
+    '최초 실행'으로 읽어 **이전 ID를 통째로 잃는다**. 그러면 기존 고아 벡터를
+    영영 정리할 수 없다.
+    """
+    tmp = UPLOADED_IDS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, UPLOADED_IDS_FILE)
 
 
 def record_uploaded_ids(book_id: str, ids: list[str]) -> set[str]:

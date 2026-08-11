@@ -595,44 +595,54 @@ def t17_textbook_chunk_id_scope() -> None:
 
     # prune_stale_vectors는 성공 시 원장을 기록한다 — 패치하지 않으면 테스트가
     # 실제 output_노동법교재/_uploaded_ids.json 을 덮어써 롤백 수단을 파괴한다.
-    import tempfile, json as _json
-    _fd, _ledger = tempfile.mkstemp(suffix=".json"); os.close(_fd)
-    _orig_ledger = tb.UPLOADED_IDS_FILE
-    tb.UPLOADED_IDS_FILE = _ledger
-
-    book = tb.BOOKS["win"]
-    idx = _FakeIndex()
-    current = [f"textbook_win_{i:04d}_0" for i in range(10)]
-    previous = set(current) | {"textbook_win_0010_0", "textbook_win_0011_0"}
-    tb.prune_stale_vectors(book, current, previous, idx)
-    check("T17-j 사라진 이전 ID만 삭제",
-          sorted(idx.deleted) == ["textbook_win_0010_0", "textbook_win_0011_0"], idx.deleted)
-
-    idx2 = _FakeIndex()
-    tb.prune_stale_vectors(book, current, set(current), idx2)
-    check("T17-k 차집합 없으면 삭제 0", idx2.deleted == [], idx2.deleted)
-
-    # 대량 삭제는 chunk_id 규격이 바뀐 신호다 — 조용히 지우면 되돌릴 수 없다.
-    idx3 = _FakeIndex()
-    raised = False
+    # prune_stale_vectors는 성공 시 원장을 기록한다 — 패치하지 않으면 테스트가
+    # 실제 output_노동법교재/_uploaded_ids.json 을 덮어써 롤백 수단을 파괴한다.
+    # 전역 변경 직후부터 finally로 감싼다 — 중간에 예외가 나면 이후 테스트가
+    # 임시 경로를 계속 보게 되고 임시 파일도 남는다.
+    import tempfile
+    import json as _json
+    fd, ledger = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    orig_ledger = tb.UPLOADED_IDS_FILE
+    tb.UPLOADED_IDS_FILE = ledger
     try:
-        tb.prune_stale_vectors(book, current, set(f"old_{i}" for i in range(50)), idx3)
-    except SystemExit:
-        raised = True
-    check("T17-l 50% 초과 고아는 중단", raised and idx3.deleted == [], idx3.deleted)
+        book = tb.BOOKS["win"]
+        current = [f"textbook_win_{i:04d}_0" for i in range(10)]
 
-    # 원장이 합집합으로 남으면 다음 실행이 이미 지운 ID를 또 stale로 계산하고,
-    # 50% 가드가 한 번 걸리면 매번 같은 지점에서 멈춘다(CodeRabbit 재리뷰 지적).
-    ledger = _ledger
-    try:
+        idx = _FakeIndex()
+        previous = set(current) | {"textbook_win_0010_0", "textbook_win_0011_0"}
+        tb.prune_stale_vectors(book, current, previous, idx)
+        check("T17-j 사라진 이전 ID만 삭제",
+              sorted(idx.deleted) == ["textbook_win_0010_0", "textbook_win_0011_0"],
+              idx.deleted)
+
+        idx2 = _FakeIndex()
+        tb.prune_stale_vectors(book, current, set(current), idx2)
+        check("T17-k 차집합 없으면 삭제 0", idx2.deleted == [], idx2.deleted)
+
+        # 대량 삭제는 chunk_id 규격이 바뀐 신호다 — 조용히 지우면 되돌릴 수 없다.
+        idx3 = _FakeIndex()
+        raised = False
+        try:
+            tb.prune_stale_vectors(book, current,
+                                   {f"textbook_win_{i:04d}_9" for i in range(50)}, idx3)
+        except SystemExit:
+            raised = True
+        check("T17-l 50% 초과 고아는 중단", raised and idx3.deleted == [], idx3.deleted)
+
+        # 원장이 합집합으로 남으면 다음 실행이 이미 지운 ID를 또 stale로 계산하고,
+        # 50% 가드가 한 번 걸리면 매번 같은 지점에서 멈춘다.
         with open(ledger, "w", encoding="utf-8") as f:
-            _json.dump({"win": current + ["textbook_win_0010_0"], "juhae3": ["x"]}, f)
+            _json.dump({"win": current + ["textbook_win_0010_0"],
+                        "juhae3": ["textbook_juhae3_0000_0"]}, f)
         idx4 = _FakeIndex()
         tb.prune_stale_vectors(book, current, set(current) | {"textbook_win_0010_0"}, idx4)
-        after = _json.load(open(ledger, encoding="utf-8"))
+        with open(ledger, encoding="utf-8") as f:
+            after = _json.load(f)
         check("T17-m 삭제 성공 후 원장이 현재 집합으로 확정",
               after["win"] == sorted(current), after["win"][-2:])
-        check("T17-n 다른 서적 원장은 보존", after["juhae3"] == ["x"], after.get("juhae3"))
+        check("T17-n 다른 서적 원장은 보존",
+              after["juhae3"] == ["textbook_juhae3_0000_0"], after.get("juhae3"))
 
         # 재실행 시 stale이 0이어야 한다 — 아니면 무한 재삭제/무한 중단
         idx5 = _FakeIndex()
@@ -640,20 +650,41 @@ def t17_textbook_chunk_id_scope() -> None:
         check("T17-o 재실행 시 재삭제 없음", idx5.deleted == [], idx5.deleted)
 
         # 50% 초과라도 명시 플래그로는 통과해야 한다 — 원장 비우기가 탈출구면
-        # previous가 사라져 고아가 영구히 남는다
-        with open(ledger, "w", encoding="utf-8") as f:
-            _json.dump({"win": [f"old_{i}" for i in range(50)]}, f)
+        # previous가 사라져 고아가 영구히 남는다.
+        big = {f"textbook_win_{i:04d}_9" for i in range(50)}
         idx6 = _FakeIndex()
-        tb.prune_stale_vectors(book, current, {f"old_{i}" for i in range(50)},
-                               idx6, allow_large=True)
-        check("T17-p --allow-large-prune 로 대량 삭제 통과", len(idx6.deleted) == 50,
-              len(idx6.deleted))
+        tb.prune_stale_vectors(book, current, big, idx6, allow_large=True)
+        check("T17-p --allow-large-prune 로 대량 삭제 통과",
+              len(idx6.deleted) == 50, len(idx6.deleted))
+
+        # 원장 스키마 검증 — 이 값이 index.delete()로 들어가므로 형태가
+        # 어긋나면 엉뚱한 벡터를 지운다. 삭제는 되돌릴 수 없다.
+        for bad, label in ((["not", "a", "dict"], "최상위 리스트"),
+                           ({"win": "문자열"}, "값이 문자열"),
+                           ({"win": ["textbook_juhae3_0000_0"]}, "타 서적 ID 혼입")):
+            with open(ledger, "w", encoding="utf-8") as f:
+                _json.dump(bad, f)
+            rejected = False
+            try:
+                tb._read_ledger()
+            except SystemExit:
+                rejected = True
+            check(f"T17-r 손상 원장 거부 ({label})", rejected)
+            if os.path.exists(ledger + ".bak"):
+                os.replace(ledger + ".bak", ledger)   # 다음 케이스용 복원
+
+        # 원자적 쓰기 — 중단 시 빈 파일이 남으면 이전 ID를 통째로 잃는다.
+        tb._write_ledger({"win": sorted(current)})
+        check("T17-s 원자 교체 후 임시파일 잔존 없음", not os.path.exists(ledger + ".tmp"))
+        check("T17-t 원자 교체 결과 읽기 가능", tb._read_ledger()["win"] == sorted(current))
     finally:
-        tb.UPLOADED_IDS_FILE = _orig_ledger
-        os.unlink(_ledger)
+        tb.UPLOADED_IDS_FILE = orig_ledger
+        for leftover in (ledger, ledger + ".bak", ledger + ".tmp"):
+            if os.path.exists(leftover):
+                os.unlink(leftover)
 
     check("T17-q 테스트가 실제 원장을 건드리지 않음",
-          tb.UPLOADED_IDS_FILE == _orig_ledger, tb.UPLOADED_IDS_FILE)
+          tb.UPLOADED_IDS_FILE == orig_ledger, tb.UPLOADED_IDS_FILE)
 
     check("T17-f book_id 정규식은 밑줄 거부", not tb._BOOK_ID_RE.match("my_book"))
     check("T17-g book_id 정규식은 소문자·숫자 허용", bool(tb._BOOK_ID_RE.match("juhae3")))
