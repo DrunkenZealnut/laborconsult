@@ -78,11 +78,12 @@
     "archivedTo": "docs/archive/2026-08/swiss-modernism-design-system/"
   },
   "textbook-corpus-embedding": {
-    "phase": "completed",
+    "phase": "archived",
     "matchRate": 100,
     "iterationCount": 0,
     "startedAt": "2026-08-10T00:00:00Z",
-    "completedAt": "2026-08-11T00:00:00Z"
-  },
-  "currentFeature": "textbook-corpus-embedding"
+    "completedAt": "2026-08-11T00:00:00Z",
+    "archivedAt": "2026-08-11T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/textbook-corpus-embedding/"
+  }
 }
