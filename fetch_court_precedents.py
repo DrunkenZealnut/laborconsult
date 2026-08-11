@@ -414,12 +414,18 @@ def main() -> None:
                         help="명시 대상 CSV(사건번호,법원[,추가컬럼 무시]). "
                              "기존 코퍼스 중복검사(L2)를 생략한다 — 이미 있는 걸 "
                              "알고 재수집하는 모드(예: 겹침분 laborlaw-v2 통일)")
+    parser.add_argument("--input", metavar="CSV",
+                        help=f"입력 CSV 경로 (기본: {os.path.relpath(INPUT_CSV, BASE_DIR)}). "
+                             "L2 중복검사는 유지된다 — 신규 수집용. "
+                             "--cases와 달리 이미 보유한 판례를 다시 받지 않는다")
     args = parser.parse_args()
 
     api_key = os.getenv("LAW_API_KEY")
     if not api_key:
         sys.exit("[오류] LAW_API_KEY가 설정되지 않았습니다.")
-    input_csv = args.cases or INPUT_CSV
+    # --cases(L2 생략)와 --input(L2 유지)은 의미가 다르다. 동시에 오면
+    # 중복검사를 끄는 --cases가 이긴다(기존 동작 보존).
+    input_csv = args.cases or args.input or INPUT_CSV
     if not os.path.exists(input_csv):
         sys.exit(f"[오류] 입력 CSV가 없습니다: {input_csv}")
 

@@ -60,13 +60,25 @@ def build_corpus() -> None:
                     text = meta.get("text") or meta.get("chunk_text", "")
                     if not text:
                         continue
-                    corpus.append({
+                    entry = {
                         "id": vid,
                         "text": text,
                         "title": meta.get("title", ""),
                         "section": meta.get("section", ""),
                         "source_type": meta.get("source_type", ""),
-                    })
+                    }
+                    # 해설서 인용 가드(G4)가 BM25 경로에서 우회되지 않도록
+                    # book_id를 보존한다. rag.py는 벡터 ID 폴백도 갖고 있지만,
+                    # 코퍼스가 정본을 담는 편이 확실하다.
+                    #
+                    # 값이 있을 때만 넣는다 — 6번째 키를 무조건 넣으면 CPython
+                    # dict가 8슬롯→16슬롯으로 리사이즈돼 문서당 +88B가 붙는다.
+                    # 코퍼스의 97%가 해설서가 아니므로 빈 문자열을 위해 상주
+                    # 메모리 5.7MB를 내는 셈이다(bm25_search.py의 RSS 경고 참조).
+                    # 소비자(bm25_search.py, rag.py)는 부재를 이미 흡수한다.
+                    if meta.get("book_id"):
+                        entry["book_id"] = meta["book_id"]
+                    corpus.append(entry)
                     count += 1
                 pagination_token = resp.pagination.next if resp.pagination else None
                 if not pagination_token:

@@ -1923,6 +1923,14 @@ def process_question(query: str, session: Session, config: AppConfig,
         messages.append({"role": "user", "content": user_message})
 
     # 6. 스트리밍 답변 (Claude → OpenAI → Gemini 순차 폴백)
+    #
+    # 저작권 있는 해설서가 LLM 컨텍스트에 실렸는가 — 인용 가드 G1~G3 부착과
+    # 공개 게시판 제외 두 곳이 이 값을 쓴다. precedent_meta는 여기 도달하기
+    # 전에 확정된다(RAG 또는 법제처 폴백). 판정을 두 곳에 복제하면 한쪽만
+    # 어긋나 조용히 새므로 단일 변수로 둔다.
+    used_textbook = any(
+        (m or {}).get("source_type") == "textbook" for m in (precedent_meta or [])
+    )
     full_text = ""
     used_provider = None
     outcome = AnswerOutcome()
@@ -1936,6 +1944,13 @@ def process_question(query: str, session: Session, config: AppConfig,
         else:
             system_prompt = SYSTEM_PROMPT_TEMPLATE.format(today=_date.today().isoformat())
         system_prompt = system_prompt + INJECTION_RESISTANCE
+        # 해설서 인용 가드 G1~G3 — 두 분기 공통으로 접미한다. 한쪽 프롬프트에만
+        # 넣으면 임금계산·괴롭힘 판정·법제처 실패 경로에서 저작물이 무가드로
+        # 나간다(prompts.py::TEXTBOOK_CITATION_RULES 주석 참조).
+        # 컨텍스트에 해설서가 실렸을 때만 붙인다 — 없으면 가리킬 대상이 없다.
+        if used_textbook:
+            from app.templates.prompts import TEXTBOOK_CITATION_RULES
+            system_prompt = system_prompt + TEXTBOOK_CITATION_RULES
         for provider, text in _stream_answer(messages, system_prompt, config, outcome):
             if not text:
                 # 전환 하트비트 — 내용 없음. 프론트 idle 타이머만 리셋한다 (FR-03).
@@ -2062,6 +2077,12 @@ def process_question(query: str, session: Session, config: AppConfig,
     # api/index.py::_PUBLIC_EXCLUDE_KEYS가 이 키를 읽는다.
     if outcome.truncated:
         conv_metadata["truncated"] = True
+    # 해설서를 근거로 쓴 답변은 저장하되 공개 게시판에서 제외한다.
+    # G1(축자 인용 금지)은 소프트 가드라 실패할 수 있는데, 그 산출물이 공개·크롤
+    # 가능한 페이지로 재게시되면 저작권 노출이 1:1 상담에서 공개 배포로 확대된다.
+    # Plan §3.2는 chunk_text 미노출만 근거로 삼았고 답변 재게시를 다루지 않았다.
+    if used_textbook:
+        conv_metadata["textbook"] = True
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
     conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
     logger.info(

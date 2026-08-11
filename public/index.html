@@ -1363,7 +1363,8 @@ async function readSSE(resp, onActivity) {
 function renderSources(hits, el) {
   if (!hits || !hits.length || !el) return;
   var labels = { precedent: '판례', interpretation: '행정해석', regulation: '훈령·예규',
-                 counsel: '노무사 상담', qa: '상담 Q&A' };
+                 counsel: '노무사 상담', qa: '상담 Q&A', textbook: '노동법 해설서',
+                 law_article: '법령', nlrc_case: '판정사례', graph: '지식그래프' };
   var div = document.createElement('div');
   div.className = 'sources';
   div.textContent = '근거 자료: ' + hits.map(function (h) {

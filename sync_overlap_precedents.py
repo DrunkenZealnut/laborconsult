@@ -80,9 +80,13 @@ def book_cited_cases() -> set[str]:
     """교재 본문에서 인용 사건번호 전체 (공백 표기·OCR 보정 포함)."""
     from enrich_court_precedents import SPACED_CASE_RE
     from fetch_court_precedents import OCR_FIXES
-    from pinecone_upload_textbook import load_body, SOURCE_FILE
+    from pinecone_upload_textbook import load_body, BOOKS
 
-    body = unicodedata.normalize("NFC", load_body(SOURCE_FILE))
+    # Win 노동법 단독 — 이 스크립트는 선행 사이클의 겹침 목록을 재현하는
+    # 용도라 대상 서적을 넓히면 산출물의 의미가 달라진다.
+    # SPACED_CASE_RE는 부호 화이트리스트가 없어 OCR_FIXES 사후 remap이
+    # 실제로 동작한다(extract_textbook_cases와 달리 사문 코드가 아님).
+    body = unicodedata.normalize("NFC", load_body(BOOKS["win"]))
     cases = set()
     for m in SPACED_CASE_RE.finditer(body):
         no = "".join(m.groups())
