@@ -362,6 +362,30 @@ def embed_texts(texts: list[str], client: OpenAI) -> list[list[float]]:
     return []
 
 
+def _read_ledger() -> dict[str, list[str]]:
+    """롤백 원장 로드. 손상 시엔 백업 후 중단한다.
+
+    조용히 {}로 시작하면 **다른 서적의 롤백 기록이 통째로 사라진다** —
+    Pinecone Serverless는 메타데이터 필터 삭제를 지원하지 않아 이 목록이
+    유일한 복구 수단이다. 빈 파일은 정상(최초 실행)으로 본다.
+    """
+    if not os.path.exists(UPLOADED_IDS_FILE) or os.path.getsize(UPLOADED_IDS_FILE) == 0:
+        return {}
+    try:
+        with open(UPLOADED_IDS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        backup = UPLOADED_IDS_FILE + ".bak"
+        os.replace(UPLOADED_IDS_FILE, backup)
+        sys.exit(f"[오류] 롤백 기록을 읽을 수 없습니다 ({e}). "
+                 f"원본을 {backup}로 보존했습니다 — 확인 후 재실행하세요.")
+
+
+def _write_ledger(data: dict[str, list[str]]) -> None:
+    with open(UPLOADED_IDS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+
+
 def record_uploaded_ids(book_id: str, ids: list[str]) -> set[str]:
     """업로드 예정 벡터 ID를 서적별로 기록(롤백용, 설계 §9).
 
@@ -377,29 +401,29 @@ def record_uploaded_ids(book_id: str, ids: list[str]) -> set[str]:
         이전 기록 ID 집합 — 업로드 성공 후 prune_stale_vectors()가 차집합을
         삭제하는 데 쓴다.
     """
-    data: dict[str, list[str]] = {}
-    if os.path.exists(UPLOADED_IDS_FILE):
-        try:
-            with open(UPLOADED_IDS_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            # 조용히 {}로 시작하면 다른 서적의 롤백 기록이 통째로 사라진다.
-            backup = UPLOADED_IDS_FILE + ".bak"
-            os.replace(UPLOADED_IDS_FILE, backup)
-            sys.exit(f"[오류] 롤백 기록을 읽을 수 없습니다 ({e}). "
-                     f"원본을 {backup}로 보존했습니다 — 확인 후 재실행하세요.")
-
+    data = _read_ledger()
     previous = set(data.get(book_id, []))
     merged = sorted(previous | set(ids))
     data[book_id] = merged
-    with open(UPLOADED_IDS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
+    _write_ledger(data)
     print(f"  벡터 ID {len(ids)}건 기록(누적 {len(merged)}): {UPLOADED_IDS_FILE}")
     return previous
 
 
+def finalize_uploaded_ids(book_id: str, current_ids: list[str]) -> None:
+    """업로드·정리가 모두 성공한 뒤 원장을 현재 집합으로 확정한다.
+
+    이걸 하지 않으면 원장이 합집합으로 남아 다음 실행이 **이미 삭제한 ID를
+    또 stale로 계산**한다. 삭제 자체는 멱등이라 무해하지만, 대량 삭제 가드가
+    한 번 걸리면 원장이 그대로라 이후 실행이 매번 같은 지점에서 멈춘다.
+    """
+    data = _read_ledger()
+    data[book_id] = sorted(current_ids)
+    _write_ledger(data)
+
+
 def prune_stale_vectors(book: Book, current_ids: list[str], previous_ids: set[str],
-                        index) -> None:
+                        index, allow_large: bool = False) -> None:
     """이번 업로드에 없는 이전 chunk_id 벡터를 삭제한다.
 
     청킹이 줄면(`ocr_fixes` 추가로 섹션이 병합되는 등) 이전 실행의 벡터가
@@ -407,27 +431,33 @@ def prune_stale_vectors(book: Book, current_ids: list[str], previous_ids: set[st
     않으므로 차집합을 명시 삭제해야 한다.
 
     업로드가 전부 성공한 뒤에만 호출한다 — 중간 실패 시 삭제하면 아직
-    올리지 못한 벡터를 지울 수 있다.
+    올리지 못한 벡터를 지울 수 있다. 삭제까지 성공하면 원장을 현재 집합으로
+    확정한다(실패 시엔 합집합을 유지해 추적을 잃지 않는다).
     """
     stale = sorted(previous_ids - set(current_ids))
     if not stale:
+        finalize_uploaded_ids(book.book_id, current_ids)
         return
 
     # 대량 삭제는 청킹 규격이 통째로 바뀐 신호다. 조용히 지우면 되돌릴 수 없다.
-    if len(stale) > len(current_ids) * 0.5:
+    # 탈출구를 '원장 비우기'로 두면 안 된다 — previous가 사라져 stale이 0이 되고
+    # 고아 벡터가 영구히 남는다. 명시 플래그로만 통과시킨다.
+    if not allow_large and len(stale) > len(current_ids) * 0.5:
         sys.exit(
             f"[오류] '{book.book_id}' 고아 벡터가 {len(stale)}건으로 현재 청크"
             f"({len(current_ids)})의 50%를 넘습니다 — chunk_id 규격이 바뀌었을 수 "
-            f"있습니다. 의도한 변경이면 {UPLOADED_IDS_FILE}에서 해당 서적 항목을 "
-            f"비우고 재실행하세요."
+            f"있습니다. 의도한 변경이면 --allow-large-prune 으로 재실행하세요 "
+            f"(원장을 직접 비우면 삭제 대상을 잃어 고아가 영구히 남습니다)."
         )
 
     for i in range(0, len(stale), UPSERT_BATCH):
         index.delete(ids=stale[i:i + UPSERT_BATCH], namespace=NAMESPACE)
     print(f"  고아 벡터 {len(stale)}건 삭제 (예: {stale[:2]})")
+    finalize_uploaded_ids(book.book_id, current_ids)
 
 
-def upload_book(book: Book, chunks: list[dict], openai_client: OpenAI, index) -> None:
+def upload_book(book: Book, chunks: list[dict], openai_client: OpenAI, index,
+                allow_large_prune: bool = False) -> None:
     """청크 → 임베딩 → upsert."""
     # 롤백 기록이 먼저다 — 중간에 죽어도 적재분이 추적 대상에 남는다.
     chunk_ids = [c["chunk_id"] for c in chunks]
@@ -470,7 +500,7 @@ def upload_book(book: Book, chunks: list[dict], openai_client: OpenAI, index) ->
 
     # 전량 성공 후에만 정리 — upsert는 덮어쓸 뿐 지우지 않으므로, 청킹이 줄면
     # 이전 실행의 벡터가 남아 검색에 계속 섞인다.
-    prune_stale_vectors(book, chunk_ids, previous_ids, index)
+    prune_stale_vectors(book, chunk_ids, previous_ids, index, allow_large_prune)
 
 
 # ── 메인 ──────────────────────────────────────────────────────────────────────
@@ -480,6 +510,9 @@ def main():
     parser.add_argument("--book", choices=sorted(BOOKS), help="업로드할 서적 ID")
     parser.add_argument("--all", action="store_true", help="BOOKS 전권 업로드")
     parser.add_argument("--dry-run", action="store_true", help="청킹만 수행")
+    parser.add_argument("--allow-large-prune", action="store_true",
+                        help="고아 벡터가 현재 청크의 50%%를 넘어도 삭제 진행 "
+                             "(chunk_id 규격을 의도적으로 바꿨을 때만)")
     # --reset 없음: laborlaw-v2는 판례 등 다른 소스와 공유하는 네임스페이스라
     # delete_all이 전체를 날린다. Pinecone Serverless는 메타데이터 필터 삭제를
     # 지원하지 않으므로 source_type별 부분 삭제도 불가 — 재업로드는 결정적
@@ -540,7 +573,7 @@ def main():
             print(f"    [{c['chunk_id']}] {c['section']}\n      {preview}...")
 
         if not args.dry_run:
-            upload_book(book, chunks, openai_client, index)
+            upload_book(book, chunks, openai_client, index, args.allow_large_prune)
         print()
 
     print(f"{'=' * 62}")
