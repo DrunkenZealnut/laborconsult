@@ -174,6 +174,7 @@ def search_bm25(query: str, top_k: int = 10) -> list[dict]:
             "section": doc.get("section", ""),
             "content": doc.get("text", ""),
             "source_type": doc.get("source_type", ""),
+            "book_id": doc.get("book_id", ""),   # 해설서 인용 가드(G4) 키
             "score": round(float(score), 4),
             "search_type": "bm25",
         })

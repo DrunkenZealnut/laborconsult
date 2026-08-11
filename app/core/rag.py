@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -58,6 +59,7 @@ def _query_namespaces(
                     "section": meta.get("section", ""),
                     "content": meta.get("text", ""),
                     "source_type": meta.get("source_type", ""),
+                    "book_id": meta.get("book_id", ""),   # 해설서 인용 가드(G4) 키
                     "id": m.id,
                 })
         except Exception as e:
@@ -300,8 +302,65 @@ def rerank_results(
         return hits[:top_n]
 
 
+MAX_CHUNKS_PER_BOOK = 3
+
+# 해설서 벡터 ID 규약: textbook_{book_id}_{section:04d}_{chunk}
+_TEXTBOOK_ID_RE = re.compile(r"^textbook_([a-z0-9]+)_")
+
+
+def _book_id_of(hit: dict) -> str:
+    """hit의 해설서 식별자. 해설서가 아니면 빈 문자열.
+
+    메타데이터의 book_id를 우선하되, 없으면 벡터 ID에서 되뽑는다 — BM25
+    코퍼스는 {id,text,title,section,source_type}만 담고 book_id가 없어서,
+    BM25로만 올라온 청크는 메타데이터만 믿으면 가드를 그대로 빠져나간다.
+    """
+    book = (hit.get("book_id") or "").strip()
+    if book:
+        return book
+
+    m = _TEXTBOOK_ID_RE.match(hit.get("id") or "")
+    if m:
+        return m.group(1)
+
+    # source_type만 아는 경우 — 서적 구분은 못 해도 상한은 걸어야 안전하다.
+    return "_unknown" if hit.get("source_type") == "textbook" else ""
+
+
+def _cap_by_book(hits: list[dict], limit: int = MAX_CHUNKS_PER_BOOK) -> list[dict]:
+    """동일 해설서(book_id)의 청크를 limit개로 제한 — 인용 가드 G4.
+
+    저작물 본문이 연속 구간째로 LLM 컨텍스트에 실려 재생산되는 것을 막는
+    구조적 상한이다. 프롬프트 규칙(G1~G3)은 소프트 가드라 이 함수가 유일한
+    확정적 통제다.
+
+    해설서가 아닌 소스(판례·행정해석·상담)는 제한하지 않는다.
+    rerank 순위는 보존한다.
+    """
+    counts: dict[str, int] = {}
+    capped: list[dict] = []
+
+    for h in hits:
+        book = _book_id_of(h)
+        if not book:
+            capped.append(h)
+            continue
+        counts[book] = counts.get(book, 0) + 1
+        if counts[book] <= limit:
+            capped.append(h)
+
+    # 서적별 폐기량은 저작권 가드의 운영 지표라 총량으로 뭉개지 않는다.
+    dropped = {b: n - limit for b, n in counts.items() if n > limit}
+    if dropped:
+        logger.info("해설서 청크 상한(G4) 적용: %s (권당 최대 %d)", dropped, limit)
+    return capped
+
+
 def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
     """Pinecone 검색 결과를 LLM 컨텍스트 텍스트 + 메타 리스트로 변환.
+
+    인용 가드 G4가 여기서 적용되므로 **출력 건수가 입력보다 적을 수 있다** —
+    동일 해설서 청크는 최대 3건까지만 통과한다.
 
     Returns:
         (formatted_text, meta_list)
@@ -310,6 +369,11 @@ def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
     """
     if not hits:
         return None, []
+
+    # 인용 가드 G4 — 이 함수는 파이프라인의 단일 초크포인트라, 여기서 걸러야
+    # 호출부가 늘어나도 가드가 새지 않는다. 컨텍스트에서 빠진 청크는
+    # meta_list(인용 화이트리스트)에서도 함께 빠진다.
+    hits = _cap_by_book(hits)
 
     parts = []
     meta_list = []
@@ -320,6 +384,7 @@ def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
             "regulation": "훈령/예규",
             "counsel": "노무사 상담",
             "qa": "상담 Q&A",
+            "textbook": "노동법 해설서",
         }.get(h["source_type"], h["source_type"])
 
         header = f"[{source_label}] {h['title']}"

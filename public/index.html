@@ -493,10 +493,16 @@
     .file-chip .remove { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; font-size: var(--text-h3); }
     .contact-bar { max-width: 100%; }
     .contact-chip { flex: 1 1 100%; min-width: 0; }
-    #chat-section, #faq-section, #board-section { padding: var(--space-6) var(--space-2); }
+    #faq-section, #board-section { padding: var(--space-6) var(--space-2); }
+    /* 좌우 여백은 #landing 한 곳에서만 준다. 섹션·채팅영역·말풍선이 각자
+       패딩을 쌓으면 390px 화면에서 본문이 244px(63%)까지 좁아진다 —
+       실측 편측 73px = landing 20 + section 16 + chat 20 + msg 16+1. */
+    #chat-section { padding: var(--space-6) 0; }
     .section-heading { font-size: var(--text-h2); }
     #faq-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .chat-card.active #chat { height: 50vh; min-height: 300px; }
+    .chat-card.active #chat { height: 50vh; min-height: 300px; padding: var(--space-2) 0; }
+    .chat-card:not(.active) #input-area { padding: var(--space-1) 0; }
+    .answer-actions { padding: var(--space-2) 0; }
     .footer-info { font-size: var(--text-label); }
     .msg.assistant .callout { padding: var(--space-1) 10px; margin: var(--space-1) 0; }
     .msg.assistant .summary-badge { padding: 10px 12px; }
@@ -1363,7 +1369,8 @@ async function readSSE(resp, onActivity) {
 function renderSources(hits, el) {
   if (!hits || !hits.length || !el) return;
   var labels = { precedent: '판례', interpretation: '행정해석', regulation: '훈령·예규',
-                 counsel: '노무사 상담', qa: '상담 Q&A' };
+                 counsel: '노무사 상담', qa: '상담 Q&A', textbook: '노동법 해설서',
+                 law_article: '법령', nlrc_case: '판정사례', graph: '지식그래프' };
   var div = document.createElement('div');
   div.className = 'sources';
   div.textContent = '근거 자료: ' + hits.map(function (h) {

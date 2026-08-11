@@ -169,12 +169,13 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="커버리지만 보고")
     args = parser.parse_args()
 
-    # 표지·목차 제외 + 알려진 OCR 표제 보정 재사용
-    from pinecone_upload_textbook import load_body, SOURCE_FILE
+    # 표지·목차 제외 + 헤딩 위생 처리 재사용 (단일 출처)
+    from pinecone_upload_textbook import load_body_normalized, BOOKS
     from fetch_court_precedents import OCR_FIXES
 
-    if not os.path.exists(SOURCE_FILE):
-        sys.exit(f"[오류] 교재 원본이 없습니다: {SOURCE_FILE}")
+    book = BOOKS["win"]
+    if not os.path.exists(book.path):
+        sys.exit(f"[오류] 교재 원본이 없습니다: {book.path}")
     if not os.path.isdir(PRECEDENT_DIR):
         sys.exit(f"[오류] 판례 디렉토리가 없습니다: {PRECEDENT_DIR}")
 
@@ -193,7 +194,7 @@ def main() -> None:
             continue
         docs[no] = (fn, md)
 
-    body = unicodedata.normalize("NFC", load_body(SOURCE_FILE))
+    body = unicodedata.normalize("NFC", load_body_normalized(book))
     index = build_case_topic_index(body, set(docs), OCR_FIXES)
 
     tagged = sum(1 for no in docs if index.get(no))

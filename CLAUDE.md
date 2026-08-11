@@ -33,12 +33,18 @@ python3 upload_new_precedents.py  # 신규 판례 증분 업로드
 python3 fetch_court_precedents.py              # output_노동법교재/누락_판례목록.csv → output_판례_보강/
 python3 fetch_court_precedents.py --limit 20   # 부분 수집(재개 지원, _progress.json)
 python3 fetch_court_precedents.py --cases <csv>  # 명시 대상 재수집(L2 중복검사 생략 — 겹침분 통일용)
+python3 fetch_court_precedents.py --input <csv>  # 입력 CSV 교체(L2 유지 — 신규 수집용, --cases와 의미가 다름)
 python3 enrich_court_precedents.py             # 교재 목차에서 '관련 쟁점' 태깅 (멱등, 저작권 경계는 스크립트 docstring)
 python3 pinecone_upload_court_precedents.py --dry-run  # 청킹 검증
 python3 pinecone_upload_court_precedents.py    # laborlaw-v2 업로드
 python3 sync_overlap_precedents.py --emit-targets      # 교재∩기존코퍼스 겹침 대상 CSV 생성 (교재 원본 필요, 로컬 전용)
 python3 sync_overlap_precedents.py --delete-ctx --dry-run  # 대체 성공분의 ctx 구벡터 삭제 (실행 전 반드시 dry-run)
 python3 test_precedent_ingest.py               # 오프라인 회귀 테스트 (API 키 불요)
+
+# 노동법 해설서 코퍼스 (본문 임베딩 + 인용 판례 추출)
+python3 pinecone_upload_textbook.py --all --dry-run   # 청킹 검증 (서적 간 chunk_id 충돌 검사 포함)
+python3 pinecone_upload_textbook.py --book juhae3     # 1권 업로드 (--all은 전권)
+python3 extract_textbook_cases.py                     # 해설서 인용 판례 → 수집 대상 CSV
 
 # Chatbot
 python3 chatbot.py                # Interactive RAG chatbot
@@ -218,12 +224,23 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - `crawl_bestqna.py` → `output/` (BEST Q&A, ~274 posts)
 - `crawl_qna.py` → `output_qna/` (general Q&A, ~10K posts, resumable via saved file detection)
 - `crawl_2025.py`, `crawl_imgum.py`, `crawl_boards.py` — variant crawlers for other board sections (2025 Q&A, 임금/근로감독 자료, 자료실)
-- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`, `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`, `output_판례_보강/`
-- 코퍼스 소스는 두 계열로 나뉜다 — **게시판 크롤 계열**(`output/`·`output_2025/`·`output_imgum/`)은 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 세트를 유지하고, **문서·API 계열**(판례·행정해석·훈령예규·counsel·`output_판례_보강/`)은 metadata.json 단계 없이 수집 스크립트 + `pinecone_upload_*` 2종이 관례다(upload가 `.md`를 직접 파싱). 새 소스 추가 시 해당 계열의 세트를 함께 추가/동기화할 것
+- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`, `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`, `output_판례_보강/`, `output_노동법교재/`(해설서 원본 + 수집 대상 CSV + `_uploaded_ids.json`)
+- 코퍼스 소스는 세 계열로 나뉜다 — **게시판 크롤 계열**(`output/`·`output_2025/`·`output_imgum/`)은 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 세트를 유지하고, **문서·API 계열**(판례·행정해석·훈령예규·counsel·`output_판례_보강/`)은 metadata.json 단계 없이 수집 스크립트 + `pinecone_upload_*` 2종이 관례다(upload가 `.md`를 직접 파싱). **해설서 계열**(`output_노동법교재/`)은 marker로 변환한 단일 `.md`를 `pinecone_upload_textbook.py`의 `BOOKS` 레지스트리에 등록하는 것으로 끝난다 — 수집 스크립트조차 없다. 새 소스 추가 시 해당 계열의 세트를 함께 추가/동기화할 것
 - **`output_판례_보강/`는 크롤러가 아니라 법제처 Open API로 채운다** (`fetch_court_precedents.py`). 사건번호 목록만 있으면 원문을 받아올 수 있는 유일한 경로다 — nodong.kr 크롤러들은 게시판 순회 방식이라 특정 사건을 지목할 수 없다. 설계·실측 근거는 `docs/02-design/features/precedent-corpus-expansion.design.md`. 주의점 셋(전부 **조용히** 실패한다):
   - **법제처 검색은 사건명 기준 fuzzy 매칭**이라 사건번호로 조회해도 무관한 판례를 반환한다(실측: `90누9421` → 6건 반환, 요청 사건 없음). 응답 XML의 `<사건번호>` 정확일치 게이트 없이 채택하면 엉뚱한 판례가 코퍼스에 섞인다.
+  - **법제처 수집 성공률 예측은 72%를 기준선으로 쓸 것.** 표본으로 잡으면 낙관 편향이 크다 — 40건 표본 95% → 전량 83%(precedent-corpus-expansion), 교재 인용 판례는 하급심·구판례 비중이 높아 다시 72%(textbook-corpus-embedding, 166건 중 120건)였다. 미달분은 법제처 DB 미수록이라 재시도해도 회수되지 않고 `_미발견.csv`에 누적된다(현재 156건).
   - **판례 중복 판정은 파일당 대표 사건번호 1개로 해야 한다.** 본문 전체를 정규식으로 긁으면 참조판례 인용까지 잡혀 "A가 B를 인용"을 "B가 코퍼스에 있음"으로 오판한다(실측: 836개 파일에서 819개가 아니라 2,450개가 잡혀 수집 대상 601건 중 133건이 부당 스킵).
   - **`prec`(법원)와 `detc`(헌재)는 XML 스키마가 다르다** — 결과 태그 대소문자(`prec`/`Detc`), `판결요지`↔`결정요지`, `판례내용`↔`전문`, `선고일자`↔`종국일자`. 법원명·판결유형은 detc에 없다.
+- **노동법 해설서 코퍼스(`source_type="textbook"`)는 저작물 본문이라 인용 가드 5종이 전제다.** 2026-08-10에 "교재 본문은 Pinecone에 올리지 않는다"는 기존 결정(`precedent-corpus-expansion` 사이클)을 **가드 구현을 조건으로 변경**했다. 가드 중 하나라도 빠지면 설계 전제가 깨진다:
+  - **G1~G3**(`app/templates/prompts.py::TEXTBOOK_CITATION_RULES`) — 축자 인용 금지·해설서 단독 근거 금지·서명 표기. **소프트 가드**라 LLM이 우회할 수 있다. **시스템 프롬프트 본문에 넣지 말 것** — 답변 경로가 `CONSULTATION_SYSTEM_PROMPT`와 `SYSTEM_PROMPT_TEMPLATE`(`pipeline.py` 인라인) 두 갈래인데 해설서 청크는 그 분기와 무관하게 컨텍스트에 실린다. 한쪽에만 넣으면 임금계산·괴롭힘 판정·법제처 실패 경로에서 저작물이 무가드로 나간다(실제로 그렇게 구현했다가 발견됨). `INJECTION_RESISTANCE`와 같이 `pipeline.py`가 두 분기 모두에 접미하고, 컨텍스트에 해설서가 실렸을 때만 붙인다.
+  - **G4**(`app/core/rag.py::_cap_by_book`, 상한 3) — **유일한 구조적 통제.** `format_pinecone_hits()` 진입부에 두는 이유는 그 함수가 파이프라인의 단일 초크포인트(`pipeline.py`에서만 호출)이기 때문이다. 다른 곳으로 옮기면 호출부가 늘 때 가드가 샌다.
+  - **G4는 BM25 경로에서 새기 쉽다** — BM25 코퍼스는 `{id,text,title,section,source_type}`만 담아 `book_id`가 없었다. `build_bm25_corpus.py`가 `book_id`를 보존하고 `rag.py::_book_id_of()`가 벡터 ID(`textbook_{book_id}_...`)에서 되뽑는 폴백을 갖는 2중 구조다. 둘 중 하나만 두면 구 코퍼스나 신규 소스에서 가드가 무력화된다.
+  - **G5** — `rag.py` 라벨 맵과 `public/index.html::renderSources`의 `labels` 양쪽. 한쪽만 고치면 raw `textbook`이 노출된다.
+  - **G6 — 해설서 근거 답변은 공개 게시판에서 제외한다**(`metadata.textbook` → `api/index.py::_PUBLIC_EXCLUDE_KEYS`). G1이 소프트 가드라 축자 인용이 새어나갈 수 있는데, 그 답변이 크롤 가능한 공개 페이지로 재게시되면 노출이 1:1 상담에서 공개 배포로 확대된다. 부착 판정과 게시판 제외는 **같은 `used_textbook` 변수**를 써야 한다 — 판정을 복제하면 한쪽만 어긋나 "가드는 붙는데 게시판엔 올라가는" 상태가 된다. 회귀는 T19b.
+  - 롤백은 `output_노동법교재/_uploaded_ids.json`의 ID 목록으로만 가능하다(Pinecone Serverless는 메타데이터 필터 삭제 미지원). 이 파일을 지우면 되돌릴 방법이 사실상 없다. 기록은 **upsert보다 먼저** 쓰고 기존 기록과 합집합을 취한다 — 중간에 죽으면 적재분이 추적에서 빠지고, 존재하지 않는 ID의 delete는 무해하므로 상위집합이 안전한 방향이다.
+- **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.
+- **해설서 헤딩 위생 처리는 "폐기만 범용, 복원은 명시 치환"이다**(`sanitize_heading`). 오폐기는 섹션 경계 하나를 잃을 뿐이지만 오복원은 코퍼스에 오정보를 남긴다. 규칙 수정 시 주의점 셋 — (1) 의미문자 비율의 **분모에서 공백·구두점을 빼야** 한다(`2. 요 건`이 2/6=0.33로 오폐기됨), (2) 조문 표기 추출은 **길이 검사보다 먼저** 해야 한다(59자짜리가 상한 60을 통과해 잡음째 살아남음), (3) `ocr_fixes`는 **원문 키**로 매칭한다(정제 후 매칭하면 정제 로직 변경 시 치환 키가 조용히 무효). 폐기율 10% 초과 시 업로드가 중단된다. 회귀는 T18.
+- **해설서에서 사건번호를 뽑을 땐 사건부호 화이트리스트가 필수다**(`extract_textbook_cases.py::CASE_RE`). 범용 `CASE_NO_RE`(`\d{2,4}[가-힣]{1,4}\d+`)는 **조문 표기를 사건번호로 오인한다** — 실측(주해Ⅲ): 308건 중 113건이 노이즈였고 상위 오탐이 `43조의2`(31회)·`43조의4`(28)·`109조2`(7)였다. 조문 해설서는 판례 수험서보다 조문 표기 밀도가 훨씬 높아 이 오염이 크다. 화이트리스트는 **긴 부호를 먼저** 나열해야 한다(`다`가 `다카`보다 앞서면 `87다카2803`이 `87다`로 잘린다). 회귀는 T20.
 - **macOS 파일명은 NFD(자모 분해)로 저장된다.** 사건번호를 파일명에서 뽑는 코드는 `unicodedata.normalize("NFC", ...)`를 먼저 걸어야 한다 — `[다두도가누]` 같은 완성형 문자 클래스는 NFD 문자열에 절대 매치되지 않고, 폴백이 연도만 잡으면 같은 해 판례들이 동일 ID로 충돌해 Pinecone에서 서로를 덮어쓴다. `pinecone_upload_legal.py::extract_post_id()`가 실제로 이 버그를 갖고 있었고(판례 836개 → 고유 post_id 362개, 474개 덮어쓰기) **2026-08-09 봉인됨**(NFC 선행 + 부호 매핑 + hex 폴백, 회귀는 `test_precedent_ingest.py` T14). 이미 손상된 `precedent` 네임스페이스 자체는 복구하지 않았다 — 프로덕션 검색 대상이 아니고, 그 안의 교재 인용 판례들은 laborlaw-v2에 `precedent_{사건번호}` ID로 재수집돼 있다.
 
 ### RAG Pipeline
@@ -305,6 +322,8 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - All `app/core/*.py` files imported by `pipeline.py` **must** be committed to git — untracked files cause Vercel import errors (500).
 
 ## Key Conventions
+
+- **gap-detector의 Match Rate는 "설계대로 만들었는가"만 답한다 — 설계 자체의 공백은 원리적으로 못 잡는다.** 실측 사례(textbook-corpus-embedding): 120항목 대조로 100%를 냈는데 그 뒤 `/simplify`와 `code-analyzer`가 High 2건을 더 찾았다. ① 답변 경로가 `CONSULTATION_SYSTEM_PROMPT`와 `SYSTEM_PROMPT_TEMPLATE` 두 갈래인 걸 설계가 놓쳐 저작물이 무가드로 LLM에 들어가고 있었고, ② Plan의 저작권 근거("코퍼스는 비공개 백엔드")가 답변이 공개 게시판에 전문 게시된다는 사실을 따지지 않았다. **Match Rate가 90%를 넘어도 그대로 배포하지 말 것** — 변경이 닿는 경로를 설계와 무관하게 훑는 리뷰를 한 번 더 거친다.
 
 - All monetary amounts in Korean Won (원), no decimal for display (use `{:,.0f}`)
 - 계산기 입력 params는 영문 키(`wage_type`, `wage_amount` 등, `pipeline.py::_run_calculator()` 규약) — 한국어는 계산 유형 라벨(`CALC_TYPE_MAP` 키, 예: "연장수당")에만 사용

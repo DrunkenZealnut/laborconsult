@@ -354,7 +354,10 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
 # metadata에 이 키가 있으면 공개 게시판에서 제외한다.
 #   guard_flag — 가드 의심(monitor) 대화 (chatbot-security FR-09)
 #   truncated  — 스트림 절단으로 완결되지 않은 답변 (llm-fallback-hardening FR-02)
-_PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated")
+#   textbook   — 저작권 있는 해설서를 근거로 쓴 답변 (textbook-corpus-embedding).
+#                축자 인용 금지(G1)는 소프트 가드라 실패할 수 있고, 그 산출물이
+#                크롤 가능한 공개 페이지로 재게시되면 노출이 크게 확대된다.
+_PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook")
 
 
 def _apply_guard_filter(query, apply_filter: bool = True):

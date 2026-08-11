@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 14,
+  "sessionCount": 18,
   "lastSession": {
-    "startedAt": "2026-08-07T06:38:37.352Z",
+    "startedAt": "2026-08-09T15:03:57.892Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -76,5 +76,14 @@
     "startedAt": "2026-08-07T00:00:00Z",
     "archivedAt": "2026-08-07T00:00:00Z",
     "archivedTo": "docs/archive/2026-08/swiss-modernism-design-system/"
+  },
+  "textbook-corpus-embedding": {
+    "phase": "archived",
+    "matchRate": 100,
+    "iterationCount": 0,
+    "startedAt": "2026-08-10T00:00:00Z",
+    "completedAt": "2026-08-11T00:00:00Z",
+    "archivedAt": "2026-08-11T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/textbook-corpus-embedding/"
   }
 }
