@@ -48,3 +48,7 @@ venv/
 
 # Playwright 검증 산출물 (페이지 스냅샷·콘솔 로그·스크린샷)
 .playwright-mcp/
+
+# 게시판 중복 정리 백업 — 상담 원문(개인정보)이 그대로 들어간다
+backup_board_dedupe_*.json
+dedupe_board_*.sql

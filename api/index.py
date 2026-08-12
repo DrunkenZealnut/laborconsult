@@ -121,6 +121,32 @@ def _client_ip(request: Request) -> str:
     return ip
 
 
+# 로컬 서버로 들어온 요청 판정용 접두사. Vercel 프로덕션은 프록시가
+# x-forwarded-for에 실 클라이언트 공인 IP를 넣으므로 여기에 해당하지 않는다.
+_LOOPBACK_PREFIXES = ("127.", "::1", "localhost")
+
+
+def _is_synthetic_request(request: Request) -> bool:
+    """비프로덕션 출처 요청인지 판정 (board-duplicate-cleanup G-B).
+
+    e2e 테스트(test_e2e.py 등)는 HTTP로 로컬 서버를 호출하므로 서버가 정상
+    hex12 세션을 발급한다 — 세션 ID로는 실사용자와 구별할 수 없어 요청 환경으로
+    판정한다.
+
+    **양성 검출만 한다.** '프로덕션임을 증명하지 못하면 합성' 방식을 쓰면
+    VERCEL_ENV가 누락된 순간 모든 실사용 대화가 합성으로 찍혀 게시판이 조용히
+    얼어붙는다. 판정 불가 상태는 실사용으로 취급한다.
+    """
+    try:
+        env = os.environ.get("VERCEL_ENV")
+        if env and env != "production":
+            return True                       # preview / development 배포
+        ip = _client_ip(request)
+        return ip.startswith(_LOOPBACK_PREFIXES)
+    except Exception:
+        return False                          # 판정 실패 → 실사용 취급
+
+
 def _guard_chat_request(
     request: Request, message: str, session_id: str | None,
 ) -> tuple[str, str | None, GuardContext]:
@@ -181,6 +207,7 @@ def _guard_chat_request(
         session_id=valid_sid or "",
         injection_mode=abuse_guard.get_injection_mode(),
         scope_mode=abuse_guard.get_scope_mode(),
+        synthetic=_is_synthetic_request(request),
     )
     return cleaned, valid_sid, ctx
 
@@ -357,7 +384,10 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
 #   textbook   — 저작권 있는 해설서를 근거로 쓴 답변 (textbook-corpus-embedding).
 #                축자 인용 금지(G1)는 소프트 가드라 실패할 수 있고, 그 산출물이
 #                크롤 가능한 공개 페이지로 재게시되면 노출이 크게 확대된다.
-_PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook")
+#   synthetic  — 벤치마크·CLI·테스트가 만든 대화 (board-duplicate-cleanup).
+#                판정은 3곳(G-A 비웹 호출·G-B 비프로덕션 요청·G-C 예약 접두사),
+#                집행은 이 한 곳이다.
+_PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "synthetic")
 
 
 def _apply_guard_filter(query, apply_filter: bool = True):

@@ -155,9 +155,35 @@ class ConversationRecord:
     metadata: dict | None = None
 
 
+# 세션 ID를 직접 만드는 호출부(벤치마크·모델비교·검증 스크립트)를 위한 규약.
+# 이 접두사로 시작하는 세션의 대화는 공개 게시판에 노출하지 않는다.
+SYNTHETIC_SESSION_PREFIXES = ("bench_", "test_", "cmp_", "verify_", "eval_")
+
+
+def _is_synthetic_session(session_id: str | None) -> bool:
+    """예약 접두사 세션인지 판정 (board-duplicate-cleanup G-C).
+
+    정상 세션 ID는 uuid4().hex[:12] 형태라 이 접두사와 겹치지 않는다
+    (16진수 문자만 나오므로 's'·'_'가 포함될 수 없다).
+    """
+    return (session_id or "").startswith(SYNTHETIC_SESSION_PREFIXES)
+
+
 def save_conversation(sb: SupabaseClient, record: ConversationRecord) -> str | None:
     """대화를 qa_conversations 테이블에 저장. 생성된 conversation_id 반환."""
     conv_id = str(uuid.uuid4())
+
+    # G-C: 예약 접두사 백스톱. save_conversation은 pipeline.py의 단일 호출부를
+    # 갖는 초크포인트라 여기에 두면 향후 저장 경로가 늘어도 가드가 새지 않는다.
+    # record.metadata를 제자리 변경하면 호출부가 이후 참조하는 값이 오염되므로
+    # 반드시 복사본을 쓴다.
+    metadata = dict(record.metadata or {})
+    try:
+        if _is_synthetic_session(record.session_id):
+            metadata["synthetic"] = True
+    except Exception as e:  # 가드 실패가 저장을 막지 않는다 (fail-open)
+        logger.warning("합성 세션 판정 실패 (저장은 계속): %s", e)
+
     try:
         ensure_session(sb, record.session_id)
         sb.table("qa_conversations").insert({
@@ -167,7 +193,7 @@ def save_conversation(sb: SupabaseClient, record: ConversationRecord) -> str | N
             "question_text": record.question_text,
             "answer_text": record.answer_text,
             "calculation_types": record.calculation_types or [],
-            "metadata": record.metadata or {},
+            "metadata": metadata,
         }).execute()
         logger.info("대화 저장 완료 (conv_id=%s, category=%s)", conv_id, record.category)
         return conv_id
