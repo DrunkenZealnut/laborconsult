@@ -153,6 +153,101 @@ def test_analysis_schema() -> None:
     print("  ✅ AnalysisResult.validation_warnings 필드")
 
 
+def test_dedupe_normalization() -> None:
+    """D1 — 중복 판정 정규화 (board-duplicate-cleanup FR-01)"""
+    import unicodedata
+    from dedupe_board import _norm_question
+
+    base = "주휴수당이 뭔가요?"
+    variants = [
+        base,
+        " 주휴수당이  뭔가요 ",           # 공백 차이
+        "주휴수당이뭔가요",                # 구두점·공백 없음
+        "주휴수당이 뭔가요???",            # 구두점 반복
+        unicodedata.normalize("NFD", base),  # 자모 분해 — NFC 선행이 없으면 갈라진다
+    ]
+    keys = {_norm_question(v) for v in variants}
+    assert len(keys) == 1, f"같은 질문이 {len(keys)}개 키로 갈림: {keys}"
+
+    assert _norm_question("연차수당이 뭔가요?") != _norm_question(base), \
+        "다른 질문이 같은 키로 병합됨"
+    assert _norm_question("???") == "", "기호만 있는 질문은 빈 키여야 함"
+    print("  ✅ dedupe 정규화: NFD/공백/구두점 흡수, 다른 질문은 분리")
+
+
+def test_dedupe_representative() -> None:
+    """D2 — 대표 선정: 최신 1건 유지 + 동률 시 결정론적 (FR-02)"""
+    from dedupe_board import pick_representative, plan_dedupe
+
+    group = [
+        {"id": "a", "created_at": "2026-03-16T00:00:00Z", "question_text": "Q"},
+        {"id": "b", "created_at": "2026-08-06T00:00:00Z", "question_text": "Q"},
+        {"id": "c", "created_at": "2026-07-01T00:00:00Z", "question_text": "Q"},
+    ]
+    rep, rest = pick_representative(group)
+    assert rep["id"] == "b", f"최신이 아닌 {rep['id']}가 선택됨"
+    assert {r["id"] for r in rest} == {"a", "c"}, rest
+
+    # created_at 동률 → id 사전순 최댓값, 그리고 재실행 시 동일 결과(멱등)
+    tie = [
+        {"id": "x1", "created_at": "2026-08-06T00:00:00Z", "question_text": "Q"},
+        {"id": "x9", "created_at": "2026-08-06T00:00:00Z", "question_text": "Q"},
+    ]
+    assert pick_representative(tie)[0]["id"] == "x9"
+    assert pick_representative(list(reversed(tie)))[0]["id"] == "x9", "순서에 따라 결과가 달라짐"
+
+    # 카테고리 불일치 그룹 검출
+    rows = [
+        {"id": "p", "created_at": "2026-01-01T00:00:00Z", "question_text": "같은 질문", "category": "해고"},
+        {"id": "q", "created_at": "2026-02-01T00:00:00Z", "question_text": "같은  질문", "category": "임금·수당"},
+        {"id": "r", "created_at": "2026-01-01T00:00:00Z", "question_text": "다른 질문", "category": "퇴직금"},
+    ]
+    keep, drop, conflicts = plan_dedupe(rows)
+    assert len(keep) == 2 and len(drop) == 1, (keep, drop)
+    assert drop[0]["id"] == "p" and len(conflicts) == 1, (drop, conflicts)
+    print("  ✅ dedupe 대표 선정: 최신 유지·동률 결정론적·카테고리 불일치 검출")
+
+
+def test_synthetic_session_guard() -> None:
+    """D3 — 합성 세션 판정 G-C (board-duplicate-cleanup FR-05)"""
+    from app.core.storage import _is_synthetic_session, SYNTHETIC_SESSION_PREFIXES
+
+    for sid in ("bench_1", "test_x", "cmp_o3_1", "verify_gpt", "eval_a"):
+        assert _is_synthetic_session(sid), f"합성 세션 미검출: {sid}"
+
+    # 실사용 세션은 uuid4().hex[:12] — 16진수라 예약 접두사와 겹칠 수 없다
+    for sid in ("a1b2c3d4e5f6", "0123456789ab", "deadbeefcafe", "", None):
+        assert not _is_synthetic_session(sid), f"정상 세션 오탐: {sid}"
+
+    assert all(p.endswith("_") for p in SYNTHETIC_SESSION_PREFIXES), \
+        "접두사는 '_'로 끝나야 hex12와 충돌하지 않는다"
+    print("  ✅ 합성 세션 판정: 예약 접두사 5종 검출, hex12 오탐 0")
+
+
+def test_public_exclude_keys() -> None:
+    """D4 — 공개 제외 집행 G-D (board-duplicate-cleanup FR-06)"""
+    from dedupe_board import PUBLIC_EXCLUDE_KEYS, is_public_excluded
+
+    for key in ("guard_flag", "truncated", "textbook", "synthetic"):
+        assert key in PUBLIC_EXCLUDE_KEYS, f"제외 키 누락: {key}"
+
+    assert is_public_excluded({"synthetic": True})
+    assert is_public_excluded({"guard_flag": "scope_monitor"})
+    assert not is_public_excluded({"has_attachments": True})
+    assert not is_public_excluded({"synthetic": False}), "False는 제외 대상이 아니다"
+    assert not is_public_excluded(None) and not is_public_excluded("문자열")
+
+    # api/index.py 와 계약이 어긋나면 게시판과 스크립트가 서로 다른 집합을 본다
+    import re as _re
+    src = open("api/index.py", encoding="utf-8").read()
+    m = _re.search(r"_PUBLIC_EXCLUDE_KEYS = \(([^)]*)\)", src)
+    assert m, "api/index.py에서 _PUBLIC_EXCLUDE_KEYS를 찾지 못함"
+    api_keys = tuple(_re.findall(r'"([^"]+)"', m.group(1)))
+    assert api_keys == PUBLIC_EXCLUDE_KEYS, \
+        f"api/index.py {api_keys} ≠ dedupe_board.py {PUBLIC_EXCLUDE_KEYS}"
+    print("  ✅ 공개 제외 키 4종 + api/index.py 와 계약 일치")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -162,6 +257,10 @@ def main() -> None:
     test_pipeline_helpers()
     test_session_cache_scope()
     test_analysis_schema()
+    test_dedupe_normalization()
+    test_dedupe_representative()
+    test_synthetic_session_guard()
+    test_public_exclude_keys()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 

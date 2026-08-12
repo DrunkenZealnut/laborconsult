@@ -91,6 +91,10 @@ class GuardContext:
     session_id: str = ""
     injection_mode: str = "monitor"
     scope_mode: str = "monitor"
+    # 비프로덕션 출처(로컬 서버·preview 배포) 요청 표식.
+    # 파이프라인이 metadata.synthetic으로 옮겨 공개 게시판 노출에서 제외한다
+    # (board-duplicate-cleanup G-B). 기본값이 있어야 기존 생성부가 깨지지 않는다.
+    synthetic: bool = False
 
 
 @dataclass
