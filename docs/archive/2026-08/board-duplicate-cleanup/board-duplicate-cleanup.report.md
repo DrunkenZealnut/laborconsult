@@ -4,7 +4,7 @@
 > Design: `board-duplicate-cleanup.design.md`
 > Analysis: `board-duplicate-cleanup.analysis.md`
 > 기간: 2026-08-12 ~ 2026-08-13 (2일)
-> Commit: `dc98e0d` (PR #47, main 머지) + Check 이후 보정분
+> Commit: `dc98e0d` (PR #47 — 정리 실행 + 가드 도입) → `a0602da` (PR #48 — 갭 6건 해소 + 단일 출처화 + 아카이브) → CodeRabbit 리뷰 반영분
 
 ## Executive Summary
 
@@ -79,7 +79,7 @@
 PostgREST는 DELETE에 **200 OK + 빈 배열**을 반환한다. 첫 `--apply`가 **"225/225 삭제"를 출력하고
 실제로는 0건**을 지웠다.
 
-```
+```python
 try:
     sb.table("qa_conversations").delete().in_("id", batch).execute()   # ← 예외 없음
     done += len(batch)                                                  # ← 거짓 성공
@@ -155,6 +155,36 @@ fail-open 가드의 실패는 조용하다는 것이 chatbot-security 사이클�
 `in_()` 배치보다 훨씬 느리지만 의도적이다 — 배치 응답이 페이지 한계에서 잘리면 살아있는 세션이
 고아로 오판돼 유지 대상이 증발한다. **틀리는 비용이 데이터 파괴이고 이득이 수십 초면 교환이
 성립하지 않는다.**
+
+### 3.7 같은 클래스의 버그는 형제 함수에 그대로 남는다
+
+§3.1의 RLS 발견은 `_delete_batches()`를 고치는 것으로 끝났다고 생각했다. CodeRabbit 리뷰가
+`_purge_orphan_sessions()`를 지적하면서 확인해 보니, **같은 파일 안의 형제 함수가 정확히 그
+버그를 그대로 갖고 있었다.**
+
+```python
+# _delete_batches — 고침
+affected = len(res.data or [])
+if affected == 0:
+    raise RLSBlocked(...)
+
+# _purge_orphan_sessions — 안 고쳐져 있었다
+sb.table("qa_sessions").delete().eq("id", sid).execute()
+done += 1                                    # ← 예외 없음 = 성공으로 간주
+```
+
+`qa_sessions`의 anon 정책도 `INSERT`/`SELECT`/`UPDATE`뿐이라(`supabase_schema.sql:47-49`)
+DELETE가 똑같이 조용히 차단된다. 즉 `--purge-sessions`는 **"85건 정리 완료"를 출력하고 0건을
+지우는** 상태였다. 이번 사이클에서 이 옵션을 쓰지 않은 덕에 드러나지 않았을 뿐이다.
+
+교훈은 발견 자체가 아니라 **발견을 적용하는 범위**다. "이 실패 모드를 고쳤다"가 아니라
+"이 실패 모드가 가능한 지점을 전부 찾았다"여야 했는데, 같은 파일 안조차 훑지 않았다.
+`§3.1`의 서술이 "고쳤다"로 끝나 있어 **다 고쳤다는 잘못된 신호**를 준 것도 같은 유형이다
+(textbook 사이클의 "주석이 작동한다는 잘못된 신호를 줬다"와 동형).
+
+CodeRabbit은 이 지점을 **TOCTOU 원자성 문제**로 지적했는데, 그 처방(단일 트랜잭션 RPC)은
+맞지만 전제가 어긋나 있었다 — anon 키로는 DELETE가 **애초에 일어나지 않으므로** 경합 창을
+논하기 전에 무성 실패가 먼저다. 지적된 라인은 옳았고 진단은 절반만 맞았다.
 
 ---
 
@@ -245,13 +275,15 @@ Check 이후 `/simplify` 패스에서 추가로 정리된 것: `PUBLIC_EXCLUDE_K
 
 | # | 항목 | 상태 |
 |---|------|------|
-| 1 | **CLAUDE.md 문구 드리프트** — "`dedupe_board.py::PUBLIC_EXCLUDE_KEYS`가 같은 집합을 재선언하므로 양쪽을 함께 갱신할 것"이 **사실과 다름**. `/simplify` 이후 `app/core/storage.py` 단일 출처를 import한다 | ⚠️ **즉시 수정 권장** |
-| 2 | 설계 §5.7 "이미 삭제된 id의 DELETE는 0행 → 무해(멱등)" vs §5.8 "0행이면 `RLSBlocked`" 문구 정합 | ⏸ 실무 충돌 없음(`drop` 목록이 매 실행 새 조회에서 산출) — 문구만 정합화 |
-| 3 | **`board_posts.nickname` 스키마 드리프트** — `api/index.py`가 없는 컬럼을 select해 PostgREST 42703이 `try/except`에 삼켜진다. 현재 0행이라 무증상이나 **사용자 글이 등록되는 순간 게시판에서 통째로 사라진다** | 🔴 별도 사이클 (Plan §7.1 Out of Scope) |
-| 4 | 잔존 238건 중 105건이 `bench_*` 소속 | 의도적 수용 — 방침 변경 시 백필 필요 |
-| 5 | `x-forwarded-for` 무검증 신뢰 — 같은 헤더가 rate limit `subject_key`에도 쓰인다 | 이번 범위 밖. 게시판 영향은 "자기 글이 숨겨질 뿐"이라 Low지만 rate limit 쪽은 별도 검토 가치 |
-| 6 | `_verify()`가 삭제~재조회 사이의 신규 저장을 고려하지 않음 | 설계 ⑦-4도 같은 한계 — 프로덕션 트래픽 중 `--apply` 시 오탐 가능 |
-| 7 | 고아 세션 85개 | 공개 경로가 세션을 읽지 않아 무해, 365일 보존기간 purge 대상 |
+| 1 | CLAUDE.md 문구 드리프트 — "`dedupe_board.py`가 재선언" 서술 | ✅ 해소 (PR #48) — 단일 출처 계약으로 교체 |
+| 2 | 설계 §5.7 vs §5.8 0행 규칙 모순 | ✅ 해소 (CodeRabbit 리뷰) — §5.7에 정정 주석. 멱등의 근거는 "0행이 무해해서"가 아니라 "0행이 될 id를 보내지 않아서"다 |
+| 3 | `_verify()`가 삭제~재조회 사이의 신규 저장을 고려하지 않음 | ✅ 문서화 (CodeRabbit 리뷰) — 오탐 방향임과 유지보수 창 권고를 docstring에 명시. 구조적 해소는 cutoff 스냅샷이 필요해 보류 |
+| 4 | **백업 JSON·생성 SQL이 저장소 루트에 평문으로 남아 있다** (1.2MB / 상담 원문 225건). `.gitignore`는 커밋만 막고 로컬 디스크·백업 도구·운영자 사본은 보호하지 않는다 | ⚠️ **파기 또는 저장소 밖 이전 필요** — 삭제 검증은 이미 끝났다. 지침은 `dedupe_board.py` docstring |
+| 5 | **`board_posts.nickname` 스키마 드리프트** — `api/index.py`가 없는 컬럼을 select해 PostgREST 42703이 `try/except`에 삼켜진다. 현재 0행이라 무증상이나 **사용자 글이 등록되는 순간 게시판에서 통째로 사라진다** | 🔴 별도 사이클 (Plan §7.1 Out of Scope) |
+| 6 | `--purge-sessions`의 조회~삭제 TOCTOU — 그 사이 저장된 대화가 CASCADE로 사라지고 **백업 어디에도 없다** | ⏸ 미사용 경로. 유지보수 창 요구를 docstring에 명시. 구조적 해소는 `DELETE ... WHERE NOT EXISTS ... RETURNING` RPC 필요(어차피 RLS 때문에 RPC가 필요하므로 함께 처리) |
+| 7 | 잔존 238건 중 105건이 `bench_*` 소속 | 의도적 수용 — 방침 변경 시 백필 필요 |
+| 8 | `x-forwarded-for` 무검증 신뢰 — 같은 헤더가 rate limit `subject_key`에도 쓰인다 | 이번 범위 밖. 게시판 영향은 "자기 글이 숨겨질 뿐"이라 Low지만 rate limit 쪽은 별도 검토 가치 |
+| 9 | 고아 세션 85개 | 공개 경로가 세션을 읽지 않아 무해, 365일 보존기간 purge 대상. 정리하려면 SQL Editor나 service role 필요(§3.7) |
 
 ---
 
@@ -260,3 +292,4 @@ Check 이후 `/simplify` 패스에서 추가로 정리된 것: `PUBLIC_EXCLUDE_K
 | 버전 | 일자 | 내용 |
 |------|------|------|
 | 1.0 | 2026-08-13 | 완료 보고. Match Rate 96.2%, 중복 225건 정리(463→238), 합성 차단 4단 가드, 갭 6건 전부 해소. RLS DELETE 무성 차단 발견 포함 |
+| 1.1 | 2026-08-13 | CodeRabbit 리뷰(PR #48) 반영. **`_purge_orphan_sessions()`가 §3.1의 RLS 무성 차단 버그를 그대로 갖고 있던 것을 발견·수정**(§3.7 신설) — `qa_sessions`도 anon DELETE 정책이 없어 "N건 정리 완료"를 출력하고 0건을 지우는 상태였다. 그밖에 설계 §5.7 문구 정합, `_verify()`·`--purge-sessions`의 한계를 docstring에 명시, 백업 파일 파기 지침 추가 |

@@ -22,6 +22,13 @@ qa_conversations.session_id가 qa_sessions를 FK로 참조하므로 순서를 �
 삽입이 실패한다. 사이드카가 없으면(= --purge-sessions 미사용) 세션이 그대로
 살아 있으므로 대화만 넣으면 된다.
 
+⚠️ **백업·생성 SQL은 상담 원문 평문 덤프다**(백업 JSON은 질문·답변 전문, .sql은
+   대화 UUID). `.gitignore`가 커밋만 막을 뿐 로컬 디스크·백업 도구·운영자 사본은
+   보호하지 않는다 — 이 파일들은 개인정보처리방침의 보유기간 대상 데이터와 같은
+   내용이므로, **삭제 검증이 끝나면 파기하거나 저장소 밖 암호화 위치로 옮길 것.**
+   보관한다면 `--backup-dir`로 저장소 바깥을 지정하는 편이 낫다. 되돌릴 필요가
+   남아 있는 동안만 존재해야 하는 파일이다.
+
 이 모듈의 순수 함수(_norm_question·pick_representative·group_by_question)는
 test_offline_units.py가 import한다 — Supabase 클라이언트 생성은 main() 안에서만
 하므로 API 키 없이도 import된다.
@@ -231,6 +238,18 @@ def _purge_orphan_sessions(sb, session_ids: set[str], sidecar_path: str) -> int:
        페이지 한계에서 잘리면 살아있는 세션이 목록에서 빠져 **고아로 오판**되고
        유지 대상 대화가 CASCADE로 증발한다. 이 함수에서 틀리는 비용은 데이터
        파괴이고 이득은 수십 초라 교환이 성립하지 않는다.
+
+    ⚠️ **쓰기가 멈춘 유지보수 창에서만 실행할 것.** 잔여 대화 조회와 세션 DELETE는
+       별도 요청이라 그 사이에 해당 세션으로 새 대화가 저장되면 CASCADE가 그것까지
+       지운다. 그 대화는 `drop` 목록에도 사이드카 백업에도 없으므로 **복구 불가**다.
+       창을 닫으려면 `DELETE ... WHERE NOT EXISTS (...) RETURNING`을 단일
+       SECURITY DEFINER RPC로 돌려야 하는데, 아래 이유로 어차피 RPC가 필요하다.
+
+    ⚠️ **qa_sessions에도 anon DELETE 정책이 없다**(supabase_schema.sql:47-49 —
+       INSERT/SELECT/UPDATE뿐). `_delete_batches()`와 똑같이 PostgREST가 에러 없이
+       0행을 반환하므로 반영 행 수를 확인하지 않으면 "N건 정리 완료"를 출력하고도
+       아무것도 지워지지 않는다. anon 키로는 이 경로가 항상 `RLSBlocked`로 끝나는
+       것이 정상이며, 실제 정리는 SQL Editor나 service role이 필요하다.
     """
     purged: list[dict] = []
     orphans: list[str] = []
@@ -264,10 +283,19 @@ def _purge_orphan_sessions(sb, session_ids: set[str], sidecar_path: str) -> int:
     done = 0
     for sid in orphans:
         try:
-            sb.table("qa_sessions").delete().eq("id", sid).execute()
-            done += 1
+            res = sb.table("qa_sessions").delete().eq("id", sid).execute()
         except Exception as e:
             print(f"  ⚠️ 세션 {sid} 삭제 실패 (건너뜀): {e}")
+            continue
+        # 예외가 아니라 반영 행 수로 판정한다 — RLS 차단은 200 OK + 빈 배열이다.
+        if not (res.data or []):
+            raise RLSBlocked(
+                f"세션 DELETE가 0행 반영됨 (id={sid}, 대상 {len(orphans)}건). "
+                "qa_sessions에 anon DELETE 정책이 없어 조용히 차단된 상태입니다 — "
+                f"세션 정리는 SQL Editor나 service role로 수행하세요. "
+                f"백업은 {sidecar_path}에 있습니다."
+            )
+        done += len(res.data)
     return done
 
 
@@ -311,6 +339,12 @@ def _verify(sb, expected_keep: int) -> bool:
     질문이 기호뿐인 행(빈 키)을 폐기하므로 `plan_dedupe()`의 keep/drop 어디에도
     들어가지 않는데, 행 수로 비교하면 그런 행 N건이 그대로 불일치로 잡혀
     삭제가 정상인데도 경고가 뜬다.
+
+    ⚠️ 기대값은 `--apply` 시작 시점의 스냅샷이라 삭제~재조회 사이에 저장된 신규
+       대화를 모르고, 그만큼 그룹 수가 늘어 **불일치로 보고된다**(오탐 방향이라
+       데이터는 안전하다). 프로덕션 트래픽 중 실행했다면 경고를 그대로 실패로
+       읽지 말고 증가분이 신규 저장인지 확인할 것 — 쓰기가 멈춘 유지보수 창에서
+       실행하면 이 모호함이 없다.
     """
     rows = [r for r in _fetch_all(sb, "question_text, metadata")
             if not is_public_excluded(r.get("metadata"))]
