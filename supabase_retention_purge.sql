@@ -104,6 +104,19 @@ REVOKE ALL ON FUNCTION laborconsult.storage_purge_claim(INT)
 REVOKE ALL ON FUNCTION laborconsult.storage_purge_mark(BIGINT, BOOLEAN, TEXT)
     FROM PUBLIC, anon, authenticated;
 
+-- ⚠️ **service_role 에는 명시적으로 부여해야 한다.**
+--    함수는 생성 시 PUBLIC 에 EXECUTE 가 기본 부여되고, public 스키마에서는
+--    Supabase 의 default privileges 가 service_role 에도 따로 부여해 준다.
+--    커스텀 스키마는 그 대상이 아니므로, 위에서 PUBLIC 을 회수하는 순간
+--    service_role 의 유일한 경로까지 사라진다(service_role 은 BYPASSRLS 일 뿐
+--    superuser 가 아니다).
+--    2026-08-13 실측: 회수만 하고 부여를 빠뜨려 purge_storage_orphans.py 가
+--    `42501 permission denied for function storage_purge_claim` 로 죽었다.
+--    테이블 GRANT 누락(supabase_schema.sql §5-1)과 같은 클래스의 함정이다.
+GRANT EXECUTE ON FUNCTION laborconsult.storage_purge_claim(INT) TO service_role;
+GRANT EXECUTE ON FUNCTION laborconsult.storage_purge_mark(BIGINT, BOOLEAN, TEXT)
+    TO service_role;
+
 
 -- ═══ §1. 파기 함수 ═══════════════════════════════════════════════════════════
 
@@ -212,6 +225,11 @@ BEGIN
 END;
 $$;
 
+-- ⚠️ service_role 에도 **일부러 부여하지 않는다.** 위의 storage_purge_* 와 다른
+--    판단이다 — 그 둘은 purge_storage_orphans.py 가 service_role 키로 호출해야
+--    하지만, 이 함수는 pg_cron 이 `postgres` 역할로 실행한다(superuser 라 권한
+--    부여가 필요 없다). 데이터를 영구 삭제하는 함수이므로 호출 경로를 좁게 둔다.
+--    수동 실행이 필요하면 SQL Editor(=postgres)에서 §3 을 쓸 것.
 REVOKE ALL ON FUNCTION laborconsult.purge_expired_data(INT, INT)
     FROM PUBLIC, anon, authenticated;
 
