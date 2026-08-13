@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 19,
+  "sessionCount": 20,
   "lastSession": {
-    "startedAt": "2026-08-12T11:46:49.395Z",
+    "startedAt": "2026-08-12T22:29:12.504Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -87,9 +87,11 @@
     "archivedTo": "docs/archive/2026-08/textbook-corpus-embedding/"
   },
   "board-duplicate-cleanup": {
-    "phase": "do",
-    "matchRate": 0,
+    "phase": "archived",
+    "matchRate": 96,
     "iterationCount": 0,
-    "startedAt": "2026-08-12T00:00:00Z"
+    "startedAt": "2026-08-12T00:00:00Z",
+    "archivedAt": "2026-08-13T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/board-duplicate-cleanup/"
   }
 }

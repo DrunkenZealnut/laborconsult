@@ -177,7 +177,7 @@ def test_dedupe_normalization() -> None:
 
 def test_dedupe_representative() -> None:
     """D2 — 대표 선정: 최신 1건 유지 + 동률 시 결정론적 (FR-02)"""
-    from dedupe_board import pick_representative, plan_dedupe
+    from dedupe_board import pick_representative, plan_dedupe, keep_of, drop_of
 
     group = [
         {"id": "a", "created_at": "2026-03-16T00:00:00Z", "question_text": "Q"},
@@ -202,9 +202,14 @@ def test_dedupe_representative() -> None:
         {"id": "q", "created_at": "2026-02-01T00:00:00Z", "question_text": "같은  질문", "category": "임금·수당"},
         {"id": "r", "created_at": "2026-01-01T00:00:00Z", "question_text": "다른 질문", "category": "퇴직금"},
     ]
-    keep, drop, conflicts = plan_dedupe(rows)
-    assert len(keep) == 2 and len(drop) == 1, (keep, drop)
-    assert drop[0]["id"] == "p" and len(conflicts) == 1, (drop, conflicts)
+    plan = plan_dedupe(rows)
+    keep, drop = keep_of(plan), drop_of(plan)
+    assert len(keep) == 2, keep
+    assert len(drop) == 1, drop
+    assert drop[0]["id"] == "p", drop
+    conflicts = [(rep, rest) for rep, rest in plan
+                 if {r.get("category") for r in rest} - {rep.get("category")}]
+    assert len(conflicts) == 1, conflicts
     print("  ✅ dedupe 대표 선정: 최신 유지·동률 결정론적·카테고리 불일치 검출")
 
 
@@ -221,31 +226,63 @@ def test_synthetic_session_guard() -> None:
 
     assert all(p.endswith("_") for p in SYNTHETIC_SESSION_PREFIXES), \
         "접두사는 '_'로 끝나야 hex12와 충돌하지 않는다"
-    print("  ✅ 합성 세션 판정: 예약 접두사 5종 검출, hex12 오탐 0")
+
+    # 호출부의 metadata 원본을 제자리 변경하면 파이프라인이 이후 참조하는 값이
+    # 오염된다(Design §4.3). 실제 save_conversation을 거쳐야 방어력이 있으므로
+    # Supabase 클라이언트를 스텁으로 주입한다.
+    from app.core.storage import save_conversation, ConversationRecord
+
+    captured: dict = {}
+
+    class _StubSB:
+        def table(self, *a, **kw): return self
+        def select(self, *a, **kw): return self
+        def eq(self, *a, **kw): return self
+        def update(self, *a, **kw): return self
+        def insert(self, payload, *a, **kw):
+            captured.update(payload)
+            return self
+        def execute(self, *a, **kw):
+            return type("R", (), {"data": []})()
+
+    original = {"has_attachments": False}
+    rec = ConversationRecord(session_id="bench_42", category="임금·수당",
+                             question_text="Q", answer_text="A", metadata=original)
+    save_conversation(_StubSB(), rec)
+    assert captured["metadata"].get("synthetic") is True, captured["metadata"]
+    assert "synthetic" not in original, f"호출부 metadata 원본이 변형됨: {original}"
+    assert rec.metadata is original, "record.metadata 참조가 교체됨"
+
+    captured.clear()
+    save_conversation(_StubSB(), ConversationRecord(
+        session_id="a1b2c3d4e5f6", category="해고", question_text="Q", answer_text="A"))
+    assert "synthetic" not in captured["metadata"], captured["metadata"]
+
+    print("  ✅ 합성 세션 판정: 예약 접두사 5종 검출, hex12 오탐 0, 원본 metadata 비변형")
 
 
 def test_public_exclude_keys() -> None:
-    """D4 — 공개 제외 집행 G-D (board-duplicate-cleanup FR-06)"""
-    from dedupe_board import PUBLIC_EXCLUDE_KEYS, is_public_excluded
+    """D4 — 공개 제외 집행 G-D (board-duplicate-cleanup FR-06)
+
+    게시판(api/index.py)·정리 스크립트(dedupe_board.py)·저장부(pipeline.py)가
+    같은 집합을 보는지는 **import가 구조적으로 보장**한다(단일 출처는
+    app/core/storage.py). 여기서는 계약 내용만 고정한다.
+    """
+    from app.core.storage import PUBLIC_EXCLUDE_KEYS, is_public_excluded
+    from dedupe_board import PUBLIC_EXCLUDE_KEYS as SCRIPT_KEYS
 
     for key in ("guard_flag", "truncated", "textbook", "synthetic"):
         assert key in PUBLIC_EXCLUDE_KEYS, f"제외 키 누락: {key}"
+    assert SCRIPT_KEYS is PUBLIC_EXCLUDE_KEYS, "정리 스크립트가 별도 집합을 씀"
 
     assert is_public_excluded({"synthetic": True})
     assert is_public_excluded({"guard_flag": "scope_monitor"})
     assert not is_public_excluded({"has_attachments": True})
+    # PostgREST 필터는 키 부재(IS NULL)로 판정하므로 명시적 False를 쓰면 두 경로가
+    # 갈라진다 — 이 키들은 True로만 기록한다는 계약을 여기서 고정한다.
     assert not is_public_excluded({"synthetic": False}), "False는 제외 대상이 아니다"
     assert not is_public_excluded(None) and not is_public_excluded("문자열")
-
-    # api/index.py 와 계약이 어긋나면 게시판과 스크립트가 서로 다른 집합을 본다
-    import re as _re
-    src = open("api/index.py", encoding="utf-8").read()
-    m = _re.search(r"_PUBLIC_EXCLUDE_KEYS = \(([^)]*)\)", src)
-    assert m, "api/index.py에서 _PUBLIC_EXCLUDE_KEYS를 찾지 못함"
-    api_keys = tuple(_re.findall(r'"([^"]+)"', m.group(1)))
-    assert api_keys == PUBLIC_EXCLUDE_KEYS, \
-        f"api/index.py {api_keys} ≠ dedupe_board.py {PUBLIC_EXCLUDE_KEYS}"
-    print("  ✅ 공개 제외 키 4종 + api/index.py 와 계약 일치")
+    print("  ✅ 공개 제외 키 4종 계약 + 단일 출처(app/core/storage.py) 공유")
 
 
 def main() -> None:

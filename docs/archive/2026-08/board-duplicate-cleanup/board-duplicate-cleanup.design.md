@@ -6,7 +6,7 @@
 > **Author**: Claude
 > **Date**: 2026-08-12
 > **Status**: Draft
-> **Planning Doc**: [board-duplicate-cleanup.plan.md](../../01-plan/features/board-duplicate-cleanup.plan.md)
+> **Planning Doc**: [board-duplicate-cleanup.plan.md](board-duplicate-cleanup.plan.md)
 
 ---
 
@@ -84,7 +84,11 @@ test_legal_cases_e2e.py                 ▼
 |------|------|-----------|-------------|-----------|
 | **G-A** | `pipeline.py:2083` 부근 | `guard_ctx is None` | 프로그램에서 직접 파이프라인을 부르는 모든 호출부 | `bench_*` 225, `test_*` 9, CLI |
 | **G-B** | `api/index.py::_guard_chat_request` | 비프로덕션 요청 | HTTP로 로컬/preview 서버를 때리는 e2e 테스트 | hex12 중 32건 유형 |
-| **G-C** | `storage.py::save_conversation` | `session_id` 예약 접두사 | 위 둘을 우회한 저장 (초크포인트 백스톱) | `cmp_*` 51, `verify_*` 등 |
+| **G-C** | `storage.py::save_conversation` | `session_id` 예약 접두사 | 위 둘을 우회한 저장 (초크포인트 백스톱) | **현재 단독 검출 0건** — 아래 주석 참조 |
+
+> ⚠️ **G-C 커버리지 정정 (2026-08-12, /simplify 리뷰)**: 초안은 G-C 담당을 "`cmp_*` 51, `verify_*` 등"으로 적었으나 **사실과 다르다.** `cmp_*`는 `compare_llm_models.py`가 `guard_ctx` 없이 파이프라인을 부르는 **G-A 케이스**이고, `verify_*`·`eval_*`는 저장소에 사용처가 0건이다. 예약 접두사 세션은 인프로세스 호출부에서만 생긴다 — 웹 경로는 `abuse_guard._SESSION_ID_RE`(`^[A-Za-z0-9-]{8,64}$`)가 언더스코어를 받지 않아 클라이언트가 `test_foo`를 보내도 폐기하고 신규 hex12를 발급하기 때문이다. 그 집합은 정확히 `guard_ctx is None`, 즉 G-A가 이미 덮는 범위다.
+>
+> **부하를 지는 것은 G-A다.** G-C는 무해한 백스톱으로 남기되, "G-C가 접두사를 다 잡으니 G-A는 중복"이라 판단해 **G-A를 제거하지 말 것.**
 | **G-D** | `api/index.py:360` | `metadata.synthetic` 존재 | **집행** — 목록·검색·상세 전 경로 | — |
 
 **G-A가 광의 규칙이고 G-C는 백스톱이다.** G-A만으로 대부분이 잡히지만, `save_conversation()`이 `pipeline.py:2118` 단일 호출부를 갖는 유일한 초크포인트이므로 여기에도 판정을 남겨 둔다. 향후 파이프라인을 거치지 않는 저장 경로가 생겨도 접두사 규약을 지키는 한 새지 않는다.
@@ -333,7 +337,9 @@ keep, drop = group[-1], group[:-1]
 | API | `sb.table("qa_conversations").delete().in_("id", batch).execute()` | |
 | **반영 행 수 확인** | `len(res.data)` 이 0이면 `RLSBlocked` 예외 | **§5.8 참조 — 필수** |
 | 실패 처리 | 해당 배치에서 중단, 진행분·잔여분 리포트 후 비정상 종료 | 부분 삭제 상태를 숨기지 않는다 |
-| 재실행 | 이미 삭제된 id의 DELETE는 0행 영향 → 무해 | 멱등 |
+| 재실행 | `drop` 목록은 매 실행 새 조회에서 산출되므로 **이미 삭제된 id가 배치에 들어가지 않는다** | 멱등 |
+
+> ⚠️ **§5.7 재실행 항목 정정 (2026-08-13, CodeRabbit 리뷰)**: 초안은 "이미 삭제된 id의 DELETE는 0행 영향 → 무해"라 적었으나, 같은 날 추가된 §5.8은 **0행을 `RLSBlocked` 예외**로 처리하도록 요구한다. 구현은 §5.8을 따르므로 초안 문구대로면 재실행이 예외로 끝난다는 모순이 된다. 실제로는 `plan_dedupe()`가 매 실행 현재 데이터를 다시 조회하므로 이미 삭제된 id는 애초에 배치에 포함되지 않아 충돌이 발생하지 않는다 — 멱등성의 근거는 "0행이 무해해서"가 아니라 "0행이 될 id를 보내지 않아서"다. 동시 삭제(다른 프로세스가 같은 id를 먼저 지우는 경우)까지 멱등으로 지원하려면 별도의 존재 여부 확인 규칙이 필요하며, 단일 운영자 실행을 전제한 이 스크립트의 범위 밖이다.
 
 ### 5.8 ⚠️ RLS가 DELETE를 무성 차단한다 — 실행 중 발견 (2026-08-12)
 

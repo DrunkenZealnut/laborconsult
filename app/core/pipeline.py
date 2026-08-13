@@ -2098,8 +2098,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # None이면 비웹 호출이다 — ABUSE_GUARD_MODE=off에서도 _guard_chat_request()는
     # 모드 값만 "off"인 GuardContext를 만들어 반환하므로 웹 경로에서 None이 되지 않는다.
     # guard_ctx.synthetic은 비프로덕션 출처 HTTP 요청 표식(G-B)이다.
-    # getattr 폴백: GuardContext를 직접 구성하는 기존 테스트가 새 필드를 몰라도 깨지지 않게.
-    if guard_ctx is None or getattr(guard_ctx, "synthetic", False):
+    if guard_ctx is None or guard_ctx.synthetic:
         conv_metadata["synthetic"] = True
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
     conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
