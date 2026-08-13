@@ -146,14 +146,13 @@ def _init_supabase():
     if _supabase_checked:
         return _supabase_client
     _supabase_checked = True
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if url and key:
-        try:
-            from supabase import create_client
-            _supabase_client = create_client(url, key)
-        except Exception as e:
-            logger.debug("Supabase 초기화 실패: %s", e)
+    try:
+        # 접속 생성은 storage.make_supabase_client 단일 경로 — 여기서 create_client 를
+        # 직접 부르면 스키마 옵션이 빠져 law_article_cache 조회가 public 으로 샌다.
+        from app.core.storage import make_supabase_client
+        _supabase_client = make_supabase_client()
+    except Exception as e:
+        logger.debug("Supabase 초기화 실패: %s", e)
     return _supabase_client
 
 
@@ -163,13 +162,16 @@ def _l2_cache_get(key: str) -> str | None:
     if sb is None:
         return None
     try:
+        # ⚠️ maybe_single().execute() 는 0행일 때 응답 객체가 아니라 None 을 반환한다.
+        #    캐시 미스는 정상 경로인데 그대로 .data 를 읽으면 매번 예외가 나
+        #    아래 except 로 떨어진다(동작은 같으나 원인 진단이 흐려진다).
         resp = sb.table("law_article_cache") \
             .select("content") \
             .eq("cache_key", key) \
             .gt("expires_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())) \
             .maybe_single() \
             .execute()
-        if resp.data:
+        if resp is not None and resp.data:
             return resp.data["content"]
     except Exception as e:
         logger.debug("L2 캐시 조회 실패 (%s): %s", key, e)

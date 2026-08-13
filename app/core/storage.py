@@ -4,12 +4,54 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import uuid
 from dataclasses import dataclass
 
 from supabase import Client as SupabaseClient
 
 logger = logging.getLogger(__name__)
+
+
+# ── Supabase 접속 ───────────────────────────────────────────────────────────
+#
+# ⚠️ **기본 스키마는 public 이 아니라 laborconsult 다.**
+#    2026-08-13, 이 프로젝트는 다른 앱과 Supabase public 스키마를 공유하다가
+#    board_posts 이름 충돌로 남의 테이블을 자기 것으로 오인했다(구 단위 권한
+#    모델을 쓰는 별개 앱이었다). public 으로 떨어지면 같은 사고가 재발한다.
+#
+# ⚠️ **접속은 반드시 이 함수로만 만들 것.** create_client() 를 직접 부르면
+#    스키마 옵션이 빠져 public 으로 새고, 그 실패가 조용하다 — 테이블이 없으면
+#    PGRST205, 있으면 남의 것을 건드린다.
+#
+# 여기(app/core/storage.py)에 두는 이유는 PUBLIC_EXCLUDE_KEYS·BOARD_POST_COLUMNS
+# 와 같다 — FastAPI·pipeline·API 키에 의존하지 않아 앱과 운영 스크립트가 모두
+# import 할 수 있는 유일한 지점이다.
+SUPABASE_SCHEMA_DEFAULT = "laborconsult"
+
+
+def make_supabase_client(url: str | None = None, key: str | None = None):
+    """laborconsult 스키마로 고정된 Supabase 클라이언트. 미설정 시 None."""
+    url = url or os.getenv("SUPABASE_URL")
+    key = key or os.getenv("SUPABASE_KEY")
+    if not (url and key):
+        return None
+
+    schema = os.getenv("SUPABASE_SCHEMA") or SUPABASE_SCHEMA_DEFAULT
+    if schema == "public":
+        # 값으로 허용은 하되 조용히 넘어가지 않는다 — 실수로 넣었을 때 드러나야 한다.
+        logger.warning(
+            "SUPABASE_SCHEMA=public — 다른 앱과 테이블 이름이 충돌할 수 있습니다. "
+            "의도한 설정이 아니면 제거하세요(기본값 %s).", SUPABASE_SCHEMA_DEFAULT,
+        )
+
+    from supabase import create_client
+    from supabase.lib.client_options import SyncClientOptions
+
+    client = create_client(url, key, options=SyncClientOptions(schema=schema))
+    # 어느 스키마에 붙었는지 사후에 확인할 방법이 없으면 이번 사고처럼 진단이 길어진다.
+    logger.info("Supabase 연결: schema=%s host=%s", schema, url.split("//")[-1].split(".")[0])
+    return client
 
 # ── 카테고리 매핑 ────────────────────────────────────────────────────────────
 
@@ -153,6 +195,48 @@ class ConversationRecord:
     answer_text: str
     calculation_types: list[str] | None = None
     metadata: dict | None = None
+
+
+# ── board_posts 스키마 계약 ─────────────────────────────────────────────────
+#
+# 사용자 직접 작성 게시글 테이블의 컬럼 집합. 여기(app/core/storage.py)에 두는
+# 이유는 PUBLIC_EXCLUDE_KEYS와 같다 — 이 모듈은 FastAPI·pipeline·API 키 어디에도
+# 의존하지 않아 API(api/index.py)·점검 스크립트(check_schema.py)·테스트가 모두
+# import할 수 있는 유일한 지점이다.
+#
+# ⚠️ DDL은 supabase_board_posts.sql이 단일 출처다. 여기를 고치면 그 파일도
+#    함께 고칠 것 — test_offline_units.py::test_board_posts_schema_source가
+#    두 소스를 대조해 고정한다.
+#
+# ⚠️ 이 대조는 **파일과 코드**만 본다. 실제 DB가 어긋났는지는 CI에서 알 수 없다
+#    (자격증명 없음). 그건 check_schema.py의 몫이고, 2026-08-13에 발견된 드리프트
+#    (8컬럼 중 5개 결손)가 정확히 그 유형이었다.
+BOARD_POST_COLUMNS = (
+    "id",
+    "nickname",
+    "password_hash",
+    "category",
+    "question_text",
+    "status",
+    "ip_hash",
+    "created_at",
+)
+
+# 공개 응답에 실어도 되는 컬럼. password_hash·ip_hash·status는 **의도적으로 제외**한다
+# — 해시는 유출 대상이고, ip_hash는 개인정보, status는 내부 상태다. 편의로 여기에
+# 추가하는 회귀는 test_offline_units.py가 막는다.
+BOARD_POST_PUBLIC_COLUMNS = (
+    "id",
+    "nickname",
+    "category",
+    "question_text",
+    "created_at",
+)
+
+
+def board_post_select(columns=BOARD_POST_PUBLIC_COLUMNS) -> str:
+    """PostgREST select 문자열. 호출부가 컬럼을 각자 나열하면 다시 갈라진다."""
+    return ", ".join(columns)
 
 
 # ── 공개 게시판 노출 계약 ────────────────────────────────────────────────────

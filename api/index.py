@@ -31,6 +31,7 @@ from app.core.storage import (
     restore_session_data,
     PUBLIC_EXCLUDE_KEYS as _PUBLIC_EXCLUDE_KEYS,
     is_public_excluded as _is_public_excluded,
+    board_post_select as _board_post_select,
 )
 from app.core.pipeline import process_question
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
@@ -401,6 +402,24 @@ def _apply_guard_filter(query, apply_filter: bool = True):
     return query
 
 
+def _single_row(query):
+    """`.maybe_single()` 쿼리를 실행해 행 하나 또는 None 을 반환한다.
+
+    ⚠️ postgrest-py 의 `.maybe_single().execute()` 는 **0행일 때 응답 객체가 아니라
+       `None` 을 반환한다.** 그대로 `.data` 를 읽으면 `AttributeError` 가 나고
+       FastAPI 가 500 으로 바꾼다 — **404 여야 할 상황이 500 이 된다.**
+
+       2026-08-13 프리뷰 종단 검증에서 `GET /api/board/{id}` 가 실측으로 500 을
+       냈다. board_detail 은 qa_conversations 를 먼저 조회하는데, 게시글 id 로는
+       항상 0행이라 사용자 글 상세가 **한 번도 열린 적이 없었다.** board_posts 에
+       행이 생기기 전까지 도달할 수 없는 경로라 드러나지 않았을 뿐이다.
+
+       maybe_single 을 쓰는 모든 호출부는 이 헬퍼를 거칠 것.
+    """
+    res = query.execute()
+    return res.data if res is not None else None
+
+
 def _drop_flagged(rows: list[dict] | None) -> list[dict]:
     """Python 레벨 후처리 — 필터 성공 시엔 이중 안전망, 실패 시엔 유일한 방어선."""
     return [row for row in (rows or []) if not _is_public_excluded(row.get("metadata"))]
@@ -631,15 +650,14 @@ def admin_conversations(
 def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
     sb = _get_supabase()
 
-    result = (
+    conv = _single_row(
         sb.table("qa_conversations")
         .select("*")
         .eq("id", conv_id)
         .maybe_single()
-        .execute()
     )
 
-    if not result.data:
+    if not conv:
         raise HTTPException(404, "대화를 찾을 수 없습니다")
 
     attachments = (
@@ -668,7 +686,7 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
                 logging.warning("signed URL 발급 실패 (%s): %s", storage_path, e)
         att_rows.append(row)
 
-    return {**result.data, "attachments": att_rows}
+    return {**conv, "attachments": att_rows}
 
 
 # ── 관리자: 남용 현황 (chatbot-security FR-12) ───────────────────────────────
@@ -905,20 +923,19 @@ def board_post_delete(post_id: str, body: BoardDeleteRequest):
         return JSONResponse(status_code=400, content={"error": "Invalid ID"})
 
     sb = _get_supabase()
-    result = (
+    post = _single_row(
         sb.table("board_posts")
         .select("id, password_hash")
         .eq("id", post_id)
         .eq("status", "active")
         .maybe_single()
-        .execute()
     )
-    if not result.data:
+    if not post:
         return JSONResponse(
             status_code=404, content={"error": "글을 찾을 수 없습니다"}
         )
 
-    stored_hash = result.data["password_hash"].encode("utf-8")
+    stored_hash = post["password_hash"].encode("utf-8")
     if not bcrypt.checkpw(body.password.encode("utf-8"), stored_hash):
         return JSONResponse(
             status_code=403, content={"error": "비밀번호가 올바르지 않습니다"}
@@ -932,10 +949,23 @@ def board_post_delete(post_id: str, body: BoardDeleteRequest):
 
 @app.get("/api/board/recent")
 def board_recent(page: int = 1, per_page: int = 10):
-    """최근 공개 질문/답변 — 비식별화 처리"""
+    """최근 공개 질문/답변 — AI 대화 + 사용자 게시글 병합, 비식별화 처리.
+
+    **오버페치 병합** — 두 테이블을 합치므로 DB가 페이지를 잘라 줄 수 없다. 각
+    소스에서 `offset + per_page`개씩만 가져와 메모리에서 병합·정렬·슬라이스한다.
+    전역 정렬의 [offset, offset+per_page) 구간에 들어갈 항목은 반드시 자기 소스의
+    상위 `offset+per_page`개 안에 있으므로 이만큼이면 충분하다.
+
+    board_search처럼 **전량을 가져오지 않는 이유**: 이 엔드포인트는 메인페이지
+    슬라이드 메뉴가 여는 가장 빈번한 경로라, 매 요청 240+행을 전송하면 안 된다.
+
+    ⚠️ 정렬 키는 DB와 Python이 **같아야** 한다(created_at desc, id desc).
+       다르면 페이지 경계에서 항목이 중복되거나 누락된다.
+    """
     sb = _get_supabase()
     per_page = min(per_page, 20)
     offset = (page - 1) * per_page
+    limit = offset + per_page          # 각 소스에서 가져올 상위 건수
 
     def _build(apply_filter: bool):
         return _apply_guard_filter(
@@ -944,24 +974,57 @@ def board_recent(page: int = 1, per_page: int = 10):
                 count="exact",
             ),
             apply_filter,
-        ).order("created_at", desc=True).range(offset, offset + per_page - 1)
+        ).order("created_at", desc=True).order("id", desc=True).range(0, limit - 1)
 
-    rows, total_count = _fetch_qa_public(_build)
+    qa_rows, qa_count = _fetch_qa_public(_build)
 
-    items = []
-    for row in rows:
-        q = _anonymize(row.get("question_text", ""))
+    merged = []
+    for row in qa_rows:
         a = row.get("answer_text", "")
         a_preview = a[:300] + ("..." if len(a) > 300 else "") if a else ""
-        items.append({
+        merged.append({
             "id": row["id"],
             "category": row.get("category", ""),
-            "question": q,
+            "question": _anonymize(row.get("question_text", "")),
             "answer_preview": _anonymize(a_preview),
             "created_at": row.get("created_at", ""),
+            "source": "ai",
         })
 
-    total = total_count or 0
+    # 사용자 게시글 — 실패해도 AI 대화 목록은 살린다(degrade 유지).
+    bp_count = 0
+    try:
+        bp_result = (
+            sb.table("board_posts")
+            .select(_board_post_select(), count="exact")
+            .eq("status", "active")
+            .order("created_at", desc=True)
+            .order("id", desc=True)
+            .range(0, limit - 1)
+            .execute()
+        )
+        bp_count = bp_result.count or 0
+        for row in bp_result.data or []:
+            merged.append({
+                "id": row["id"],
+                "category": row.get("category", ""),
+                "question": _anonymize(row.get("question_text", "")),
+                "answer_preview": "",       # 사용자 글에는 AI 답변이 없다
+                "created_at": row.get("created_at", ""),
+                "source": "user",
+            })
+    except Exception as e:
+        # 삼키되 흔적은 남긴다 — 42703(스키마 드리프트)은 설정 오류라 조용히
+        # 넘기면 board_posts가 통째로 사라진 것을 아무도 모른다.
+        logging.warning("board_posts 최근글 조회 실패 (AI 대화만 반환): %s", e)
+
+    # created_at은 ISO8601 문자열이라 사전순 비교로 시간순이 나온다(동일 포맷 전제).
+    # 두 테이블의 직렬화 포맷이 갈리면 **같은 초 안에서만** 순서가 흔들릴 수 있는데,
+    # 그때도 id 2차 키가 결정론을 보장하므로 페이지 경계는 안전하다.
+    merged.sort(key=lambda x: (x.get("created_at", ""), x.get("id", "")), reverse=True)
+    items = merged[offset : offset + per_page]
+
+    total = (qa_count or 0) + bp_count
     return {
         "items": items,
         "total": total,
@@ -988,6 +1051,19 @@ def board_categories():
     for row in rows:
         cat = row.get("category", "일반상담") or "일반상담"
         counts[cat] = counts.get(cat, 0) + 1
+
+    # 사용자 게시글 카테고리 합산 — 빠지면 필터 건수가 실제 목록과 어긋난다.
+    # 페이지네이션 없이 전량을 읽는다: 사용자 직접 작성이라 증가가 느리고,
+    # 위의 qa_conversations도 이미 전량을 읽는다.
+    try:
+        bp_result = (
+            sb.table("board_posts").select("category").eq("status", "active").execute()
+        )
+        for row in bp_result.data or []:
+            cat = row.get("category", "일반상담") or "일반상담"
+            counts[cat] = counts.get(cat, 0) + 1
+    except Exception as e:
+        logging.warning("board_posts 카테고리 집계 실패 (AI 대화만 집계): %s", e)
 
     categories = [
         {"name": cat, "count": count}
@@ -1037,7 +1113,7 @@ def board_search(q: str = "", category: str = "", page: int = 1, per_page: int =
     # --- board_posts 조회 (active만) ---
     try:
         bp_qb = sb.table("board_posts").select(
-            "id, nickname, category, question_text, created_at", count="exact"
+            _board_post_select(), count="exact"
         ).eq("status", "active")
         if category:
             bp_qb = bp_qb.eq("category", category)
@@ -1055,8 +1131,10 @@ def board_search(q: str = "", category: str = "", page: int = 1, per_page: int =
                 "source": "user",
                 "nickname": _anonymize(row.get("nickname", "")),
             })
-    except Exception:
-        pass  # board_posts 테이블 미생성 시 graceful fallback
+    except Exception as e:
+        # 삼키되 흔적은 남긴다 — 42703(컬럼 결손)·42P01(테이블 부재)은 설정 오류라
+        # 조용히 넘기면 사용자 게시글이 검색에서 통째로 사라진 것을 아무도 모른다.
+        logging.warning("board_posts 검색 실패 (AI 대화만 반환): %s", e)
 
     # --- 병합 + 정렬 + 페이지네이션 ---
     all_items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -1088,15 +1166,13 @@ def board_detail(item_id: str):
 
     # 1) qa_conversations에서 먼저 조회
     #    metadata를 함께 select해야 공개 제외 검사가 작동한다 (Design §3.2)
-    result = (
+    row = _single_row(
         sb.table("qa_conversations")
         .select("id, category, question_text, answer_text, created_at, metadata")
         .eq("id", item_id)
         .maybe_single()
-        .execute()
     )
-    if result.data:
-        row = result.data
+    if row:
         if _is_public_excluded(row.get("metadata")):
             return JSONResponse(status_code=404, content={"error": "Not found"})
         return {
@@ -1110,16 +1186,14 @@ def board_detail(item_id: str):
 
     # 2) board_posts에서 조회
     try:
-        bp_result = (
+        row = _single_row(
             sb.table("board_posts")
-            .select("id, nickname, category, question_text, created_at")
+            .select(_board_post_select())
             .eq("id", item_id)
             .eq("status", "active")
             .maybe_single()
-            .execute()
         )
-        if bp_result.data:
-            row = bp_result.data
+        if row:
             return {
                 "id": row["id"],
                 "category": row.get("category", ""),
@@ -1129,8 +1203,10 @@ def board_detail(item_id: str):
                 "source": "user",
                 "nickname": _anonymize(row.get("nickname", "")),
             }
-    except Exception:
-        pass
+    except Exception as e:
+        # 삼키되 흔적은 남긴다 — 사용자 글 상세가 스키마 오류로 404가 되는 것과
+        # 실제로 없어서 404인 것을 로그 없이는 구분할 수 없다.
+        logging.warning("board_posts 상세 조회 실패 (404로 처리): %s", e)
 
     return JSONResponse(status_code=404, content={"error": "Not found"})
 
