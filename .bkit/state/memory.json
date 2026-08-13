@@ -101,9 +101,10 @@
     "note": "전제 무효(board_posts가 타 앱 테이블) — supabase-schema-migration이 대체"
   },
   "supabase-schema-migration": {
-    "phase": "check",
+    "phase": "completed",
     "iterationCount": 0,
     "startedAt": "2026-08-13T00:00:00Z",
-    "matchRate": 95
+    "matchRate": 95,
+    "completedAt": "2026-08-13T00:00:00Z"
   }
 }
