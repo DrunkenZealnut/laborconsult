@@ -155,8 +155,38 @@ class ConversationRecord:
     metadata: dict | None = None
 
 
+# ── 공개 게시판 노출 계약 ────────────────────────────────────────────────────
+#
+# 이 키가 metadata에 있으면 공개 게시판(api/index.py::board_*)에서 제외한다.
+#   guard_flag — 가드 의심(monitor) 대화 (chatbot-security FR-09)
+#   truncated  — 스트림 절단으로 완결되지 않은 답변 (llm-fallback-hardening FR-02)
+#   textbook   — 저작권 있는 해설서를 근거로 쓴 답변 (textbook-corpus-embedding G6)
+#   synthetic  — 벤치마크·CLI·테스트가 만든 대화 (board-duplicate-cleanup)
+#
+# 여기(app/core/storage.py)에 두는 이유: 노출 여부를 **읽는** 쪽은 api/index.py이고
+# **쓰는** 쪽은 pipeline.py·이 파일인데, 운영 스크립트(dedupe_board.py)도 같은
+# 규칙이 필요하다. 이 모듈은 FastAPI·pipeline·API 키에 의존하지 않아 셋 모두가
+# import할 수 있는 유일한 지점이다.
+#
+# ⚠️ 이 키들은 **True일 때만 기록한다.** PostgREST 필터는 키 부재(`IS NULL`)로,
+#    Python 후처리는 truthiness로 판정하므로 `{"truncated": False}`처럼 명시적
+#    False를 쓰면 두 경로가 갈라진다.
+PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "synthetic")
+
+
+def is_public_excluded(meta) -> bool:
+    """공개 게시판 제외 대상인지."""
+    return isinstance(meta, dict) and any(meta.get(k) for k in PUBLIC_EXCLUDE_KEYS)
+
+
 # 세션 ID를 직접 만드는 호출부(벤치마크·모델비교·검증 스크립트)를 위한 규약.
 # 이 접두사로 시작하는 세션의 대화는 공개 게시판에 노출하지 않는다.
+#
+# ⚠️ 열거형이라 **열린 기본값**이다 — 등록되지 않은 접두사는 잡히지 않는다.
+#    새 스크립트는 여기 등록하거나 metadata["synthetic"]을 직접 설정할 것.
+#    (닫힌 기본값으로 뒤집으려면 abuse_guard의 세션 수용 정규식을 발급 형태
+#    `^[0-9a-f]{12}$`와 일치시켜야 하는데, 그러면 구 클라이언트의 세션 이력이
+#    끊긴다. 현재 이 가드가 단독으로 잡는 케이스가 0건이라 미뤄 둔 판단이다.)
 SYNTHETIC_SESSION_PREFIXES = ("bench_", "test_", "cmp_", "verify_", "eval_")
 
 
@@ -175,6 +205,13 @@ def save_conversation(sb: SupabaseClient, record: ConversationRecord) -> str | N
 
     # G-C: 예약 접두사 백스톱. save_conversation은 pipeline.py의 단일 호출부를
     # 갖는 초크포인트라 여기에 두면 향후 저장 경로가 늘어도 가드가 새지 않는다.
+    #
+    # ⚠️ 현재 이 가드가 **단독으로** 잡는 케이스는 0건이다 — 예약 접두사 세션은
+    #    인프로세스 호출부에서만 생기고(웹은 abuse_guard의 세션 정규식이 '_'를
+    #    받지 않아 신규 hex12를 발급한다) 그 집합은 정확히 `guard_ctx is None`,
+    #    즉 pipeline.py의 G-A가 이미 덮는 범위다. 부하를 지는 것은 G-A이므로
+    #    "G-C가 다 잡으니 G-A는 중복"이라 판단해 G-A를 지우지 말 것.
+    #
     # record.metadata를 제자리 변경하면 호출부가 이후 참조하는 값이 오염되므로
     # 반드시 복사본을 쓴다.
     metadata = dict(record.metadata or {})

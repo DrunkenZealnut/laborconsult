@@ -27,7 +27,11 @@ from pydantic import BaseModel
 from app.config import AppConfig
 from app.models.schemas import ChatRequest, ChatWithFilesRequest
 from app.models.session import get_or_create_session
-from app.core.storage import restore_session_data
+from app.core.storage import (
+    restore_session_data,
+    PUBLIC_EXCLUDE_KEYS as _PUBLIC_EXCLUDE_KEYS,
+    is_public_excluded as _is_public_excluded,
+)
 from app.core.pipeline import process_question
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
 from app.anonymize import anonymize as _anonymize
@@ -378,16 +382,9 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
 
 # ── 공용 보안 헬퍼 ────────────────────────────────────────────────────────────
 
-# metadata에 이 키가 있으면 공개 게시판에서 제외한다.
-#   guard_flag — 가드 의심(monitor) 대화 (chatbot-security FR-09)
-#   truncated  — 스트림 절단으로 완결되지 않은 답변 (llm-fallback-hardening FR-02)
-#   textbook   — 저작권 있는 해설서를 근거로 쓴 답변 (textbook-corpus-embedding).
-#                축자 인용 금지(G1)는 소프트 가드라 실패할 수 있고, 그 산출물이
-#                크롤 가능한 공개 페이지로 재게시되면 노출이 크게 확대된다.
-#   synthetic  — 벤치마크·CLI·테스트가 만든 대화 (board-duplicate-cleanup).
-#                판정은 3곳(G-A 비웹 호출·G-B 비프로덕션 요청·G-C 예약 접두사),
-#                집행은 이 한 곳이다.
-_PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "synthetic")
+# 공개 게시판 제외 계약(_PUBLIC_EXCLUDE_KEYS·_is_public_excluded)의 단일 출처는
+# app/core/storage.py다 — 키의 의미와 "True로만 기록" 규약은 그쪽 주석 참조.
+# 운영 스크립트(dedupe_board.py)도 같은 상수를 import하므로 재선언하면 갈라진다.
 
 
 def _apply_guard_filter(query, apply_filter: bool = True):
@@ -402,10 +399,6 @@ def _apply_guard_filter(query, apply_filter: bool = True):
     for key in _PUBLIC_EXCLUDE_KEYS:
         query = query.is_(f"metadata->>{key}", "null")
     return query
-
-
-def _is_public_excluded(meta) -> bool:
-    return isinstance(meta, dict) and any(meta.get(k) for k in _PUBLIC_EXCLUDE_KEYS)
 
 
 def _drop_flagged(rows: list[dict] | None) -> list[dict]:

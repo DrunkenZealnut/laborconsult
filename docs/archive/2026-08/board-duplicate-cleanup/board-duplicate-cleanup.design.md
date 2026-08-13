@@ -6,7 +6,7 @@
 > **Author**: Claude
 > **Date**: 2026-08-12
 > **Status**: Draft
-> **Planning Doc**: [board-duplicate-cleanup.plan.md](../../01-plan/features/board-duplicate-cleanup.plan.md)
+> **Planning Doc**: [board-duplicate-cleanup.plan.md](board-duplicate-cleanup.plan.md)
 
 ---
 
@@ -84,7 +84,11 @@ test_legal_cases_e2e.py                 ▼
 |------|------|-----------|-------------|-----------|
 | **G-A** | `pipeline.py:2083` 부근 | `guard_ctx is None` | 프로그램에서 직접 파이프라인을 부르는 모든 호출부 | `bench_*` 225, `test_*` 9, CLI |
 | **G-B** | `api/index.py::_guard_chat_request` | 비프로덕션 요청 | HTTP로 로컬/preview 서버를 때리는 e2e 테스트 | hex12 중 32건 유형 |
-| **G-C** | `storage.py::save_conversation` | `session_id` 예약 접두사 | 위 둘을 우회한 저장 (초크포인트 백스톱) | `cmp_*` 51, `verify_*` 등 |
+| **G-C** | `storage.py::save_conversation` | `session_id` 예약 접두사 | 위 둘을 우회한 저장 (초크포인트 백스톱) | **현재 단독 검출 0건** — 아래 주석 참조 |
+
+> ⚠️ **G-C 커버리지 정정 (2026-08-12, /simplify 리뷰)**: 초안은 G-C 담당을 "`cmp_*` 51, `verify_*` 등"으로 적었으나 **사실과 다르다.** `cmp_*`는 `compare_llm_models.py`가 `guard_ctx` 없이 파이프라인을 부르는 **G-A 케이스**이고, `verify_*`·`eval_*`는 저장소에 사용처가 0건이다. 예약 접두사 세션은 인프로세스 호출부에서만 생긴다 — 웹 경로는 `abuse_guard._SESSION_ID_RE`(`^[A-Za-z0-9-]{8,64}$`)가 언더스코어를 받지 않아 클라이언트가 `test_foo`를 보내도 폐기하고 신규 hex12를 발급하기 때문이다. 그 집합은 정확히 `guard_ctx is None`, 즉 G-A가 이미 덮는 범위다.
+>
+> **부하를 지는 것은 G-A다.** G-C는 무해한 백스톱으로 남기되, "G-C가 접두사를 다 잡으니 G-A는 중복"이라 판단해 **G-A를 제거하지 말 것.**
 | **G-D** | `api/index.py:360` | `metadata.synthetic` 존재 | **집행** — 목록·검색·상세 전 경로 | — |
 
 **G-A가 광의 규칙이고 G-C는 백스톱이다.** G-A만으로 대부분이 잡히지만, `save_conversation()`이 `pipeline.py:2118` 단일 호출부를 갖는 유일한 초크포인트이므로 여기에도 판정을 남겨 둔다. 향후 파이프라인을 거치지 않는 저장 경로가 생겨도 접두사 규약을 지키는 한 새지 않는다.
