@@ -402,6 +402,24 @@ def _apply_guard_filter(query, apply_filter: bool = True):
     return query
 
 
+def _single_row(query):
+    """`.maybe_single()` 쿼리를 실행해 행 하나 또는 None 을 반환한다.
+
+    ⚠️ postgrest-py 의 `.maybe_single().execute()` 는 **0행일 때 응답 객체가 아니라
+       `None` 을 반환한다.** 그대로 `.data` 를 읽으면 `AttributeError` 가 나고
+       FastAPI 가 500 으로 바꾼다 — **404 여야 할 상황이 500 이 된다.**
+
+       2026-08-13 프리뷰 종단 검증에서 `GET /api/board/{id}` 가 실측으로 500 을
+       냈다. board_detail 은 qa_conversations 를 먼저 조회하는데, 게시글 id 로는
+       항상 0행이라 사용자 글 상세가 **한 번도 열린 적이 없었다.** board_posts 에
+       행이 생기기 전까지 도달할 수 없는 경로라 드러나지 않았을 뿐이다.
+
+       maybe_single 을 쓰는 모든 호출부는 이 헬퍼를 거칠 것.
+    """
+    res = query.execute()
+    return res.data if res is not None else None
+
+
 def _drop_flagged(rows: list[dict] | None) -> list[dict]:
     """Python 레벨 후처리 — 필터 성공 시엔 이중 안전망, 실패 시엔 유일한 방어선."""
     return [row for row in (rows or []) if not _is_public_excluded(row.get("metadata"))]
@@ -632,15 +650,14 @@ def admin_conversations(
 def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
     sb = _get_supabase()
 
-    result = (
+    conv = _single_row(
         sb.table("qa_conversations")
         .select("*")
         .eq("id", conv_id)
         .maybe_single()
-        .execute()
     )
 
-    if not result.data:
+    if not conv:
         raise HTTPException(404, "대화를 찾을 수 없습니다")
 
     attachments = (
@@ -669,7 +686,7 @@ def admin_conversation_detail(conv_id: str, _admin=Depends(require_admin)):
                 logging.warning("signed URL 발급 실패 (%s): %s", storage_path, e)
         att_rows.append(row)
 
-    return {**result.data, "attachments": att_rows}
+    return {**conv, "attachments": att_rows}
 
 
 # ── 관리자: 남용 현황 (chatbot-security FR-12) ───────────────────────────────
@@ -906,20 +923,19 @@ def board_post_delete(post_id: str, body: BoardDeleteRequest):
         return JSONResponse(status_code=400, content={"error": "Invalid ID"})
 
     sb = _get_supabase()
-    result = (
+    post = _single_row(
         sb.table("board_posts")
         .select("id, password_hash")
         .eq("id", post_id)
         .eq("status", "active")
         .maybe_single()
-        .execute()
     )
-    if not result.data:
+    if not post:
         return JSONResponse(
             status_code=404, content={"error": "글을 찾을 수 없습니다"}
         )
 
-    stored_hash = result.data["password_hash"].encode("utf-8")
+    stored_hash = post["password_hash"].encode("utf-8")
     if not bcrypt.checkpw(body.password.encode("utf-8"), stored_hash):
         return JSONResponse(
             status_code=403, content={"error": "비밀번호가 올바르지 않습니다"}
@@ -1150,15 +1166,13 @@ def board_detail(item_id: str):
 
     # 1) qa_conversations에서 먼저 조회
     #    metadata를 함께 select해야 공개 제외 검사가 작동한다 (Design §3.2)
-    result = (
+    row = _single_row(
         sb.table("qa_conversations")
         .select("id, category, question_text, answer_text, created_at, metadata")
         .eq("id", item_id)
         .maybe_single()
-        .execute()
     )
-    if result.data:
-        row = result.data
+    if row:
         if _is_public_excluded(row.get("metadata")):
             return JSONResponse(status_code=404, content={"error": "Not found"})
         return {
@@ -1172,16 +1186,14 @@ def board_detail(item_id: str):
 
     # 2) board_posts에서 조회
     try:
-        bp_result = (
+        row = _single_row(
             sb.table("board_posts")
             .select(_board_post_select())
             .eq("id", item_id)
             .eq("status", "active")
             .maybe_single()
-            .execute()
         )
-        if bp_result.data:
-            row = bp_result.data
+        if row:
             return {
                 "id": row["id"],
                 "category": row.get("category", ""),

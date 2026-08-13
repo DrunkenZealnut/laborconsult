@@ -162,13 +162,16 @@ def _l2_cache_get(key: str) -> str | None:
     if sb is None:
         return None
     try:
+        # ⚠️ maybe_single().execute() 는 0행일 때 응답 객체가 아니라 None 을 반환한다.
+        #    캐시 미스는 정상 경로인데 그대로 .data 를 읽으면 매번 예외가 나
+        #    아래 except 로 떨어진다(동작은 같으나 원인 진단이 흐려진다).
         resp = sb.table("law_article_cache") \
             .select("content") \
             .eq("cache_key", key) \
             .gt("expires_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())) \
             .maybe_single() \
             .execute()
-        if resp.data:
+        if resp is not None and resp.data:
             return resp.data["content"]
     except Exception as e:
         logger.debug("L2 캐시 조회 실패 (%s): %s", key, e)
