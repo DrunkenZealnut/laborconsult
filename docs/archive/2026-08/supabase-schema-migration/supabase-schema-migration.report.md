@@ -124,6 +124,23 @@ postgrest-py 의 .maybe_single().execute() 는 0행일 때
 
 신규 코드 반영 자체는 부작용 없이 판별했다 — `maybe_single` 수정으로 없는 id 상세가 500→404가 되는 것을 discriminator로 썼다.
 
+### 3.6 "우리 것일 것이다"가 네 번 반복됐다
+
+같은 사이클에서 소유권 오판이 형태만 바꿔 네 번 나왔다.
+
+| # | 대상 | 무엇이 남의 것이었나 | 드러난 계기 |
+|---|------|---------------------|-------------|
+| 1 | `board_posts` | 테이블 자체 | `pg_policies` 조회 |
+| 2 | `search_path = public` | 함수의 미지정 참조가 향하는 스키마 | 설계 검토 |
+| 3 | `attachments`(3행) | 이름이 비슷한 남의 테이블 (우리 건 `qa_attachments`) | 전체 테이블 목록 |
+| 4 | **`update_updated_at()`** | **공유 트리거 함수** — 그 앱 테이블 8개가 쓴다 | `pg_trigger` 조회 |
+
+4번이 특히 아찔하다. 옛 프로젝트 정리 SQL에 이 함수 DROP을 넣을 뻔했고, 실행됐다면 `districts`·`profiles`·`council_minutes`·`calendar_events`·`supporters`·`board_posts`·`candidate_schedules`·`rally_schedules`의 **UPDATE가 전부 실패**했을 것이다.
+
+더 나쁜 사실도 함께 드러났다 — 그 트리거 목록에 `qa_sessions`가 **없었다.** 우리 트리거는 그 프로젝트에 만들어진 적이 없고, 그럼에도 `supabase_schema.sql`의 `CREATE OR REPLACE FUNCTION update_updated_at()`은 **그 앱의 함수를 덮어쓸 수 있는 상태**였다. 본문이 우연히 같아 사고가 안 났을 뿐이다.
+
+교훈: **`DROP`과 `CREATE OR REPLACE`는 둘 다 남의 것을 조용히 덮어쓴다.** 공유 DB에서는 테이블뿐 아니라 **함수의 의존자(`pg_trigger`·`pg_depend`)까지** 확인해야 한다. 이 규약을 CLAUDE.md에 기록했다.
+
 ---
 
 ## 4. 검증 결과
@@ -189,7 +206,7 @@ storage_purge_mark   security_definer=true  ["search_path=laborconsult, pg_temp"
 | # | 항목 | 상태 |
 |---|------|------|
 | 1 | **pg_cron 미등록** — 등록해야 보유기간 파기가 자동 실행된다(`supabase_retention_purge.sql` §4). 지금 등록해도 삭제 대상 0건이라 무해 | ⏳ 운영 |
-| 2 | **옛 프로젝트에 상담 원문 248건 잔존** — 이관·삭제 모두 하지 않았다. 그 프로젝트의 `purge_expired_data()`에는 여전히 스키마 미지정 `DELETE FROM board_posts`가 남아 있다(cron 미활성이라 자동 위험 없음, 수동 실행 시 다른 앱 게시글 삭제) | 🔴 방침 결정 필요 |
+| 2 | 옛 프로젝트의 laborconsult 자산 | ✅ **2026-08-14 전량 삭제** — 테이블 7종(`qa_conversations` 248 · `qa_sessions` 293 · `abuse_events` 30 · `chat_quota` 4 · `qa_attachments`·`block_list`·`law_article_cache` 0) + 함수 8종. `purge_expired_data`를 지우면서 스키마 미지정 `DELETE FROM board_posts` 지뢰도 함께 제거됐다. **`update_updated_at()`은 남겼다** — 그 앱의 테이블 8개가 트리거로 쓰고 있었다(§3.6) |
 | 3 | G-4 쿼터 HTTP 배선(`_guard_chat_request` → `check_guard` → RPC) | ⏸ 이번 사이클에서 변경되지 않은 구간. RPC 실동작은 확인됨 |
 | 4 | `board_posts`에 `answer_text`가 없어 사용자 글에 답변이 붙지 않는다 | ⏸ 제품 결정 |
 | 5 | `board_search`의 전량 조회 후 메모리 슬라이스 | 보류 — 현 규모에선 무증상 |
