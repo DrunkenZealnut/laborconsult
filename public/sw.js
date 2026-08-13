@@ -9,7 +9,7 @@
 
 // 배포마다 올릴 것. 이 값이 그대로면 sw.js 바이트가 동일해 브라우저가 업데이트를
 // 감지하지 못하고 셸 캐시가 영구히 낡은 상태로 남는다.
-const VERSION = 'v5-2026-08-11';
+const VERSION = 'v6-2026-08-13';
 const SHELL_CACHE = `shell-${VERSION}`;
 const ASSET_CACHE = `asset-${VERSION}`;
 

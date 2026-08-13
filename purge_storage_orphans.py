@@ -62,11 +62,12 @@ def _load_client():
         )
 
     try:
-        from supabase import create_client
+        # 접속 생성은 단일 경로 — storage_purge_* RPC 가 laborconsult 스키마에 있다.
+        from app.core.storage import make_supabase_client
     except ImportError:
         sys.exit("supabase 패키지가 없습니다:  pip install -r requirements.txt")
 
-    return create_client(url, key)
+    return make_supabase_client(url, key)
 
 
 def main() -> int:

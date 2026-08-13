@@ -146,14 +146,13 @@ def _init_supabase():
     if _supabase_checked:
         return _supabase_client
     _supabase_checked = True
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if url and key:
-        try:
-            from supabase import create_client
-            _supabase_client = create_client(url, key)
-        except Exception as e:
-            logger.debug("Supabase 초기화 실패: %s", e)
+    try:
+        # 접속 생성은 storage.make_supabase_client 단일 경로 — 여기서 create_client 를
+        # 직접 부르면 스키마 옵션이 빠져 law_article_cache 조회가 public 으로 샌다.
+        from app.core.storage import make_supabase_client
+        _supabase_client = make_supabase_client()
+    except Exception as e:
+        logger.debug("Supabase 초기화 실패: %s", e)
     return _supabase_client
 
 

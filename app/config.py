@@ -120,9 +120,10 @@ class AppConfig:
 
         claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         gemini_api_key = os.getenv("GEMINI_API_KEY")
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-        supabase = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
+        # 접속 생성은 storage.make_supabase_client 단일 경로 — 스키마 옵션이
+        # 빠지면 public 으로 새고 그 실패가 조용하다(2026-08-13 board_posts 사고).
+        from app.core.storage import make_supabase_client
+        supabase = make_supabase_client()
         law_api_key = os.getenv("LAW_API_KEY")
         odcloud_api_key = os.getenv("ODCLOUD_API_KEY")
         cohere_api_key = os.getenv("COHERE_API_KEY")

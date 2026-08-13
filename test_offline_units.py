@@ -285,6 +285,181 @@ def test_public_exclude_keys() -> None:
     print("  ✅ 공개 제외 키 4종 계약 + 단일 출처(app/core/storage.py) 공유")
 
 
+def test_board_posts_schema_source() -> None:
+    """D5 — board_posts 스키마 단일 출처 (board-posts-schema-fix FR-07)
+
+    ⚠️ 이 테스트는 **DDL 파일 ↔ 코드 상수**만 대조한다. 실제 DB가 어긋났는지는
+       CI에서 알 수 없다(자격증명 없음) — 그건 check_schema.py의 몫이고,
+       2026-08-13에 발견된 드리프트(8컬럼 중 5개 결손)가 정확히 그 유형이었다.
+       "CI가 스키마를 검증한다"고 읽지 말 것.
+    """
+    import pathlib
+
+    from app.core.storage import (
+        BOARD_POST_COLUMNS,
+        BOARD_POST_PUBLIC_COLUMNS,
+        board_post_select,
+    )
+
+    ddl = pathlib.Path("supabase_board_posts.sql").read_text(encoding="utf-8")
+    for col in BOARD_POST_COLUMNS:
+        assert col in ddl, f"DDL 파일에 컬럼이 없다: {col} (supabase_board_posts.sql)"
+
+    for col in BOARD_POST_PUBLIC_COLUMNS:
+        assert col in BOARD_POST_COLUMNS, f"공개 컬럼이 전체 집합에 없다: {col}"
+
+    # 노출 회귀 차단 — 편의로 공개 목록에 넣는 순간 게시판 응답으로 새어나간다.
+    for col in ("password_hash", "ip_hash", "status"):
+        assert col not in BOARD_POST_PUBLIC_COLUMNS, f"민감 컬럼이 공개 목록에 있다: {col}"
+
+    # select 문자열은 상수에서 생성한다 — 호출부가 각자 나열하면 다시 갈라진다.
+    assert board_post_select() == ", ".join(BOARD_POST_PUBLIC_COLUMNS)
+    assert "password_hash" not in board_post_select()
+
+    # DDL이 anon DELETE 정책을 만들지 않는지 (CLAUDE.md 규약)
+    assert "FOR DELETE" not in ddl.upper(), "anon DELETE 정책이 DDL에 있다"
+    # soft delete는 단방향이어야 한다
+    assert "status = 'active'" in ddl and "status = 'deleted'" in ddl, \
+        "UPDATE 정책의 단방향 조건이 DDL에 없다"
+
+    print("  ✅ board_posts 스키마: DDL↔상수 8컬럼, 민감 컬럼 미노출, DELETE 정책 부재")
+
+
+_DDL_FILES = (
+    "supabase_schema.sql",
+    "supabase_abuse_guard.sql",
+    "supabase_board_posts.sql",
+    "supabase_retention_purge.sql",
+)
+
+
+def _ddl_sources() -> dict[str, str]:
+    import pathlib
+    return {f: pathlib.Path(f).read_text(encoding="utf-8") for f in _DDL_FILES}
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """주석·블록주석(/* */)을 제거한 실행문만 남긴다."""
+    import re
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)
+    return "\n".join(l for l in sql.split("\n") if not l.strip().startswith("--"))
+
+
+def test_ddl_schema_qualified() -> None:
+    """D6 — DDL의 객체 참조가 전부 스키마 한정인지 (supabase-schema-migration §3.3)
+
+    스키마를 생략하면 search_path 에 따라 public 의 동명 객체를 건드린다.
+    2026-08-13 board_posts 사고가 정확히 그 경로였다 — purge 함수가 다른 앱의
+    테이블을 지우도록 작성돼 있었다.
+    """
+    import re
+
+    ours = {"laborconsult", "storage", "cron", "information_schema", "pg_catalog"}
+    # CTE 이름 — 스키마 한정 대상이 아니다.
+    allowed_bare = {"expired", "queued", "removed"}
+    # 매치가 테이블 참조가 아닌 문맥. GRANT/REVOKE 의 역할, 정책의 FOR ... TO 등.
+    not_a_table = {
+        "to", "on", "set", "all", "public", "anon", "authenticated", "service_role",
+        "select", "insert", "update", "delete", "only", "each", "row",
+        "grant", "revoke", "function", "table", "column", "policy",
+        "pg_constraint", "pg_policies", "pg_tables", "pg_proc",
+        "pg_namespace", "pg_roles", "pg_class",
+    }
+    pattern = re.compile(
+        r"\b(?:FROM|JOIN|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+"
+        r"(?:ONLY\s+)?([A-Za-z_%][A-Za-z0-9_]*)(\.[A-Za-z_][A-Za-z0-9_]*)?",
+        re.I,
+    )
+
+    for name, raw in _ddl_sources().items():
+        for m in pattern.finditer(_strip_sql_comments(raw)):
+            head, tail = m.group(1), m.group(2)
+            if tail:                                          # schema.table 형태
+                assert head in ours, f"{name}: 알 수 없는 스키마 참조 {head}{tail}"
+                continue
+            low = head.lower()
+            if low in not_a_table or low in allowed_bare or head.startswith("%"):
+                continue
+            raise AssertionError(
+                f"{name}: 스키마 미지정 참조 '{head}' — laborconsult. 로 한정할 것"
+            )
+    print("  ✅ DDL 스키마 한정: 미지정 객체 참조 0건")
+
+
+def test_ddl_search_path() -> None:
+    """D7 — SECURITY DEFINER 함수의 search_path 에 public 이 없을 것
+
+    SECURITY DEFINER 는 정의자 권한으로 실행되고 미지정 참조는 search_path 로
+    해석된다. public 이 목록에 있으면 함수가 다른 앱의 테이블을 읽고 쓴다.
+    """
+    import re
+
+    found = 0
+    for name, raw in _ddl_sources().items():
+        # 주석에는 "구 버전은 search_path = public 이었다" 같은 설명이 있다.
+        # 실행문만 검사해야 한다.
+        for m in re.finditer(r"SET\s+search_path\s*=\s*([^\n;]+)",
+                             _strip_sql_comments(raw), re.I):
+            entries = [e.strip().strip("'\"") for e in m.group(1).split(",")]
+            found += 1
+            assert "public" not in entries, (
+                f"{name}: search_path 에 public 이 있다 ({m.group(1).strip()}) — "
+                "미지정 참조가 다른 앱 스키마로 샌다"
+            )
+            assert "laborconsult" in entries, (
+                f"{name}: search_path 에 laborconsult 가 없다 ({m.group(1).strip()})"
+            )
+    assert found >= 7, f"search_path 지정 함수가 너무 적다: {found}개"
+    print(f"  ✅ SECURITY DEFINER search_path {found}건: public 부재·laborconsult 포함")
+
+
+def test_ddl_no_quoted_identifiers() -> None:
+    """D8 — DDL 실행문에 큰따옴표 인용 식별자가 없을 것
+
+    SQL Editor 붙여넣기에서 큰따옴표가 스마트 따옴표(U+201C)로 바뀌면
+    `syntax error at or near ...` 로 죽는다(2026-08-13 실제 발생).
+    검증용 SELECT 의 컬럼 별칭은 예외로 둔다.
+    """
+    import re
+
+    for name, raw in _ddl_sources().items():
+        body = _strip_sql_comments(raw)
+        for m in re.finditer(r'"([^"]+)"', body):
+            ident = m.group(1)
+            # AS "별칭" 형태(검증 SELECT의 한글 헤더)만 허용
+            head = body[max(0, m.start() - 4):m.start()].rstrip().upper()
+            assert head.endswith("AS"), (
+                f"{name}: 큰따옴표 식별자 \"{ident}\" — 인용부호 없는 이름을 쓸 것"
+            )
+    print("  ✅ DDL 인용 식별자: AS 별칭 외 0건")
+
+
+def test_code_tables_defined_in_ddl() -> None:
+    """D9 — 코드가 .table()로 접근하는 이름이 DDL에 정의돼 있을 것
+
+    2026-08-13 이전 프로젝트 전환에서 law_article_cache 가 DDL 에 없어 조용히
+    누락됐다(법령 L2 캐시가 404). CI 가 그것을 잡을 수 있는 유일한 지점이다.
+    """
+    import pathlib
+    import re
+
+    ddl = "\n".join(_ddl_sources().values())
+    defined = set(re.findall(r"CREATE TABLE IF NOT EXISTS\s+laborconsult\.(\w+)", ddl))
+
+    used: set[str] = set()
+    for path in ("app", "api"):
+        for py in pathlib.Path(path).rglob("*.py"):
+            used |= set(re.findall(r'\.table\("(\w+)"\)', py.read_text(encoding="utf-8")))
+    for py in ("dedupe_board.py", "check_schema.py", "purge_storage_orphans.py"):
+        p = pathlib.Path(py)
+        if p.exists():
+            used |= set(re.findall(r'\.table\("(\w+)"\)', p.read_text(encoding="utf-8")))
+
+    missing = used - defined
+    assert not missing, f"코드가 쓰는데 DDL에 없는 테이블: {sorted(missing)}"
+    print(f"  ✅ 테이블 정의 대조: 코드 사용 {len(used)}종 ⊆ DDL 정의 {len(defined)}종")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -298,6 +473,11 @@ def main() -> None:
     test_dedupe_representative()
     test_synthetic_session_guard()
     test_public_exclude_keys()
+    test_board_posts_schema_source()
+    test_ddl_schema_qualified()
+    test_ddl_search_path()
+    test_ddl_no_quoted_identifiers()
+    test_code_tables_defined_in_ddl()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 

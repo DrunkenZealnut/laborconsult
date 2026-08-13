@@ -426,6 +426,7 @@
   .board-item.open .board-chevron { transform: rotate(180deg); }
   .board-a { display: none; padding: 0 18px 14px; font-size: var(--text-label); color: var(--color-text-muted); line-height: var(--leading-relaxed); border-top: 1px solid var(--color-border); padding-top: 14px; }
   .board-item.open .board-a { display: block; }
+  .board-noanswer { font-style: italic; opacity: 0.75; }
   .board-ask-btn { display: inline-block; margin-top: var(--space-1); color: var(--color-text); font-size: var(--text-label); font-weight: var(--weight-semibold); cursor: pointer; background: none; border: none; font-family: var(--font-body); }
   .board-ask-btn:hover { text-decoration: underline; }
   .retry-btn { margin-top: var(--space-1); padding: 6px 14px; color: var(--color-text); font-size: var(--text-label); font-weight: var(--weight-semibold); cursor: pointer; background: none; border: 1px solid var(--accent); border-radius: var(--radius-pill); font-family: var(--font-body); }
@@ -1828,7 +1829,12 @@ async function loadBoard(append) {
       div.className = 'board-item';
       const timeAgo = getTimeAgo(item.created_at);
       const qText = escHtml(item.question);
-      const aText = escHtml(item.answer_preview);
+      // 사용자가 직접 올린 글에는 AI 답변이 없다. 그대로 두면 펼침이 빈 칸이 된다.
+      const isUserPost = item.source === 'user';
+      const aText = isUserPost
+        ? '<span class="board-noanswer">아직 AI 답변이 없습니다</span>'
+        : escHtml(item.answer_preview);
+      const askLabel = isUserPost ? 'AI에게 물어보기' : '비슷한 질문하기';
       div.innerHTML =
         '<div class="board-q" role="button" tabindex="0" aria-expanded="false">' +
           '<span class="board-cat">' + escHtml(item.category || '일반') + '</span>' +
@@ -1838,7 +1844,7 @@ async function loadBoard(append) {
         '</div>' +
         '<div class="board-a">' +
           aText +
-          '<br><button class="board-ask-btn">비슷한 질문하기 \u2192</button>' +
+          '<br><button class="board-ask-btn">' + askLabel + ' \u2192</button>' +
         '</div>';
       // 인라인 onclick 문자열 조립 대신 addEventListener + 원문 그대로 전달
       // — HTML 속성 이탈(quote-breakout) 인젝션 벡터를 원천 차단(F-2b)

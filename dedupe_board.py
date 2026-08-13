@@ -416,8 +416,9 @@ def _connect() -> tuple[object | None, bool]:
         print("✗ SUPABASE_URL / SUPABASE_KEY 가 필요합니다 (.env 확인)")
         return None, False
 
-    from supabase import create_client
-    return create_client(url, key), bool(svc_key)
+    # 접속 생성은 단일 경로 — 스키마 옵션이 빠지면 public 의 동명 테이블을 지운다.
+    from app.core.storage import make_supabase_client
+    return make_supabase_client(url, key), bool(svc_key)
 
 
 def _report_rls_blocked(err, sql_path: str, backup_path: str) -> None:
