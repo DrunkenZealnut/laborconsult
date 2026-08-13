@@ -95,16 +95,19 @@
     "archivedTo": "docs/archive/2026-08/board-duplicate-cleanup/"
   },
   "board-posts-schema-fix": {
-    "phase": "superseded",
+    "phase": "archived",
     "iterationCount": 0,
     "startedAt": "2026-08-13T00:00:00Z",
-    "note": "전제 무효(board_posts가 타 앱 테이블) — supabase-schema-migration이 대체"
+    "archivedAt": "2026-08-13T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/board-posts-schema-fix/",
+    "note": "전제 무효(타 앱 테이블) — supabase-schema-migration이 대체. 산출물은 승계"
   },
   "supabase-schema-migration": {
-    "phase": "completed",
+    "phase": "archived",
+    "matchRate": 95,
     "iterationCount": 0,
     "startedAt": "2026-08-13T00:00:00Z",
-    "matchRate": 95,
-    "completedAt": "2026-08-13T00:00:00Z"
+    "archivedAt": "2026-08-13T00:00:00Z",
+    "archivedTo": "docs/archive/2026-08/supabase-schema-migration/"
   }
 }

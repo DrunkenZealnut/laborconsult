@@ -1,8 +1,8 @@
 # supabase-schema-migration 완료 보고서
 
-> Plan: `docs/01-plan/features/supabase-schema-migration.plan.md`
-> Design: `docs/02-design/features/supabase-schema-migration.design.md`
-> Analysis: `docs/03-analysis/supabase-schema-migration.analysis.md`
+> Plan: `supabase-schema-migration.plan.md`
+> Design: `supabase-schema-migration.design.md`
+> Analysis: `supabase-schema-migration.analysis.md`
 > 기간: 2026-08-13 (1일)
 > Commit: `aa607b4` → `f37a5d7` → PR #49 머지(`a7ff6b0`) → `f83d172`
 

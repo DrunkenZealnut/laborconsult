@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Supabase 스키마 대조 — 코드가 기대하는 스키마·테이블·컬럼·RPC가 실제 DB에 있는지.
 
-설계: docs/02-design/features/supabase-schema-migration.design.md §6
+설계: docs/archive/2026-08/supabase-schema-migration/supabase-schema-migration.design.md §6
 
     python3 check_schema.py              # 대조 결과 요약
     python3 check_schema.py --verbose    # 실패 항목의 PostgREST 오류 원문

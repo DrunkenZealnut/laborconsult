@@ -1,7 +1,7 @@
 -- ============================================================================
 -- laborconsult — 기본 스키마 (1/4)
 --
--- 설계: docs/02-design/features/supabase-schema-migration.design.md §4
+-- 설계: docs/archive/2026-08/supabase-schema-migration/supabase-schema-migration.design.md §4
 -- 실행: Supabase SQL Editor. **파일 단위로 나눠 실행할 것** — 한 번에 붙여넣으면
 --       구문 오류 하나로 전량 롤백되고 어디서 막혔는지도 보이지 않는다.
 --

@@ -2,7 +2,7 @@
 -- laborconsult — 챗봇 남용 가드 (2/4)
 --
 -- 설계: docs/02-design/features/chatbot-security.design.md §3.1
---       docs/02-design/features/supabase-schema-migration.design.md §3
+--       docs/archive/2026-08/supabase-schema-migration/supabase-schema-migration.design.md §3
 -- 선행: supabase_schema.sql (스키마 생성)
 --
 -- ⚠️ 권한 설계 (중요)

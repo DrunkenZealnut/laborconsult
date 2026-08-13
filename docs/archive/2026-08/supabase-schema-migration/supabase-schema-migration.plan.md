@@ -97,7 +97,7 @@ board_posts_insert  INSERT  {authenticated}  ...
 
 ### 1.6 Related Documents / Files
 
-- 직전 사이클(전제 무효화됨): `docs/01-plan/features/board-posts-schema-fix.plan.md`, `.design.md`
+- 직전 사이클(전제 무효화됨): `../board-posts-schema-fix/` (같은 아카이브)
 - 스키마 파일 3종: `supabase_schema.sql`, `supabase_abuse_guard.sql`, `supabase_retention_purge.sql`, `supabase_board_posts.sql`
 - 접속부: `app/config.py:118-130`
 - 운영 스크립트: `check_schema.py`, `dedupe_board.py`, `purge_storage_orphans.py`, `refresh_nlrc_cases.py`

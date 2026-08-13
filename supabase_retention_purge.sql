@@ -2,7 +2,7 @@
 -- laborconsult — 보유기간 경과 데이터 자동 파기 (4/4)
 --                (개인정보처리방침 제5항 이행 수단)
 --
--- 설계: docs/02-design/features/supabase-schema-migration.design.md §4.6
+-- 설계: docs/archive/2026-08/supabase-schema-migration/supabase-schema-migration.design.md §4.6
 -- 선행: supabase_schema.sql · supabase_abuse_guard.sql · supabase_board_posts.sql
 --       (이 함수가 그 테이블들을 참조하므로 반드시 마지막에 적용)
 --

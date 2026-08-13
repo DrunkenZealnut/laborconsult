@@ -6,7 +6,7 @@
 > **Author**: Claude
 > **Date**: 2026-08-13
 > **Status**: Draft
-> **Planning Doc**: [supabase-schema-migration.plan.md](../../01-plan/features/supabase-schema-migration.plan.md)
+> **Planning Doc**: [supabase-schema-migration.plan.md](supabase-schema-migration.plan.md)
 
 ---
 

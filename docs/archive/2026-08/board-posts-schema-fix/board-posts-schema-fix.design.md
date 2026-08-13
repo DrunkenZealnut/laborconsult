@@ -6,7 +6,7 @@
 > **Author**: Claude
 > **Date**: 2026-08-13
 > **Status**: Draft
-> **Planning Doc**: [board-posts-schema-fix.plan.md](../../01-plan/features/board-posts-schema-fix.plan.md)
+> **Planning Doc**: [board-posts-schema-fix.plan.md](board-posts-schema-fix.plan.md)
 
 ---
 

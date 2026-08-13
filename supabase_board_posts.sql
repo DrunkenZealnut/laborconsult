@@ -2,7 +2,7 @@
 -- laborconsult — 사용자 직접 작성 질문게시판 (3/4)
 --
 -- 설계: docs/02-design/features/board-write-security.design.md:138-150 (원형)
---       docs/02-design/features/supabase-schema-migration.design.md §4
+--       docs/archive/2026-08/supabase-schema-migration/supabase-schema-migration.design.md §4
 -- 선행: supabase_schema.sql (스키마 생성)
 --
 -- ⚠️ 이 파일이 board_posts 스키마의 단일 출처다. 컬럼을 늘리거나 줄일 때

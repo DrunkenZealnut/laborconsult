@@ -5,8 +5,8 @@
 > **Project**: laborconsult
 > **Analyst**: 설계 대조 + 독립 사각지대 점검
 > **Date**: 2026-08-13
-> **Plan**: [supabase-schema-migration.plan.md](../01-plan/features/supabase-schema-migration.plan.md)
-> **Design**: [supabase-schema-migration.design.md](../02-design/features/supabase-schema-migration.design.md)
+> **Plan**: [supabase-schema-migration.plan.md](supabase-schema-migration.plan.md)
+> **Design**: [supabase-schema-migration.design.md](supabase-schema-migration.design.md)
 > **Commit**: `aa607b4` (브랜치 `feat/supabase-schema-migration`, 미머지)
 
 ---
@@ -235,7 +235,7 @@ B1이 이번 사이클의 최대 리스크였다. 스키마 경계는 코드가 
 
 ## 9. 관련 문서
 
-- Plan: [supabase-schema-migration.plan.md](../01-plan/features/supabase-schema-migration.plan.md)
-- Design: [supabase-schema-migration.design.md](../02-design/features/supabase-schema-migration.design.md)
-- 대체된 사이클: [board-posts-schema-fix.plan.md](../01-plan/features/board-posts-schema-fix.plan.md) — 전제 무효(타 앱 테이블), 산출물은 이번에 승계
+- Plan: [supabase-schema-migration.plan.md](supabase-schema-migration.plan.md)
+- Design: [supabase-schema-migration.design.md](supabase-schema-migration.design.md)
+- 대체된 사이클: [board-posts-schema-fix.plan.md](../board-posts-schema-fix/board-posts-schema-fix.plan.md) — 전제 무효(타 앱 테이블), 산출물은 이번에 승계
 - 선행 사이클: `chatbot-security`(RPC·fail-open 규약) · `board-duplicate-cleanup`(RLS 무성 차단 실측)
