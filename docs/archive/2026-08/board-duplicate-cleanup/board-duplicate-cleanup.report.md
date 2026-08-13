@@ -278,7 +278,7 @@ Check 이후 `/simplify` 패스에서 추가로 정리된 것: `PUBLIC_EXCLUDE_K
 | 1 | CLAUDE.md 문구 드리프트 — "`dedupe_board.py`가 재선언" 서술 | ✅ 해소 (PR #48) — 단일 출처 계약으로 교체 |
 | 2 | 설계 §5.7 vs §5.8 0행 규칙 모순 | ✅ 해소 (CodeRabbit 리뷰) — §5.7에 정정 주석. 멱등의 근거는 "0행이 무해해서"가 아니라 "0행이 될 id를 보내지 않아서"다 |
 | 3 | `_verify()`가 삭제~재조회 사이의 신규 저장을 고려하지 않음 | ✅ 문서화 (CodeRabbit 리뷰) — 오탐 방향임과 유지보수 창 권고를 docstring에 명시. 구조적 해소는 cutoff 스냅샷이 필요해 보류 |
-| 4 | **백업 JSON·생성 SQL이 저장소 루트에 평문으로 남아 있다** (1.2MB / 상담 원문 225건). `.gitignore`는 커밋만 막고 로컬 디스크·백업 도구·운영자 사본은 보호하지 않는다 | ⚠️ **파기 또는 저장소 밖 이전 필요** — 삭제 검증은 이미 끝났다. 지침은 `dedupe_board.py` docstring |
+| 4 | 백업 JSON·생성 SQL이 저장소 루트에 평문으로 남아 있었다 (1.2MB / 상담 원문 225건) | ✅ 해소 (2026-08-13) — `~/DEV/laborconsult-backups/`로 이전(디렉터리 700, 파일 600, SHA-256 일치 확인). 복구 절차·파기 기준은 그곳 `README.md`. 파기는 롤백 가능성이 닫힐 때, 상한은 방침상 보유기간 기준 **2027-03-08** |
 | 5 | **`board_posts.nickname` 스키마 드리프트** — `api/index.py`가 없는 컬럼을 select해 PostgREST 42703이 `try/except`에 삼켜진다. 현재 0행이라 무증상이나 **사용자 글이 등록되는 순간 게시판에서 통째로 사라진다** | 🔴 별도 사이클 (Plan §7.1 Out of Scope) |
 | 6 | `--purge-sessions`의 조회~삭제 TOCTOU — 그 사이 저장된 대화가 CASCADE로 사라지고 **백업 어디에도 없다** | ⏸ 미사용 경로. 유지보수 창 요구를 docstring에 명시. 구조적 해소는 `DELETE ... WHERE NOT EXISTS ... RETURNING` RPC 필요(어차피 RLS 때문에 RPC가 필요하므로 함께 처리) |
 | 7 | 잔존 238건 중 105건이 `bench_*` 소속 | 의도적 수용 — 방침 변경 시 백필 필요 |
