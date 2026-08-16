@@ -28,6 +28,7 @@ import sys
 import json
 import time
 import argparse
+import unicodedata
 from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
@@ -68,6 +69,18 @@ class BookPart:
     path: str
     body_start: str
 
+    def __post_init__(self) -> None:
+        # Book과 같은 이유로 생성 시점에 막는다 — 레지스트리 상수라 손으로 쓰고,
+        # 틀려도 실행 중 예외가 아니라 조용한 오적재로 나타난다.
+        if not self.path:
+            raise ValueError("BookPart.path가 비어 있습니다")
+        if not self.body_start:
+            # str.find("")는 -1이 아니라 0을 반환한다 — load_body()의
+            # `marker_pos == -1` 가드를 통과해 표지·목차가 절단 없이 본문에
+            # 들어가고, 그 잡음은 헤딩이 아니라 표 텍스트라 폐기율 게이트에도
+            # 걸리지 않는다.
+            raise ValueError(f"BookPart.body_start가 비어 있습니다: {self.path}")
+
 
 @dataclass(frozen=True)
 class Book:
@@ -92,6 +105,13 @@ class Book:
         if not _BOOK_ID_RE.match(self.book_id):
             raise ValueError(
                 f"book_id는 소문자·숫자만 허용합니다(chunk_id 파싱): {self.book_id!r}")
+        # 조각 경로 중복은 그 부분을 두 번 임베딩한다. section_idx가 계속
+        # 증가하므로 chunk_id는 서로 달라 main()의 충돌 검사(서적 간 비교)에
+        # 걸리지 않고, 폐기율도 정상으로 나온다 — 여기서만 잡을 수 있다.
+        paths = [p.path for p in self.parts]
+        dup = {p for p in paths if paths.count(p) > 1}
+        if dup:
+            raise ValueError(f"'{self.book_id}' 조각 경로가 중복됩니다: {sorted(dup)}")
 
     @property
     def parts(self) -> tuple[BookPart, ...]:
@@ -127,27 +147,34 @@ JUHAE3_OCR_FIXES = {
         "Ⅱ. 보조·지원 제한의 예외",
 }
 
-# marker가 '테'를 '데'로 읽은 건들. 이 책의 조직 단위가 '실무테마'다.
-# 헤딩으로 잡힌 4건만 대상 — 나머지 31개 테마 제목은 스캔에서 장식 이미지라
-# 애초에 헤딩이 되지 못했다.
-# 이 4건은 뒤이어 하위 헤딩이 바로 오는 탓에 본문이 비어 섹션에서 탈락하므로
-# 지금은 벡터 메타데이터에 나타나지 않는다. 그래도 두는 이유는
-# load_body_normalized()를 쓰는 표제 경로 추출(enrich_court_precedents.py)이
-# 이 헤딩을 그대로 읽고, 원본 재변환으로 구조가 바뀌면 바로 노출되기 때문이다.
-GAEBYEOL_OCR_FIXES = {
-    "실무데마 1. 근로기준법의 적용범위": "실무테마 1. 근로기준법의 적용범위",
-    "실무데마 2. 근로자, 근로자 대표": "실무테마 2. 근로자, 근로자 대표",
-    "실무데마 19.": "실무테마 19. 연소자, 청소년, 미성년자",
-    "실무데마 35.": "실무테마 35. 근로시간·휴게·휴일 등의 적용특례",
-}
+# 개별 노동법실무는 ocr_fixes를 두지 않는다. marker가 '실무테마'를 '실무데마'로
+# 읽은 헤딩이 4건 있으나 모두 직후에 하위 헤딩이 와 본문이 비고, 그래서 섹션에서
+# 탈락해 벡터에 나타나지 않는다(치환 유/무 산출물이 바이트 동일함을 확인).
+# 그중 2건은 번호만 남아('실무데마 19.') 제목을 채우려면 목차에서 가져와야 하는데,
+# 그것은 원문에 없는 말을 헤딩에 넣는 일이다 — 오폐기는 섹션 경계 하나를 잃을
+# 뿐이지만 오복원은 코퍼스에 오정보를 남긴다. 효과 없는 치환을 위해 그 위험을
+# 지지 않는다.
 
 # 스캔이 3파일로 분할된 서적. 각 조각의 앞머리는 속표지(해당 PART의 테마 목록)라
 # 본문에서 제외한다 — 목차는 페이지 번호만 담고 있어 검색에 노이즈다.
-_GAEBYEOL_DIR = os.path.join(CORPUS_DIR, "개별노동법실무1")
+_GAEBYEOL_DIR = "개별노동법실무1"
 
 
 def _gaebyeol_md(name: str) -> str:
-    return os.path.join(_GAEBYEOL_DIR, name, "_markdown", name, f"{name}.md")
+    """조각 경로. macOS는 파일명을 NFD로 저장하므로 정규화 형태를 모두 시도한다.
+
+    소스 리터럴은 NFC라 디스크의 NFD 이름과 **바이트가 다르다**. macOS(APFS)는
+    조회 시 정규화해 주지만 Linux/ext4·CI·네트워크 공유는 그러지 않아, 같은
+    코드가 `ls`에 보이는 파일을 '없다'고 말한다. 이 저장소는 NFD로 벡터 474개를
+    잃은 전력이 있다.
+    """
+    for form in ("NFC", "NFD"):
+        p = os.path.join(CORPUS_DIR, unicodedata.normalize(form, _GAEBYEOL_DIR),
+                         name, "_markdown", name, f"{name}.md")
+        if os.path.exists(p):
+            return p
+    # 어느 형태로도 없으면 호출부(존재 검사)가 경로를 그대로 보고하게 둔다.
+    return os.path.join(CORPUS_DIR, _GAEBYEOL_DIR, name, "_markdown", name, f"{name}.md")
 
 
 BOOKS: dict[str, Book] = {
@@ -179,7 +206,6 @@ BOOKS: dict[str, Book] = {
             BookPart(_gaebyeol_md("part2"), "<!-- page: 1 -->"),
             BookPart(_gaebyeol_md("part3"), "<!-- page: 1 -->"),
         ),
-        ocr_fixes=GAEBYEOL_OCR_FIXES,
     ),
 }
 
@@ -232,7 +258,15 @@ _MEANING_RE = re.compile(r"[가-힣一-龥ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]")
 _SIGNIF_RE = re.compile(r"[^\s.·…\-—,、]")
 
 HEADING_MIN_LEN = 3
-HEADING_MAX_LEN = 60
+# 상한은 '잡음 걸러내기'용이지 '긴 제목 자르기'용이 아니다. 60은 조문 해설서
+# 두 권에 맞춘 값이었는데, Q&A형 실무서가 들어오면서 정상 표제를 지우기
+# 시작했다 — 실측 폐기 사유: gaebyeol은 32건 중 28건이 길이 초과이고 그중
+# 27건이 멀쩡한 문장('(4) 공공기관 청년인턴제도에 따른 …', 95자)인 반면
+# win의 2건은 진짜 OCR 잡음이었다. 폐기된 헤딩은 본문만 직전 섹션에 흡수되고
+# 제목 문자열 자체는 코퍼스에서 사라지므로, 질문이 곧 검색 키인 Q&A 책에서는
+# 그 키가 통째로 없어진다. 80은 메타데이터 저장 폭(section[:80])과 같은 값이라
+# 잘림 없이 실릴 수 있는 한계이기도 하다. 상향 효과: gaebyeol 32→10, win 15→14.
+HEADING_MAX_LEN = 80
 HEADING_MIN_RATIO = 0.35
 
 
@@ -271,28 +305,30 @@ def sanitize_heading(raw: str, ocr_fixes: dict[str, str]) -> str | None:
 
 # ── 본문 파싱 ─────────────────────────────────────────────────────────────────
 
-def load_body(book: Book) -> str:
-    """표지·목차를 제외한 본문만 로드. 분할 서적은 조각을 순서대로 이어붙인다.
+def load_part_body(part: BookPart) -> str:
+    """조각 하나의 본문(앞머리 절단 후, page 주석 제거).
 
-    조각 하나라도 없거나 마커를 못 찾으면 중단한다 — 조용히 건너뛰면 책의
-    중간이 빠진 채 업로드되고, 그 사실을 알아챌 방법이 없다.
+    없거나 마커를 못 찾으면 중단한다 — 조용히 건너뛰면 책의 중간이 빠진 채
+    업로드되고, 그 사실을 알아챌 방법이 없다. 오류 메시지는 **그 조각의**
+    마커를 보여준다(책 대표 마커를 보여주면 3조각 중 2번은 엉뚱한 곳을 가리킨다).
     """
-    segments = []
-    for part in book.parts:
-        if not os.path.exists(part.path):
-            sys.exit(f"[오류] 원본 파일이 없습니다: {part.path}")
-        with open(part.path, "r", encoding="utf-8") as f:
-            content = f.read()
+    if not os.path.exists(part.path):
+        sys.exit(f"[오류] 원본 파일이 없습니다: {part.path}")
+    with open(part.path, "r", encoding="utf-8") as f:
+        content = f.read()
 
-        marker_pos = content.find(part.body_start)
-        if marker_pos == -1:
-            sys.exit(f"[오류] body_start 마커를 찾을 수 없습니다: "
-                     f"{part.body_start!r} ({part.path})")
-        segments.append(content[marker_pos + len(part.body_start):])
+    marker_pos = content.find(part.body_start)
+    if marker_pos == -1:
+        sys.exit(f"[오류] body_start 마커를 찾을 수 없습니다: "
+                 f"{part.body_start!r} ({part.path})")
+    return _PAGE_COMMENT_RE.sub("", content[marker_pos + len(part.body_start):])
 
+
+def load_body(book: Book) -> str:
+    """표지·목차를 제외한 본문만 로드. 분할 서적은 조각을 순서대로 이어붙인다."""
     # 조각 경계에 빈 줄을 둔다 — 마지막 문단과 다음 조각의 첫 헤딩이 붙으면
     # _HEADING_RE(^ 기준)가 그 헤딩을 인식하지 못해 섹션 하나가 통째로 사라진다.
-    return _PAGE_COMMENT_RE.sub("", "\n\n".join(segments))
+    return "\n\n".join(load_part_body(p) for p in book.parts)
 
 
 def load_body_normalized(book: Book) -> str:
@@ -321,8 +357,15 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
     폐기된 헤딩의 본문은 직전 섹션에 흡수한다(직전이 없으면 다음 섹션 앞에 붙인다).
     폐기 때문에 본문이 유실되는 경로는 없다.
 
-    단, **첫 헤딩보다 앞선 텍스트는 어떤 섹션에도 들어가지 않는다**(기존 동작).
-    body_start 마커 직후에 헤딩이 오는 것을 전제한 것이고, 두 서적 모두 그렇다.
+    단, **책 전체의 첫 헤딩보다 앞선 텍스트는 어떤 섹션에도 들어가지 않는다**.
+    body_start 직후에 헤딩이 오는 것을 전제한 동작이다.
+
+    분할 서적에서는 이 규칙이 첫 조각에만 적용된다 — 이 함수는 이미 이어붙인
+    한 덩어리를 받으므로, 2번째 이후 조각의 헤딩 앞 텍스트는 '두 헤딩 사이'가
+    되어 **직전 조각의 마지막 섹션에 흡수된다**. 현재 gaebyeol에서는 이미지
+    참조 한 줄(약 26자)뿐이라 실질 영향이 없지만, 조각의 body_start를 한 페이지
+    앞으로 잘못 잡으면 그 조각의 속표지 목차가 통째로 직전 조각의 헤딩 아래
+    실린다. 폐기율 게이트는 헤딩만 세므로 이 경로를 잡지 못한다.
 
     Returns:
         (sections, kept_headings, dropped_headings)
@@ -363,22 +406,50 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
     return cleaned, len(sections), dropped
 
 
-def check_drop_rate(book: Book, kept: int, dropped: int) -> None:
-    """헤딩 폐기율 상한 검사 — 초과 시 중단."""
+def check_drop_rate(book: Book, kept: int, dropped: int,
+                    scope: str | None = None, marker: str | None = None) -> None:
+    """헤딩 폐기율 상한 검사 — 초과 시 중단.
+
+    Args:
+        scope: 검사 대상 표시(조각 파일명 등). None이면 책 전체.
+        marker: 오류 메시지에 보여줄 body_start. None이면 책 대표 마커.
+    """
+    label = f"'{book.book_id}'" + (f" [{scope}]" if scope else "")
     total = kept + dropped
     if total == 0:
         # 게이트가 막으려던 실패(body_start 오배치)가 정확히 이 모습이다 —
         # 헤딩이 하나도 없으면 책 전체가 단일 섹션이 되므로 통과시키면 안 된다.
-        sys.exit(f"[오류] '{book.book_id}' 본문에서 헤딩을 찾지 못했습니다 — "
-                 f"body_start 마커({book.body_start!r})가 잘못됐을 수 있습니다.")
+        sys.exit(f"[오류] {label} 본문에서 헤딩을 찾지 못했습니다 — "
+                 f"body_start 마커({marker or book.body_start!r})가 잘못됐을 수 있습니다.")
     rate = dropped / total
-    print(f"  헤딩 {total}개 → 유지 {kept} / 폐기 {dropped} ({rate * 100:.1f}%)")
+    print(f"  {scope or '전체'}: 헤딩 {total}개 → 유지 {kept} / 폐기 {dropped} "
+          f"({rate * 100:.1f}%)")
     if rate > MAX_HEADING_DROP_RATE:
         sys.exit(
-            f"[오류] '{book.book_id}' 헤딩 폐기율 {rate * 100:.1f}%가 상한 "
+            f"[오류] {label} 헤딩 폐기율 {rate * 100:.1f}%가 상한 "
             f"{MAX_HEADING_DROP_RATE * 100:.0f}%를 초과했습니다 — 위생 규칙 오작동 "
-            f"또는 body_start 마커 오류일 수 있습니다. 업로드를 중단합니다."
+            f"또는 body_start 마커({marker or book.body_start!r}) 오류일 수 "
+            f"있습니다. 업로드를 중단합니다."
         )
+
+
+def check_part_drop_rates(book: Book) -> None:
+    """조각별 폐기율 검사 — 병합 합계는 한 조각의 손상을 희석한다.
+
+    실측(gaebyeol): 조각별 2.05 / 2.06 / 5.30%가 합계 2.96%로 뭉쳐 10% 상한과
+    대조된다. 3조각이면 한 조각이 30% 망가져도 합계는 통과한다.
+
+    조각 길이도 함께 출력한다 — 마커가 '찾을 수 없음'이 아니라 **엉뚱한 위치에서
+    맞는** 경우(페이지 번호 오프셋 착오)는 폐기율이 오히려 좋아져서 어떤 비율
+    게이트로도 못 잡는다. 분량 급감은 사람이 보면 바로 안다.
+    """
+    if not book.extra_parts:
+        return
+    for part in book.parts:
+        seg = load_part_body(part)
+        _, kept, dropped = parse_sections(seg, book)
+        scope = f"{os.path.basename(part.path)} ({len(seg):,}자)"
+        check_drop_rate(book, kept, dropped, scope=scope, marker=repr(part.body_start))
 
 
 # ── 청킹 ─────────────────────────────────────────────────────────────────────
@@ -411,6 +482,7 @@ def build_chunks(book: Book) -> list[dict]:
     body = load_body(book)
     sections, kept, dropped = parse_sections(body, book)
     check_drop_rate(book, kept, dropped)
+    check_part_drop_rates(book)
 
     chunks = []
     for section_idx, section in enumerate(sections):

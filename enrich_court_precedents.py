@@ -174,8 +174,11 @@ def main() -> None:
     from fetch_court_precedents import OCR_FIXES
 
     book = BOOKS["win"]
-    if not os.path.exists(book.path):
-        sys.exit(f"[오류] 교재 원본이 없습니다: {book.path}")
+    # 분할 스캔 서적은 조각이 여러 개다 — 첫 조각만 보면 나머지 부재를 놓치고,
+    # 사전 검사의 목적(비싼 작업 전에 실패)이 무너진다.
+    for path in book.paths:
+        if not os.path.exists(path):
+            sys.exit(f"[오류] 교재 원본이 없습니다: {path}")
     if not os.path.isdir(PRECEDENT_DIR):
         sys.exit(f"[오류] 판례 디렉토리가 없습니다: {PRECEDENT_DIR}")
 

@@ -877,6 +877,119 @@ def t20_textbook_case_extraction() -> None:
               bool(fetch.CASE_NO_RE.fullmatch(case)), case)
 
 
+@contextlib.contextmanager
+def _tmp_multipart_book(book_id: str, parts: list[tuple[str, str]],
+                        ocr_fixes: dict | None = None):
+    """조각별 (앞머리, 본문)으로 임시 다중 파트 Book을 만든다.
+
+    앞머리는 조각마다 다른 마커로 잘려야 한다 — 책 대표 마커를 전 조각에
+    쓰면 2번째 이후 조각의 속표지가 통째로 본문에 들어간다.
+    """
+    import tempfile
+    import pinecone_upload_textbook as tb
+    paths = []
+    for i, (front, body) in enumerate(parts):
+        fd, path = tempfile.mkstemp(suffix=".md", prefix=f"tb_{book_id}_p{i}_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"{front}\n<!-- CUT{i} -->\n{body}")
+        paths.append(path)
+    try:
+        yield tb.Book(
+            book_id=book_id, title=f"테스트 서적 {book_id}",
+            path=paths[0], body_start="<!-- CUT0 -->",
+            extra_parts=tuple(tb.BookPart(p, f"<!-- CUT{i} -->")
+                              for i, p in enumerate(paths[1:], start=1)),
+            ocr_fixes=ocr_fixes or {},
+        )
+    finally:
+        for p in paths:
+            os.unlink(p)
+
+
+def t21_multipart_book() -> None:
+    """분할 스캔 서적(Book.extra_parts) 경로.
+
+    원본 .md가 전부 gitignore라 CI는 실물 코퍼스를 볼 수 없다 — 이 경로의
+    실패는 여기서 잡지 못하면 업로드 시점까지 드러나지 않는다.
+    """
+    import pinecone_upload_textbook as tb
+
+    def sec(n, label="본문"):
+        return f"# 표제 {n}\n\n{label} {n} " + "가나다라마바사" * 12
+
+    parts = [("표지 잡음", "\n\n".join(sec(i) for i in range(3))),
+             ("속표지 목차", "\n\n".join(sec(i) for i in range(3, 6))),
+             ("속표지 목차2", "\n\n".join(sec(i) for i in range(6, 9)))]
+
+    with _tmp_multipart_book("multi", parts) as b:
+        body = tb.load_body(b)
+        chunks = tb.build_chunks(b)
+        headings = [s["heading"] for s in tb.parse_sections(body, b)[0]]
+
+        check("T21-a 조각이 순서대로 이어붙음",
+              headings == [f"표제 {i}" for i in range(9)], headings)
+        # 조각마다 다른 마커가 실제로 쓰였는지 — 대표 마커만 쓰면 2·3조각의
+        # 앞머리가 남는다.
+        check("T21-b 조각별 body_start로 앞머리 절단",
+              "속표지" not in body and "표지 잡음" not in body,
+              body[:60])
+        # 이음매가 '\n\n'이 아니면 앞 조각 마지막 문단과 다음 조각 첫 헤딩이
+        # 한 줄로 붙어 _HEADING_RE(^ 앵커)가 그 헤딩을 놓친다 → 섹션 소멸.
+        check("T21-c 조각 경계 헤딩이 살아남음",
+              "표제 3" in headings and "표제 6" in headings, headings)
+        check("T21-d 조각 수만큼 섹션 생성", len(chunks) >= 9, len(chunks))
+        ids = [c["chunk_id"] for c in chunks]
+        check("T21-e chunk_id 유일", len(set(ids)) == len(ids))
+
+    # 조각별 게이트 — 큰 조각이 멀쩡하면 작은 조각의 손상이 합계로 희석된다.
+    # 실측(gaebyeol): 조각별 2.05/2.06/5.30%가 합계 2.96%로 뭉친다.
+    # 여기서는 100개 정상 조각 + (정상 5 / 잡음 5) 조각 = 합계 5/110 = 4.5%로
+    # 상한(10%) 아래지만, 뒤 조각만 보면 50%다.
+    big = "\n\n".join(sec(i) for i in range(100))
+    small = "\n\n".join(sec(i) for i in range(100, 105)) + "\n\n" + \
+            "\n\n".join(f"# $I.{i}$\n\n잡음 {i}" for i in range(5))
+    with _tmp_multipart_book("rot", [("표지", big), ("속표지", small)]) as b:
+        merged = tb.parse_sections(tb.load_body(b), b)
+        total_rate = merged[2] / (merged[1] + merged[2])
+        check("T21-f 전제: 합계 폐기율은 상한 이하 (희석 성립)",
+              total_rate <= tb.MAX_HEADING_DROP_RATE, f"{total_rate:.3f}")
+        raised = False
+        try:
+            tb.build_chunks(b)
+        except SystemExit:
+            raised = True
+        check("T21-g 합계로는 통과하는 조각 손상을 조각별 게이트가 중단", raised)
+
+    # 레지스트리는 손으로 쓰는 상수라 생성 시점에 막는다.
+    for bad, why in ((("", "<!-- X -->"), "빈 path"),
+                     (("/tmp/x.md", ""), "빈 body_start")):
+        try:
+            tb.BookPart(*bad)
+            check(f"T21-h BookPart {why} 거부", False, bad)
+        except ValueError:
+            check(f"T21-h BookPart {why} 거부", True)
+
+    # str.find("")는 -1이 아니라 0이라 marker_pos 가드를 통과한다 — 빈 마커
+    # 거부가 없으면 표지가 절단 없이 본문에 들어간다.
+    check("T21-i find('')는 0을 반환(가드가 못 잡는 이유)", "abc".find("") == 0)
+
+    # 같은 조각을 두 번 넣으면 그 부분이 두 번 임베딩된다. section_idx가 계속
+    # 증가해 chunk_id는 서로 달라서 main()의 서적 간 충돌 검사에 걸리지 않는다.
+    try:
+        p = tb.BookPart("/tmp/dup.md", "<!-- X -->")
+        tb.Book(book_id="dup", title="t", path="/tmp/dup.md",
+                body_start="<!-- X -->", extra_parts=(p,))
+        check("T21-j 조각 경로 중복 거부", False)
+    except ValueError:
+        check("T21-j 조각 경로 중복 거부", True)
+
+    # 단일 파일 서적은 이 변경에 영향받지 않아야 한다.
+    with _tmp_book("solo", "\n".join(sec(i) for i in range(4))) as s:
+        check("T21-k 단일 파일 서적 동작 불변",
+              s.extra_parts == () and len(s.parts) == 1 and
+              len(tb.build_chunks(s)) >= 4)
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -888,7 +1001,7 @@ def main() -> int:
                t14_nfd_bug_sealed, t15_cases_mode, t16_ctx_deletion_safety,
                t17_textbook_chunk_id_scope, t18_heading_sanitizer,
                t19_citation_guard_cap, t19b_citation_rules_attachment,
-               t20_textbook_case_extraction):
+               t20_textbook_case_extraction, t21_multipart_book):
         print(f"\n[{fn.__name__}]")
         fn()
 
