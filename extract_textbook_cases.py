@@ -116,8 +116,10 @@ def main() -> None:
     origin: defaultdict[str, set[str]] = defaultdict(set)
 
     for book in books:
-        if not os.path.exists(book.path):
-            sys.exit(f"[오류] 원본이 없습니다: {book.path}")
+        # 분할 스캔 서적은 조각이 여러 개다 — 첫 조각만 보면 나머지 부재를 놓친다.
+        for path in book.paths:
+            if not os.path.exists(path):
+                sys.exit(f"[오류] 원본이 없습니다: {path}")
         cases = extract_cases(normalize_body(load_body(book)))
         print(f"  {book.book_id}: 고유 {len(cases)}건 / 총인용 {sum(cases.values())}회")
         freq.update(cases)

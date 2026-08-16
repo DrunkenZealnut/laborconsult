@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """노동법 해설서 marker 변환본을 Pinecone laborlaw-v2 네임스페이스에 업로드.
 
-대상 서적은 BOOKS 레지스트리로 관리한다(현재 2권 — Win 노동법, 근로기준법 주해 Ⅲ).
-각 서적의 단일 마크다운을 헤더 단위로 분할 → 청킹 → 임베딩 → 업로드한다.
+대상 서적은 BOOKS 레지스트리로 관리한다(현재 3권 — Win 노동법, 근로기준법 주해 Ⅲ,
+개별 노동법실무). 각 서적의 마크다운을 헤더 단위로 분할 → 청킹 → 임베딩 → 업로드한다.
+원본 스캔이 여러 파일로 쪼개진 서적은 Book.extra_parts로 조각을 이어붙인다.
 crawl/metadata 단계 없이 upload 스크립트 하나로 처리하는 점은
 pinecone_upload_counsel.py와 동일한 관례를 따름.
 
@@ -59,6 +60,16 @@ _BOOK_ID_RE = re.compile(r"^[a-z0-9]+$")
 
 
 @dataclass(frozen=True)
+class BookPart:
+    """스캔이 여러 파일로 쪼개진 서적의 후속 조각.
+
+    조각마다 앞머리(속표지·중간 목차)의 위치가 다르므로 절단 마커를 따로 갖는다.
+    """
+    path: str
+    body_start: str
+
+
+@dataclass(frozen=True)
 class Book:
     """업로드 대상 서적.
 
@@ -70,6 +81,10 @@ class Book:
     path: str
     body_start: str            # 표지·목차 절단 마커
     ocr_fixes: dict[str, str] = field(default_factory=dict)
+    # 원본 스캔이 분할된 서적의 나머지 조각. 나열 순서가 곧 본문 순서다.
+    # **뒤에만 추가할 것** — 중간에 끼우면 section_idx가 통째로 밀려 기존
+    # chunk_id가 전부 바뀌고, 이전 벡터가 고아로 남는다(설계 §2.3의 ID 안정성).
+    extra_parts: tuple[BookPart, ...] = ()
 
     def __post_init__(self) -> None:
         # 레지스트리 상수라 사실상 타입 불변식이다 — main()에서만 검사하면
@@ -77,6 +92,15 @@ class Book:
         if not _BOOK_ID_RE.match(self.book_id):
             raise ValueError(
                 f"book_id는 소문자·숫자만 허용합니다(chunk_id 파싱): {self.book_id!r}")
+
+    @property
+    def parts(self) -> tuple[BookPart, ...]:
+        """본문 순서대로의 전체 조각 — 단일 파일 서적은 길이 1."""
+        return (BookPart(self.path, self.body_start),) + tuple(self.extra_parts)
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        return tuple(p.path for p in self.parts)
 
 
 # marker OCR이 헤딩을 깨뜨린 건들. 유효 표제가 남아 있어 복원 가능한 것만
@@ -103,6 +127,29 @@ JUHAE3_OCR_FIXES = {
         "Ⅱ. 보조·지원 제한의 예외",
 }
 
+# marker가 '테'를 '데'로 읽은 건들. 이 책의 조직 단위가 '실무테마'다.
+# 헤딩으로 잡힌 4건만 대상 — 나머지 31개 테마 제목은 스캔에서 장식 이미지라
+# 애초에 헤딩이 되지 못했다.
+# 이 4건은 뒤이어 하위 헤딩이 바로 오는 탓에 본문이 비어 섹션에서 탈락하므로
+# 지금은 벡터 메타데이터에 나타나지 않는다. 그래도 두는 이유는
+# load_body_normalized()를 쓰는 표제 경로 추출(enrich_court_precedents.py)이
+# 이 헤딩을 그대로 읽고, 원본 재변환으로 구조가 바뀌면 바로 노출되기 때문이다.
+GAEBYEOL_OCR_FIXES = {
+    "실무데마 1. 근로기준법의 적용범위": "실무테마 1. 근로기준법의 적용범위",
+    "실무데마 2. 근로자, 근로자 대표": "실무테마 2. 근로자, 근로자 대표",
+    "실무데마 19.": "실무테마 19. 연소자, 청소년, 미성년자",
+    "실무데마 35.": "실무테마 35. 근로시간·휴게·휴일 등의 적용특례",
+}
+
+# 스캔이 3파일로 분할된 서적. 각 조각의 앞머리는 속표지(해당 PART의 테마 목록)라
+# 본문에서 제외한다 — 목차는 페이지 번호만 담고 있어 검색에 노이즈다.
+_GAEBYEOL_DIR = os.path.join(CORPUS_DIR, "개별노동법실무1")
+
+
+def _gaebyeol_md(name: str) -> str:
+    return os.path.join(_GAEBYEOL_DIR, name, "_markdown", name, f"{name}.md")
+
+
 BOOKS: dict[str, Book] = {
     "win": Book(
         book_id="win",
@@ -119,6 +166,20 @@ BOOKS: dict[str, Book] = {
         # 1~5페이지가 표지·목차. page 6 직후에 '# 제 3장 임 금'이 나온다.
         body_start="<!-- page: 6 -->",
         ocr_fixes=JUHAE3_OCR_FIXES,
+    ),
+    "gaebyeol": Book(
+        book_id="gaebyeol",
+        title="개별 노동법실무(최영우, 개정증보 12판)",
+        # part1의 0~12페이지는 표지·차례·색인(용어→페이지 번호)이라 전량 제외.
+        # page 13에서 '실무테마 1. 근로기준법의 적용범위'로 본문이 시작한다.
+        path=_gaebyeol_md("part1"),
+        body_start="<!-- page: 13 -->",
+        # part2·part3는 page 0이 해당 PART의 속표지다.
+        extra_parts=(
+            BookPart(_gaebyeol_md("part2"), "<!-- page: 1 -->"),
+            BookPart(_gaebyeol_md("part3"), "<!-- page: 1 -->"),
+        ),
+        ocr_fixes=GAEBYEOL_OCR_FIXES,
     ),
 }
 
@@ -211,16 +272,27 @@ def sanitize_heading(raw: str, ocr_fixes: dict[str, str]) -> str | None:
 # ── 본문 파싱 ─────────────────────────────────────────────────────────────────
 
 def load_body(book: Book) -> str:
-    """표지·목차를 제외한 본문만 로드."""
-    with open(book.path, "r", encoding="utf-8") as f:
-        content = f.read()
+    """표지·목차를 제외한 본문만 로드. 분할 서적은 조각을 순서대로 이어붙인다.
 
-    marker_pos = content.find(book.body_start)
-    if marker_pos == -1:
-        sys.exit(f"[오류] body_start 마커를 찾을 수 없습니다: {book.body_start!r} ({book.path})")
-    body = content[marker_pos + len(book.body_start):]
+    조각 하나라도 없거나 마커를 못 찾으면 중단한다 — 조용히 건너뛰면 책의
+    중간이 빠진 채 업로드되고, 그 사실을 알아챌 방법이 없다.
+    """
+    segments = []
+    for part in book.parts:
+        if not os.path.exists(part.path):
+            sys.exit(f"[오류] 원본 파일이 없습니다: {part.path}")
+        with open(part.path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    return _PAGE_COMMENT_RE.sub("", body)
+        marker_pos = content.find(part.body_start)
+        if marker_pos == -1:
+            sys.exit(f"[오류] body_start 마커를 찾을 수 없습니다: "
+                     f"{part.body_start!r} ({part.path})")
+        segments.append(content[marker_pos + len(part.body_start):])
+
+    # 조각 경계에 빈 줄을 둔다 — 마지막 문단과 다음 조각의 첫 헤딩이 붙으면
+    # _HEADING_RE(^ 기준)가 그 헤딩을 인식하지 못해 섹션 하나가 통째로 사라진다.
+    return _PAGE_COMMENT_RE.sub("", "\n\n".join(segments))
 
 
 def load_body_normalized(book: Book) -> str:
@@ -566,8 +638,9 @@ def main():
     # 전량 사전 검사 — --all에서 1권을 업로드(임베딩 비용 + 벡터 적재)한 뒤
     # 2권 파일 부재로 죽는 것을 막는다.
     for book in targets:
-        if not os.path.exists(book.path):
-            sys.exit(f"[오류] 원본 파일이 없습니다: {book.path}")
+        for path in book.paths:
+            if not os.path.exists(path):
+                sys.exit(f"[오류] 원본 파일이 없습니다: {path}")
 
     openai_key = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
