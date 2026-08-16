@@ -324,11 +324,23 @@ def load_part_body(part: BookPart) -> str:
     return _PAGE_COMMENT_RE.sub("", content[marker_pos + len(part.body_start):])
 
 
+def load_parts(book: Book) -> list[str]:
+    """조각별 본문 리스트(본문 순서). 단일 파일 서적은 길이 1."""
+    return [load_part_body(p) for p in book.parts]
+
+
+def join_parts(segments: list[str]) -> str:
+    """조각 본문을 하나로 잇는다.
+
+    경계에 빈 줄을 둔다 — 앞 조각의 마지막 문단과 다음 조각의 첫 헤딩이 한 줄로
+    붙으면 _HEADING_RE(^ 앵커)가 그 헤딩을 인식하지 못해 섹션이 통째로 사라진다.
+    """
+    return "\n\n".join(segments)
+
+
 def load_body(book: Book) -> str:
     """표지·목차를 제외한 본문만 로드. 분할 서적은 조각을 순서대로 이어붙인다."""
-    # 조각 경계에 빈 줄을 둔다 — 마지막 문단과 다음 조각의 첫 헤딩이 붙으면
-    # _HEADING_RE(^ 기준)가 그 헤딩을 인식하지 못해 섹션 하나가 통째로 사라진다.
-    return "\n\n".join(load_part_body(p) for p in book.parts)
+    return join_parts(load_parts(book))
 
 
 def load_body_normalized(book: Book) -> str:
@@ -415,12 +427,15 @@ def check_drop_rate(book: Book, kept: int, dropped: int,
         marker: 오류 메시지에 보여줄 body_start. None이면 책 대표 마커.
     """
     label = f"'{book.book_id}'" + (f" [{scope}]" if scope else "")
+    # 마커는 여기서 딱 한 번 repr 한다 — 호출부가 미리 repr 해서 넘기면
+    # f-string의 !r이 그 위에 다시 걸려 따옴표가 두 겹으로 나온다.
+    shown = book.body_start if marker is None else marker
     total = kept + dropped
     if total == 0:
         # 게이트가 막으려던 실패(body_start 오배치)가 정확히 이 모습이다 —
         # 헤딩이 하나도 없으면 책 전체가 단일 섹션이 되므로 통과시키면 안 된다.
         sys.exit(f"[오류] {label} 본문에서 헤딩을 찾지 못했습니다 — "
-                 f"body_start 마커({marker or book.body_start!r})가 잘못됐을 수 있습니다.")
+                 f"body_start 마커({shown!r})가 잘못됐을 수 있습니다.")
     rate = dropped / total
     print(f"  {scope or '전체'}: 헤딩 {total}개 → 유지 {kept} / 폐기 {dropped} "
           f"({rate * 100:.1f}%)")
@@ -428,12 +443,11 @@ def check_drop_rate(book: Book, kept: int, dropped: int,
         sys.exit(
             f"[오류] {label} 헤딩 폐기율 {rate * 100:.1f}%가 상한 "
             f"{MAX_HEADING_DROP_RATE * 100:.0f}%를 초과했습니다 — 위생 규칙 오작동 "
-            f"또는 body_start 마커({marker or book.body_start!r}) 오류일 수 "
-            f"있습니다. 업로드를 중단합니다."
+            f"또는 body_start 마커({shown!r}) 오류일 수 있습니다. 업로드를 중단합니다."
         )
 
 
-def check_part_drop_rates(book: Book) -> None:
+def check_part_drop_rates(book: Book, segments: list[str]) -> None:
     """조각별 폐기율 검사 — 병합 합계는 한 조각의 손상을 희석한다.
 
     실측(gaebyeol): 조각별 2.05 / 2.06 / 5.30%가 합계 2.96%로 뭉쳐 10% 상한과
@@ -442,14 +456,21 @@ def check_part_drop_rates(book: Book) -> None:
     조각 길이도 함께 출력한다 — 마커가 '찾을 수 없음'이 아니라 **엉뚱한 위치에서
     맞는** 경우(페이지 번호 오프셋 착오)는 폐기율이 오히려 좋아져서 어떤 비율
     게이트로도 못 잡는다. 분량 급감은 사람이 보면 바로 안다.
+
+    parse_sections를 조각마다 다시 돌리는 것은 중복이 아니다 — 병합본의 폐기
+    카운트에서는 어느 헤딩이 어느 조각 것인지 되짚을 수 없다. 카운트 로직을
+    따로 구현하면 위생 규칙이 두 벌이 되므로 같은 함수를 재사용한다.
+
+    Args:
+        segments: 조각별 본문(load_parts 결과). 호출부가 이미 읽은 것을 넘겨
+            파일을 두 번 읽지 않는다.
     """
     if not book.extra_parts:
         return
-    for part in book.parts:
-        seg = load_part_body(part)
+    for part, seg in zip(book.parts, segments):
         _, kept, dropped = parse_sections(seg, book)
         scope = f"{os.path.basename(part.path)} ({len(seg):,}자)"
-        check_drop_rate(book, kept, dropped, scope=scope, marker=repr(part.body_start))
+        check_drop_rate(book, kept, dropped, scope=scope, marker=part.body_start)
 
 
 # ── 청킹 ─────────────────────────────────────────────────────────────────────
@@ -479,10 +500,12 @@ def chunk_section(section: dict, book: Book, section_idx: int) -> list[dict]:
 
 def build_chunks(book: Book) -> list[dict]:
     """서적 1권 → 전체 청크 (임베딩 전 단계까지)."""
-    body = load_body(book)
+    # 조각을 한 번만 읽어 병합본과 조각별 검사에 함께 쓴다.
+    segments = load_parts(book)
+    body = join_parts(segments)
     sections, kept, dropped = parse_sections(body, book)
     check_drop_rate(book, kept, dropped)
-    check_part_drop_rates(book)
+    check_part_drop_rates(book, segments)
 
     chunks = []
     for section_idx, section in enumerate(sections):

@@ -961,8 +961,10 @@ def t21_multipart_book() -> None:
         check("T21-g 합계로는 통과하는 조각 손상을 조각별 게이트가 중단", raised)
 
     # 레지스트리는 손으로 쓰는 상수라 생성 시점에 막는다.
+    import tempfile
+    tmpdir = tempfile.gettempdir()
     for bad, why in ((("", "<!-- X -->"), "빈 path"),
-                     (("/tmp/x.md", ""), "빈 body_start")):
+                     ((os.path.join(tmpdir, "x.md"), ""), "빈 body_start")):
         try:
             tb.BookPart(*bad)
             check(f"T21-h BookPart {why} 거부", False, bad)
@@ -975,10 +977,13 @@ def t21_multipart_book() -> None:
 
     # 같은 조각을 두 번 넣으면 그 부분이 두 번 임베딩된다. section_idx가 계속
     # 증가해 chunk_id는 서로 달라서 main()의 서적 간 충돌 검사에 걸리지 않는다.
+    # BookPart 생성은 try 밖에 둔다 — 안에 두면 그쪽이 ValueError를 던져도
+    # 테스트가 통과해, 정작 Book의 중복 검사가 사라져도 알아채지 못한다.
+    dup_path = os.path.join(tmpdir, "dup.md")
+    dup_part = tb.BookPart(dup_path, "<!-- X -->")
     try:
-        p = tb.BookPart("/tmp/dup.md", "<!-- X -->")
-        tb.Book(book_id="dup", title="t", path="/tmp/dup.md",
-                body_start="<!-- X -->", extra_parts=(p,))
+        tb.Book(book_id="dup", title="t", path=dup_path,
+                body_start="<!-- X -->", extra_parts=(dup_part,))
         check("T21-j 조각 경로 중복 거부", False)
     except ValueError:
         check("T21-j 조각 경로 중복 거부", True)
