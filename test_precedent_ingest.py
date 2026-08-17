@@ -995,6 +995,203 @@ def t21_multipart_book() -> None:
               len(tb.build_chunks(s)) >= 4)
 
 
+def t22_textbook_followup() -> None:
+    """해설서 3권 체제의 저작권 총량 상한 + 청크 신호 게이트.
+
+    이 사이클이 막는 실패:
+      · 서적을 추가할 때마다 답변당 저작물 노출이 3씩 자동으로 늘어난다
+      · OCR 잔해가 검색 대상이 되고 출처 카드에 표시된다
+      · 잡음 판정이 판례 표·근무표 같은 실무 정보를 함께 버린다
+    """
+    import pinecone_upload_textbook as tb
+    from app.core.rag import (_cap_by_book, _cap_textbook_total,
+                              MAX_TEXTBOOK_CHUNKS, MAX_CHUNKS_PER_BOOK)
+
+    def hit(book=None, i=0):
+        if book:
+            return {"id": f"textbook_{book}_{i:04d}_0", "source_type": "textbook",
+                    "book_id": book, "title": "t", "content": "c"}
+        return {"id": f"prec_{i}", "source_type": "precedent", "title": "t", "content": "c"}
+
+    # 3권 × 권당상한(3) = 9가 통째로 들어와도 총량은 6을 넘지 않는다.
+    many = [hit(b, i) for b in ("win", "juhae3", "gaebyeol") for i in range(3)]
+    capped = _cap_textbook_total(_cap_by_book(many))
+    check("T22-a 총량 상한 준수", len(capped) == MAX_TEXTBOOK_CHUNKS, len(capped))
+
+    # 총량이 권당을 대체하면 한 권이 6슬롯을 독점한다 — 원래 위험의 복귀.
+    one_book = [hit("gaebyeol", i) for i in range(10)]
+    capped1 = _cap_textbook_total(_cap_by_book(one_book))
+    check("T22-b 권당 상한이 총량에 흡수되지 않음",
+          len(capped1) == MAX_CHUNKS_PER_BOOK, len(capped1))
+
+    # 비해설서는 세지도 버리지도 않는다.
+    mixed = [hit(i=i) for i in range(5)] + many
+    capped2 = _cap_textbook_total(_cap_by_book(mixed))
+    non_tb = [h for h in capped2 if h["source_type"] != "textbook"]
+    check("T22-c 비해설서 hit은 총량 상한과 무관", len(non_tb) == 5, len(non_tb))
+    check("T22-c2 rerank 순위 보존",
+          [h["id"] for h in capped2] == [h["id"] for h in mixed if h in capped2])
+
+    # 가드가 **초크포인트에 실제로 걸려 있는지**를 고정한다. 위 T22-a~c는
+    # _cap_textbook_total을 손으로 합성해 부르므로, format_pinecone_hits에서
+    # 그 호출을 지워도 전부 통과한다 — 프로덕션 경로가 비어도 CI가 녹색이다.
+    from app.core.rag import format_pinecone_hits
+
+    def phit(book, i):
+        return {"id": f"textbook_{book}_{i:04d}_0", "source_type": "textbook",
+                "book_id": book, "title": f"{book} 해설서", "section": "s",
+                "content": f"본문 {i}", "score": 0.9 - i * 0.01}
+
+    over = [phit(b, i) for b in ("win", "juhae3", "gaebyeol") for i in range(3)]
+    _, meta = format_pinecone_hits(over)
+    check("T22-a2 초크포인트에서 총량 상한이 실제로 걸림",
+          len(meta) == MAX_TEXTBOOK_CHUNKS, len(meta))
+
+    one = [phit("gaebyeol", i) for i in range(8)]
+    _, meta1 = format_pinecone_hits(one)
+    check("T22-b2 초크포인트에서 권당 상한이 실제로 걸림",
+          len(meta1) == MAX_CHUNKS_PER_BOOK, len(meta1))
+
+    # 순서 역전 방지 — 역순이면 상위 한 권이 총량을 채운 뒤 권당에 깎여
+    # 뒤 순위 서적이 통째로 사라진다(정순 6건/2권 vs 역순 3건/1권).
+    skewed = [phit("win", i) for i in range(6)] + [phit("gaebyeol", i) for i in range(3)]
+    _, meta2 = format_pinecone_hits(skewed)
+    books = {m["title"] for m in meta2}
+    check("T22-a3 정순 적용으로 2번째 서적이 살아남음",
+          len(meta2) == MAX_TEXTBOOK_CHUNKS and len(books) == 2, (len(meta2), books))
+
+    # 축약 — 연속 중복이 1회로 접힌다.
+    dup = "자금지원에 의존하는 기업체에서 자금지원이 중단된 경우" * 4
+    check("T22-d 연속 중복 축약",
+          len(tb.collapse_dup_runs(dup)) < len(dup) * 0.4, len(tb.collapse_dup_runs(dup)))
+
+    # 축약을 먼저 하지 않으면 이 청크가 통째로 버려지고, 그 안의 판례가
+    # 코퍼스에서 사라진다(실측: 90누9421은 인접 청크에 없다).
+    repeated_case = ("우(대법원 1992.5.12. 선고 90누9421 판결),2) 자금지원에 "
+                     "의존하는 기업체에서 자금지원이 중단된 경우") * 4
+    check("T22-e 판례 반복 청크는 축약 후 유지", not tb.is_low_signal(repeated_case))
+
+    for name, noise in (("표구분선", "|" + "-" * 90),
+                        ("파이프 1자", "|"),
+                        ("OCR 반복", "THE STATE OF " * 20),
+                        ("OCR 숫자", "1-1-1-0 0 Ex -- 1-1-1-1-0 = 0 1-1 | 5 -- 1-1-1-0 | 5"),
+                        # 표 안의 OCR 잡음 — 표라서 고유토큰비를 건너뛰므로
+                        # 의미비율이 유일한 백스톱이다.
+                        ("표형 OCR", "|\n| The state of the state of the state of the state")):
+        check(f"T22-f 잡음 제외 — {name}", tb.is_low_signal(noise), noise[:30])
+
+    # 잡음과 정보가 같은 의미비율 구간에 공존한다 — 비율만으로는 못 가른다.
+    for name, good in (
+            ("판례 표", "| 대상판례 | 대법 2002.3.29, 2000두8455<br>(한국○○전장) | 영업양도 |"),
+            ("영문 병기", "- 1. 영업양도(transfer of business)\n- 2. 단순한 자산매각(asset sale)"),
+            ("교대 근무표", "근 | 휴  | 2근 | 2근  | 2근  | 2근  | 휴   | 3근  | 3근  |\n| 3조 | 1근 |"),
+            ("짧은 소제목", "1. 의 의"),
+            ("h4 헤딩", "#### 1. 차별금지사유")):
+        check(f"T22-g 정보 유지 — {name}", not tb.is_low_signal(good), good[:40])
+
+    # 표는 값 반복이 정상이므로 고유토큰비를 적용하면 안 된다.
+    check("T22-g2 표 판정", tb._looks_like_table("| a | b |\n| c | d |"))
+    check("T22-g3 산문은 표가 아님", not tb._looks_like_table("근로시간이란 지휘·감독을 받는 시간이다."))
+    # '|를 포함한 줄이 과반'으로 판정하면 산문형 OCR 잔해가 표로 오인되고,
+    # 그러면 숫자가 의미문자로 인정돼 잡음이 살아난다.
+    check("T22-g4 |가 섞인 산문은 표가 아님",
+          not tb._looks_like_table("1-1-1-0 0 Ex -- 1-1-1-1-0 = 0 1-1 | 5 -- 1-1-1-0 | 5"))
+
+    # 의미비율 분자(_MEANING_RE)는 헤딩용이라 한글·한자·로마숫자만 센다. 본문에
+    # 그대로 쓰면 **한글 없는 정상 청크가 무조건 제외된다** — 임금 해설서의
+    # 핵심 자료형인 수치표가 여기 해당한다. 표에 한해 숫자를 인정해 푼다.
+    for name, numeric in (("최저임금 수치표", "| 2024 | 9,860 | 2,060,740 |\n| 2025 | 10,030 |"),
+                          ("연도-금액 나열", "| 2020 | 8,590 |\n| 2021 | 8,720 |\n| 2022 | 9,160 |")):
+        check(f"T22-g5 한글 없는 수치표 유지 — {name}", not tb.is_low_signal(numeric))
+
+    # 위생 규칙의 허용 손실은 하나의 규약이다 — 값만 같게 복사하면 갈라진다.
+    check("T22-h2 청크 제외율 상한이 헤딩 폐기율 상한을 참조",
+          tb.MAX_CHUNK_DROP_RATE is tb.MAX_HEADING_DROP_RATE)
+
+    # 규칙 오작동으로 본문이 대량 소실되는 것을 막는 게이트.
+    raised = False
+    try:
+        check_book = tb.BOOKS["win"]
+        tb.check_chunk_drop_rate(check_book, kept=10, dropped=90)
+    except SystemExit:
+        raised = True
+    check("T22-h 제외율 상한 초과 시 중단", raised)
+
+    # 함수가 옳아도 build_chunks가 그것을 부르지 않으면 아무 일도 안 일어난다.
+    # 호출을 지워도 위 검사는 통과하므로, 실제 경로로 한 번 태운다.
+    # 헤딩은 전부 정상이라 헤딩 게이트는 걸리지 않고 청크 게이트만 남는다.
+    junk = "\n\n".join(f"# 유효 표제 {i}\n\n|" + "-" * 200 for i in range(20))
+    with _tmp_book("junky", junk) as jb:
+        raised2 = False
+        try:
+            tb.build_chunks(jb)
+        except SystemExit:
+            raised2 = True
+        check("T22-h3 build_chunks가 청크 게이트를 실제로 호출", raised2)
+
+    # 제외된 청크가 번호를 소비하면 ID에 구멍이 생기고, 원장 검증 정규식은
+    # 구멍을 통과시켜 조용하다.
+    sec = {"heading": "표제", "text": "|\n" + "-" * 700 + "\n\n" + "정상 본문입니다. " * 60}
+    chunks, dropped = tb.chunk_section(sec, tb.BOOKS["win"], 7)
+    idxs = [c["chunk_index"] for c in chunks]
+    check("T22-i 제외 청크가 chunk_index를 소비하지 않음",
+          idxs == list(range(len(chunks))) and dropped >= 1, (idxs, dropped))
+
+    # 섹션의 청크가 전부 제외되면 헤딩 문자열이 코퍼스에서 통째로 사라진다.
+    # 헤딩 위생 처리는 본문을 이웃에 흡수시키지만 이 경로는 둘 다 잃는다 —
+    # 실측으로 '재량근로시간제' 같은 검색 키가 사라졌다.
+    dead = {"heading": "재량근로시간제", "text": "|\n" + "-" * 600}
+    dchunks, ddropped = tb.chunk_section(dead, tb.BOOKS["win"], 9)
+    check("T22-i2 섹션 전량 제외 시 표제를 남김",
+          len(dchunks) == 1 and dchunks[0]["chunk_text"] == "재량근로시간제"
+          and ddropped >= 1, (len(dchunks), ddropped))
+
+    # 축약본으로 판정하고 원본을 저장하면, 게이트를 통과시킨 근거와 실제
+    # 적재분이 달라져 임베딩이 내용 대신 OCR 반복을 인코딩한다.
+    rep = {"heading": "표제", "text": "자금지원이 중단된 경우에 해당한다고 볼 수 있다. " * 12}
+    rchunks, _ = tb.chunk_section(rep, tb.BOOKS["win"], 11)
+    check("T22-i3 저장 텍스트가 판정 텍스트와 같음(축약본)",
+          all(c["chunk_text"] == tb.collapse_dup_runs(c["chunk_text"])
+              for c in rchunks), [len(c["chunk_text"]) for c in rchunks])
+
+    # 청크 제외율도 조각별로 봐야 한다 — 책 단위로만 재면 헤딩 게이트에서
+    # 이미 겪은 희석이 재현된다.
+    ok_part = "\n\n".join(f"# 표제 {i}\n\n본문 {i} " + "가나다라마" * 30 for i in range(60))
+    bad_part = "\n\n".join(f"# 표제 {i}\n\n|" + "-" * 300 for i in range(100, 110))
+    with _tmp_multipart_book("dilute", [("표지", ok_part), ("속표지", bad_part)]) as db:
+        raised3 = False
+        try:
+            tb.build_chunks(db)
+        except SystemExit:
+            raised3 = True
+        check("T22-i4 조각별 청크 제외율 게이트", raised3)
+
+    # 대량 삭제 가드를 --all에서 전역으로 풀면 다른 서적까지 위험해진다.
+    # 어서션은 **가드 자신의 문구**로 한다 — '--book'만 보면 argparse의 usage
+    # 배너에도 그 문자열이 있어서, 플래그 오타 같은 무관한 거부에도 통과한다.
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    def _run(*argv):
+        return subprocess.run([sys.executable, "pinecone_upload_textbook.py", *argv],
+                              capture_output=True, text=True, cwd=here)
+
+    for argv in (("--all", "--allow-large-prune", "--dry-run"),
+                 # --book 과 --all 은 배타적이지 않다. targets를 정하는 것은
+                 # --all 쪽이므로 이 조합도 막아야 한다.
+                 ("--book", "win", "--all", "--allow-large-prune", "--dry-run")):
+        r = _run(*argv)
+        check(f"T22-j --allow-large-prune 거부: {' '.join(argv[:-1])}",
+              r.returncode != 0 and "--book 단일 실행에서만" in r.stderr,
+              r.stderr[-100:])
+
+    # 가드 문구가 바뀌어도 위 검사가 조용히 통과하지 않도록, 정상 조합은
+    # 그 문구 없이 진행되는지 함께 확인한다(청킹까지만 — --dry-run).
+    r_ok = _run("--book", "win", "--allow-large-prune", "--dry-run")
+    check("T22-j2 --book 단일 실행은 허용",
+          "--book 단일 실행에서만" not in r_ok.stderr, r_ok.stderr[-80:])
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -1006,7 +1203,8 @@ def main() -> int:
                t14_nfd_bug_sealed, t15_cases_mode, t16_ctx_deletion_safety,
                t17_textbook_chunk_id_scope, t18_heading_sanitizer,
                t19_citation_guard_cap, t19b_citation_rules_attachment,
-               t20_textbook_case_extraction, t21_multipart_book):
+               t20_textbook_case_extraction, t21_multipart_book,
+               t22_textbook_followup):
         print(f"\n[{fn.__name__}]")
         fn()
 

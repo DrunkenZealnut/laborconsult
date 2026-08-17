@@ -34,6 +34,14 @@ BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
 # 메모리를 쓴다. 코퍼스가 커지면 이 상수와 실제 배포 메모리 한도를 함께 재검토할 것.
 # 소프트 MemoryError는 app/core/rag.py::search_hybrid()의 broad except가 잡아
 # Dense-only로 폴백하지만, OS 레벨 하드 OOM-kill은 코드로 방어 불가능하다.
+#
+# 후속 실측(2026-08-16, Vercel preview, 해설서 3권 체제): 66,354건 로드 7.8초,
+# OOM 없음. vercel.json은 legacy `builds` 블록이라 memory 키가 없어 기본 1024MB다.
+#
+# ⚠️ BM25_MAX_DOCS는 **메모리 상한이 아니다.** 절단(load_bm25_corpus)이
+# json.load 이후에 일어나므로 가장 큰 할당은 이미 끝난 뒤다. 이 값을 낮춰도
+# 피크 RSS는 줄지 않는다 — 줄이려면 스트리밍 파싱이나 외부 저장이 필요하고,
+# 그건 이 상수를 만지는 일이 아니다.
 BM25_MAX_DOCS = 100_000
 
 

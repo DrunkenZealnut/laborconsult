@@ -304,6 +304,33 @@ def rerank_results(
 
 MAX_CHUNKS_PER_BOOK = 3
 
+# 답변 1건에 실리는 해설서 청크의 **총량** 상한(G4-T).
+#
+# 권당 상한만 두면 구조적 상한이 `MAX_CHUNKS_PER_BOOK × 서적 수`로 서적 등록에
+# 따라 커진다. 코퍼스 확장은 저작권 검토를 다시 받지 않으므로, 노출량이 아무도
+# 모르게 늘어나는 경로가 된다.
+#
+# 실제 천장은 `min(rerank_top_n, 3 × 서적수)`라 '권당 3씩 선형 증가'는 아니다 —
+# 서적수 1·2·3·4·5에서 SIMPLE 3/3/3/3/3, MODERATE 3/5/5/5/5, COMPLEX 3/6/7/7/7,
+# Self-RAG wider 3/6/9/10/10으로 rerank_top_n에 막혀 4권에서 포화한다. 그래서
+# 이 상한은 SIMPLE·MODERATE에서는 발동하지 않고 COMPLEX(7→6)와 wider(9→6),
+# 그리고 Cohere 미설정 폴백 경로에서만 실효가 있다.
+#
+# ⚠️ **노출을 실제로 지배하는 값은 query_decomposer.py의 rerank_top_n이다.**
+# 그 모듈에는 저작권 표시가 없으므로, 누가 recall을 위해 COMPLEX를 7→20으로
+# 올리면 매 답변이 이 상한(6)까지 차오르는데 리뷰 신호가 없다. rerank_top_n을
+# 만질 때 이 상수를 함께 볼 것.
+#
+# 6은 임의 값이 아니라 **2권 체제의 실효 최댓값**이다 — 저작권 검토를 통과한
+# 실적이 있는 유일한 수치다(textbook-corpus-embedding 사이클). 서적이 몇 권이
+# 되든 이 값은 변하지 않으며, 늘리려면 상수를 고쳐야 하고 그 순간이 검토
+# 시점이 된다.
+#
+# 이 값은 "비해설서 출처가 최소 1건 실린다"를 보장하지 않는다. rerank 결과가
+# 전부 해설서면 컨텍스트도 전부 해설서다(SIMPLE은 rerank_top_n=3이라 서적이
+# 1권일 때도 그랬다). 그런 보장이 필요하면 별도 설계 항목이다.
+MAX_TEXTBOOK_CHUNKS = 6
+
 # 해설서 벡터 ID 규약: textbook_{book_id}_{section:04d}_{chunk}
 _TEXTBOOK_ID_RE = re.compile(r"^textbook_([a-z0-9]+)_")
 
@@ -356,11 +383,43 @@ def _cap_by_book(hits: list[dict], limit: int = MAX_CHUNKS_PER_BOOK) -> list[dic
     return capped
 
 
+def _cap_textbook_total(hits: list[dict],
+                        limit: int = MAX_TEXTBOOK_CHUNKS) -> list[dict]:
+    """해설서 청크 **총량**을 limit개로 제한 — 인용 가드 G4-T.
+
+    _cap_by_book(권당)을 대체하지 않고 덧씌운다. 총량만 두면 한 권이 슬롯을
+    독점해 "한 책을 연속 구간째로 재생산"하는 원래 위험이 돌아온다.
+
+    비해설서 hit은 세지도, 버리지도 않는다. rerank 순위를 보존하는 순수
+    차감이라는 점도 _cap_by_book과 같다 — 상위부터 채우고 초과분만 버린다.
+    """
+    total = 0
+    capped: list[dict] = []
+    dropped: dict[str, int] = {}
+
+    for h in hits:
+        book = _book_id_of(h)
+        if not book:
+            capped.append(h)
+            continue
+        if total < limit:
+            total += 1
+            capped.append(h)
+        else:
+            dropped[book] = dropped.get(book, 0) + 1
+
+    if dropped:
+        logger.info("해설서 총량 상한(G4-T) 적용: %s (답변당 최대 %d)",
+                    dropped, limit)
+    return capped
+
+
 def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
     """Pinecone 검색 결과를 LLM 컨텍스트 텍스트 + 메타 리스트로 변환.
 
     인용 가드 G4가 여기서 적용되므로 **출력 건수가 입력보다 적을 수 있다** —
-    동일 해설서 청크는 최대 3건까지만 통과한다.
+    동일 해설서 청크는 최대 3건(G4), 해설서 전체는 최대 6건(G4-T)까지만
+    통과한다.
 
     Returns:
         (formatted_text, meta_list)
@@ -373,7 +432,13 @@ def format_pinecone_hits(hits: list[dict]) -> tuple[str | None, list[dict]]:
     # 인용 가드 G4 — 이 함수는 파이프라인의 단일 초크포인트라, 여기서 걸러야
     # 호출부가 늘어나도 가드가 새지 않는다. 컨텍스트에서 빠진 청크는
     # meta_list(인용 화이트리스트)에서도 함께 빠진다.
-    hits = _cap_by_book(hits)
+    #
+    # 권당(G4) → 총량(G4-T) 순서. **이 순서를 뒤집지 말 것** — 로그 가독성
+    # 문제가 아니라 결과가 달라진다. 역순이면 총량 6슬롯을 상위 한 권이 다
+    # 채운 뒤 권당 검사가 그것을 3으로 깎아, 뒤 순위의 다른 책이 자리를 잃은
+    # 채로 총 3건만 남는다(예: A×6, B×3 → 정순 6건/2권, 역순 3건/1권).
+    # 실측 3만 회 비교에서 정순이 역순보다 작은 경우는 0, 큰 경우는 3,197회다.
+    hits = _cap_textbook_total(_cap_by_book(hits))
 
     parts = []
     meta_list = []
