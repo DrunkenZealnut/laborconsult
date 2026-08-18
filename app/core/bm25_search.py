@@ -35,8 +35,12 @@ BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
 # 소프트 MemoryError는 app/core/rag.py::search_hybrid()의 broad except가 잡아
 # Dense-only로 폴백하지만, OS 레벨 하드 OOM-kill은 코드로 방어 불가능하다.
 #
-# 후속 실측(2026-08-16, Vercel preview, 해설서 3권 체제): 66,354건 로드 7.8초,
-# OOM 없음. vercel.json은 legacy `builds` 블록이라 memory 키가 없어 기본 1024MB다.
+# 후속 실측(2026-08-18, Vercel preview, 해설서 3권 체제 + 청크 신호 게이트 적용):
+# 66,307건 로드 9.0초, OOM 없음. vercel.json은 legacy `builds` 블록이라 memory
+# 키가 없어 기본 1024MB다. 로드 시간은 7.8초(2026-08-16, 게이트 이전 66,354건)에서
+# 늘었고 콜드 스타트 첫 요청 지연에 그대로 얹힌다 — 건수가 줄었는데도 늘었다는 건
+# 이 시간이 문서 수가 아니라 인스턴스 상태에 좌우된다는 뜻이므로, 회귀 판단의
+# 기준선으로 쓰지 말 것.
 #
 # ⚠️ BM25_MAX_DOCS는 **메모리 상한이 아니다.** 절단(load_bm25_corpus)이
 # json.load 이후에 일어나므로 가장 큰 할당은 이미 끝난 뒤다. 이 값을 낮춰도

@@ -313,8 +313,20 @@ MAX_CHUNKS_PER_BOOK = 3
 # 실제 천장은 `min(rerank_top_n, 3 × 서적수)`라 '권당 3씩 선형 증가'는 아니다 —
 # 서적수 1·2·3·4·5에서 SIMPLE 3/3/3/3/3, MODERATE 3/5/5/5/5, COMPLEX 3/6/7/7/7,
 # Self-RAG wider 3/6/9/10/10으로 rerank_top_n에 막혀 4권에서 포화한다. 그래서
-# 이 상한은 SIMPLE·MODERATE에서는 발동하지 않고 COMPLEX(7→6)와 wider(9→6),
-# 그리고 Cohere 미설정 폴백 경로에서만 실효가 있다.
+# 이 상한은 SIMPLE·MODERATE에서는 발동하지 않는다.
+#
+# ⚠️ 위 표는 **rerank 직후** 기준이고, 이 함수가 실제로 받는 입력은 그 뒤에
+# Self-RAG 필터(pipeline.py ③ filter_by_relevance)를 한 번 더 통과한 결과다.
+# COMPLEX는 self_rag=True라 입력이 rerank_top_n보다 작아진다 — 실측 7→6·7→5
+# (2026-08-18 프리뷰). 그래서 3권 체제 COMPLEX 자연 질의에서는 이 상한이
+# 발동하지 않았고(4회 시도 전부 미도달, 최대가 G4의 gaebyeol 4→3), 발동이
+# 남는 경로는 Self-RAG를 **재적용하지 않는** wider(pipeline.py:1642,
+# rerank_top_n+3=10 → 3권이면 9→6)와 Cohere 미설정 폴백(rerank 자체가 없어
+# 수십 건이 그대로 들어온다)이다.
+#
+# 상한의 실동작 자체는 실코퍼스 벡터로 확인했다(3권×4건=12 → G4가 9 → 이
+# 상한이 6). 발동이 드문 것은 상한이 헐거워서가 아니라 앞단이 이미 좁아서이며,
+# 서적이 늘거나 rerank_top_n이 오르면 그 여유는 사라진다.
 #
 # ⚠️ **노출을 실제로 지배하는 값은 query_decomposer.py의 rerank_top_n이다.**
 # 그 모듈에는 저작권 표시가 없으므로, 누가 recall을 위해 COMPLEX를 7→20으로
