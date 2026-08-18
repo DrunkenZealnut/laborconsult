@@ -196,7 +196,11 @@ BOOKS: dict[str, Book] = {
     ),
     "gaebyeol": Book(
         book_id="gaebyeol",
-        title="개별 노동법실무(최영우, 개정증보 12판)",
+        # 수록 범위를 title에 명시한다. 원서는 실무테마 1~85(PART 1~8)인데
+        # 적재분은 1~35뿐이라, 범위를 적지 않으면 미수록 주제 질문에 이 서명이
+        # 인용된다 — G3(prompts.py)가 "참고 자료에 있는 서명만" 쓰라고 지시해
+        # 이 문자열이 LLM 인용 서명의 유일한 출처이기 때문이다.
+        title="개별 노동법실무 1권 — 실무테마 1~35(최영우, 개정증보 12판)",
         # part1의 0~12페이지는 표지·차례·색인(용어→페이지 번호)이라 전량 제외.
         # page 13에서 '실무테마 1. 근로기준법의 적용범위'로 본문이 시작한다.
         path=_gaebyeol_md("part1"),
@@ -468,14 +472,148 @@ def check_part_drop_rates(book: Book, segments: list[str]) -> None:
     if not book.extra_parts:
         return
     for part, seg in zip(book.parts, segments):
-        _, kept, dropped = parse_sections(seg, book)
+        sections, kept, dropped = parse_sections(seg, book)
         scope = f"{os.path.basename(part.path)} ({len(seg):,}자)"
         check_drop_rate(book, kept, dropped, scope=scope, marker=part.body_start)
+
+        # 청크 제외율도 조각별로 본다. 책 단위로만 재면 헤딩 게이트에서 이미
+        # 겪은 희석이 그대로 재현된다 — 실측(gaebyeol) 조각별 2.79/1.58/4.25%가
+        # 합계 2.80%로 뭉치고, 상한 10%면 part3 하나가 32% 망가져도 통과한다.
+        c_kept = c_dropped = 0
+        for section_idx, section in enumerate(sections):
+            part_chunks, part_dropped = chunk_section(section, book, section_idx)
+            c_kept += len(part_chunks)
+            c_dropped += part_dropped
+        check_chunk_drop_rate(book, c_kept, c_dropped, scope=scope)
+
+
+# ── 청크 본문 신호 판정 ───────────────────────────────────────────────────────
+
+# 괘선·구분선만으로 이루어진 청크(marker가 표 구조를 본문으로 흘린 잔해).
+_STRUCT_ONLY_RE = re.compile(r"^[\s|\-:+_=.·…—]*$")
+_TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
+# 연속 중복 구절 축약. 12자 하한을 두어 조사·접속사 같은 짧은 반복은 건드리지
+# 않는다. 축약은 원문 변형이지만 **정보를 더하지 않으므로** 오정보 위험이 없다
+# — 위생 규칙이 경계하는 것은 없던 말을 채워 넣는 방향이다.
+_DUP_RUN_RE = re.compile(r"(.{12,}?)\1+", re.S)
+
+# 청크 의미비율의 분모. 헤딩용 _SIGNIF_RE와 달리 **표 구분자와 셀 여백을 뺀다**
+# — 마크다운 표는 '|'가 내용만큼 많아서, 그것을 분모에 넣으면 정상 표가 통째로
+# 잡음으로 판정된다(실측: 교대제 근무표 478자·287자가 오탐). 헤딩 판정은 표를
+# 만날 일이 없으므로 상수를 공유하지 않고 따로 둔다.
+_CHUNK_SIGNIF_RE = re.compile(r"[^\s.·…\-—,、|:]")
+# 표 안에서만 숫자를 의미문자로 인정한다.
+#
+# 분자인 _MEANING_RE는 헤딩용이라 한글·한자·로마숫자만 센다. 헤딩은 그래야
+# 맞지만 본문에 그대로 쓰면 **한글이 없는 정상 청크가 무조건 제외된다** —
+# 최저임금·통상임금 수치표(`| 2024 | 9,860 | 2,060,740 |`)가 의미비 0.000이
+# 되는데, 그런 표는 임금 해설서의 핵심 자료형이다. 현재 3권에서 오탐이 없는
+# 것은 700자 청크에 보통 한글 표제가 섞이기 때문이고, split_by_size가 표
+# 중간을 자르면 바로 재현된다.
+#
+# 그렇다고 숫자를 항상 인정하면 'Ex -- 1-1-1-0 | 5 -- …' 같은 숫자 OCR 잔해가
+# 살아난다. 표일 때만 인정하는 이유다 — 표 형태의 OCR 잡음
+# ('| The state of the state of …')은 숫자가 없어 여전히 걸린다.
+_MEANING_IN_TABLE_RE = re.compile(r"[가-힣一-龥ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ0-9]")
+
+# 길이 하한은 '잡음 거르기'가 아니라 '축약 후 껍데기만 남은 것' 판정이다.
+# 15로 두면 '1. 의 의'(6자)·'(1) 귀책사유의 의미'(12자) 같은 정상 소제목 조각을
+# 버린다(실측 오탐 3건). 짧은 잡음은 의미비율·구조 규칙이 이미 잡으므로
+# 여기서는 사실상 빈 문자열만 막는다.
+CHUNK_MIN_LEN = 4
+CHUNK_MIN_UNIQ_RATIO = 0.25
+CHUNK_MIN_MEANING_RATIO = 0.10
+# 신호 게이트 오작동으로 본문이 대량 소실되는 것을 막는 상한.
+# 헤딩 폐기율 상한을 **참조**한다 — 값만 같게 복사해 두면 한쪽을 조정할 때
+# 규약이 조용히 갈라진다. "위생 규칙의 허용 손실은 10%"가 하나의 규약이다.
+MAX_CHUNK_DROP_RATE = MAX_HEADING_DROP_RATE
+
+
+def collapse_dup_runs(text: str) -> str:
+    """연속 중복 구절을 1회로 접는다."""
+    return _DUP_RUN_RE.sub(r"\1", text)
+
+
+def _looks_like_table(text: str) -> bool:
+    """마크다운 표 조각인가.
+
+    '|를 포함한 줄이 과반'으로 판정하면 산문형 OCR 잔해가 표로 오인된다
+    (실측: '1-1-1-0 0 Ex -- … | 5 -- 1-1-1-0 | 5' 한 줄이 표로 잡혔다).
+    마크다운 표의 행은 **줄 첫 글자가 셀 구분자**이므로 그것을 요구한다 —
+    청크 경계가 표 중간을 잘라 첫 줄이 셀 값부터 시작해도, 이어지는 행이
+    조건을 만족한다.
+    """
+    return any(ln.lstrip().startswith("|")
+               for ln in text.splitlines() if ln.strip())
+
+
+def is_low_signal(text: str) -> bool:
+    """검색 가치가 없는 잡음 청크인가.
+
+    **단일 의미문자 비율로 판정하면 안 된다** — 잡음과 정보가 같은 비율 구간에
+    공존한다(실측: 표 구분선 0.000·OCR 반복 0.266이 잡음인 반면, 영문 병기
+    목록 0.250·판례 표 0.309는 유용). 비율은 판별식이 될 수 없으므로 잡음의
+    구조를 본다.
+
+    축약을 **먼저** 하는 것이 핵심이다. OCR이 한 구절을 반복 출력하면 그 청크의
+    고유토큰비가 무너지는데, 반복을 걷어내고 보면 유효한 본문이 남아 있는
+    경우가 있다(실측: textbook_win_0612_1은 원본 646자 중 축약 후 79자가
+    판례 인용을 포함한 정상 문장이다). 축약 없이 자르면 그 본문까지 함께
+    버린다 — 반복은 잡음이지만 반복된 *내용*은 아니다.
+
+    규칙은 서로를 보완한다 — 'THE STATE OF' 반복은 축약 후 고유토큰비가 1.0이
+    되지만 의미비 0.000으로 걸린다. 하나를 빼면 샌다.
+    """
+    t = collapse_dup_runs(text).strip()
+
+    if len(t) < CHUNK_MIN_LEN:
+        return True
+    if _STRUCT_ONLY_RE.match(t):
+        return True
+
+    # 표는 값이 반복되는 것이 정상이다 — 교대제 근무표('근 | 휴 | 2근 | 2근 …')
+    # 처럼 실무 정보를 담은 표가 고유토큰비 규칙에 잡힌다(실측 오탐 2건).
+    # 표 안에 든 OCR 잡음은 아래 의미비율이 백스톱으로 잡으므로 안전하다.
+    is_table = _looks_like_table(t)
+    if not is_table:
+        tokens = _TOKEN_RE.findall(t)
+        if tokens and len(set(tokens)) / len(tokens) < CHUNK_MIN_UNIQ_RATIO:
+            return True
+
+    meaning_re = _MEANING_IN_TABLE_RE if is_table else _MEANING_RE
+    denom = len(_CHUNK_SIGNIF_RE.findall(t))
+    if denom == 0 or len(meaning_re.findall(t)) / denom < CHUNK_MIN_MEANING_RATIO:
+        return True
+    return False
+
+
+def check_chunk_drop_rate(book: Book, kept: int, dropped: int,
+                          scope: str | None = None) -> None:
+    """청크 제외율 상한 검사 — 초과 시 중단.
+
+    Args:
+        scope: 검사 대상 표시(조각 파일명 등). None이면 책 전체.
+    """
+    label = f"'{book.book_id}'" + (f" [{scope}]" if scope else "")
+    total = kept + dropped
+    if total == 0:
+        sys.exit(f"[오류] {label} 청크가 하나도 생성되지 않았습니다.")
+    rate = dropped / total
+    if dropped:
+        print(f"  저신호 청크 제외{f' [{scope}]' if scope else ''}: "
+              f"{dropped} / {total} ({rate * 100:.1f}%)")
+    if rate > MAX_CHUNK_DROP_RATE:
+        sys.exit(
+            f"[오류] {label} 청크 제외율 {rate * 100:.1f}%가 상한 "
+            f"{MAX_CHUNK_DROP_RATE * 100:.0f}%를 초과했습니다 — 신호 판정 규칙 "
+            f"오작동일 수 있습니다. 업로드를 중단합니다."
+        )
 
 
 # ── 청킹 ─────────────────────────────────────────────────────────────────────
 
-def chunk_section(section: dict, book: Book, section_idx: int) -> list[dict]:
+def chunk_section(section: dict, book: Book,
+                  section_idx: int) -> tuple[list[dict], int]:
     """섹션 1개 → 청크 리스트.
 
     chunk_id에 book_id가 반드시 들어가야 한다 — 없으면 서적 간 heading_idx가
@@ -484,9 +622,26 @@ def chunk_section(section: dict, book: Book, section_idx: int) -> list[dict]:
 
     section_idx는 '유지된 섹션'의 순번이다. 폐기 헤딩이 번호를 소비하면
     ocr_fixes 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다.
+
+    같은 이유로 저신호 청크도 번호를 소비하지 않는다 — 소비하면 ID에 구멍이
+    생기고, 롤백 원장의 검증 정규식(`_\\d+$`)은 구멍을 통과시켜 조용하다.
+
+    **판정한 텍스트를 그대로 저장한다.** 축약본으로 판정하고 원본을 저장하면,
+    게이트를 통과시킨 근거(반복을 걷어낸 79자)와 실제 적재분(646자)이 달라져
+    임베딩이 내용 대신 OCR 반복을 인코딩하고 그 반복이 LLM 컨텍스트와 출처
+    카드까지 간다. 게이트를 둔 목적 자체가 무효가 된다.
+
+    Returns:
+        (chunks, dropped) — dropped는 저신호로 제외된 청크 수.
     """
     chunks = []
-    for idx, sub_text in enumerate(split_by_size(section["text"])):
+    dropped = 0
+    for raw_text in split_by_size(section["text"]):
+        sub_text = collapse_dup_runs(raw_text).strip()
+        if is_low_signal(raw_text):
+            dropped += 1
+            continue
+        idx = len(chunks)
         embed_text = f"제목: {book.title}\n섹션: {section['heading']}\n\n{sub_text}"
         chunks.append({
             "chunk_id": f"textbook_{book.book_id}_{section_idx:04d}_{idx}",
@@ -495,7 +650,22 @@ def chunk_section(section: dict, book: Book, section_idx: int) -> list[dict]:
             "chunk_text": sub_text,
             "section": section["heading"],
         })
-    return chunks
+
+    # 섹션의 청크가 전부 제외되면 **헤딩 문자열이 코퍼스에서 통째로 사라진다.**
+    # 헤딩 위생 처리는 폐기해도 본문을 이웃 섹션에 흡수시키지만 이 경로는
+    # 둘 다 잃는다 — 실측으로 '재량근로시간제'·'근로시간의 범위' 같은 검색 키가
+    # 사라졌다(게이트 도입 전에는 잡음 청크가 그 헤딩을 embed_text에 싣고 있었다).
+    # 잡음 본문은 버리되 표제는 남긴다.
+    if not chunks and dropped:
+        heading = section["heading"]
+        chunks.append({
+            "chunk_id": f"textbook_{book.book_id}_{section_idx:04d}_0",
+            "chunk_index": 0,
+            "embed_text": f"제목: {book.title}\n섹션: {heading}",
+            "chunk_text": heading,
+            "section": heading,
+        })
+    return chunks, dropped
 
 
 def build_chunks(book: Book) -> list[dict]:
@@ -508,8 +678,12 @@ def build_chunks(book: Book) -> list[dict]:
     check_part_drop_rates(book, segments)
 
     chunks = []
+    low_signal = 0
     for section_idx, section in enumerate(sections):
-        chunks.extend(chunk_section(section, book, section_idx))
+        part, dropped_chunks = chunk_section(section, book, section_idx)
+        chunks.extend(part)
+        low_signal += dropped_chunks
+    check_chunk_drop_rate(book, len(chunks), low_signal)
     print(f"  섹션 {len(sections)} → 청크 {len(chunks)}")
     return chunks
 
@@ -718,7 +892,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="청킹만 수행")
     parser.add_argument("--allow-large-prune", action="store_true",
                         help="고아 벡터가 현재 청크의 50%%를 넘어도 삭제 진행 "
-                             "(chunk_id 규격을 의도적으로 바꿨을 때만)")
+                             "(chunk_id 규격을 의도적으로 바꿨을 때만). "
+                             "--book 단일 실행에서만 사용할 수 있다")
     # --reset 없음: laborlaw-v2는 판례 등 다른 소스와 공유하는 네임스페이스라
     # delete_all이 전체를 날린다. Pinecone Serverless는 메타데이터 필터 삭제를
     # 지원하지 않으므로 source_type별 부분 삭제도 불가 — 재업로드는 결정적
@@ -727,6 +902,17 @@ def main():
 
     if not args.book and not args.all:
         parser.error("--book <id> 또는 --all 중 하나가 필요합니다.")
+
+    # 대량 삭제 가드 해제는 한 권씩만 허용한다. 전역 플래그로 두면 한 권 때문에
+    # 켰을 때 나머지 서적의 가드까지 조용히 풀리고, Pinecone Serverless에는
+    # 복구 수단이 없다. 청킹 규격을 의도적으로 바꾸는 작업은 원래 한 권씩
+    # 확인하며 진행하는 것이 정상 절차다.
+    # 조건은 `not args.book`이 아니라 `args.all`이어야 한다 — 두 플래그는 서로
+    # 배타적이지 않고 targets를 정하는 것은 --all 쪽이라, `--book win --all
+    # --allow-large-prune`이 가드를 통과한 뒤 3권 전체를 대상으로 삼았다.
+    if args.allow_large_prune and args.all:
+        parser.error("--allow-large-prune 은 --book 단일 실행에서만 사용할 수 "
+                     "있습니다 (--all 과 함께 쓰면 다른 서적의 가드까지 풀립니다).")
 
     targets = list(BOOKS.values()) if args.all else [BOOKS[args.book]]
 
@@ -759,13 +945,17 @@ def main():
     print(f"대상: {', '.join(b.book_id for b in targets)}")
     print(f"{'=' * 62}\n")
 
+    # ── 1단계: 전량 청킹 ──
+    # 파일 존재만 보는 사전 검사로는 부족하다. 마커 미발견·헤딩 폐기율·조각별
+    # 폐기율·청크 제외율은 모두 build_chunks() 안에서 중단하는데, 예전에는 그
+    # 함수가 업로드와 같은 루프에 있어 **앞 서적을 임베딩·업서트한 뒤** 죽었다.
+    # 청킹은 파일 읽기와 정규식뿐이라 비용이 없으므로 전량을 먼저 끝낸다.
     all_ids: set[str] = set()
-    total_chunks = 0
+    built: list[tuple[Book, list[dict]]] = []
 
     for book in targets:
         print(f"── {book.book_id}: {book.title}")
         chunks = build_chunks(book)
-        total_chunks += len(chunks)
 
         # 서적 간 ID 충돌은 조용한 데이터 유실이라 업로드 전에 확정적으로 막는다.
         ids = {c["chunk_id"] for c in chunks}
@@ -778,11 +968,17 @@ def main():
         for c in chunks[:2]:
             preview = c["chunk_text"][:110].replace("\n", " ")
             print(f"    [{c['chunk_id']}] {c['section']}\n      {preview}...")
-
-        if not args.dry_run:
-            upload_book(book, chunks, openai_client, index, args.allow_large_prune)
+        built.append((book, chunks))
         print()
 
+    # ── 2단계: 업로드 ──
+    if not args.dry_run:
+        for book, chunks in built:
+            print(f"── 업로드: {book.book_id} ({len(chunks)}청크)")
+            upload_book(book, chunks, openai_client, index, args.allow_large_prune)
+            print()
+
+    total_chunks = sum(len(c) for _, c in built)
     print(f"{'=' * 62}")
     print(f"총 청크 수: {total_chunks}  |  고유 벡터 ID: {len(all_ids)}")
     print(f"=== 완료 {'(DRY RUN)' if args.dry_run else ''} ===")
