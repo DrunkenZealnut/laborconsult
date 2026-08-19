@@ -118,13 +118,11 @@
     "reportedAt": "2026-08-18T00:00:00Z"
   },
   "textbook-retrieval-balance": {
-    "phase": "check",
+    "phase": "archived",
     "startedAt": "2026-08-19T00:00:00Z",
     "updatedAt": "2026-08-19T00:00:00Z",
-    "planDoc": "docs/01-plan/features/textbook-retrieval-balance.plan.md",
-    "notes": "Check 97.8% 후 /simplify 완료: 발견 15→적용 10·스킵 4. 핵심 — promoted 구조적 마커(로그 의존 제거), eval 1 pass A/B(API 절반·잡음 제거), QUERY_MERGE_HEADROOM 상수 단일화. 1 pass 실측 기준선 50.0%→승격 75.0%(발동 4와 정합). 잔여: 커밋 → 프리뷰 실측(순서 7) → report.",
-    "designDoc": "docs/02-design/features/textbook-retrieval-balance.design.md",
+    "notes": "완료·아카이브(2026-08-19). PR #52 머지, 도달률 50→75%, 프로덕션 실측 확인. 잔여: 검색 미도달 4건(별도 사이클)·승격 발동 관찰·part6 title 게이트.",
     "matchRate": 97.8,
-    "analysisDoc": "docs/03-analysis/textbook-retrieval-balance.analysis.md"
+    "archivedTo": "docs/archive/2026-08/textbook-retrieval-balance/"
   }
 }
