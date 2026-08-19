@@ -1192,6 +1192,103 @@ def t22_textbook_followup() -> None:
           "--book 단일 실행에서만" not in r_ok.stderr, r_ok.stderr[-80:])
 
 
+def t23_textbook_diversity_promotion() -> None:
+    """다양성 승격(textbook-retrieval-balance) — 설계 불변식 I-1~I-6.
+
+    이 사이클이 막는 실패:
+      · rerank pool에 있던 해설서가 top_n 절단으로 사장된다(기준선 도달률 56%)
+      · 승격이 가드(G4/G4-T)를 우회하거나, 단일 출처를 지워 다양성을 되레 깎는다
+    """
+    from app.core.rag import (_ensure_textbook_presence, _pick_swap_victim,
+                              rerank_results, format_pinecone_hits,
+                              TEXTBOOK_PROMOTE_WINDOW_FACTOR)
+
+    def tb(i, book="win"):
+        return {"id": f"textbook_{book}_{i:04d}_0", "source_type": "textbook",
+                "book_id": book, "title": f"{book} 해설서", "section": "s",
+                "content": f"해설 {i}", "score": 0.5}
+
+    def src(i, stype="qa"):
+        return {"id": f"{stype}_{i}", "source_type": stype, "title": f"{stype}{i}",
+                "section": "s", "content": f"본문 {i}", "score": 0.5}
+
+    # I-1: 승격은 교체 — 길이 불변, 해설서 정확히 1건, 후보는 말미.
+    ranked = [src(i) for i in range(5)] + [src(5, "precedent"), tb(0)] + [src(i) for i in range(7, 10)]
+    out = _ensure_textbook_presence(ranked, 5)
+    check("T23-a 창 내 후보 승격 (길이 불변)", len(out) == 5, len(out))
+    check("T23-a2 해설서 정확히 1건",
+          sum(1 for h in out if h["source_type"] == "textbook") == 1)
+    check("T23-a3 승격 후보는 말미", out[-1]["id"] == "textbook_win_0000_0", out[-1]["id"])
+    # promoted 마커는 계측의 구조적 계약 — eval_retrieval.py가 이 키로 발동을
+    # 센다. 로그 문자열로 세면 문구 수정만으로 계측이 조용히 0이 된다.
+    check("T23-a4 승격 hit에 promoted 마커", out[-1].get("promoted") is True)
+    check("T23-a5 pool 원본은 비변이(사본에만 마킹)", "promoted" not in ranked[6])
+
+    # I-3: 창(top_n ~ 2*top_n) 밖 후보는 끌어올리지 않는다.
+    # fixture 크기를 상수에서 파생 — 계수가 바뀌면 케이스가 자동 추종한다.
+    far = [src(i) for i in range(5 * TEXTBOOK_PROMOTE_WINDOW_FACTOR)] + [tb(0)]
+    out_far = _ensure_textbook_presence(far, 5)
+    check("T23-b 창 밖 후보 무승격",
+          all(h["source_type"] != "textbook" for h in out_far))
+    # 창 정의 자체를 고정 — FACTOR가 2에서 바뀌면 위 케이스의 전제가 무너진다.
+    check("T23-b2 창 계수 고정", TEXTBOOK_PROMOTE_WINDOW_FACTOR == 2)
+
+    # I-2: 이미 있으면 원소 그대로(교체·재정렬 없음).
+    has = [src(0), tb(1), src(2), src(3), src(4), tb(9)]
+    out_has = _ensure_textbook_presence(has, 5)
+    check("T23-c 이미 존재 시 무변경",
+          [h["id"] for h in out_has] == [h["id"] for h in has[:5]])
+
+    # pool 전체에 해설서 없음 → 무변경.
+    none = [src(i) for i in range(12)]
+    check("T23-d 후보 부재 시 무변경",
+          [h["id"] for h in _ensure_textbook_presence(none, 5)] == [h["id"] for h in none[:5]])
+
+    # I-4: victim은 중복-출처에서만 — 단일 출처(precedent·counsel)는 생존.
+    sel = [src(0), src(1), src(2, "precedent"), src(3), src(4, "counsel")]
+    check("T23-e victim은 중복 출처의 최하위", _pick_swap_victim(sel) == 3)
+    mixed = sel + [tb(0)]
+    out_e = _ensure_textbook_presence(mixed, 5)
+    kinds = [h["source_type"] for h in out_e]
+    check("T23-e2 단일 출처 생존",
+          "precedent" in kinds and "counsel" in kinds, kinds)
+
+    # I-4 폴백: 전원 단일 출처면 최하위 제거.
+    singles = [src(0), src(1, "precedent"), src(2, "counsel")]
+    check("T23-f 전원 단일 출처 → 최하위", _pick_swap_victim(singles) == 2)
+
+    # I-6: top_n=1이면 교체가 100% 치환 — 승격하지 않는다.
+    tiny = [src(0), tb(0)]
+    check("T23-g top_n=1 무승격",
+          _ensure_textbook_presence(tiny, 1)[0]["source_type"] == "qa")
+
+    # exit-A(무키 직접 호출)에서도 승격 적용 — RRF 순서가 랭킹을 대행.
+    out_h = rerank_results("q", ranked, cohere_api_key="", top_n=5)
+    check("T23-h 무키 경로 승격",
+          sum(1 for h in out_h if h["source_type"] == "textbook") == 1)
+
+    # I-5: 승격 → 가드 순서. 승격 결과가 초크포인트를 통과해도 상한 정상,
+    # 비해설서 ≥ 1 유지(승격은 0→1건이라 100% 해설서를 만들 수 없다).
+    _, meta = format_pinecone_hits(out)
+    check("T23-i 승격 결과가 가드 통과", len(meta) == 5, len(meta))
+    check("T23-i2 비해설서 유지",
+          sum(1 for m in meta if m["source_type"] != "textbook") == 4)
+
+    # 킬스위치 — env는 반드시 원복한다(다른 테스트 오염 방지).
+    os.environ["TEXTBOOK_PROMOTE"] = "off"
+    try:
+        out_j = rerank_results("q", ranked, cohere_api_key="", top_n=5)
+        check("T23-j TEXTBOOK_PROMOTE=off 무승격",
+              all(h["source_type"] != "textbook" for h in out_j))
+    finally:
+        del os.environ["TEXTBOOK_PROMOTE"]
+
+    # 기준선 경로(평가 A/B) — ensure_textbook=False는 현행 절단과 동일.
+    out_k = rerank_results("q", ranked, cohere_api_key="", top_n=5, ensure_textbook=False)
+    check("T23-k ensure_textbook=False 무승격",
+          [h["id"] for h in out_k] == [h["id"] for h in ranked[:5]])
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -1204,7 +1301,7 @@ def main() -> int:
                t17_textbook_chunk_id_scope, t18_heading_sanitizer,
                t19_citation_guard_cap, t19b_citation_rules_attachment,
                t20_textbook_case_extraction, t21_multipart_book,
-               t22_textbook_followup):
+               t22_textbook_followup, t23_textbook_diversity_promotion):
         print(f"\n[{fn.__name__}]")
         fn()
 

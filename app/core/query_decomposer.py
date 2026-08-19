@@ -62,6 +62,12 @@ COMPLEXITY_PARAMS = {
     },
 }
 
+# 검색 쿼리 병합의 여유 슬롯 — LLM 분해 쿼리(max_queries) 외에 규칙 기반·
+# 폴백 쿼리가 차지할 수 있는 수. pipeline의 _merge_search_queries(max_total=…)와
+# eval_retrieval.py의 절단이 공유한다 — 리터럴로 두 곳에 살면 한쪽 조정 시
+# 고정 평가셋의 기준선이 프로덕션과 조용히 어긋난다.
+QUERY_MERGE_HEADROOM = 2
+
 _COMPLEXITY_MARKERS = ["그리고", "또한", "그런데", "하고", "이랑", "랑", ",", "?"]
 
 
