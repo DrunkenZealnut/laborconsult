@@ -21,7 +21,7 @@ rerank 입력(pool)에 해설서가 있는데 결과 top_n에 0건인 경우, **
 
 ### 2.1 절단 지점은 `rerank_results` 내부 3곳뿐이다
 
-```
+```text
 rerank_results(query, hits, cohere_api_key, top_n)   # app/core/rag.py:243
 ├─ exit-A hits 없음/키 없음  → return hits[:top_n]      # 절단
 ├─ exit-B Cohere 성공        → top_n건 재구성 반환        # 절단
@@ -243,7 +243,7 @@ python3 eval_retrieval.py --out r.json    # 결과 JSON 저장 (로컬)
 | 순서 | 작업 | Plan 완료 조건 |
 |:---:|------|------|
 | 1 | fixture 질의 24건 작성 + `eval_retrieval.py` + `--freeze`로 분해 고정 | — |
-| 2 | **기준선 측정**(`--no-promote`) → 수치 기록 | 조건 1 |
+| 2 | **기준선 측정** → 수치 기록 *(당시엔 `--no-promote` 별도 실행 — /simplify의 1 pass 통합으로 플래그는 제거됐고, 현재는 단일 실행이 기준선·승격을 함께 파생한다. §5.3)* | 조건 1 |
 | 3 | `rag.py` 구현(§4.1~4.3) | — |
 | 4 | T23 작성·통과 + 기존 스위트 전체 | 조건 3·4·5 |
 | 5 | 승격 ON 재측정 → 도달률 상승·총 건수 불변·상한 동작 동일 확인 | 조건 2·4 |
