@@ -155,8 +155,10 @@ JUHAE3_OCR_FIXES = {
 # 뿐이지만 오복원은 코퍼스에 오정보를 남긴다. 효과 없는 치환을 위해 그 위험을
 # 지지 않는다.
 
-# 스캔이 3파일로 분할된 서적. 각 조각의 앞머리는 속표지(해당 PART의 테마 목록)라
+# 스캔이 5파일로 분할된 서적. 각 조각의 앞머리는 속표지(해당 PART의 테마 목록)라
 # 본문에서 제외한다 — 목차는 페이지 번호만 담고 있어 검색에 노이즈다.
+# 조각 이름은 디스크의 디렉토리명 그대로 써야 한다 — 5번째 조각만 'Part5'로
+# 대문자다(경로가 {name}/_markdown/{name}/{name}.md 3중으로 name을 쓴다).
 _GAEBYEOL_DIR = "개별노동법실무1"
 
 
@@ -197,18 +199,25 @@ BOOKS: dict[str, Book] = {
     "gaebyeol": Book(
         book_id="gaebyeol",
         # 수록 범위를 title에 명시한다. 원서는 실무테마 1~85(PART 1~8)인데
-        # 적재분은 1~35뿐이라, 범위를 적지 않으면 미수록 주제 질문에 이 서명이
+        # 적재분은 1~60뿐이라, 범위를 적지 않으면 미수록 주제 질문에 이 서명이
         # 인용된다 — G3(prompts.py)가 "참고 자료에 있는 서명만" 쓰라고 지시해
         # 이 문자열이 LLM 인용 서명의 유일한 출처이기 때문이다.
-        title="개별 노동법실무 1권 — 실무테마 1~35(최영우, 개정증보 12판)",
+        # 조각을 추가하면 이 범위도 함께 갱신할 것(part1~3=1~35, part4=36~46,
+        # Part5=47~60). title은 build_bm25_corpus.py가 BM25 코퍼스에도 담으므로
+        # 변경 시 재빌드가 필요하다.
+        title="개별 노동법실무 1권 — 실무테마 1~60(최영우, 개정증보 12판)",
         # part1의 0~12페이지는 표지·차례·색인(용어→페이지 번호)이라 전량 제외.
         # page 13에서 '실무테마 1. 근로기준법의 적용범위'로 본문이 시작한다.
         path=_gaebyeol_md("part1"),
         body_start="<!-- page: 13 -->",
-        # part2·part3는 page 0이 해당 PART의 속표지다.
+        # part2 이후는 page 0이 해당 PART의 속표지다.
+        # **뒤에만 추가할 것** — 중간에 끼우면 section_idx가 밀려 기존 조각의
+        # chunk_id가 전부 바뀌고 이전 벡터가 고아로 남는다.
         extra_parts=(
             BookPart(_gaebyeol_md("part2"), "<!-- page: 1 -->"),
             BookPart(_gaebyeol_md("part3"), "<!-- page: 1 -->"),
+            BookPart(_gaebyeol_md("part4"), "<!-- page: 1 -->"),
+            BookPart(_gaebyeol_md("Part5"), "<!-- page: 1 -->"),
         ),
     ),
 }
