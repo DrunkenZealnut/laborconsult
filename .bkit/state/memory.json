@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 22,
+  "sessionCount": 23,
   "lastSession": {
-    "startedAt": "2026-08-18T02:00:32.820Z",
+    "startedAt": "2026-08-19T05:04:28.514Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -116,5 +116,15 @@
     "iterationCount": 0,
     "startedAt": "2026-08-17T00:00:00Z",
     "reportedAt": "2026-08-18T00:00:00Z"
+  },
+  "textbook-retrieval-balance": {
+    "phase": "check",
+    "startedAt": "2026-08-19T00:00:00Z",
+    "updatedAt": "2026-08-19T00:00:00Z",
+    "planDoc": "docs/01-plan/features/textbook-retrieval-balance.plan.md",
+    "notes": "Check 97.8% 후 /simplify 완료: 발견 15→적용 10·스킵 4. 핵심 — promoted 구조적 마커(로그 의존 제거), eval 1 pass A/B(API 절반·잡음 제거), QUERY_MERGE_HEADROOM 상수 단일화. 1 pass 실측 기준선 50.0%→승격 75.0%(발동 4와 정합). 잔여: 커밋 → 프리뷰 실측(순서 7) → report.",
+    "designDoc": "docs/02-design/features/textbook-retrieval-balance.design.md",
+    "matchRate": 97.8,
+    "analysisDoc": "docs/03-analysis/textbook-retrieval-balance.analysis.md"
   }
 }

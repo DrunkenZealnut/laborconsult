@@ -33,7 +33,9 @@ from app.core.legal_api import (
     search_precedent_multi, fetch_precedent_details,
 )
 from app.core.precedent_query import build_precedent_queries
-from app.core.query_decomposer import decompose_query, classify_complexity, COMPLEXITY_PARAMS
+from app.core.query_decomposer import (
+    decompose_query, classify_complexity, COMPLEXITY_PARAMS, QUERY_MERGE_HEADROOM,
+)
 from app.core.nlrc_cases import search_nlrc_with_details
 from app.core.rag import search_pinecone_multi, search_hybrid, format_pinecone_hits, rerank_results
 from app.core.legal_consultation import process_consultation
@@ -1608,7 +1610,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 decomposed=decomposed,
                 rule_based=prec_queries,
                 fallback=getattr(analysis, "question_summary", None) or query[:80],
-                max_total=adaptive_params["max_queries"] + 2,
+                max_total=adaptive_params["max_queries"] + QUERY_MERGE_HEADROOM,
             )
 
             # ① Hybrid Search (Dense + BM25 RRF) — Adaptive top_k

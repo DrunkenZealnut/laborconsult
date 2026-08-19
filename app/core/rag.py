@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 import logging
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
@@ -239,26 +241,101 @@ def search_hybrid(
 RERANK_MODEL = "rerank-v3.5"
 RERANK_TOP_N = 5
 
+# 다양성 승격의 후보 탐색 창 — 전체 랭킹의 top_n ~ FACTOR*top_n 구간에서만
+# 해설서를 끌어올린다. 절대 점수 하한을 쓰지 않는 이유: hits의 score는
+# Dense(cosine 0.5~0.65)와 BM25(10~30)가 혼재해 스케일이 없고, rerank_score는
+# Cohere 성공 경로에만 붙는다. 랭크는 세 exit(성공·무키·예외) 모두에서 동일하게
+# 정의되는 유일한 기준이다(설계 §2.3·D-3).
+TEXTBOOK_PROMOTE_WINDOW_FACTOR = 2
+
+
+def _textbook_promote_enabled() -> bool:
+    """다양성 승격 킬스위치 — TEXTBOOK_PROMOTE=off일 때만 끈다.
+
+    코드 변경 없는 운영 롤백 수단(ANSWER_PROVIDER와 같은 의미론 — Vercel에서는
+    env 변경 후 재배포 시 반영). 알 수 없는 값은 on으로 취급한다.
+    """
+    return os.getenv("TEXTBOOK_PROMOTE", "on").strip().lower() != "off"
+
+
+def _pick_swap_victim(selected: list[dict]) -> int:
+    """아래에서부터, 같은 source_type이 2건 이상인 첫 hit의 인덱스. 없으면 최하위.
+
+    단일 출처(예: precedent 1건)를 지키기 위해서다 — 다양성을 늘리려고 다른
+    소수 출처를 지우면 목적이 자기모순이 된다(설계 D-2·I-4).
+    """
+    counts = Counter(h.get("source_type") for h in selected)
+    for i in reversed(range(len(selected))):
+        if counts[selected[i].get("source_type")] >= 2:
+            return i
+    return len(selected) - 1
+
+
+def _ensure_textbook_presence(ranked: list[dict], top_n: int) -> list[dict]:
+    """rerank 결과에 해설서가 0건이면 pool의 최상위 해설서 1건을 승격(교체).
+
+    다양성 보장이지 저작권 가드가 아니다 — G4/G4-T는 이 결과에
+    format_pinecone_hits가 그대로 적용한다(승격 → 가드 순서 불변, I-5).
+    승격은 0→1건 교체라 상한(권당 3·총량 6)을 넘길 수 없고, 비해설서가
+    top_n-1건 남으므로 100% 해설서 컨텍스트를 만들지도 않는다.
+
+    승격 후보는 말미에 붙인다 — 재랭커 기준 selected 전원보다 약한 문서이므로
+    순위를 속이지 않는다. 회귀는 test_precedent_ingest.py T23.
+    """
+    selected = ranked[:top_n]
+    if len(selected) < 2:
+        # 교체가 곧 100% 치환이 되는 크기 — 승격하지 않는다(I-6).
+        return selected
+    if any(_book_id_of(h) for h in selected):
+        return selected
+
+    window = ranked[top_n: top_n * TEXTBOOK_PROMOTE_WINDOW_FACTOR]
+    candidate = next((h for h in window if _book_id_of(h)), None)
+    if candidate is None:
+        return selected
+
+    victim_idx = _pick_swap_victim(selected)
+    # promoted 마커는 계측의 구조적 계약이다 — eval_retrieval.py가 이 키로
+    # 발동을 센다(로그 문자열·레벨에 의존하면 문구 수정만으로 계측이 조용히
+    # 0이 되고, 그 0은 "승격이 효과 없음"이라는 그럴듯한 오답으로 읽힌다).
+    # dict 사본을 만드는 이유: exit-A/C에서 candidate는 호출자 hits의 원본이다.
+    promoted = (selected[:victim_idx] + selected[victim_idx + 1:]
+                + [dict(candidate, promoted=True)])
+    logger.info("해설서 다양성 승격: %s (교체: %s, top_n=%d)",
+                candidate.get("id"), selected[victim_idx].get("source_type"), top_n)
+    return promoted
+
 
 def rerank_results(
     query: str,
     hits: list[dict],
     cohere_api_key: str,
     top_n: int = RERANK_TOP_N,
+    ensure_textbook: bool = True,
 ) -> list[dict]:
-    """Cohere Rerank로 검색 결과 재정렬.
+    """Cohere Rerank로 검색 결과 재정렬 + 해설서 다양성 승격.
 
     Args:
         query: 원본 사용자 질문 (rerank 기준)
         hits: Pinecone 검색 결과 리스트
         cohere_api_key: Cohere API 키
         top_n: 반환할 상위 결과 수
+        ensure_textbook: 해설서 다양성 승격 적용 여부. False는 평가 스크립트의
+            기준선(A/B) 측정 전용 — 파이프라인은 기본값을 쓴다.
 
     Returns:
         재정렬된 상위 top_n건. 실패 시 원본 hits[:top_n] 반환.
+        절단이 일어나는 세 exit(성공·무키·예외) 모두에서 승격이 적용된다 —
+        파이프라인의 Cohere 무키 경로는 이 함수를 아예 호출하지 않아 절단이
+        없으므로 승격도 필요 없다(설계 §2.1).
     """
+    def _finalize(ranked: list[dict]) -> list[dict]:
+        if ensure_textbook and _textbook_promote_enabled():
+            return _ensure_textbook_presence(ranked, top_n)
+        return ranked[:top_n]
+
     if not hits or not cohere_api_key:
-        return hits[:top_n]
+        return _finalize(hits)  # RRF/cosine 순서가 랭킹을 대행
 
     try:
         import cohere
@@ -277,29 +354,32 @@ def rerank_results(
                 text += h["content"]
             documents.append(text.strip() or "(empty)")
 
+        # 전체 랭킹을 요청한다(top_n이 아니라) — 승격 후보(pool 내 최상위
+        # 해설서)의 순위를 알아야 랭크 창을 적용할 수 있다. Cohere 과금은
+        # search 단위(쿼리+문서셋)라 top_n을 올려도 비용은 같다(설계 §2.2).
         result = co.rerank(
             model=RERANK_MODEL,
             query=query,
             documents=documents,
-            top_n=min(top_n, len(hits)),
+            top_n=len(documents),
         )
 
-        # 재정렬된 인덱스로 hits 재구성
-        reranked = []
+        # 재정렬된 인덱스로 hits 재구성 (전 문서에 rerank_score 부착)
+        ranked = []
         for item in result.results:
             hit = hits[item.index].copy()
             hit["rerank_score"] = round(item.relevance_score, 4)
-            reranked.append(hit)
+            ranked.append(hit)
 
         logger.info(
-            "Rerank 완료: %d건 → %d건 (model=%s)",
-            len(hits), len(reranked), RERANK_MODEL,
+            "Rerank 완료: %d건 → 상위 %d건 (model=%s)",
+            len(hits), min(top_n, len(ranked)), RERANK_MODEL,
         )
-        return reranked
+        return _finalize(ranked)
 
     except Exception as e:
         logger.warning("Rerank 실패, cosine 정렬 폴백: %s", e)
-        return hits[:top_n]
+        return _finalize(hits)
 
 
 MAX_CHUNKS_PER_BOOK = 3
@@ -341,6 +421,8 @@ MAX_CHUNKS_PER_BOOK = 3
 # 이 값은 "비해설서 출처가 최소 1건 실린다"를 보장하지 않는다. rerank 결과가
 # 전부 해설서면 컨텍스트도 전부 해설서다(SIMPLE은 rerank_top_n=3이라 서적이
 # 1권일 때도 그랬다). 그런 보장이 필요하면 별도 설계 항목이다.
+# 역방향(해설서 최소 1건)은 _ensure_textbook_presence(다양성 승격)가 담당한다 —
+# 그쪽은 상한이 아니라 교체라 이 상한과 충돌하지 않는다(textbook-retrieval-balance).
 MAX_TEXTBOOK_CHUNKS = 6
 
 # 해설서 벡터 ID 규약: textbook_{book_id}_{section:04d}_{chunk}
