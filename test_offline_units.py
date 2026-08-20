@@ -61,7 +61,40 @@ def test_merge_search_queries() -> None:
     )
     assert merged == ["연차수당 산정", "연차 발생 기준"], merged
     assert _merge_search_queries([], [], "폴백") == ["폴백"]
-    print("  ✅ _merge_search_queries: 중복 제거·우선순위·폴백")
+
+    # always_fallback(구어사전 합성 경로) — rule 쿼리가 있어도 원문이 병기된다.
+    # 기본값(False)은 기존 동작 그대로: merged가 차 있으면 fallback 탈락.
+    assert "원문" not in _merge_search_queries([], ["부당해고 해고 통보"], "원문")
+    assert _merge_search_queries([], ["부당해고 해고 통보"], "원문",
+                                 always_fallback=True) == ["부당해고 해고 통보", "원문"]
+    # max_total이 꽉 차도 원문은 잘리지 않는다 — 자리를 비우고 들어간다.
+    full = _merge_search_queries(["a", "b"], ["c"], "원문", max_total=3,
+                                 always_fallback=True)
+    assert "원문" in full and len(full) == 3, full
+    print("  ✅ _merge_search_queries: 중복 제거·우선순위·폴백·원문 병기(합성 경로)")
+
+
+def test_colloquial_fallback_only_wiring() -> None:
+    """구어 사전은 의도분석 실패 폴백에서만 발동한다 (Design §2.2·분석 G-3).
+
+    소스 배선 검사 — 사전 호출이 `analysis is None` 분기 안에만 있음을 고정한다.
+    누군가 정상 경로로 옮기면(LLM 변환과 이중 발동) CI가 잡아야 한다.
+    """
+    import re as _re
+    from pathlib import Path
+
+    src = Path("app/core/pipeline.py").read_text(encoding="utf-8")
+    calls = [m.start() for m in _re.finditer(r"map_colloquial_terms\(", src)]
+    # import 줄 제외한 호출 지점은 정확히 1곳
+    call_sites = [p for p in calls if "import" not in src[src.rfind("\n", 0, p) + 1:p]]
+    assert len(call_sites) == 1, f"사전 호출 {len(call_sites)}곳 — 폴백 1곳이어야 함"
+    # 호출 지점을 감싸는 최근접 상위 분기가 `if analysis is None:`인지 —
+    # 호출 위치에서 역방향으로 첫 if 문을 찾는다.
+    prefix = src[: call_sites[0]]
+    last_if = max(prefix.rfind("if analysis is None:"), prefix.rfind("if analysis:"))
+    assert prefix[last_if:].startswith("if analysis is None:"), \
+        "사전 호출이 `analysis is None` 분기 밖에 있음"
+    print("  ✅ 구어 사전 배선: 의도분석 실패 폴백 1곳에서만 발동")
 
 
 def test_conflict_resolver() -> None:
@@ -460,9 +493,88 @@ def test_code_tables_defined_in_ddl() -> None:
     print(f"  ✅ 테이블 정의 대조: 코드 사용 {len(used)}종 ⊆ DDL 정의 {len(defined)}종")
 
 
+def test_colloquial_map() -> None:
+    """구어→법률용어 정적 사전 (colloquial-legal-mapping G1b).
+
+    막는 실패: 의도분석 폴백에서 구어 질의의 법률 코퍼스 도달 0/8(실측).
+    수록 원칙: 오변환(무관 판례가 근거로 실림)이 미변환(Q&A 강등)보다 비싸므로
+    고신뢰 패턴만 — 여기서는 양성(잡아야 할 것)과 음성(잡으면 안 되는 것)을
+    모두 고정한다.
+    """
+    from app.core.colloquial_map import map_colloquial_terms
+
+    # 양성 — 실측 8건 + 계열 대표. (질의, 반드시 포함할 용어)
+    positives = [
+        ("저 어제 잘렸어요", "부당해고"),
+        ("사장이 내일부터 나오지 말래요", "부당해고"),
+        ("오늘부로 나오지 말라네요", "부당해고"),
+        ("월급 대신 가불이랑 퉁치자고 하는데", "임금 상계 금지"),
+        ("회사 물건 파손했다고 월급에서 까겠대요", "임금 공제"),
+        ("월급을 일방적으로 깎겠답니다", "임금 삭감"),
+        ("삼일 일하고 짤렸는데 돈을 안 줘요", "임금체불"),
+        ("야근 수당을 밥값으로 때운대요", "임금 통화 지급 원칙"),
+        ("사직서 쓰라고 계속 눈치 줘요", "사직 강요"),
+        ("팀장이 매일 갈궈요", "직장 내 괴롭힘"),
+        ("부서에서 왕따를 당하고 있어요", "직장 내 괴롭힘"),
+        ("일하다 다쳤는데 공상 처리하재요", "산재보상"),
+        ("근무 중에 다쳤어요", "업무상 재해"),
+        ("근무 중에 다쳐서 병원에 다녀요", "업무상 재해"),
+        ("4대보험을 안 들어줬어요", "4대보험 가입의무"),
+        ("3.3% 떼고 주는데 저 프리랜서인가요", "근로자성 인정"),
+        ("근로계약서를 안 썼어요", "근로계약서 미작성"),
+        ("쪼개기 계약으로 갱신만 해요", "갱신기대권"),
+        ("임신했다고 잘렸어요", "임산부 해고 금지"),
+        ("회사가 구조조정을 한다고 해요", "경영상 해고"),
+        ("부장님 갑질이 심해요", "직장 내 괴롭힘"),
+        ("전 직장이 블랙리스트에 올렸대요", "취업방해 금지"),
+        ("연차를 못 쓰게 해요", "연차휴가 사용권"),
+        ("실업급여도 못 받고 월급도 못 받았어요", "임금체불"),  # 복합 — lookbehind가 월급 매칭은 보존
+    ]
+    for q, expect in positives:
+        terms = map_colloquial_terms(q)
+        assert expect in terms, f"미매핑: {q!r} → {terms} (기대: {expect})"
+
+    # 음성 — 법률용어 질의·무관 문장·타 쟁점은 조용히 빈 리스트 또는 해당
+    # 항목 미발동(원문 검색 유지). 오변환은 무관 판례를 근거로 만들므로
+    # 이 클래스가 회귀로 고정돼야 한다(분석 P2-5).
+    negatives = [
+        "통상임금에 상여금이 포함되나요",      # 이미 법률용어 — 사전 불필요
+        "연차휴가 산정 방법이 궁금합니다",      # '연차'만으로는 미발동(쟁점어 없음)
+        "회사 공상과학 동아리에서 다퉜어요",    # '공상' 오매칭 방지(처리 없음)
+        "월급날이 언제인가요",                  # 임금 문맥이지만 쟁점 없음
+        "실업급여를 못 받았어요",               # 고용보험 쟁점 — 임금체불 아님
+        "연금이 안 들어왔어요",                 # 미입금 — 미가입 아님
+    ]
+    for q in negatives:
+        terms = map_colloquial_terms(q)
+        assert terms == [], f"오매핑: {q!r} → {terms}"
+
+    # 억제자 — 같은 어간이라도 문맥이 다르면 해당 항목이 죽어야 한다.
+    suppressed = [
+        ("작업하다 기계에 손가락이 잘렸어요", "부당해고"),   # 산재이지 해고 아님
+        ("출장 나가라고 했는데 출장비를 안 줘요", "부당해고"),  # 이동 지시
+        ("임신 중인데 외근 나가라고 해요", "임산부 해고 금지"),  # 배치 쟁점
+    ]
+    for q, must_not in suppressed:
+        terms = map_colloquial_terms(q)
+        assert must_not not in terms, f"억제 실패: {q!r} → {terms}"
+    # 억제자는 항목 단위다 — 신체 문맥이 '잘렸'(해고)만 죽이고, 같은 문장의
+    # 산재 매핑은 산다.
+    both = map_colloquial_terms("작업 중에 다쳤는데 기계에 손가락이 잘렸어요")
+    assert "산재보상" in both and "부당해고" not in both, both
+
+    # max_terms 상한 — 여러 패턴이 동시 매칭돼도 쿼리 폭주를 막는다.
+    combo = "임신했는데 잘렸고 월급도 안 주고 갈구고 왕따에 보험도 안 들어줬어요"
+    assert len(map_colloquial_terms(combo, max_terms=6)) == 6
+
+    print(f"  ✅ 구어 사전: 양성 {len(positives)}건 매핑·음성 {len(negatives)}건 통과·상한 고정")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
+    test_colloquial_map()
+    test_colloquial_fallback_only_wiring()
     test_merge_search_queries()
     test_conflict_resolver()
     test_nlrc_bundle()

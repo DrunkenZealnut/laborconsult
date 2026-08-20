@@ -16,6 +16,8 @@ from app.config import (
 )
 from app.core.file_parser import ParsedAttachment
 from app.core.analyzer import analyze_intent
+from app.core.colloquial_map import map_colloquial_terms
+from app.models.schemas import AnalysisResult
 # compose_follow_up은 더 이상 파이프라인에서 사용하지 않음
 # (누락 정보가 있어도 답변을 생성하고 말미에 안내)
 from app.core.storage import save_conversation, save_session_data, upload_attachment, classify_category, infer_calc_types, ConversationRecord
@@ -143,10 +145,17 @@ def _merge_search_queries(
     rule_based: list[str],
     fallback: str,
     max_total: int = 5,
+    always_fallback: bool = False,
 ) -> list[str]:
     """LLM 분해 + 규칙 기반 쿼리를 병합, 중복 제거.
 
     우선순위: decomposed > rule_based > fallback
+
+    always_fallback: fallback을 merged가 비었을 때만이 아니라 **항상** 병기한다.
+    구어사전 합성 경로 전용 — 사전이 매칭되면 rule_based가 차서 원문(fallback)이
+    탈락하는데, 그러면 검색이 일반명사 나열만으로 돌아 상황 특정성을 잃고
+    Dense의 구어-Q&A 매칭도 죽는다(분석 P1-2 — 설계 "병기"의 실제 구현).
+    정상 경로 기본값은 False — LLM이 재진술한 쿼리들로 검색하는 기존 설계 유지.
     """
     seen: set[str] = set()
     merged: list[str] = []
@@ -160,6 +169,11 @@ def _merge_search_queries(
     # 결과가 없으면 폴백
     if not merged:
         merged.append(fallback)
+    elif always_fallback and fallback.strip().lower() not in seen:
+        # 말미가 아니라 max_total 안쪽에 확실히 들어가도록 자리를 비운다 —
+        # 뒤에만 붙이면 rule 쿼리가 max_total을 채웠을 때 조용히 잘린다.
+        merged = merged[: max_total - 1]
+        merged.append(fallback.strip())
 
     return merged[:max_total]
 
@@ -1563,11 +1577,38 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 2-1b. 판례·행정해석 검색 (Pinecone 우선 → 법제처 API 폴백)
     precedent_text = None
     precedent_meta: list[dict] = []
+    if analysis is None:
+        # 의도분석 실패 시 이 블록이 통째로 죽어 답변이 검색 근거 0으로 나가던
+        # 것을 살린다(colloquial-legal-mapping G1a). 구어 원문만으로는 법률
+        # 코퍼스 도달이 0/8(실측)이라, 정적 사전(G1b)이 뽑은 법률용어를
+        # precedent_keywords에 실어 rule 쿼리 경로를 태운다 — 사전 미매칭이어도
+        # 합성 객체 덕에 RAG 자체는 원문 쿼리로 돈다. 전 필드 기본값의 합성
+        # 객체라 하류(NLRC·상담 매핑·지식 모듈·저장)는 "빈 분석"으로 통과한다.
+        # 주입 지점이 스코프 게이트·계산 라우팅 **뒤**인 것이 중요하다 — 그 둘은
+        # 의도분석 실패 시 기존 동작(게이트 skip·레거시 추출)을 유지해야 한다.
+        colloquial_terms = map_colloquial_terms(query)
+        if colloquial_terms:
+            # 계측 — Vercel 로그에서 '구어사전' 검색. 없으면 사전이
+            # 죽어도(패턴 오류 등) 아무도 모른다. 미매칭도 남긴다 — 21패턴에
+            # 안 걸리는 대다수 질의에서 합성 경로 진입 자체를 셀 수단이다.
+            logger.info("구어사전 발동: %s", colloquial_terms)
+        else:
+            logger.info("구어사전 미매칭 — 원문 검색만")
+        # intent_provider="synthetic"은 이중 용도다: ① _llm_meta가
+        # metadata.llm.intent_provider로 저장해 "의도분석 전멸 대화"를 사후
+        # 식별 가능하게 하고(없으면 정상 대화와 구별 불가 — 분석 P2-6),
+        # ② 아래 RAG 블록이 합성 경로 전용 처리(SIMPLE 강제·원문 병기)의
+        # 판정 키로 쓴다.
+        analysis = AnalysisResult(precedent_keywords=colloquial_terms,
+                                  intent_provider="synthetic")
     if analysis:
         try:
             yield {"type": "status", "text": "관련 판례 검색 중..."}
 
             # ── Adaptive Retrieval: 복잡도 분류 → 파라미터 동적 조정 ──
+            synthetic_analysis = (
+                getattr(analysis, "intent_provider", None) == "synthetic"
+            )
             try:
                 complexity = classify_complexity(
                     query,
@@ -1577,6 +1618,13 @@ def process_question(query: str, session: Session, config: AppConfig,
             except Exception:
                 from app.core.query_decomposer import QueryComplexity
                 complexity = QueryComplexity.MODERATE
+            if synthetic_analysis:
+                # 합성 경로 = Claude·OpenAI 의도분석이 모두 죽은 상태다. MODERATE
+                # 이상이 여는 decompose(Anthropic)·Self-RAG(Haiku)·wider는 죽은
+                # 벤더 재호출이라 지연만 쌓는다 — SIMPLE로 강제해 외부 호출을
+                # 임베딩+Pinecone+Cohere 최소 경로로 좁힌다(분석 P1-4).
+                from app.core.query_decomposer import QueryComplexity
+                complexity = QueryComplexity.SIMPLE
             adaptive_params = COMPLEXITY_PARAMS[complexity]
             logger.info("Adaptive: %s → top_k=%d, rerank_n=%d, self_rag=%s",
                         complexity.value,
@@ -1605,12 +1653,15 @@ def process_question(query: str, session: Session, config: AppConfig,
                     force=adaptive_params.get("force_decompose", False),
                 )
 
-            # 쿼리 병합: LLM 분해 + 규칙 기반 + 폴백(원본)
+            # 쿼리 병합: LLM 분해 + 규칙 기반 + 폴백(원본).
+            # 합성 경로는 원문을 항상 병기한다 — 사전 매핑(일반명사)만으로는
+            # 상황 특정성이 사라진다(P1-2).
             pinecone_search_queries = _merge_search_queries(
                 decomposed=decomposed,
                 rule_based=prec_queries,
                 fallback=getattr(analysis, "question_summary", None) or query[:80],
                 max_total=adaptive_params["max_queries"] + QUERY_MERGE_HEADROOM,
+                always_fallback=synthetic_analysis,
             )
 
             # ① Hybrid Search (Dense + BM25 RRF) — Adaptive top_k
