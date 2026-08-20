@@ -11,13 +11,14 @@
       구어-구어 매칭이 돼 변환 없이도 잡히므로 지표에서 분리한다.
 
 판정은 집계 지표로 한다(개별 질의 ±1건은 회귀가 아니다 — eval_retrieval.py와
-같은 원칙). 기준선(2026-08-20, Act 완료 후 측정):
+같은 원칙). 기준선(2026-08-20, Act 완료 + 폴백 SIMPLE 파라미터 정합 후):
   [1] 의도분석 변환 18/18
   [2] 정적 사전 18/18
-  [3] 폴백(사전+원문 병기) 9/18 = 50% — 사전 도입 전 0%
-      정상(LLM 키워드) 13~15/18 = 72~83% — 반복 2회의 준결정 밴드(법률근거
-      승격 도입 전 50%). c15(4대보험)·c16(근로자성)은 두 측정 모두 0 —
-      법률 코퍼스의 주제 커버리지 공백(다음 사이클 후보), 검색 로직 문제 아님.
+  [3] 폴백(사전+원문 병기, SIMPLE 파라미터) 9/18 = 50% — 사전 도입 전 0%
+      정상(LLM 키워드, 원본 복잡도 파라미터) 12~15/18 = 67~83% — 반복 3회의
+      준결정 밴드(승격 도입 전 8건 실측 기준 50%). c15(4대보험)·c16(근로자성)은
+      전 측정 0 — 법률 코퍼스의 주제 커버리지 공백(다음 사이클 후보), 검색
+      로직 문제 아님.
 fixture 갱신 시 이 기준선을 재측정할 것.
 
 사용법:
@@ -88,21 +89,30 @@ def eval_llm_and_search(queries: list[dict]) -> None:
     print(f"{'id':<5} {'LLM변환':>7} {'폴백도달':>8} {'정상도달':>8}  키워드(LLM)")
     print("-" * 90)
 
+    def legal_count(user_query: str, search_queries: list[str],
+                    params: dict) -> int:
+        """params를 명시로 받는다 — 폴백과 정상 경로의 search_top_k·
+        rerank_top_n이 다르므로(아래) 루프 변수 캡처(B023)로 두면 두 측정이
+        같은 파라미터를 쓰는 계측 오류가 조용히 생긴다."""
+        hits = rag.search_hybrid(search_queries, config,
+                                 top_k=params["search_top_k"])
+        if not hits:
+            return 0
+        ranked = rag.rerank_results(user_query, hits, config.cohere_api_key,
+                                    top_n=params["rerank_top_n"])
+        return sum(1 for h in ranked if h.get("source_type") in LEGAL_SOURCES)
+
+    from app.core.query_decomposer import QueryComplexity
+    # 프로덕션 합성 경로는 복잡도를 SIMPLE로 강제한다(pipeline.py, 분석 P1-4) —
+    # 폴백 측정도 같은 파라미터를 써야 기준선이 프로덕션을 대변한다.
+    simple_params = COMPLEXITY_PARAMS[QueryComplexity.SIMPLE]
+
     llm_ok = fb_reach = normal_reach = 0
     n = len(queries)
     for q in queries:
         query = q["query"]
         complexity = classify_complexity(query)
         params = COMPLEXITY_PARAMS[complexity]
-
-        def legal_count(search_queries: list[str]) -> int:
-            hits = rag.search_hybrid(search_queries, config,
-                                     top_k=params["search_top_k"])
-            if not hits:
-                return 0
-            ranked = rag.rerank_results(query, hits, config.cohere_api_key,
-                                        top_n=params["rerank_top_n"])
-            return sum(1 for h in ranked if h.get("source_type") in LEGAL_SOURCES)
 
         # [1] 의도분석 변환
         try:
@@ -114,10 +124,11 @@ def eval_llm_and_search(queries: list[dict]) -> None:
         hit_llm = _hits_any(kws, q["expect_terms"])
         llm_ok += hit_llm
 
-        # [3a] 폴백 경로 재현 — pipeline의 합성 주입과 동일 구성(사전 + 원문 폴백)
+        # [3a] 폴백 경로 재현 — pipeline의 합성 주입과 동일 구성
+        # (사전 rule 쿼리 + 원문 병기, SIMPLE 강제 파라미터)
         dict_terms = map_colloquial_terms(query)
         fb_queries = ([" ".join(dict_terms[:4])] if dict_terms else []) + [query[:80]]
-        fb_n = legal_count(fb_queries)
+        fb_n = legal_count(query, fb_queries, simple_params)
         fb_reach += fb_n > 0
 
         # [3b] 정상 경로 — LLM 키워드 rule 쿼리(+요약 폴백)
@@ -131,7 +142,7 @@ def eval_llm_and_search(queries: list[dict]) -> None:
         fallback = ((getattr(a, "question_summary", "") or query)[:80]
                     if a else query[:80])
         normal_queries = (prec_queries or []) + [fallback]
-        nm_n = legal_count(normal_queries)
+        nm_n = legal_count(query, normal_queries, params)
         normal_reach += nm_n > 0
 
         print(f"{q['id']:<5} {'✅' if hit_llm else '❌':>6} "
