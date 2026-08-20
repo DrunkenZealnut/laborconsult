@@ -92,7 +92,13 @@ def search_pinecone(
     """
     try:
         # 쿼리 임베딩 (1회만)
-        resp = config.openai_client.embeddings.create(
+        # 국소 타임아웃 — 클라이언트 기본(600s×2회)은 임베딩에 과하다. 의도분석
+        # 실패 폴백(2벤더 장애 중)에서도 이 호출이 열리므로, 행(hang) 열화 시
+        # 프론트 idle(60s) 안에 실패로 떨어져야 한다(분석 P1-4). with_options는
+        # 요청 단위라 답변 LLM 등 다른 OpenAI 경로에 영향이 없다.
+        resp = config.openai_client.with_options(
+            timeout=10.0, max_retries=0,
+        ).embeddings.create(
             model=config.embed_model,
             input=query,
         )
@@ -258,52 +264,128 @@ def _textbook_promote_enabled() -> bool:
     return os.getenv("TEXTBOOK_PROMOTE", "on").strip().lower() != "off"
 
 
-def _pick_swap_victim(selected: list[dict]) -> int:
-    """아래에서부터, 같은 source_type이 2건 이상인 첫 hit의 인덱스. 없으면 최하위.
+def _legal_promote_enabled() -> bool:
+    """법률근거 승격 킬스위치 — LEGAL_PROMOTE=off일 때만 끈다(TEXTBOOK_PROMOTE와
+    동일한 재배포-반영 의미론)."""
+    return os.getenv("LEGAL_PROMOTE", "on").strip().lower() != "off"
+
+
+# 법률근거 승격의 대상 — 공공 저작물(저작권법 제7조 비보호) 소스만.
+# **textbook을 절대 넣지 말 것** — 해설서 노출 증가는 저작권 재검토 대상이다
+# (colloquial-legal-mapping design §6).
+LEGAL_PROMOTE_SOURCES = frozenset({"precedent", "interpretation", "regulation"})
+
+
+def _is_legal_source(hit: dict) -> bool:
+    return hit.get("source_type") in LEGAL_PROMOTE_SOURCES
+
+
+def _diversity_class_of(hit: dict):
+    """hit이 속한 다양성 클래스 판정 술어. 어느 클래스도 아니면 None.
+
+    두 승격(_ensure_source_presence의 두 호출)의 대상 집합과 정확히 같은
+    정의여야 한다 — 어긋나면 I-9가 엉뚱한 것을 보호하거나 놓친다.
+    """
+    if _book_id_of(hit):
+        return _book_id_of
+    if _is_legal_source(hit):
+        return _is_legal_source
+    return None
+
+
+def _pick_swap_victim(selected: list[dict]) -> int | None:
+    """아래에서부터, 같은 source_type이 2건 이상인 첫 hit의 인덱스.
 
     단일 출처(예: precedent 1건)를 지키기 위해서다 — 다양성을 늘리려고 다른
     소수 출처를 지우면 목적이 자기모순이 된다(설계 D-2·I-4).
+
+    승격으로 들어온 항목(promoted 마커)은 후보에서 제외한다(I-7) — 뒤 승격이
+    앞 승격분을 잡아먹으면 적용 순서가 결과를 바꾸는 비결정 구조가 된다.
+    비승격 원본이 2건 미만이면 None(I-8) — 교체를 허용하면 승격 연쇄가 원본을
+    전멸시켜 100% 승격 컨텍스트가 된다.
+
+    다양성 클래스(해설서·법률근거)의 **마지막 1건**은 I-4 폴백에서도 victim이
+    되지 않는다(I-9) — 해설서 승격이 유일한 판례를 지우면 법률근거 승격의
+    발동 조건이 새로 생겨, rerank 상위 판례가 랭크 창의 하위 판례로 되메워지는
+    강등 순환이 생긴다(분석 P1-3). 자연 유입 해설서를 legal 승격이 지우는
+    역방향도 같은 규칙이 막는다.
     """
-    counts = Counter(h.get("source_type") for h in selected)
-    for i in reversed(range(len(selected))):
+    candidates = [i for i, h in enumerate(selected) if not h.get("promoted")]
+    if len(candidates) < 2:
+        return None
+
+    def _last_of_class(i: int) -> bool:
+        pred = _diversity_class_of(selected[i])
+        return pred is not None and sum(1 for h in selected if pred(h)) == 1
+
+    eligible = [i for i in candidates if not _last_of_class(i)]
+    if not eligible:
+        return None
+    counts = Counter(selected[i].get("source_type") for i in candidates)
+    for i in reversed(eligible):
         if counts[selected[i].get("source_type")] >= 2:
             return i
-    return len(selected) - 1
+    return eligible[-1]
+
+
+def _ensure_source_presence(
+    selected: list[dict],
+    ranked: list[dict],
+    top_n: int,
+    is_target,
+    label: str,
+) -> list[dict]:
+    """selected에 대상 소스가 0건이면 랭크 창의 최상위 후보 1건을 승격(교체).
+
+    해설서·법률근거 두 승격의 공용 몸체 — 불변식 I-1~I-8은 여기 한 곳에만
+    구현된다. 다양성 보장이지 저작권 가드가 아니다 — G4/G4-T는 이 결과에
+    format_pinecone_hits가 그대로 적용한다(승격 → 가드 순서 불변, I-5).
+    교체라 총 건수가 불변이고(I-1), 승격 후보는 말미에 붙인다 — 재랭커 기준
+    selected 전원보다 약한 문서이므로 순위를 속이지 않는다.
+
+    Args:
+        selected: 현재 상위 목록(앞선 승격이 반영된 상태일 수 있음)
+        ranked: 전체 랭킹 — 후보 창(top_n ~ FACTOR*top_n)의 근거
+        is_target: 승격 대상 판정 술어
+        label: promoted 마커 값("textbook"|"legal") — eval·로그가 이 키로
+            발동을 구분 계측한다. 회귀는 test_precedent_ingest.py T23·T24.
+    """
+    if len(selected) < 2:
+        # 교체가 곧 100% 치환이 되는 크기 — 승격하지 않는다(I-6).
+        return selected
+    if any(is_target(h) for h in selected):
+        return selected
+
+    window = ranked[top_n: top_n * TEXTBOOK_PROMOTE_WINDOW_FACTOR]
+    candidate = next((h for h in window if is_target(h)), None)
+    if candidate is None:
+        return selected
+
+    victim_idx = _pick_swap_victim(selected)
+    if victim_idx is None:
+        return selected
+    # promoted 마커는 계측의 구조적 계약이다 — eval 스크립트가 이 키로
+    # 발동을 센다(로그 문자열·레벨에 의존하면 문구 수정만으로 계측이 조용히
+    # 0이 되고, 그 0은 "승격이 효과 없음"이라는 그럴듯한 오답으로 읽힌다).
+    # dict 사본을 만드는 이유: exit-A/C에서 candidate는 호출자 hits의 원본이다.
+    promoted = (selected[:victim_idx] + selected[victim_idx + 1:]
+                + [dict(candidate, promoted=label)])
+    logger.info("%s 다양성 승격: %s (교체: %s, top_n=%d)",
+                "해설서" if label == "textbook" else "법률근거",
+                candidate.get("id"), selected[victim_idx].get("source_type"), top_n)
+    return promoted
 
 
 def _ensure_textbook_presence(ranked: list[dict], top_n: int) -> list[dict]:
     """rerank 결과에 해설서가 0건이면 pool의 최상위 해설서 1건을 승격(교체).
 
-    다양성 보장이지 저작권 가드가 아니다 — G4/G4-T는 이 결과에
-    format_pinecone_hits가 그대로 적용한다(승격 → 가드 순서 불변, I-5).
-    승격은 0→1건 교체라 상한(권당 3·총량 6)을 넘길 수 없고, 비해설서가
-    top_n-1건 남으므로 100% 해설서 컨텍스트를 만들지도 않는다.
-
-    승격 후보는 말미에 붙인다 — 재랭커 기준 selected 전원보다 약한 문서이므로
-    순위를 속이지 않는다. 회귀는 test_precedent_ingest.py T23.
+    공용 몸체(_ensure_source_presence)에 위임 — 기존 시그니처는 평가 스크립트
+    (eval_retrieval.py)와 T23이 소비하므로 유지한다.
     """
-    selected = ranked[:top_n]
-    if len(selected) < 2:
-        # 교체가 곧 100% 치환이 되는 크기 — 승격하지 않는다(I-6).
-        return selected
-    if any(_book_id_of(h) for h in selected):
-        return selected
-
-    window = ranked[top_n: top_n * TEXTBOOK_PROMOTE_WINDOW_FACTOR]
-    candidate = next((h for h in window if _book_id_of(h)), None)
-    if candidate is None:
-        return selected
-
-    victim_idx = _pick_swap_victim(selected)
-    # promoted 마커는 계측의 구조적 계약이다 — eval_retrieval.py가 이 키로
-    # 발동을 센다(로그 문자열·레벨에 의존하면 문구 수정만으로 계측이 조용히
-    # 0이 되고, 그 0은 "승격이 효과 없음"이라는 그럴듯한 오답으로 읽힌다).
-    # dict 사본을 만드는 이유: exit-A/C에서 candidate는 호출자 hits의 원본이다.
-    promoted = (selected[:victim_idx] + selected[victim_idx + 1:]
-                + [dict(candidate, promoted=True)])
-    logger.info("해설서 다양성 승격: %s (교체: %s, top_n=%d)",
-                candidate.get("id"), selected[victim_idx].get("source_type"), top_n)
-    return promoted
+    return _ensure_source_presence(
+        ranked[:top_n], ranked, top_n,
+        lambda h: bool(_book_id_of(h)), "textbook",
+    )
 
 
 def rerank_results(
@@ -320,8 +402,8 @@ def rerank_results(
         hits: Pinecone 검색 결과 리스트
         cohere_api_key: Cohere API 키
         top_n: 반환할 상위 결과 수
-        ensure_textbook: 해설서 다양성 승격 적용 여부. False는 평가 스크립트의
-            기준선(A/B) 측정 전용 — 파이프라인은 기본값을 쓴다.
+        ensure_textbook: 다양성 승격(해설서·법률근거 모두) 적용 여부. False는
+            평가 스크립트의 기준선(A/B) 측정 전용 — 파이프라인은 기본값을 쓴다.
 
     Returns:
         재정렬된 상위 top_n건. 실패 시 원본 hits[:top_n] 반환.
@@ -330,9 +412,19 @@ def rerank_results(
         없으므로 승격도 필요 없다(설계 §2.1).
     """
     def _finalize(ranked: list[dict]) -> list[dict]:
-        if ensure_textbook and _textbook_promote_enabled():
-            return _ensure_textbook_presence(ranked, top_n)
-        return ranked[:top_n]
+        # 승격 순서: 해설서(기존) → 법률근거(신규). 두 대상 집합이 배타적이라
+        # 앞 승격이 뒤 발동 조건을 바꾸지 않는다. 뒤 승격이 앞 승격분을 victim
+        # 삼는 것은 _pick_swap_victim의 I-7이 막는다.
+        selected = ranked[:top_n]
+        if not ensure_textbook:
+            return selected
+        if _textbook_promote_enabled():
+            selected = _ensure_source_presence(
+                selected, ranked, top_n, lambda h: bool(_book_id_of(h)), "textbook")
+        if _legal_promote_enabled():
+            selected = _ensure_source_presence(
+                selected, ranked, top_n, _is_legal_source, "legal")
+        return selected
 
     if not hits or not cohere_api_key:
         return _finalize(hits)  # RRF/cosine 순서가 랭킹을 대행

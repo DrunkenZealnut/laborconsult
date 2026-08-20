@@ -1221,7 +1221,7 @@ def t23_textbook_diversity_promotion() -> None:
     check("T23-a3 승격 후보는 말미", out[-1]["id"] == "textbook_win_0000_0", out[-1]["id"])
     # promoted 마커는 계측의 구조적 계약 — eval_retrieval.py가 이 키로 발동을
     # 센다. 로그 문자열로 세면 문구 수정만으로 계측이 조용히 0이 된다.
-    check("T23-a4 승격 hit에 promoted 마커", out[-1].get("promoted") is True)
+    check("T23-a4 승격 hit에 promoted 마커", out[-1].get("promoted") == "textbook")
     check("T23-a5 pool 원본은 비변이(사본에만 마킹)", "promoted" not in ranked[6])
 
     # I-3: 창(top_n ~ 2*top_n) 밖 후보는 끌어올리지 않는다.
@@ -1289,6 +1289,125 @@ def t23_textbook_diversity_promotion() -> None:
           [h["id"] for h in out_k] == [h["id"] for h in ranked[:5]])
 
 
+def t24_legal_diversity_promotion() -> None:
+    """법률근거 승격(colloquial-legal-mapping) — 공용화 불변식 + I-7·I-8.
+
+    이 사이클이 막는 실패:
+      · 구어 질의에서 pool에 든 판례가 top_n 절단으로 사장된다(실측 4/8)
+      · 승격 연쇄가 서로의 승격분을 잡아먹거나(I-7) 원본을 전멸시킨다(I-8)
+    """
+    from app.core.rag import (_ensure_source_presence, _is_legal_source,
+                              _pick_swap_victim, rerank_results,
+                              format_pinecone_hits, LEGAL_PROMOTE_SOURCES,
+                              TEXTBOOK_PROMOTE_WINDOW_FACTOR)
+    from app.core.pipeline import uses_textbook
+
+    def tb(i, book="win"):
+        return {"id": f"textbook_{book}_{i:04d}_0", "source_type": "textbook",
+                "book_id": book, "title": f"{book} 해설서", "section": "s",
+                "content": f"해설 {i}", "score": 0.5}
+
+    def src(i, stype="qa"):
+        return {"id": f"{stype}_{i}", "source_type": stype, "title": f"{stype}{i}",
+                "section": "s", "content": f"본문 {i}", "score": 0.5}
+
+    def legal_promote(ranked, top_n):
+        return _ensure_source_presence(
+            ranked[:top_n], ranked, top_n, _is_legal_source, "legal")
+
+    # T24a — 발동: qa 일색 top에 창 내 판례 → 교체·마커·길이 불변 (T23-a 미러).
+    ranked = [src(i) for i in range(6)] + [src(6, "precedent")] + [src(i) for i in range(7, 10)]
+    out = legal_promote(ranked, 5)
+    check("T24-a 창 내 판례 승격 (길이 불변)", len(out) == 5, len(out))
+    check("T24-a2 판례 정확히 1건",
+          sum(1 for h in out if h["source_type"] == "precedent") == 1)
+    check("T24-a3 promoted 마커는 'legal'", out[-1].get("promoted") == "legal")
+    # 대상 판정 — 행정해석·훈령예규도 대상, textbook은 절대 아님(저작권 §6).
+    check("T24-a4 대상 집합 고정",
+          LEGAL_PROMOTE_SOURCES == {"precedent", "interpretation", "regulation"})
+    check("T24-a5 해석도 대상", _is_legal_source(src(0, "interpretation")))
+    check("T24-a6 textbook은 비대상", not _is_legal_source(tb(0)))
+    only_tb_window = [src(i) for i in range(5)] + [tb(0)]
+    check("T24-a7 창에 textbook뿐이면 미발동",
+          all(h["source_type"] != "textbook" for h in legal_promote(only_tb_window, 5)))
+
+    # 이미 존재·후보 부재 → 무변경 (T23-c·d 미러).
+    has = [src(0), src(1, "precedent"), src(2), src(3), src(4), src(5, "precedent")]
+    check("T24-a8 이미 존재 시 무변경",
+          [h["id"] for h in legal_promote(has, 5)] == [h["id"] for h in has[:5]])
+
+    # I-3 미러 — 창(top_n ~ 2*top_n) 밖 법률근거는 끌어올리지 않는다.
+    far_legal = [src(i) for i in range(5 * TEXTBOOK_PROMOTE_WINDOW_FACTOR)] + [src(99, "precedent")]
+    check("T24-a9 창 밖 후보 무승격",
+          all(h["source_type"] != "precedent" for h in legal_promote(far_legal, 5)))
+
+    # T24b — 동시 발동: 해설서·법률근거 둘 다 창에 있으면 각 1건씩 교체.
+    both = [src(i) for i in range(5)] + [tb(0), src(5, "precedent")] + [src(i) for i in range(7, 10)]
+    out_b = rerank_results("q", both, cohere_api_key="", top_n=5)
+    kinds_b = [h["source_type"] for h in out_b]
+    check("T24-b 동시 발동 (길이 불변)", len(out_b) == 5, kinds_b)
+    check("T24-b2 해설서·판례 각 1건",
+          kinds_b.count("textbook") == 1 and kinds_b.count("precedent") == 1, kinds_b)
+    # I-7: 뒤 승격(legal)이 앞 승격분(textbook)을 victim 삼지 않았다.
+    markers = sorted(str(h.get("promoted")) for h in out_b if h.get("promoted"))
+    check("T24-b3 승격 마커 2종 공존", markers == ["legal", "textbook"], markers)
+
+    # I-7 직접: promoted 항목은 victim 후보에서 제외.
+    sel = [src(0), src(1), dict(tb(0), promoted="textbook")]
+    check("T24-b4 promoted는 victim 제외", _pick_swap_victim(sel) == 1)
+
+    # I-8: 비승격 원본이 2건 미만이면 교체 불가(None) — 승격 연쇄의 전멸 방지.
+    check("T24-b5 비승격 <2 → None",
+          _pick_swap_victim([src(0), dict(tb(0), promoted="textbook")]) is None)
+    tiny = [src(0), src(1)] + [tb(0), src(2, "precedent")]
+    out_tiny = rerank_results("q", tiny, cohere_api_key="", top_n=2)
+    kinds_t = [h["source_type"] for h in out_tiny]
+    check("T24-b6 top_n=2 연쇄 시 원본 1건 잔존",
+          len(out_tiny) == 2 and kinds_t.count("qa") == 1, kinds_t)
+
+    # I-9 (분석 P1-3) — 전원 단일 출처 + 해설서·법률근거 둘 다 창에 있는 조합.
+    # 해설서 승격의 I-4 폴백이 유일한 판례를 지우면 legal 승격이 하위 판례로
+    # 되메우는 강등 순환이 생겼다 — 이제 다양성 클래스 마지막 1건은 victim이
+    # 되지 않아, 상위 판례가 그대로 남고 legal 승격은 발동하지 않는다.
+    singles_pool = [src(0), src(1, "counsel"), src(2, "precedent"),
+                    tb(0), src(4, "precedent")]
+    out_i9 = rerank_results("q", singles_pool, cohere_api_key="", top_n=3)
+    ids_i9 = [h["id"] for h in out_i9]
+    check("T24-b7 유일 판례는 victim 금지(I-9)", "precedent_2" in ids_i9, ids_i9)
+    check("T24-b7b 하위 판례 되메움 없음", "precedent_4" not in ids_i9, ids_i9)
+    check("T24-b7c 해설서 승격은 정상 발동",
+          sum(1 for h in out_i9 if h["source_type"] == "textbook") == 1, ids_i9)
+    # 역방향 — 자연 유입 해설서(비승격)도 legal 승격이 지우지 못한다.
+    nat_tb = [src(0), tb(1), src(2, "counsel"), src(3, "precedent")]
+    out_nat = rerank_results("q", nat_tb, cohere_api_key="", top_n=3)
+    check("T24-b8 자연 유입 해설서 보존(I-9 역방향)",
+          any(h["source_type"] == "textbook" for h in out_nat),
+          [h["id"] for h in out_nat])
+
+    # T24c — 승격 → 가드 순서: 결과가 초크포인트를 통과해도 정상.
+    # uses_textbook 단일 판정이 승격 산출물에도 동일 적용된다(Design §6 —
+    # G1~G3 부착과 G6 게시판 제외가 이 판정 하나를 공유한다).
+    _, meta = format_pinecone_hits(out_b)
+    check("T24-c 동시 승격 결과가 가드 통과", len(meta) == 5, len(meta))
+    check("T24-c2 uses_textbook 판정 동일 적용", uses_textbook(meta) is True)
+
+    # 킬스위치 — legal만 끄면 해설서 승격은 유지된다(독립 스위치).
+    os.environ["LEGAL_PROMOTE"] = "off"
+    try:
+        out_off = rerank_results("q", both, cohere_api_key="", top_n=5)
+        check("T24-d LEGAL_PROMOTE=off 무승격",
+              all(h["source_type"] != "precedent" for h in out_off))
+        check("T24-d2 해설서 승격은 독립 유지",
+              any(h["source_type"] == "textbook" for h in out_off))
+    finally:
+        del os.environ["LEGAL_PROMOTE"]
+
+    # 기준선 경로 — ensure_textbook=False는 두 승격 모두 끈다(평가 A/B 계약).
+    out_base = rerank_results("q", both, cohere_api_key="", top_n=5, ensure_textbook=False)
+    check("T24-e ensure_textbook=False는 전 승격 무효",
+          [h["id"] for h in out_base] == [h["id"] for h in both[:5]])
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -1301,7 +1420,8 @@ def main() -> int:
                t17_textbook_chunk_id_scope, t18_heading_sanitizer,
                t19_citation_guard_cap, t19b_citation_rules_attachment,
                t20_textbook_case_extraction, t21_multipart_book,
-               t22_textbook_followup, t23_textbook_diversity_promotion):
+               t22_textbook_followup, t23_textbook_diversity_promotion,
+               t24_legal_diversity_promotion):
         print(f"\n[{fn.__name__}]")
         fn()
 

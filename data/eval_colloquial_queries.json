@@ -1,0 +1,24 @@
+{
+  "_readme": "구어체→법률용어 매핑 고정 평가셋 (colloquial-legal-mapping). expect_terms는 '추출·매핑 결과에 이 개념 중 하나 이상 포함' 판정용 — LLM 표현 흔들림을 허용하기 위해 정확 일치를 강제하지 않는다. 갱신 시 eval_colloquial.py 기준선을 재측정할 것.",
+  "frozen_at": "2026-08-20",
+  "queries": [
+    {"id": "c01", "category": "해고", "query": "저 어제 잘렸어요", "expect_terms": ["부당해고", "해고"]},
+    {"id": "c02", "category": "해고", "query": "사장이 내일부터 나오지 말래요. 어떻게 해야 하나요?", "expect_terms": ["부당해고", "해고"]},
+    {"id": "c03", "category": "해고예고", "query": "오늘부로 나오지 말라는데 한 달치 월급 받을 수 있나요?", "expect_terms": ["해고예고"]},
+    {"id": "c04", "category": "사직강요", "query": "사직서 쓰라고 계속 눈치 줘요", "expect_terms": ["사직 강요", "권고사직"]},
+    {"id": "c05", "category": "수습", "query": "수습 끝나니까 그냥 나가라네요", "expect_terms": ["부당해고", "본채용", "수습"]},
+    {"id": "c06", "category": "임금상계", "query": "월급 대신 가불이랑 퉁치자고 하는데 괜찮은 건가요?", "expect_terms": ["상계", "전액"]},
+    {"id": "c07", "category": "임금공제", "query": "회사 물건 파손했다고 월급에서 까겠대요", "expect_terms": ["공제", "전액"]},
+    {"id": "c08", "category": "임금삭감", "query": "월급을 일방적으로 깎겠답니다", "expect_terms": ["삭감", "불이익"]},
+    {"id": "c09", "category": "임금체불", "query": "삼일 일하고 짤렸는데 돈을 안 줘요", "expect_terms": ["임금체불", "체불"]},
+    {"id": "c10", "category": "통화지급", "query": "야근 수당을 밥값으로 때운대요", "expect_terms": ["통화", "대체", "연장근로수당"]},
+    {"id": "c11", "category": "괴롭힘", "query": "팀장이 매일 갈궈요", "expect_terms": ["괴롭힘"]},
+    {"id": "c12", "category": "괴롭힘", "query": "부서에서 왕따를 당하고 있어요", "expect_terms": ["괴롭힘", "따돌림"]},
+    {"id": "c13", "category": "산재", "query": "일하다 다쳤는데 공상 처리하재요", "expect_terms": ["산재", "공상"]},
+    {"id": "c14", "category": "산재", "query": "근무 중에 다쳐서 병원에 다니고 있어요", "expect_terms": ["산재", "업무상 재해", "요양"]},
+    {"id": "c15", "category": "4대보험", "query": "4대보험을 안 들어줬어요", "expect_terms": ["4대보험", "가입"]},
+    {"id": "c16", "category": "근로자성", "query": "3.3% 떼고 주는데 저 프리랜서인가요 직원인가요", "expect_terms": ["근로자성", "프리랜서"]},
+    {"id": "c17", "category": "근로계약", "query": "근로계약서를 안 썼는데 문제없나요", "expect_terms": ["근로계약서", "명시"]},
+    {"id": "c18", "category": "비정규직", "query": "쪼개기 계약으로 3개월마다 갱신만 해요", "expect_terms": ["갱신", "기간제"]}
+  ]
+}
