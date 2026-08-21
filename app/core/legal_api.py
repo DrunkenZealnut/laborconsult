@@ -1,7 +1,8 @@
 """법제처 국가법령정보 Open API 클라이언트
 
 법제처 DRF API(law.go.kr)를 통해 현행 법령 조문·판례를 실시간 조회한다.
-- 법령 검색 → MST(일련번호) 획득 (주요 법령은 사전매핑으로 API 생략)
+- 조문: 법령명(LM) 직접 조회 — 항상 현행판. MST(일련번호) 지정은 그 판본을
+  고정 반환하므로 쓰지 않는다(드리프트 이력은 _OFFICIAL_NAME_CACHE 위 주석)
 - 조문/판례 조회 → XML 파싱 → 텍스트 추출
 - 3단계 캐시: L1(인메모리) → L2(Supabase) → L3(API)
 - Circuit breaker: 연속 실패 시 일시 차단으로 타임아웃 누적 방지
@@ -14,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.etree import ElementTree as ET
@@ -68,6 +70,17 @@ def _circuit_record_failure():
         logger.warning("법령 API circuit breaker OPEN (%.0fs)", _CIRCUIT_COOLDOWN)
 
 
+def _circuit_record_neutral():
+    """성공도 실패도 아닌 종료(법령명 미매칭 등) — probe만 반납한다.
+
+    미매칭에서 success를 기록하면 폴백 검색이 남긴 failure가 상쇄돼
+    검색 엔드포인트 장애에도 회로가 영영 열리지 않고(분석 P1-3),
+    아무것도 안 하면 probe로 통과한 요청이 자기 probing 플래그에 갇혀
+    후속 요청 전부가 차단된다(기아). 중립 = 카운터 불변 + probe 반납.
+    """
+    _circuit["probing"] = False
+
+
 # ── HTTP 세션 (Keep-Alive, 연결 재사용) ──────────────────────────────────────
 _http = requests.Session()
 _http.headers.update({"Accept": "application/xml"})
@@ -88,33 +101,24 @@ _LAW_NAME_ALIASES: dict[str, str] = {
 }
 
 
-# ── MST 사전 매핑 (주요 노동법 — 법 전부개정 시에만 변경) ────────────────────
-_PRELOADED_MST: dict[str, int] = {
-    "근로기준법": 265959,
-    "근로기준법 시행령": 270551,
-    "근로기준법 시행규칙": 269393,
-    "최저임금법": 218303,
-    "최저임금법 시행령": 206564,
-    "고용보험법": 276843,
-    "고용보험법 시행령": 281219,
-    "산업재해보상보험법": 279733,
-    "산업재해보상보험법 시행령": 281227,
-    "근로자퇴직급여 보장법": 279829,
-    "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률": 276851,
-    "소득세법": 276127,
-    "조세특례제한법": 268807,
-    "기간제 및 단시간근로자 보호 등에 관한 법률": 232201,
-    "파견근로자 보호 등에 관한 법률": 223983,
-    "임금채권보장법": 259881,
-    "노동조합 및 노동관계조정법": 273667,
-}
+# ⚠️ MST(법령일련번호) 사전 매핑을 두지 말 것 (law-version-drift, 2026-08-20).
+# MST를 명시해 조회하면 **그 판본의** 조문이 고정 반환된다. 과거의 사전매핑은
+# "법 전부개정 시에만 변경"을 전제했지만 실제로는 **일부개정마다 일련번호가
+# 바뀐다** — 매핑해 둔 주요 법령일수록 낡은 조문을 답하는 역설이 생겼다
+# (실측 2026-08-20: 17개 중 11개가 낡았고, 고용보험법 §70 육아휴직 급여
+# 요건의 "30일 또는 7일" 확대가 누락돼 있었다). 조문 조회는 법령명(LM)
+# 파라미터로 한다 — 법제처가 항상 현행판을 반환해 드리프트가 원리적으로
+# 불가능하고, 검색(MST 획득) 왕복이 사라져 호출도 2회→1회로 준다.
 
-# ── MST 캐시 (사전매핑으로 초기화 + 동적 조회 결과 병합) ────────────────────
-_MST_CACHE: dict[str, int | None] = dict(_PRELOADED_MST)
+# ── 정식 법령명 해석 캐시 (LM 미매칭 폴백 결과: 입력명 → 정식명 | None) ──────
+_OFFICIAL_NAME_CACHE: dict[str, str | None] = {}
 
 
 # ── L1 조문 캐시 (인메모리, TTL 기반) ────────────────────────────────────────
 _ARTICLE_CACHE: dict[str, tuple[float, str]] = {}
+
+# 미매칭 negative 표지 — L1 전용(TTL 동일 적용). L2에는 절대 저장하지 않는다.
+_MISS_SENTINEL = "__lm_miss__"
 
 
 def _cache_get(key: str) -> str | None:
@@ -138,21 +142,32 @@ def _cache_set(key: str, text: str) -> None:
 
 _supabase_client = None
 _supabase_checked = False
+_supabase_lock = threading.Lock()
 
 
 def _init_supabase():
-    """Supabase 클라이언트를 지연 초기화. 미설정 시 None."""
+    """Supabase 클라이언트를 지연 초기화. 미설정 시 None.
+
+    Lock + double-check — 플래그만으로는 병렬 5스레드(fetch_relevant_articles)
+    가 동시에 False를 읽고 각자 생성하거나, 생성 완료 전 상태가 공개돼 L2를
+    조용히 스킵한다(실측: 콜드 첫 상담에서 5건 중 4건 L2 미저장 — 분석
+    P2-1). checked는 생성 시도 완료 후에만 공개한다.
+    """
     global _supabase_client, _supabase_checked
     if _supabase_checked:
         return _supabase_client
-    _supabase_checked = True
-    try:
-        # 접속 생성은 storage.make_supabase_client 단일 경로 — 여기서 create_client 를
-        # 직접 부르면 스키마 옵션이 빠져 law_article_cache 조회가 public 으로 샌다.
-        from app.core.storage import make_supabase_client
-        _supabase_client = make_supabase_client()
-    except Exception as e:
-        logger.debug("Supabase 초기화 실패: %s", e)
+    with _supabase_lock:
+        if _supabase_checked:
+            return _supabase_client
+        try:
+            # 접속 생성은 storage.make_supabase_client 단일 경로 — 여기서
+            # create_client 를 직접 부르면 스키마 옵션이 빠져
+            # law_article_cache 조회가 public 으로 샌다.
+            from app.core.storage import make_supabase_client
+            _supabase_client = make_supabase_client()
+        except Exception as e:
+            logger.debug("Supabase 초기화 실패: %s", e)
+        _supabase_checked = True
     return _supabase_client
 
 
@@ -186,9 +201,14 @@ def _l2_cache_set(key: str, law_name: str, article_no: int | None,
         return
     try:
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # 만료 = L1과 동일한 24h(LAW_CACHE_TTL). 구 7일은 "현행판 보장"과
+        # 상충했다 — 캐시 수명 동안은 개정이 반영되지 않으므로, 이 값이 곧
+        # 조문 최신성의 최대 지연이다(CodeRabbit #55 Major). MST 드리프트
+        # (무기한)와 달리 유계이고, 24h는 개정 공포→시행의 통상 간격 대비
+        # 충분히 짧다.
         expires = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
-            time.gmtime(time.time() + 7 * 86400),  # 7일
+            time.gmtime(time.time() + LAW_CACHE_TTL),
         )
         sb.table("law_article_cache").upsert({
             "cache_key": key,
@@ -205,22 +225,47 @@ def _l2_cache_set(key: str, law_name: str, article_no: int | None,
 
 # ── 법령명 정규화 ─────────────────────────────────────────────────────────────
 
+def _norm_law_name(name: str) -> str:
+    """법령명 표기 정규화 — 가운뎃점 이형 흡수 + 공백 정리.
+
+    법제처 정식명은 한글 가운뎃점 ㆍ(U+318D)를 쓰는데 LLM·하드코딩 인용은
+    ·(U+00B7)·‧(U+2027)이 섞인다. 코드포인트가 다르면 LM 조회도 부분일치도
+    전부 조용히 실패한다 — 실측: 남녀고용평등법 인용이 U+00B7 하나 때문에
+    괴롭힘 상담에서 상시 누락됐다(분석 P1-4).
+    """
+    for dot in ("·", "‧"):
+        name = name.replace(dot, "ㆍ")
+    return " ".join(name.split())
+
+
+def _norm_compact(name: str) -> str:
+    """정규화 + 공백 제거 — '표기 변형'(띄어쓰기 차이) 동일성 판정용."""
+    return _norm_law_name(name).replace(" ", "")
+
+
 def _resolve_law_name(name: str) -> str:
-    """약칭을 정식명칭으로 변환."""
+    """약칭을 정식명칭으로 변환(가운뎃점·공백 정규화 포함)."""
+    name = _norm_law_name(name)
     return _LAW_NAME_ALIASES.get(name, name)
 
 
-# ── 법령 MST 조회 ─────────────────────────────────────────────────────────────
+# ── 정식 법령명 해석 (LM 미매칭 폴백 전용) ──────────────────────────────────
 
-def _lookup_mst(law_name: str, api_key: str) -> int | None:
-    """법령명으로 MST(일련번호)를 조회. 사전매핑 히트 시 API 미호출."""
+def _resolve_official_name(law_name: str, api_key: str) -> str | None:
+    """법령 검색으로 정식 법령명을 해석한다.
+
+    주요 법령은 별칭 사전(_LAW_NAME_ALIASES)의 정식명이 LM에 바로 매칭돼
+    이 함수까지 오지 않는다 — 발동 대상은 의도분석 LLM이 relevant_laws에
+    넣은 비정형 이름(미등록 약칭·부정확 표기)뿐이다.
+    """
     canonical = _resolve_law_name(law_name)
 
-    if canonical in _MST_CACHE:
-        return _MST_CACHE[canonical]
+    if canonical in _OFFICIAL_NAME_CACHE:
+        return _OFFICIAL_NAME_CACHE[canonical]
 
-    if _circuit_check():
-        return None
+    # 서킷 검사는 호출자(fetch_article)가 이미 통과했다 — 여기서 또 하면
+    # probe로 통과한 요청이 자기가 세운 probing 플래그에 막혀 폴백을 못 탄다
+    # (실측: probe 요청의 호출 엔드포인트가 LM 하나뿐 — 분석 P2-2).
 
     try:
         resp = _http.get(LAW_SEARCH_URL, params={
@@ -237,19 +282,28 @@ def _lookup_mst(law_name: str, api_key: str) -> int | None:
             name_el = law_el.find("법령명한글")
             if name_el is None:
                 name_el = law_el.find("법령명_한글")
-            if name_el is not None and name_el.text and canonical in name_el.text:
-                mst_el = law_el.find("법령일련번호")
-                if mst_el is not None and mst_el.text:
-                    mst = int(mst_el.text)
-                    _MST_CACHE[canonical] = mst
-                    _circuit_record_success()
-                    return mst
+            if name_el is None or not name_el.text:
+                continue
+            text = name_el.text.strip()
+            # compact(공백 제거·가운뎃점 통일) 후 양방향 부분일치 — 원형
+            # 그대로 비교하면 공백 변형("근로자퇴직급여보장법" vs
+            # "근로자퇴직급여 보장법")이 어느 방향으로도 부분문자열이 아니라
+            # 폴백의 목적(표기 변형 구제) 자체가 성립하지 않는다(Act 회귀
+            # 테스트 B1이 적발). 검색 자체가 fuzzy라 첫 매칭이 최상위다.
+            a, b = _norm_compact(canonical), _norm_compact(text)
+            if a in b or b in a:
+                _OFFICIAL_NAME_CACHE[canonical] = text
+                _circuit_record_success()
+                return text
         _circuit_record_success()
     except Exception as e:
-        logger.warning("법령 MST 조회 실패 (%s): %s", law_name, e)
+        logger.warning("법령명 해석 실패 (%s): %s", law_name, e)
         _circuit_record_failure()
 
-    _MST_CACHE[canonical] = None
+    # 성공한 이름만 캐시한다 — None을 영구 저장하면 일시적 검색 장애가
+    # 워밍 인스턴스 수명 내내 그 법령명을 차단한다(CodeRabbit #55).
+    # 미매칭 재시도 억제는 호출자의 L1 negative 캐시(_MISS_SENTINEL, TTL
+    # 있음)가 담당하므로 여기의 영구 None은 필요 없다.
     return None
 
 
@@ -260,19 +314,29 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
                   sub: int | None = None) -> str | None:
     """특정 법률의 조문 텍스트를 3단계 캐시 계층으로 조회.
 
+    법령명(LM)으로 조회하므로 항상 **현행판**이 온다 — MST(일련번호)를
+    명시하던 구 방식은 그 판본이 고정 반환돼, 사전매핑이 낡을수록 옛 조문을
+    답하는 드리프트가 있었다(law-version-drift).
+
     Args:
         sub: "조의N" 번호 (예: 제76조의2 → sub=2)
     """
-    cache_key = f"{law_name}_{article_no}"
+    # v2: 접두사 — LM 전환 시점의 캐시 세대 구분. 구 키(MST 시절)의 낡은
+    # 조문이 L2에 남지만(만료 7일 — 자동 삭제 경로는 없다) 지우는 대신
+    # **안 읽는** 방식이라 마이그레이션이 없고, 롤백 시 구버전 코드가 구 키를
+    # 그대로 읽어 안전하다.
+    cache_key = f"v2:{law_name}_{article_no}"
     if sub:
         cache_key += f"의{sub}"
     if paragraph:
         cache_key += f"_{paragraph}"
 
-    # L1: 인메모리 캐시
+    # L1: 인메모리 캐시 (미매칭 negative 표지 포함 — 없으면 실패한 법령명이
+    # 매 요청 LM 왕복을 반복한다. 구 코드는 _MST_CACHE[...]=None으로 2회째
+    # 0회였는데 그 성질이 LM 전환에서 빠졌었다. 분석 P2-3)
     cached = _cache_get(cache_key)
     if cached is not None:
-        return cached
+        return None if cached == _MISS_SENTINEL else cached
 
     # L2: Supabase 영속 캐시
     l2_cached = _l2_cache_get(cache_key)
@@ -283,21 +347,71 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
     if _circuit_check():
         return None
 
-    # L3: API 호출
-    mst = _lookup_mst(law_name, api_key)
-    if mst is None:
-        return None
+    def _fetch_by_lm(lm: str) -> ET.Element | None:
+        """LM(법령명) 조회. 매칭 실패를 None으로 정규화한다.
 
-    try:
+        ⚠️ 미매칭도 HTTP 200으로 온다 — 본문이 빈 <Law> 루트다(실측).
+        raise_for_status()로는 절대 잡히지 않으므로 루트 태그로 판정해야
+        한다. 이 판정이 없으면 폴백이 영영 발동하지 않는다.
+
+        ⚠️ 자격증명·파라미터 오류도 HTTP 200이다 — <Response> 루트에 오류
+        문구가 온다(실측: 키 만료 시 "필수입력요소 검증에 실패"). 이를
+        미매칭으로 취급하면 API 키 장애가 "법령명 문제"로 영구 오진되고
+        회로도 안 열린다 — 예외로 올려 failure 경로를 태운다(분석 P1-3).
+
+        ⚠️ 법령 루트여도 그대로 믿지 않는다 — LM은 별칭·폐지판까지
+        해석한다(실측: '근로자직업훈련촉진법' → '국민 평생 직업능력
+        개발법' 반환, '노동조합법' → 1996년 타법폐지판). 반환 법령명이
+        요청과 다르거나 폐지면 거부해야 **다른 법의 조문이 요청한 법령명
+        헤더를 달고 나가는** 오인용을 막는다(분석 P1-1).
+        """
         resp = _http.get(LAW_SERVICE_URL, params={
             "OC": api_key,
             "target": "law",
-            "MST": str(mst),
+            "LM": lm,
             "type": "XML",
         }, timeout=LAW_SERVICE_TIMEOUT)
         resp.raise_for_status()
-
         root = ET.fromstring(resp.content)
+        if root.tag == "Response":
+            detail = (root.findtext(".//result") or root.findtext(".//message")
+                      or "").strip()[:80]
+            raise RuntimeError(f"법제처 API 오류 응답: {detail}")
+        if root.tag != "법령":
+            return None
+        returned = (root.findtext(".//기본정보/법령명_한글")
+                    or root.findtext(".//기본정보/법령명한글") or "").strip()
+        if returned and _norm_compact(returned) != _norm_compact(lm):
+            logger.warning("법령명 오해석 거부 (요청 %r → 반환 %r)", lm, returned)
+            return None
+        status = (root.findtext(".//기본정보/제개정구분") or "").strip()
+        if "폐지" in status:
+            logger.warning("폐지 법령 거부 (%s: %s)", lm, status)
+            return None
+        return root
+
+    # L3: API 호출 — 성공 경로는 1회(구 방식은 검색+조회 2회)
+    try:
+        canonical = _resolve_law_name(law_name)
+        root = _fetch_by_lm(canonical)
+        if root is None:
+            # 미매칭 폴백(1회): 표기 변형(띄어쓰기 등)을 검색으로 정식명 해석
+            # 후 재시도. **compact 동일일 때만** — 실질적으로 다른 이름
+            # (개명·다른 법)으로의 해석을 허용하면 조문과 헤더(요청명)가
+            # 어긋나는 오인용이 되살아난다(P1-1과 같은 결말).
+            official = _resolve_official_name(law_name, api_key)
+            if (official and official != canonical
+                    and _norm_compact(official) == _norm_compact(canonical)):
+                root = _fetch_by_lm(official)
+        if root is None:
+            logger.warning("법령 LM 미매칭 (%s): 정식명 해석 실패", law_name)
+            # negative 캐시는 L1에만 — L2에 남기면 오타 하나가 7일간 영속된다.
+            _cache_set(cache_key, _MISS_SENTINEL)
+            # 서킷은 중립 — success를 기록하면 폴백 검색의 failure가 상쇄되고
+            # (검색 장애에도 회로 영구 미개방), 무기록이면 probe가 갇힌다.
+            _circuit_record_neutral()
+            return None
+
         article_text = _extract_article(root, article_no, paragraph, sub)
         if article_text:
             _cache_set(cache_key, article_text)                          # L1
@@ -356,13 +470,33 @@ def _extract_article(root: ET.Element, article_no: int,
                 for hang in jo.iter("항"):
                     hang_no_el = hang.find("항번호")
                     if hang_no_el is not None and hang_no_el.text:
-                        h_match = re.search(r"(\d+)", hang_no_el.text)
-                        if h_match and int(h_match.group(1)) == paragraph:
+                        if _parse_hang_no(hang_no_el.text) == paragraph:
                             return _format_article_text(jo_no_el.text, hang)
-                return None
+                # 항 미발견 → 조문 전체로 폴백. None을 반환하면 인용이 통째로
+                # 사라진다 — 항 하나보다 조문 전체가 낫다(분석 P1-2).
+                return _format_full_article(jo)
             else:
                 return _format_full_article(jo)
     return None
+
+
+def _parse_hang_no(text: str) -> int | None:
+    """항번호 텍스트 → 정수. 법제처는 ASCII 숫자가 아니라 원문자(①②…)를 쓴다.
+
+    `re.search(r"(\\d+)", "①")`은 절대 매치되지 않아 항 단위 조회가 전량
+    None이었다(실측 4법령 — prompts.py가 명시 지시하는 '최저임금법 제6조
+    제5항'이 한 번도 조회된 적 없음). 원문자 블록은 셋으로 나뉜다:
+    ①~⑳ U+2460~, ㉑~㉟ U+3251~, ㊱~㊿ U+32B1~ (각각 연속).
+    """
+    for c in text:
+        if "①" <= c <= "⑳":
+            return ord(c) - 0x2460 + 1
+        if "㉑" <= c <= "㉟":
+            return ord(c) - 0x3251 + 21
+        if "㊱" <= c <= "㊿":
+            return ord(c) - 0x32B1 + 36
+    m = re.search(r"(\d+)", text)
+    return int(m.group(1)) if m else None
 
 
 def _format_full_article(jo_el: ET.Element) -> str | None:

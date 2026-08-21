@@ -164,7 +164,7 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `replace` — full answer replacement (after citation correction)
 - `contacts` — agency contact cards (노동위/고용센터/근로복지공단)
 - `sources` — 검색 출처 목록 (`_build_sources_payload()`, 상위 5건 {title, section, source_type, score, origin}) → 프론트 `renderSources()`가 답변 하단에 표시
-- `meta` — calc_result (프론트는 현재 미표시 — 수치 카드 UI는 제품 결정 대기)
+- `meta` — calc_result. 프론트는 `pendingCalc`에 보관했다가 스트림 완료 시 `renderCalcResult()`로 **답변 말풍선 위에 `<pre>` 카드**로 표시(`textContent`라 정렬 보존·XSS 안전). 말풍선 **바깥**이라 인용 교정(`replace`)에도 지워지지 않는다 — LLM의 수치 재현에 의존하지 않는 결정적 표시다. 같은 값이 LLM 컨텍스트에도 "이 수치를 사용하세요"로 주입되므로 **표시와 근거가 이중화**돼 있다
 - `error` — error message
 - `done` — stream end marker
 
@@ -361,6 +361,12 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 폴백 결과는 `qa_conversations.metadata.llm`(provider·attempts·fallback·empty·truncated·citation_fixed)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.**
 - All `app/core/*.py` modules use `from __future__ import annotations` for forward reference support.
 - Legal API (`legal_api.py`) has circuit breaker pattern: 3 consecutive failures → 30s cooldown. L1 in-memory → L2 Supabase → L3 API call.
+- **법령 조문 조회에 MST(일련번호) 사전매핑을 두지 말 것**(law-version-drift). MST를 명시하면 **그 판본이 고정 반환**돼, "전부개정 시에만 바뀐다"던 전제와 달리 일부개정마다 번호가 바뀌어 17개 중 11개가 낡은 조문을 답하고 있었다(실측: 고용보험법 §70 육아휴직 '30일 또는 7일' 확대 누락). 조회는 `LM`(법령명) 파라미터 — 법제처가 항상 현행판을 반환하고 호출도 2회→1회다. 주의 다섯(전부 실측):
+  - **미매칭은 HTTP 200 + 빈 `<Law>` 루트**라 `raise_for_status()`로 못 잡는다 — 루트 태그 판정 필수(없으면 정식명 해석 폴백이 영영 안 돈다). **자격증명 오류도 HTTP 200 + `<Response>` 루트**다 — 미매칭과 구분해 failure로 올리지 않으면 키 장애가 "법령명 문제"로 영구 오진되고 서킷이 안 열린다.
+  - **`법령` 루트여도 그대로 믿지 말 것** — LM은 별칭·폐지판까지 해석한다(실측: '근로자직업훈련촉진법'→'국민 평생 직업능력 개발법' 반환, '노동조합법'→1996 타법폐지판). 반환 `법령명_한글` 대조 + `제개정구분` "폐지" 거부 게이트가 없으면 **다른 법의 조문이 요청한 법령명 헤더로 인용**된다. 정식명 해석 폴백의 채택도 compact 동일(표기 변형)일 때만 — 실질 다른 이름을 허용하면 같은 오인용이 되살아난다.
+  - **법령명 비교는 반드시 정규화 후에**(`_norm_law_name`/`_norm_compact`) — 가운뎃점이 ㆍ(U+318D)·(U+00B7)·‧(U+2027)로 섞여 코드포인트가 다르면 조회·부분일치가 전부 조용히 실패한다(실측: 남녀고용평등법 인용이 U+00B7 하나로 괴롭힘 상담에서 상시 누락). **항번호는 원문자**(①=U+2460)라 `\d+`로는 절대 안 잡힌다 — `_parse_hang_no` 사용, 항 미발견 시 조문 전체 폴백(None이면 인용이 통째로 사라진다).
+  - 캐시 키는 `v2:` 세대 접두사 — 구 키의 낡은 조문(L2, **만료 7일 — 자동 삭제 경로는 없고 읽히지만 않는다**)을 지우는 대신 안 읽는 방식이라 롤백 안전. 미매칭은 L1에만 negative 캐시(`_MISS_SENTINEL`) — 없으면 실패한 법령명이 매 요청 LM 왕복(미스 경로 19초)을 반복하고, L2에 남기면 오타가 7일 영속된다.
+  - 현행판 검증은 `python3 check_law_freshness.py`(수동, 네트워크 필요) — **대조 기준은 공포일자+공포번호**(시행일자는 부칙 단계시행 법령에서 같은 공포본을 목록·본문이 다르게 표기해 오탐). 검증 목록은 고정 17종 + `legal_consultation.py::TOPIC_SEARCH_CONFIG`의 실입력에서 생성 — 정식명만 검사하면 프로덕션 표기 결함이 새어나간다. CI는 구조만 고정하되 대상은 **`legal_api.py`와 `build_graph.py` 두 파일** — 후자에 같은 사전매핑이 복제돼 있다가 원본만 전환된 사각이 실제로 있었다.
 - Citation validator (`citation_validator.py`) regex patterns: `대법원 YYYY[가-힣]NNNN` for precedents, `[부서명]과-NNNN` for administrative interpretations.
 - Graceful degradation everywhere: Pinecone 초기화/쿼리 실패 → `pinecone_index=None`으로 RAG 비활성(계산기·법령 API·LLM 답변은 정상, `config.py`에서 try/except), BM25 미설치 → Dense-only, Self-RAG 실패 → rerank 유지, `classify_complexity` 실패 → MODERATE 폴백. 새 기능 추가 시 반드시 폴백 경로 구현.
 - `public/calculator_flow/*.html` 내 `sendPrompt()` 호출은 반드시 `window.parent?.sendPrompt?.()` 로 — iframe 내에서 실행되므로 부모 컨텍스트 필요.

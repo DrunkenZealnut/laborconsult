@@ -74,6 +74,178 @@ def test_merge_search_queries() -> None:
     print("  ✅ _merge_search_queries: 중복 제거·우선순위·폴백·원문 병기(합성 경로)")
 
 
+def test_law_version_drift_guard() -> None:
+    """법령 조문 조회의 LM 전환 + Act 보강 (law-version-drift).
+
+    막는 실패: ① MST 사전매핑이 낡아 구버전 조문 답변(17개 중 11개 실측)
+    ② LM의 별칭·폐지판 오해석으로 **다른 법의 조문이 요청 법령명 헤더로
+    인용**(P1-1) ③ 원문자 항번호로 제N항 조회 전량 실패(P1-2) ④ 폴백
+    실패를 success가 상쇄해 서킷 무력화(P1-3) ⑤ 미매칭 무캐시로 매 요청
+    LM 왕복(P2-3).
+    """
+    import re as _re
+    from pathlib import Path
+    from unittest import mock
+
+    from app.core import legal_api
+
+    # ① 구조 검사 — 사전매핑 부활 방지는 **두 파일** 모두. build_graph.py에
+    # 같은 매핑이 복제돼 있다가 원본만 전환된 사각이 실제로 있었다(G-1).
+    for target in ("app/core/legal_api.py", "build_graph.py"):
+        src = Path(target).read_text(encoding="utf-8")
+        code = "\n".join(ln for ln in src.splitlines()
+                         if not ln.lstrip().startswith("#"))
+        assert "PRELOADED_MST" not in code, f"{target}: MST 사전매핑 부활 금지"
+        assert '"MST"' not in code and "'MST'" not in code, \
+            f"{target}: MST 파라미터 사용 금지 — 판본 고정 = 드리프트"
+        assert '"LM"' in code, f"{target}: 조문 조회는 LM(법령명) 파라미터"
+    api_code = "\n".join(
+        ln for ln in Path("app/core/legal_api.py").read_text(encoding="utf-8")
+        .splitlines() if not ln.lstrip().startswith("#"))
+    assert "전부개정 시에만" not in api_code
+    assert 'root.tag == "Response"' in api_code, \
+        "API 오류(200+Response 루트)를 미매칭과 구분해야 키 장애가 오진되지 않는다"
+    assert "_norm_compact(returned)" in api_code, \
+        "반환 법령명 대조 게이트(P1-1) — 없으면 폐지법·개명법이 요청명으로 인용된다"
+    assert "_circuit_record_neutral" in api_code, "미매칭은 서킷 중립(P1-3)"
+
+    # 가운뎃점 정규화 — U+00B7·U+2027 입력이 정식 표기(U+318D)로 흡수(P1-4)
+    assert legal_api._resolve_law_name("남녀고용평등과 일·가정 양립 지원에 관한 법률") \
+        == "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률"
+    # 원문자 항번호 변환(P1-2) — 세 블록의 경계값까지(⑳/㉑, ㉟/㊱, ㊿)
+    assert legal_api._parse_hang_no("①") == 1
+    assert legal_api._parse_hang_no("⑤") == 5
+    assert legal_api._parse_hang_no("⑳") == 20
+    assert legal_api._parse_hang_no("㉑") == 21
+    assert legal_api._parse_hang_no("㉟") == 35
+    assert legal_api._parse_hang_no("㊱") == 36
+    assert legal_api._parse_hang_no("㊿") == 50
+    assert legal_api._parse_hang_no("2") == 2
+
+    # ── mock 시나리오 ────────────────────────────────────────────────────
+    OK_XML = (
+        "<법령><기본정보><법령명_한글>고용보험법</법령명_한글>"
+        "<제개정구분>일부개정</제개정구분></기본정보>"
+        "<조문단위><조문번호>70</조문번호><조문여부>조문</조문여부>"
+        "<조문내용>제70조(육아휴직 급여)</조문내용>"
+        "<항><항번호>①</항번호><항내용>30일 또는 7일 이상</항내용></항>"
+        "<항><항번호>②</항번호><항내용>신청 기한</항내용></항>"
+        "</조문단위>"
+        "<조문단위><조문번호>76</조문번호><조문가지번호>2</조문가지번호>"
+        "<조문여부>조문</조문여부><조문내용>제76조의2(괴롭힘 금지)</조문내용>"
+        "</조문단위></법령>"
+    ).encode()
+    WRONG_LAW_XML = (
+        "<법령><기본정보><법령명_한글>국민 평생 직업능력 개발법</법령명_한글>"
+        "<제개정구분>일부개정</제개정구분></기본정보>"
+        "<조문단위><조문번호>1</조문번호><조문여부>조문</조문여부>"
+        "<조문내용>다른 법의 조문</조문내용></조문단위></법령>"
+    ).encode()
+    MISS_XML = "<Law></Law>".encode()
+    ERR_XML = "<Response><result>필수입력요소 검증에 실패하였습니다</result></Response>".encode()
+    SEARCH_OK = ("<법령검색><law><법령명한글>근로자퇴직급여 보장법</법령명한글>"
+                 "</law></법령검색>").encode()
+    SEARCH_MISS = "<법령검색></법령검색>".encode()
+
+    def _resp(content):
+        r = mock.Mock()
+        r.content = content
+        r.raise_for_status = mock.Mock()
+        return r
+
+    def _reset():
+        legal_api._ARTICLE_CACHE.clear()
+        legal_api._OFFICIAL_NAME_CACHE.clear()
+        legal_api._circuit.update({"fail_count": 0, "open_until": 0.0,
+                                   "probing": False})
+
+    l2_off = mock.patch.object(legal_api, "_l2_cache_get", return_value=None)
+    l2_set = mock.patch.object(legal_api, "_l2_cache_set")
+
+    # A: 정식명 즉시 매칭 + 게이트 통과 → 1회
+    _reset()
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)) as g:
+        txt = legal_api.fetch_article("고용보험법", 70, "k")
+        assert txt and "7일" in txt, txt
+        assert g.call_count == 1, g.call_count
+
+    # A2: 원문자 항 조회(P1-2) — paragraph=1이 ① 항을 잡는다
+    _reset()
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
+        txt = legal_api.fetch_article("고용보험법", 70, "k", paragraph=1)
+        assert txt and "30일 또는 7일" in txt, txt
+
+    # A3: 미존재 항 → None이 아니라 조문 전체 폴백
+    _reset()
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
+        txt = legal_api.fetch_article("고용보험법", 70, "k", paragraph=9)
+        assert txt and "육아휴직 급여" in txt, "항 미발견 시 인용 소실 금지"
+
+    # A4: 조의N — sub=2가 제76조의2를 잡는다(G-3 fixture)
+    _reset()
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
+        txt = legal_api.fetch_article("고용보험법", 76, "k", sub=2)
+        assert txt and "괴롭힘" in txt, txt
+
+    # B1: 표기 변형(공백) → 미스 → 검색 해석(compact 동일) → 재시도 성공 (3회)
+    _reset()
+    ok_ret = OK_XML.replace("고용보험법".encode(), "근로자퇴직급여 보장법".encode())
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get",
+                           side_effect=[_resp(MISS_XML), _resp(SEARCH_OK),
+                                        _resp(ok_ret)]) as g:
+        txt = legal_api.fetch_article("근로자퇴직급여보장법", 70, "k")
+        assert txt is not None and g.call_count == 3, (txt, g.call_count)
+
+    # B2: 오해석 거부(P1-1) — 반환 법령명이 다르면 게이트가 막고, 검색 결과도
+    # compact 불일치라 재시도하지 않는다(다른 법 조문이 요청명 헤더로 나가는
+    # 것 방지). 최종 None + 서킷 카운터 불변.
+    _reset()
+    before = legal_api._circuit["fail_count"]
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get",
+                           side_effect=[_resp(WRONG_LAW_XML), _resp(SEARCH_MISS)]):
+        assert legal_api.fetch_article("근로자직업훈련촉진법", 1, "k") is None
+    assert legal_api._circuit["fail_count"] == before
+
+    # C: 완전 미매칭 → None + **negative 캐시**(P2-3) — 2회째는 API 0회
+    _reset()
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get",
+                           side_effect=[_resp(MISS_XML), _resp(SEARCH_MISS)]) as g:
+        assert legal_api.fetch_article("존재하지않는법", 1, "k") is None
+        first_calls = g.call_count
+        assert legal_api.fetch_article("존재하지않는법", 1, "k") is None
+        assert g.call_count == first_calls, "미매칭 재요청이 LM 왕복을 반복하면 안 됨"
+
+    # C2: 미매칭 후 probe 반납 — probing 플래그가 갇히지 않는다(기아 방지)
+    assert legal_api._circuit["probing"] is False
+
+    # D: API 오류 응답(200 + Response 루트) → 미매칭이 아니라 failure(P1-3)
+    _reset()
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get", return_value=_resp(ERR_XML)):
+        assert legal_api.fetch_article("고용보험법", 70, "k") is None
+    assert legal_api._circuit["fail_count"] == 1, \
+        "키 장애가 '법령명 미매칭'으로 오진되면 회로가 영영 안 열린다"
+
+    # E: 캐시 세대 — v2 키 저장, 구 키(MST 시절) 불독
+    _reset()
+    legal_api._cache_set("고용보험법_70", "낡은 조문")
+    with l2_off, mock.patch.object(legal_api, "_l2_cache_set") as l2s, \
+         mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
+        txt = legal_api.fetch_article("고용보험법", 70, "k")
+        assert "낡은" not in (txt or "")
+        assert l2s.call_args.args[0].startswith("v2:")
+
+    _reset()
+    print("  ✅ 법령 LM 전환: 구조 2파일·게이트·원문자 항·항 폴백·조의N·"
+          "폴백 3회·오해석 거부·negative 캐시·Response=failure·캐시 v2")
+
 def test_colloquial_fallback_only_wiring() -> None:
     """구어 사전은 의도분석 실패 폴백에서만 발동한다 (Design §2.2·분석 G-3).
 
@@ -574,6 +746,7 @@ def main() -> None:
     test_citation_validator()
     test_rrf()
     test_colloquial_map()
+    test_law_version_drift_guard()
     test_colloquial_fallback_only_wiring()
     test_merge_search_queries()
     test_conflict_resolver()

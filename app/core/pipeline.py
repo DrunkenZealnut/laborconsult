@@ -1566,8 +1566,11 @@ def process_question(query: str, session: Session, config: AppConfig,
     legal_articles_text = None
     if analysis and analysis.relevant_laws and config.law_api_key:
         try:
+            # 중복 제거(순서 보존) — LLM이 같은 조문을 두 번 내면 5슬롯 중
+            # 하나가 낭비되고 동일 키 API 왕복이 중복된다(분석 P2-4).
+            # legal_consultation.py 호출부는 이미 하고 있어 비대칭이었다.
             legal_articles_text = fetch_relevant_articles(
-                analysis.relevant_laws, config.law_api_key
+                list(dict.fromkeys(analysis.relevant_laws)), config.law_api_key
             )
             if legal_articles_text:
                 logger.info("법령 API 조문 %d건 조회 완료", len(analysis.relevant_laws))
