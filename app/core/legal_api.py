@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.etree import ElementTree as ET
@@ -141,27 +142,32 @@ def _cache_set(key: str, text: str) -> None:
 
 _supabase_client = None
 _supabase_checked = False
+_supabase_lock = threading.Lock()
 
 
 def _init_supabase():
     """Supabase 클라이언트를 지연 초기화. 미설정 시 None.
 
-    checked 플래그는 반드시 클라이언트 생성 **뒤**에 세운다 — 앞에 세우면
-    fetch_relevant_articles의 병렬 5스레드 중 첫 스레드가 생성을 마치기 전에
-    나머지가 checked=True·client=None을 보고 L2를 조용히 스킵한다
-    (실측: 콜드 첫 상담에서 5건 중 4건 L2 미저장 — 분석 P2-1).
+    Lock + double-check — 플래그만으로는 병렬 5스레드(fetch_relevant_articles)
+    가 동시에 False를 읽고 각자 생성하거나, 생성 완료 전 상태가 공개돼 L2를
+    조용히 스킵한다(실측: 콜드 첫 상담에서 5건 중 4건 L2 미저장 — 분석
+    P2-1). checked는 생성 시도 완료 후에만 공개한다.
     """
     global _supabase_client, _supabase_checked
     if _supabase_checked:
         return _supabase_client
-    try:
-        # 접속 생성은 storage.make_supabase_client 단일 경로 — 여기서 create_client 를
-        # 직접 부르면 스키마 옵션이 빠져 law_article_cache 조회가 public 으로 샌다.
-        from app.core.storage import make_supabase_client
-        _supabase_client = make_supabase_client()
-    except Exception as e:
-        logger.debug("Supabase 초기화 실패: %s", e)
-    _supabase_checked = True
+    with _supabase_lock:
+        if _supabase_checked:
+            return _supabase_client
+        try:
+            # 접속 생성은 storage.make_supabase_client 단일 경로 — 여기서
+            # create_client 를 직접 부르면 스키마 옵션이 빠져
+            # law_article_cache 조회가 public 으로 샌다.
+            from app.core.storage import make_supabase_client
+            _supabase_client = make_supabase_client()
+        except Exception as e:
+            logger.debug("Supabase 초기화 실패: %s", e)
+        _supabase_checked = True
     return _supabase_client
 
 
@@ -195,9 +201,14 @@ def _l2_cache_set(key: str, law_name: str, article_no: int | None,
         return
     try:
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # 만료 = L1과 동일한 24h(LAW_CACHE_TTL). 구 7일은 "현행판 보장"과
+        # 상충했다 — 캐시 수명 동안은 개정이 반영되지 않으므로, 이 값이 곧
+        # 조문 최신성의 최대 지연이다(CodeRabbit #55 Major). MST 드리프트
+        # (무기한)와 달리 유계이고, 24h는 개정 공포→시행의 통상 간격 대비
+        # 충분히 짧다.
         expires = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
-            time.gmtime(time.time() + 7 * 86400),  # 7일
+            time.gmtime(time.time() + LAW_CACHE_TTL),
         )
         sb.table("law_article_cache").upsert({
             "cache_key": key,
@@ -289,7 +300,10 @@ def _resolve_official_name(law_name: str, api_key: str) -> str | None:
         logger.warning("법령명 해석 실패 (%s): %s", law_name, e)
         _circuit_record_failure()
 
-    _OFFICIAL_NAME_CACHE[canonical] = None
+    # 성공한 이름만 캐시한다 — None을 영구 저장하면 일시적 검색 장애가
+    # 워밍 인스턴스 수명 내내 그 법령명을 차단한다(CodeRabbit #55).
+    # 미매칭 재시도 억제는 호출자의 L1 negative 캐시(_MISS_SENTINEL, TTL
+    # 있음)가 담당하므로 여기의 영구 None은 필요 없다.
     return None
 
 
@@ -471,11 +485,16 @@ def _parse_hang_no(text: str) -> int | None:
 
     `re.search(r"(\\d+)", "①")`은 절대 매치되지 않아 항 단위 조회가 전량
     None이었다(실측 4법령 — prompts.py가 명시 지시하는 '최저임금법 제6조
-    제5항'이 한 번도 조회된 적 없음). ①~⑳은 U+2460~U+2473 연속이다.
+    제5항'이 한 번도 조회된 적 없음). 원문자 블록은 셋으로 나뉜다:
+    ①~⑳ U+2460~, ㉑~㉟ U+3251~, ㊱~㊿ U+32B1~ (각각 연속).
     """
     for c in text:
         if "①" <= c <= "⑳":
             return ord(c) - 0x2460 + 1
+        if "㉑" <= c <= "㉟":
+            return ord(c) - 0x3251 + 21
+        if "㊱" <= c <= "㊿":
+            return ord(c) - 0x32B1 + 36
     m = re.search(r"(\d+)", text)
     return int(m.group(1)) if m else None
 

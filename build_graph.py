@@ -259,6 +259,10 @@ def _fetch_articles_from_api(law_name: str) -> list[dict]:
         if returned and returned.replace(" ", "") != law_name.replace(" ", ""):
             logger.warning("법령명 오해석 거부: %s → %s", law_name, returned)
             return []
+        status = (root.findtext(".//기본정보/제개정구분") or "").strip()
+        if "폐지" in status:
+            logger.warning("폐지 법령 거부: %s (%s)", law_name, status)
+            return []
         articles = []
         for art_el in root.iter("조문단위"):
             num_text = art_el.findtext("조문번호", "").strip()
@@ -292,6 +296,14 @@ def build_articles(G: nx.DiGraph, skip_api: bool = False) -> None:
         # 캐시 파일명은 법령명 기반 — 구 MST 기반 파일({mst}.json)은 낡은
         # 판본의 스냅샷이라 재사용하지 않는다(자연 미스 → 현행판 재수집).
         cache_file = CACHE_DIR / f"{name.replace(' ', '_')}.json"
+
+        # 캐시 만료 7일 — 만료 검사 없이 재사용하면 그래프 재빌드가 캐시
+        # 시점의 판본을 계속 굳힌다(CodeRabbit #55: "현행성 보장은 캐시
+        # 수명까지"). 만료분은 삭제해 아래 미스 경로로 재수집시킨다.
+        if cache_file.exists() and not skip_api:
+            age = time.time() - cache_file.stat().st_mtime
+            if age > 7 * 86400:
+                cache_file.unlink()
 
         articles = []
         if cache_file.exists():

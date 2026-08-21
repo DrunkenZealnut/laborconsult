@@ -112,9 +112,14 @@ def test_law_version_drift_guard() -> None:
     # 가운뎃점 정규화 — U+00B7·U+2027 입력이 정식 표기(U+318D)로 흡수(P1-4)
     assert legal_api._resolve_law_name("남녀고용평등과 일·가정 양립 지원에 관한 법률") \
         == "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률"
-    # 원문자 항번호 변환(P1-2)
+    # 원문자 항번호 변환(P1-2) — 세 블록의 경계값까지(⑳/㉑, ㉟/㊱, ㊿)
     assert legal_api._parse_hang_no("①") == 1
     assert legal_api._parse_hang_no("⑤") == 5
+    assert legal_api._parse_hang_no("⑳") == 20
+    assert legal_api._parse_hang_no("㉑") == 21
+    assert legal_api._parse_hang_no("㉟") == 35
+    assert legal_api._parse_hang_no("㊱") == 36
+    assert legal_api._parse_hang_no("㊿") == 50
     assert legal_api._parse_hang_no("2") == 2
 
     # ── mock 시나리오 ────────────────────────────────────────────────────

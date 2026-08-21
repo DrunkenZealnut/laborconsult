@@ -5,9 +5,10 @@ CI에서는 돌지 않는다(법제처 API 필요) — check_schema.py처럼 배
 수동 실행 항목이다. 오프라인 CI는 구조(MST 미사용)만 고정하고, "실제로
 현행판이 오는가"는 이 스크립트만 확인할 수 있다.
 
-검증 방식: 각 법령을 (a) 프로덕션 경로(fetch_article이 쓰는 LM 조회)와
-(b) 법령 검색의 현행 시행일로 이중 조회해 시행일이 일치하는지 대조한다.
-불일치가 하나라도 있으면 종료 코드 1 — 드리프트 재발이다.
+검증 방식: 각 법령을 (a) 프로덕션과 동일한 LM 요청과 (b) 법령 검색의
+현행 목록으로 이중 조회해 **공포일자+공포번호**(판본 식별자)가 일치하는지
+대조한다 — 시행일자로 대조하면 부칙 단계시행 법령에서 오탐이 난다(아래
+주석 참조). 불일치가 하나라도 있으면 종료 코드 1 — 드리프트 재발이다.
 
 대상 17종은 과거 MST 사전매핑에 있던 주요 노동법이다(실측에서 11종이
 낡아 있던 바로 그 목록 — 재발 감시 대상으로 보존).
@@ -96,7 +97,9 @@ def lm_promulgation(name: str, key: str) -> tuple[str, str] | None:
         return None
     date = (root.findtext(".//기본정보/공포일자") or "").strip()
     no = (root.findtext(".//기본정보/공포번호") or "").strip()
-    return (date, no) if date else None
+    # 공포번호까지 있어야 판본 식별자다 — 번호가 빈 응답을 통과시키면
+    # 양쪽 다 비었을 때 ("date","")==("date","")로 거짓 성공한다.
+    return (date, no) if date and no else None
 
 
 def current_promulgation(name: str, key: str) -> tuple[str, str] | None:
@@ -112,7 +115,7 @@ def current_promulgation(name: str, key: str) -> tuple[str, str] | None:
         if nm == name and status in ("현행", ""):
             date = (el.findtext("공포일자") or "").strip()
             no = (el.findtext("공포번호") or "").strip()
-            return (date, no) if date else None
+            return (date, no) if date and no else None
     return None
 
 
