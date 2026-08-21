@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 23,
+  "sessionCount": 26,
   "lastSession": {
-    "startedAt": "2026-08-19T05:04:28.514Z",
+    "startedAt": "2026-08-21T19:39:18.399Z",
     "platform": "claude",
     "level": "Dynamic"
   },

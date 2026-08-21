@@ -67,7 +67,27 @@ def normalize_body(body: str) -> str:
     body = unicodedata.normalize("NFC", body)
     for wrong, right in OCR_FIXES.items():
         body = body.replace(wrong, right)
-    return body
+    return strip_case_index(body)
+
+
+# 판례색인 헤딩 — 이후 전부를 추출 대상에서 뺀다.
+_CASE_INDEX_RE = re.compile(r"^#{1,3}\s*판례\s*색인\b", re.M)
+
+
+def strip_case_index(body: str) -> str:
+    """권말 판례색인을 절단한다 — 색인 행은 '사건번호+페이지'가 붙어 있어
+    CASE_RE가 페이지를 사건번호 일련번호에 결합한 유령 번호를 만든다.
+
+    실측(이론판례 노동법 part3, 2026-08-22): 색인 미절단 추출로 수집을 돌려
+    2,193건 중 1,509건이 미발견 — 접두사-결합 의심 308건의 표본 200건 중
+    196건이 색인부 유래였다('99두8657' + p424/425 → '99두8657424' 등).
+    유령 번호는 대부분 미발견으로 끝나 수집 시간만 태우지만, 우연히 실존
+    사건과 일치하면 **무관 판례가 코퍼스에 들어간다** — 절단은 그 경로를
+    원천 차단한다. 색인은 관례상 권말이라 첫 매치부터 끝까지 자른다
+    (목차의 '판례색인' 항목은 body_start 절단으로 이미 제거된 뒤다).
+    """
+    m = _CASE_INDEX_RE.search(body)
+    return body[:m.start()] if m else body
 
 
 def extract_cases(body: str) -> Counter:

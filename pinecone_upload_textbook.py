@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """노동법 해설서 marker 변환본을 Pinecone laborlaw-v2 네임스페이스에 업로드.
 
-대상 서적은 BOOKS 레지스트리로 관리한다(현재 3권 — Win 노동법, 근로기준법 주해 Ⅲ,
-개별 노동법실무). 각 서적의 마크다운을 헤더 단위로 분할 → 청킹 → 임베딩 → 업로드한다.
+대상 서적은 BOOKS 레지스트리로 관리한다(현재 4권 — Win 노동법, 근로기준법 주해 Ⅲ,
+개별 노동법실무, 이론판례 노동법). 각 서적의 마크다운을 헤더 단위로 분할 → 청킹 →
+임베딩 → 업로드한다. 4권 체제의 저작권 영향은 없음 — G4-T 총량 상한 6은 서적 수와
+무관하게 고정이고, 권당 상한의 실효 천장은 rerank_top_n에 막혀 4권에서 포화한다
+(CLAUDE.md G4-T 절의 시나리오 표).
 원본 스캔이 여러 파일로 쪼개진 서적은 Book.extra_parts로 조각을 이어붙인다.
 crawl/metadata 단계 없이 upload 스크립트 하나로 처리하는 점은
 pinecone_upload_counsel.py와 동일한 관례를 따름.
@@ -98,6 +101,17 @@ class Book:
     # **뒤에만 추가할 것** — 중간에 끼우면 section_idx가 통째로 밀려 기존
     # chunk_id가 전부 바뀌고, 이전 벡터가 고아로 남는다(설계 §2.3의 ID 안정성).
     extra_parts: tuple[BookPart, ...] = ()
+    # 서적별 헤딩 추출 특례(옵트인). 조문 특례(_ARTICLE_RE)처럼 길이·의미비율
+    # 검사 **전에** 매치를 시도해, 매치되면 그 부분을 정규화해 헤딩으로 살린다.
+    # **전역 규칙으로 승격하지 말 것** — 같은 패턴이 기존 서적의 폐기 헤딩에
+    # 있으면 유지로 전환돼 section_idx가 밀린다(실측: 판례 패턴을 전역으로
+    # 두면 win에서 6건 전환 → 1,408벡터 뒤쪽이 전부 고아).
+    heading_extractors: tuple[re.Pattern, ...] = ()
+    # 저신호 청크 제외율 상한의 서적별 override(옵트인). None이면 전역 상한
+    # (MAX_CHUNK_DROP_RATE). **제외분 전량 육안 판정을 마친 서적에만** 올릴 것
+    # — 상한은 "규칙 오작동 감지기"라, 육안 없이 올리면 감지기를 끄는 것과
+    # 같다. 전역 상한을 올리지 않는 이유도 같다(다른 서적의 감지력 보존).
+    low_signal_cap: float | None = None
 
     def __post_init__(self) -> None:
         # 레지스트리 상수라 사실상 타입 불변식이다 — main()에서만 검사하면
@@ -234,6 +248,62 @@ BOOKS: dict[str, Book] = {
             BookPart(_gaebyeol_md("Part7"), "<!-- page: 1 -->"),
         ),
     ),
+    "ironpanrye": Book(
+        book_id="ironpanrye",
+        # 판례 헤딩 특례 — 이 책은 판례가 소제목 단위다("이론판례"). 사건번호
+        # 헤딩은 숫자·마침표가 의미비율 분모를 채워 전량 오폐기됐다(실측:
+        # 폐기 253건 중 ~200건). 사건번호는 이 책의 최우선 검색 키이므로
+        # 특례로 살린다. 서적별 옵트인인 이유는 Book.heading_extractors 주석.
+        heading_extractors=(
+            # 어미(판결/결정)는 옵셔널 — '대법원 2002.7.9. 선고 2001다29452'
+            # 처럼 어미가 누락된 헤딩도 사건번호까지는 유효하다. 병합 사건은
+            # 두 번째 번호에 부호가 다시 붙을 수 있다('2015다221903,
+            # 2015다221910'). '대결'·'결정'·'등 판결'도 실측 변형.
+            re.compile(
+                r"((?:대법원|대결)\s*\d{4}\s*[.,]\s*\d{1,2}\s*[.,]\s*\d{1,2}\s*[.,]?\s*"
+                r"(?:선고\s*)?\d{2,4}[가-힣]{1,4}\d+"
+                r"(?:\s*[·,]\s*(?:\d{2,4}[가-힣]{1,4})?\d+)*"
+                r"(?:\s*등)?\s*(?:전원합의체\s*)?(?:판결|결정)?)"
+            ),
+        ),
+        # 기출 이력 접미(◆노16, 변19 등)·마크업 잔재가 의미비율을 깎아
+        # 오폐기되는 핵심 쟁점 표제들 — 유효 표제가 온전히 남아 있어 명시
+        # 치환한다(관례: 오폐기 < 오복원, 복원은 명시 치환만).
+        ocr_fixes={
+            "09 시용 4 노16, 변19, 5급22": "09 시용",
+            "01 전직 4 변13, 5급11·20·23": "01 전직",
+            "05 전적 ∢노10, 5급14·23": "05 전적",
+            "08 징계절차의 정당성 ◆변13·14·17·19·24, 5급14·22, 노10·23":
+                "08 징계절차의 정당성",
+            "06 해고의 서면통지 ◆노11·16·22, 변13·17·20·25": "06 해고의 서면통지",
+            "**| 불이익변경의 절차 ⁴** 노13·15·21, 변12·22·23, 5급13·17·21":
+                "불이익변경의 절차",
+            "(4) 일<del>률</del>성": "(4) 일률성",
+        },
+        # 전권 수록(2026-08-22 part2·part3 적재) — 첫 조각이 PART 01 총론 +
+        # PART 02 근로기준법(퇴직금까지), part2가 PART 03 노조법 전체, part3이
+        # PART 04 기타 법령(비정규직·안전보건·산재보험·고용보험·노동위원회).
+        # 조각을 더 추가하면 extra_parts **뒤에만** 붙이고 title·이 주석을
+        # 함께 갱신할 것 + BM25 재빌드.
+        title="이론판례 노동법(제15판, 김기범 편저, 2026)",
+        # p0 표지, p1 법령 약어표, p2~17 목차, p18 PART 01 속표지(이미지).
+        # page 19에서 'Chapter 01 노동법의 법원'으로 본문이 시작한다.
+        path=os.path.join(CORPUS_DIR, "이론판례노동법", "이론판례노동법.md"),
+        body_start="<!-- page: 19 -->",
+        # part3의 저신호 제외율이 10.5%로 전역 상한(10%)을 스치는데, 제외
+        # 68건 전량 육안 판정 결과 전부 정당한 잡음이었다 — 빈 표 구분선
+        # 60건(파견대상업무 표·각 법률 '구성' 표의 깨진 OCR), 'LABOR LAW'
+        # 워터마크 4, OCR 반복 3. 정상 본문 오탐 0. 이 책은 법률 구성 표가
+        # 많은 편집이라 잡음 비율이 구조적으로 높다 — 여유폭만 소폭 부여.
+        low_signal_cap=0.13,
+        # part2·part3은 page 0이 해당 PART 속표지(이미지+장 목록)라 제외.
+        extra_parts=(
+            BookPart(os.path.join(CORPUS_DIR, "이론판례노동법", "part2", "part2.md"),
+                     "<!-- page: 1 -->"),
+            BookPart(os.path.join(CORPUS_DIR, "이론판례노동법", "part3", "part3.md"),
+                     "<!-- page: 1 -->"),
+        ),
+    ),
 }
 
 _PAGE_COMMENT_RE = re.compile(r"<!--\s*page:\s*\d+\s*-->")
@@ -297,11 +367,16 @@ HEADING_MAX_LEN = 80
 HEADING_MIN_RATIO = 0.35
 
 
-def sanitize_heading(raw: str, ocr_fixes: dict[str, str]) -> str | None:
+def sanitize_heading(raw: str, ocr_fixes: dict[str, str],
+                     extractors: tuple[re.Pattern, ...] = ()) -> str | None:
     """정제된 헤딩 문자열, 또는 폐기 대상이면 None.
 
     헤딩은 section 메타데이터이자 embed_text 접두사로 두 번 쓰이므로,
     OCR 잔해가 들어가면 검색 품질과 출처 표시가 함께 망가진다.
+
+    extractors: 서적별 옵트인 특례(Book.heading_extractors). 조문 특례처럼
+    길이·의미비율 검사 전에 매치를 추출해 살린다 — 전역화 금지 사유는
+    Book 필드 주석 참조.
 
     Returns:
         정제된 헤딩. None이면 섹션 경계로 쓰지 않고 본문을 이웃 섹션에 흡수한다.
@@ -317,6 +392,14 @@ def sanitize_heading(raw: str, ocr_fixes: dict[str, str]) -> str | None:
     m = _ARTICLE_RE.search(s)
     if m:
         return re.sub(r"\s+", "", m.group(1))
+
+    # 서적별 특례 — 매치 부분만 추출(잔재 접두 'm'·'血' 등은 매치 밖이라
+    # 자동 탈락). 공백은 collapse만 하고 보존한다(조문 특례의 전면 제거와
+    # 달리 '대법원 2010.5.20. 선고 …'는 공백이 의미 단위다).
+    for ex in extractors:
+        em = ex.search(s)
+        if em:
+            return re.sub(r"\s+", " ", em.group(1)).strip()
 
     s = _TEX_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip(" .·…-—")
@@ -384,7 +467,7 @@ def load_body_normalized(book: Book) -> str:
     body = load_body(book)
 
     def _rewrite(m: re.Match) -> str:
-        heading = sanitize_heading(m.group(2).strip(), book.ocr_fixes)
+        heading = sanitize_heading(m.group(2).strip(), book.ocr_fixes, book.heading_extractors)
         return f"{m.group(1)} {heading}" if heading else ""
 
     return _HEADING_RE.sub(_rewrite, body)
@@ -425,7 +508,7 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
         end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
         raw_text = body[start:end]
 
-        heading = sanitize_heading(m.group(2).strip(), book.ocr_fixes)
+        heading = sanitize_heading(m.group(2).strip(), book.ocr_fixes, book.heading_extractors)
         if heading is None:
             dropped += 1
             if sections:
@@ -625,10 +708,11 @@ def check_chunk_drop_rate(book: Book, kept: int, dropped: int,
     if dropped:
         print(f"  저신호 청크 제외{f' [{scope}]' if scope else ''}: "
               f"{dropped} / {total} ({rate * 100:.1f}%)")
-    if rate > MAX_CHUNK_DROP_RATE:
+    cap = book.low_signal_cap if book.low_signal_cap is not None else MAX_CHUNK_DROP_RATE
+    if rate > cap:
         sys.exit(
             f"[오류] {label} 청크 제외율 {rate * 100:.1f}%가 상한 "
-            f"{MAX_CHUNK_DROP_RATE * 100:.0f}%를 초과했습니다 — 신호 판정 규칙 "
+            f"{cap * 100:.0f}%를 초과했습니다 — 신호 판정 규칙 "
             f"오작동일 수 있습니다. 업로드를 중단합니다."
         )
 
