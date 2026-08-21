@@ -27,22 +27,27 @@ logger = logging.getLogger(__name__)
 GRAPH_PATH = Path("data/graph_data.json")
 CACHE_DIR = Path("data/article_cache")
 
-# ── 법률 MST 매핑 (legal_api.py와 동일) ──────────────────────────────────────
+# ── 그래프 대상 법률 (법령명 기반 — MST 사전매핑 금지) ───────────────────────
+# ⚠️ 과거에는 legal_api.py와 같은 MST 사전매핑을 복제해 두었는데, 원본이
+# LM(법령명) 조회로 전환된 뒤(law-version-drift) 이쪽만 낡은 판본 12종이
+# 남아 있었다 — 8종이 실측에서 '낡음' 판정된 바로 그 값이었고, 재빌드하면
+# 낡은 조문이 그래프에 다시 고정되는 구조였다(분석 G-1). 법령명으로 조회하면
+# 항상 현행판이 온다.
 
-PRELOADED_MST: dict[str, int] = {
-    "근로기준법": 265959,
-    "근로기준법 시행령": 270551,
-    "최저임금법": 218303,
-    "고용보험법": 276843,
-    "산업재해보상보험법": 279733,
-    "근로자퇴직급여 보장법": 279829,
-    "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률": 276851,
-    "소득세법": 276127,
-    "기간제 및 단시간근로자 보호 등에 관한 법률": 232201,
-    "파견근로자 보호 등에 관한 법률": 223983,
-    "임금채권보장법": 259881,
-    "노동조합 및 노동관계조정법": 273667,
-}
+GRAPH_LAWS: list[str] = [
+    "근로기준법",
+    "근로기준법 시행령",
+    "최저임금법",
+    "고용보험법",
+    "산업재해보상보험법",
+    "근로자퇴직급여 보장법",
+    "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률",
+    "소득세법",
+    "기간제 및 단시간근로자 보호 등에 관한 법률",
+    "파견근로자 보호 등에 관한 법률",
+    "임금채권보장법",
+    "노동조합 및 노동관계조정법",
+]
 
 LAW_NAME_ALIASES: dict[str, str] = {
     "근기법": "근로기준법",
@@ -217,9 +222,9 @@ _CITE_SAME_LAW = re.compile(r"제(\d+)조(?:의(\d+))?")
 
 def build_statutes(G: nx.DiGraph) -> None:
     alias_reverse = {v: k for k, v in LAW_NAME_ALIASES.items()}
-    for name, mst in PRELOADED_MST.items():
+    for name in GRAPH_LAWS:
         node_id = f"statute:{name}"
-        G.add_node(node_id, type="statute", name=name, mst=mst,
+        G.add_node(node_id, type="statute", name=name,
                    short=alias_reverse.get(name, ""))
     logger.info("Statute 노드: %d개", sum(1 for _, d in G.nodes(data=True) if d.get("type") == "statute"))
 
@@ -231,17 +236,29 @@ def build_statutes(G: nx.DiGraph) -> None:
 LAW_SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
 
 
-def _fetch_articles_from_api(mst: int) -> list[dict]:
-    """법제처 API에서 조문 목록 조회."""
+def _fetch_articles_from_api(law_name: str) -> list[dict]:
+    """법제처 API에서 조문 목록 조회 — LM(법령명)이라 항상 현행판.
+
+    미매칭·오해석은 빈 리스트로 강등한다(legal_api.py의 게이트와 같은 원리
+    — LM은 별칭·폐지판까지 해석하므로 반환 법령명을 대조해야 다른 법의
+    조문이 이 법 이름의 노드에 붙는 것을 막는다).
+    """
     api_key = os.getenv("LAW_API_KEY")
     if not api_key:
         return []
     try:
         resp = requests.get(LAW_SERVICE_URL, params={
-            "OC": api_key, "target": "law", "MST": mst, "type": "XML",
+            "OC": api_key, "target": "law", "LM": law_name, "type": "XML",
         }, timeout=10)
         resp.raise_for_status()
         root = ET.fromstring(resp.content)
+        if root.tag != "법령":
+            logger.warning("법령 미매칭: %s (root=%s)", law_name, root.tag)
+            return []
+        returned = (root.findtext(".//기본정보/법령명_한글") or "").strip()
+        if returned and returned.replace(" ", "") != law_name.replace(" ", ""):
+            logger.warning("법령명 오해석 거부: %s → %s", law_name, returned)
+            return []
         articles = []
         for art_el in root.iter("조문단위"):
             num_text = art_el.findtext("조문번호", "").strip()
@@ -260,7 +277,7 @@ def _fetch_articles_from_api(mst: int) -> list[dict]:
             })
         return articles
     except Exception as e:
-        logger.warning("API 조회 실패 MST=%d: %s", mst, e)
+        logger.warning("API 조회 실패 (%s): %s", law_name, e)
         return []
 
 
@@ -272,15 +289,16 @@ def build_articles(G: nx.DiGraph, skip_api: bool = False) -> None:
         if data.get("type") != "statute":
             continue
         name = data["name"]
-        mst = data["mst"]
-        cache_file = CACHE_DIR / f"{mst}.json"
+        # 캐시 파일명은 법령명 기반 — 구 MST 기반 파일({mst}.json)은 낡은
+        # 판본의 스냅샷이라 재사용하지 않는다(자연 미스 → 현행판 재수집).
+        cache_file = CACHE_DIR / f"{name.replace(' ', '_')}.json"
 
         articles = []
         if cache_file.exists():
             with open(cache_file, "r", encoding="utf-8") as f:
                 articles = json.load(f)
         elif not skip_api:
-            articles = _fetch_articles_from_api(mst)
+            articles = _fetch_articles_from_api(name)
             if articles:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(articles, f, ensure_ascii=False, indent=1)
