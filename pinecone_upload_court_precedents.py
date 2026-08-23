@@ -27,12 +27,21 @@ import unicodedata
 
 from dotenv import load_dotenv
 
+from vector_ledger import VectorLedger
+
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
             override=True)
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DIR = os.path.join(BASE_DIR, "output_판례_보강")
+
+# 고아 벡터 정리용 원장 — 사건번호별 벡터 ID를 기록한다.
+# **그룹 키가 사건번호인 것이 `--limit` 안전성의 근거다**: 그룹을 코퍼스 전체로
+# 두면 `--limit 20` 실행이 나머지 수천 건을 고아로 오판해 지운다.
+# 원장 파일은 textbook과 분리한다 — 한쪽의 손상 격리가 다른 쪽 롤백 기록까지
+# 묶어 중단시키지 않도록.
+UPLOADED_IDS_FILE = os.path.join(SOURCE_DIR, "_uploaded_ids.json")
 
 EMBED_MODEL = "text-embedding-3-small"
 CHUNK_MAX = 700
@@ -70,7 +79,13 @@ _CODE_KEYS = sorted(_CASE_CODE_MAP, key=len, reverse=True)
 CASE_NO_RE = re.compile(r"(\d{2,4}[가-힣]{1,4}\d+)")
 
 
-# ── 텍스트 유틸 (기존 pinecone_upload_*.py와 동일 로직) ─────────────────────
+# ── 텍스트 유틸 ───────────────────────────────────────────────────────────────
+# `pinecone_upload_legal.py`의 clean_text와 **다르다** — 그쪽에 있는 마크다운
+# 이스케이프 해제 2줄(`\\\n`, `\\([*_...])`)이 여기엔 없다. legal/qa는
+# markdownify로 HTML을 변환해 이스케이프가 섞이지만, 이 코퍼스는 법제처 API의
+# XML 텍스트라 그 단계를 거치지 않는다(실측 2026-08-23: 40개 표본에서 0건).
+# 이전 주석이 "동일 로직"이라고 잘못 주장하고 있었다(외부감사 M6) — 사본이
+# 갈라진 게 아니라 소스 특성이 다른 것이므로 통합하지 않는다.
 
 def clean_text(text: str) -> str:
     text = text.replace("\xa0", " ")
@@ -123,8 +138,26 @@ def case_no_to_ascii(case_no: str) -> str:
 
 
 def make_vector_id(case_no: str, idx: int) -> str:
-    """결정적 ID — 재실행 시 upsert가 덮어써 중복 벡터가 생기지 않는다."""
+    """결정적 ID — 재실행 시 upsert가 덮어써 중복 벡터가 생기지 않는다.
+
+    다만 **덮어쓰기는 청크 수가 유지되거나 늘 때만 안전하다.** 줄어들면
+    (`enrich_court_precedents.py` 재태깅·`EMBED_SECTIONS` 조정·재수집으로 요지가
+    짧아지는 등) 이전 실행의 남는 벡터가 프로덕션 검색 대상 NS에 그대로 남아
+    검색 결과에 계속 섞인다 — upsert는 덮어쓸 뿐 지우지 않기 때문이다. 그
+    차집합을 지우는 것이 `_LEDGER`의 역할이다(외부감사 2026-08-23 H3).
+    """
     return f"{SOURCE_TYPE}_{case_no_to_ascii(case_no)}_chunk_{idx}"
+
+
+# 사건번호 그룹의 벡터 ID 규격 — 원장 검증에 쓴다. 접두사만 보면
+# `precedent_2020da123_chunk_x` 같은 규격 위반이 통과하고, 그 값이
+# index.delete()로 들어가면 되돌릴 수 없다.
+_LEDGER = VectorLedger(
+    UPLOADED_IDS_FILE,
+    group_re=re.compile(r"^[A-Za-z0-9_]+$"),
+    id_re_for=lambda case: re.compile(
+        rf"^{SOURCE_TYPE}_{re.escape(case)}_chunk_\d+$"),
+)
 
 
 # ── 마크다운 파싱 ─────────────────────────────────────────────────────────────
@@ -245,6 +278,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="법제처 판례 Pinecone 업로드")
     parser.add_argument("--dry-run", action="store_true", help="청킹만 수행")
     parser.add_argument("--limit", type=int, help="처리할 최대 파일 수")
+    parser.add_argument("--allow-large-prune", action="store_true",
+                        help="고아 벡터가 현재 청크의 50%%를 넘어도 삭제 진행 "
+                             "(ID 규격을 의도적으로 바꿨을 때만)")
     # --reset 없음: laborlaw-v2는 다른 소스와 공유하는 네임스페이스라
     # delete_all이 기존 9,000여 벡터를 통째로 날린다.
     args = parser.parse_args()
@@ -286,6 +322,10 @@ def main() -> None:
     seen_ids: set[str] = set()
     pending: list[dict] = []
     samples: list[dict] = []
+    # 청킹을 먼저 전량 끝내는 이유는 **원장 기록이 upsert보다 앞서야** 하기
+    # 때문이다(중간에 죽으면 적재된 벡터가 추적 대상에서 빠진다). 청킹은 파싱만
+    # 하므로 가볍고, dry-run이 이미 같은 일을 전량 수행한다.
+    ready: list[tuple[str, dict, list[dict]]] = []
 
     for fn in md_files:
         path = os.path.join(SOURCE_DIR, fn)
@@ -313,7 +353,19 @@ def main() -> None:
         total_chunks += len(chunks)
         if len(samples) < 5:
             samples.append({**chunks[0], "case_no": doc["case_no"]})
+        ready.append((fn, doc, chunks))
 
+    # 원장 기록 — 업로드 예정 ID를 upsert보다 **먼저** 남긴다. 그룹 키가
+    # 사건번호라 `--limit` 부분 실행이 미처리 사건을 고아로 오판하지 않는다.
+    groups: dict[str, list[str]] = {}
+    previous: dict[str, set[str]] = {}
+    if not args.dry_run and ready:
+        groups = {case_no_to_ascii(doc["case_no"]): [c["vector_id"] for c in chunks]
+                  for _, doc, chunks in ready}
+        previous = _LEDGER.record(groups)
+        print(f"벡터 ID {total_chunks}건 기록: {UPLOADED_IDS_FILE}\n")
+
+    for fn, doc, chunks in ready:
         if args.dry_run:
             continue
 
@@ -354,6 +406,15 @@ def main() -> None:
 
     if pending and not args.dry_run:
         index.upsert(vectors=pending, namespace=NAMESPACE)
+
+    # 고아 벡터 정리 — **업로드가 전부 성공한 뒤에만** 한다. 중간 실패 시
+    # 삭제하면 아직 올리지 못한 벡터를 지운다(위 임베딩 불일치는 sys.exit로
+    # 여기 도달하지 않는다). 성공하면 원장을 현재 집합으로 확정한다.
+    if not args.dry_run and groups:
+        _LEDGER.prune(groups, previous, index, NAMESPACE,
+                      batch_size=UPSERT_BATCH,
+                      allow_large=args.allow_large_prune,
+                      label="판례 코퍼스")
 
     if not args.dry_run:
         # 벡터 수 스냅샷(V1) — 4시점 검증(설계 §2.4)의 자동 출력분.

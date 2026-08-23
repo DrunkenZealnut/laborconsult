@@ -742,6 +742,72 @@ def test_colloquial_map() -> None:
     print(f"  ✅ 구어 사전: 양성 {len(positives)}건 매핑·음성 {len(negatives)}건 통과·상한 고정")
 
 
+def test_upload_namespace_contract() -> None:
+    """업로드 스크립트의 네임스페이스 계약 (외부감사 2026-08-23 H1·H2).
+
+    막는 실패 셋 — **전부 조용하다**:
+    ① `pc.delete_index()` 부활 — 네임스페이스가 아니라 **인덱스 전체**가 대상이라
+       공유 인덱스의 타 프로젝트 데이터(실측 139,776벡터, 5개 인덱스 계정)까지
+       파괴한다. Pinecone Serverless에는 복구 수단이 없다.
+    ② 프로덕션이 읽지 않는 네임스페이스에 적재 — 임베딩 비용을 쓰고 성공
+       메시지·벡터 수가 정상 출력되지만 검색에는 영원히 반영되지 않는다
+       (실측: `precedent` 6,540벡터가 사장 상태).
+    ③ `rag.py::NS_GROUPS`와 업로더의 검색 NS 상수가 갈라짐.
+    """
+    import re as _re
+    from pathlib import Path
+
+    from app.core import rag
+
+    searched = {ns for group in rag.NS_GROUPS for ns in group}
+
+    # ① 인덱스 전체 삭제 금지 — 주석·docstring의 언급은 허용(사유 기록이다)
+    for path in sorted(Path(".").glob("pinecone_upload*.py")):
+        code = "\n".join(
+            ln for ln in path.read_text(encoding="utf-8").splitlines()
+            if not ln.lstrip().startswith("#"))
+        code = _re.sub(r'""".*?"""', "", code, flags=_re.S)
+        assert "delete_index(" not in code, (
+            f"{path.name}: pc.delete_index()는 인덱스 전체를 삭제한다 — 공유 "
+            f"인덱스의 타 프로젝트까지 파괴된다. index.delete(delete_all=True, "
+            f"namespace=...)로 범위를 좁힐 것")
+
+    # ② 사장 NS에 쓰는 스크립트는 경고/봉인 마커가 있어야 한다.
+    #    마커는 기계 판독용 고정 문자열 — 자연어 문구로 판정하면 정상 스크립트의
+    #    설명문이 오탐된다(court_precedents가 실제로 그랬다).
+    MARKER = "NS-CONTRACT: unsearched"
+    # 리터럴(`"namespace": "qa"`, `namespace="qa"`)과 모듈 상수(`NAMESPACE = "counsel"`)
+    # 양쪽을 본다 — 리터럴만 보면 상수를 쓰는 스크립트가 "무지정"으로 오탐된다.
+    ns_re = _re.compile(r'"namespace":\s*"([a-z0-9_-]+)"|namespace="([a-z0-9_-]+)"'
+                        r'|^NAMESPACE\s*=\s*"([a-z0-9_-]+)"', _re.M)
+    for path in sorted(Path(".").glob("pinecone_upload*.py")):
+        src = path.read_text(encoding="utf-8")
+        declared = {g for m in ns_re.finditer(src) for g in m.groups() if g}
+        dead = declared - searched
+        if dead:
+            assert MARKER in src, (
+                f"{path.name}: 프로덕션이 읽지 않는 NS {sorted(dead)}에 적재한다. "
+                f"검색 대상은 {sorted(searched)}뿐 — '{MARKER}' 마커로 의도를 "
+                f"명시하거나 적재 대상을 바꿀 것")
+        # 무지정 upsert도 같은 부류다 — 기본 NS는 타 프로젝트 소유로 실측됐다.
+        # 판정은 "upsert 호출에 namespace 인자가 없다"로 한다(선언 유무가 아니라).
+        bare = [c for c in _re.findall(r"\.upsert\((?:[^()]|\([^()]*\))*\)", src)
+                if "namespace" not in c]
+        if bare:
+            assert MARKER in src or "실행 봉인됨" in src, (
+                f"{path.name}: 네임스페이스 무지정 upsert {bare[:1]} — 기본 NS는 "
+                f"반도체 프로젝트 소유다(실측). 명시하거나 봉인할 것")
+
+    # ③ 업로더가 복제한 검색 NS 상수가 rag.py와 일치하는지
+    ctx = Path("pinecone_upload_contextual.py").read_text(encoding="utf-8")
+    m = _re.search(r"SEARCHED_NAMESPACES\s*=\s*frozenset\(\{([^}]*)\}\)", ctx)
+    assert m, "pinecone_upload_contextual.py: SEARCHED_NAMESPACES 상수가 없다"
+    assert {s.strip().strip('"\'') for s in m.group(1).split(",") if s.strip()} \
+        == searched, "SEARCHED_NAMESPACES가 rag.py::NS_GROUPS와 갈라졌다"
+
+    print(f"  ✅ 업로드 NS 계약: 검색 대상 {sorted(searched)}·인덱스 삭제 금지·마커 일치")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -763,6 +829,7 @@ def main() -> None:
     test_ddl_search_path()
     test_ddl_no_quoted_identifiers()
     test_code_tables_defined_in_ddl()
+    test_upload_namespace_contract()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 

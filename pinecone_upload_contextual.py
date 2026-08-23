@@ -61,6 +61,17 @@ EMBED_BATCH = 50
 UPSERT_BATCH = 100
 CONTEXT_BATCH_DELAY = 0.05  # Haiku rate limit 여유
 
+# 프로덕션 검색이 실제로 읽는 네임스페이스 — `app/core/rag.py::NS_GROUPS`와 같은 값.
+# 여기 없는 네임스페이스에 올린 벡터는 챗봇 답변에 절대 쓰이지 않는다(임베딩 비용만
+# 쓰고 성공 메시지는 정상 출력되는 조용한 실패). rag.py를 import하지 않는 이유는
+# 업로드 스크립트가 서빙 계층 의존(cohere·supabase 등)을 끌어오지 않게 하기 위함이고,
+# 두 곳이 갈라지지 않도록 test_offline_units.py가 대조를 고정한다.
+SEARCHED_NAMESPACES = frozenset({"laborlaw-v2", "counsel", "qa"})
+
+# NS-CONTRACT: unsearched — precedent/interpretation/regulation 소스는 사장 NS에 쓴다.
+#   판례를 프로덕션 검색에 넣으려면 pinecone_upload_court_precedents.py를 쓸 것
+#   (같은 데이터를 laborlaw-v2에 올린다). 실행 시 _warn_unsearched()가 경고한다.
+
 # 소스 정의 — 소스별 네임스페이스 분리
 SOURCES = [
     {
@@ -214,10 +225,26 @@ def extract_body(md_content: str) -> str:
     return clean_text(md_content)
 
 
-def extract_post_id(filepath: str) -> str:
-    basename = os.path.splitext(os.path.basename(filepath))[0]
-    m = re.match(r"(\d+)", basename)
-    return m.group(1) if m else basename[:20]
+def extract_post_id(filepath: str, source_type: str = "") -> str:
+    """파일명 → post_id. 구현은 `pinecone_upload_legal.py`가 단일 출처다.
+
+    여기 사본을 두지 않는 이유: 이 함수는 2026-08-09에 legal 쪽에서 봉인된
+    NFD/연도충돌 결함(판례 836개 → 고유 post_id 362개, 474벡터 덮어쓰기)의
+    수정 대상인데, contextual에는 그 수정이 전파되지 않아 **같은 결함이 그대로
+    남아 있었다**(외부감사 2026-08-23 M1). 원인은 "업로드 스크립트 간 유틸 복사"라는
+    관례 자체였으므로, 복사본을 최신화하는 대신 출처를 하나로 합친다.
+
+    macOS 파일명은 NFD라 NFC 정규화 없이는 한글 문자 클래스가 매치되지 않고,
+    폴백이 연도만 잡으면 같은 해 판례들이 동일 ID로 충돌한다.
+
+    qa·counsel 소스의 ID는 불변이다 — 사건번호 패턴(`\\d{2,4}[가-힣]{1,4}\\d+`)은
+    `1877294_제목` 같은 숫자ID 파일명에 매치되지 않아 숫자 폴백으로 내려가고,
+    기존 프로덕션 벡터(`ctx_qa_{post_id}_c{i}` 49,842건)와 같은 값이 나온다.
+    회귀는 `test_precedent_ingest.py` T14가 두 모듈 모두에 대해 고정한다.
+    """
+    from pinecone_upload_legal import extract_post_id as _legal_extract_post_id
+
+    return _legal_extract_post_id(filepath, source_type)
 
 
 # ── 청킹 ─────────────────────────────────────────────────────────────────────
@@ -613,7 +640,7 @@ def process_source(
 
         title = extract_title(md_content)
         meta = parse_md_metadata(md_content)
-        post_id = extract_post_id(filepath)
+        post_id = extract_post_id(filepath, source_type)
 
         category = meta.get("분류", "")
         if not category:
@@ -759,6 +786,18 @@ def main():
         sources = [s for s in SOURCES if args.source in s["label"]]
         if not sources:
             sys.exit(f"[오류] 알 수 없는 소스: {args.source}. 가능: {[s['label'] for s in SOURCES]}")
+
+    # 사장 NS 경고 — 업로드 자체는 성공하고 벡터 수도 맞게 찍히므로, 이 경고가
+    # 없으면 "검색에 반영되지 않는다"는 사실을 알 방법이 없다.
+    if not args.dry_run:
+        dead = sorted({s["namespace"] for s in sources} - SEARCHED_NAMESPACES)
+        if dead:
+            print("\n" + "=" * 62)
+            print(f"⚠️  네임스페이스 {', '.join(dead)}는 프로덕션 검색 대상이 아닙니다.")
+            print(f"    rag.py가 읽는 곳: {', '.join(sorted(SEARCHED_NAMESPACES))}")
+            print("    이 소스의 벡터는 챗봇 답변에 쓰이지 않습니다.")
+            print("    판례를 검색에 넣으려면 pinecone_upload_court_precedents.py를 쓰세요.")
+            print("=" * 62 + "\n")
 
     # 네임스페이스 초기화 (대상 소스의 NS만)
     if args.reset and not args.dry_run:

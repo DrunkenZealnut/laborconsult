@@ -38,6 +38,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pinecone import Pinecone
 
+from vector_ledger import VectorLedger
+
 load_dotenv()
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
@@ -310,7 +312,16 @@ _PAGE_COMMENT_RE = re.compile(r"<!--\s*page:\s*\d+\s*-->")
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
 
 
-# ── 텍스트 유틸 (기존 pinecone_upload_*.py와 동일 로직) ─────────────────────
+# ── 텍스트 유틸 ───────────────────────────────────────────────────────────────
+# `pinecone_upload_legal.py`의 clean_text와 **다르다** — 그쪽의 마크다운
+# 이스케이프 해제 2줄(`\\\n`, `\\([*_...])`)이 여기엔 없다. 이전 주석이
+# "동일 로직"이라고 잘못 주장했다(외부감사 2026-08-23 M6).
+#
+# **의도적으로 추가하지 않는다.** marker 변환 산출물에도 이스케이프가 있긴 하나
+# 극소량이고(실측: 4권 본문 474만 자 중 133개 = 0.003%, 2~74ppm), 반면
+# clean_text가 바뀌면 청크 분할 경계가 밀려 `chunk_id`가 달라지고 **기존
+# 해설서 벡터 10,103개 중 일부가 고아로 남는다**(prune으로 정리되더라도 재업로드
+# 비용이 든다). 백슬래시 133개를 지우려고 치를 대가가 아니다.
 
 def clean_text(text: str) -> str:
     text = text.replace("\xa0", " ")
@@ -810,137 +821,52 @@ def embed_texts(texts: list[str], client: OpenAI) -> list[list[float]]:
     return []
 
 
+# 원장 구현은 vector_ledger.py가 단일 출처다 — court 스크립트도 같은 것을 쓴다.
+# 사본을 두지 않는 이유: 같은 사이클(외부감사 2026-08-23)에서 M1이 "업로드
+# 스크립트 간 유틸 복사"로 legal의 NFD 픽스가 contextual에 3.5개월간 전파되지
+# 않은 것을 확인했다. 여기 원장은 Pinecone Serverless에서 고아 벡터를 지울 수
+# 있는 유일한 수단이라 드리프트의 대가가 더 크다.
+_LEDGER = VectorLedger(
+    UPLOADED_IDS_FILE,
+    group_re=_BOOK_ID_RE,
+    id_re_for=lambda bid: re.compile(rf"^textbook_{re.escape(bid)}_\d{{4}}_\d+$"),
+)
+
+
 def _read_ledger() -> dict[str, list[str]]:
-    """롤백 원장 로드. 손상 시엔 백업 후 중단한다.
-
-    조용히 {}로 시작하면 **다른 서적의 롤백 기록이 통째로 사라진다** —
-    Pinecone Serverless는 메타데이터 필터 삭제를 지원하지 않아 이 목록이
-    유일한 복구 수단이다. 빈 파일은 정상(최초 실행)으로 본다.
-    """
-    backup = UPLOADED_IDS_FILE + ".bak"
-
-    if not os.path.exists(UPLOADED_IDS_FILE) or os.path.getsize(UPLOADED_IDS_FILE) == 0:
-        # .bak만 남아 있다는 건 직전 실행이 손상을 감지하고 격리했다는 뜻이다.
-        # 여기서 {}를 반환하면 이전 ID를 잃고 기존 고아 벡터를 영영 정리하지
-        # 못한다 — 사람이 복구하거나 명시적으로 초기화할 때까지 막는다.
-        if os.path.exists(backup):
-            sys.exit(f"[오류] 손상 격리된 롤백 기록이 있습니다: {backup}\n"
-                     f"       내용을 확인해 {UPLOADED_IDS_FILE}로 복구하거나, "
-                     f"의도적 초기화라면 .bak을 삭제한 뒤 재실행하세요.")
-        return {}
-
-    def _abort(reason: str):
-        os.replace(UPLOADED_IDS_FILE, backup)
-        sys.exit(f"[오류] 롤백 기록이 올바르지 않습니다 ({reason}). "
-                 f"원본을 {backup}로 보존했습니다 — 확인 후 재실행하세요.")
-
-    try:
-        with open(UPLOADED_IDS_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        _abort(str(e))
-
-    # 스키마 검증 — 이 값은 index.delete()로 들어간다. 형태가 어긋나면 엉뚱한
-    # 벡터를 지우게 되고, 삭제는 되돌릴 수 없다.
-    if not isinstance(data, dict):
-        _abort(f"최상위가 dict가 아님: {type(data).__name__}")
-    for book_id, ids in data.items():
-        if not _BOOK_ID_RE.match(str(book_id)):
-            _abort(f"book_id 형식 위반: {book_id!r}")
-        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
-            _abort(f"'{book_id}' 항목이 문자열 리스트가 아님")
-        # 접두사만 보면 textbook_win_x_y 같은 잘못된 ID가 통과한다.
-        # chunk_id 규격 전체를 확인한다: textbook_{book_id}_{section:04d}_{chunk}
-        id_re = re.compile(rf"^textbook_{re.escape(book_id)}_\d{{4}}_\d+$")
-        bad = [i for i in ids if not id_re.match(i)]
-        if bad:
-            _abort(f"'{book_id}' 항목에 chunk_id 규격 위반 {len(bad)}건 (예: {bad[:2]})")
-    return data
+    """원장 로드(위임). 테스트가 UPLOADED_IDS_FILE을 갈아끼우므로 경로를 매번 맞춘다."""
+    _LEDGER.path = UPLOADED_IDS_FILE
+    return _LEDGER.read()
 
 
 def _write_ledger(data: dict[str, list[str]]) -> None:
-    """원자적 교체로 기록 — 쓰기 중 죽어도 원장이 비지 않는다.
-
-    truncate 후 쓰는 방식은 중단 시 빈 파일을 남기고, _read_ledger()가 그것을
-    '최초 실행'으로 읽어 **이전 ID를 통째로 잃는다**. 그러면 기존 고아 벡터를
-    영영 정리할 수 없다.
-    """
-    tmp = UPLOADED_IDS_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, UPLOADED_IDS_FILE)
+    """원장 원자적 기록(위임)."""
+    _LEDGER.path = UPLOADED_IDS_FILE
+    _LEDGER.write(data)
 
 
 def record_uploaded_ids(book_id: str, ids: list[str]) -> set[str]:
-    """업로드 예정 벡터 ID를 서적별로 기록(롤백용, 설계 §9).
-
-    **upsert보다 먼저** 호출한다 — 업로드 도중 죽으면 이미 적재된 벡터가
-    기록 없이 남고, Pinecone Serverless는 메타데이터 필터 삭제를 지원하지
-    않아 복구 수단이 사라진다. 존재하지 않는 ID의 delete는 무해하므로
-    기록은 실제 적재분의 상위집합이어야 안전하다.
-
-    같은 이유로 기존 기록과 **합집합**을 취한다. 청킹이 바뀌어 ID가 줄면
-    교체 방식은 이전 실행의 고아 벡터를 추적 대상에서 지워버린다.
-
-    Returns:
-        이전 기록 ID 집합 — 업로드 성공 후 prune_stale_vectors()가 차집합을
-        삭제하는 데 쓴다.
-    """
-    data = _read_ledger()
-    previous = set(data.get(book_id, []))
-    merged = sorted(previous | set(ids))
-    data[book_id] = merged
-    _write_ledger(data)
-    print(f"  벡터 ID {len(ids)}건 기록(누적 {len(merged)}): {UPLOADED_IDS_FILE}")
+    """업로드 예정 벡터 ID를 기록하고 이전 기록을 돌려준다(upsert보다 **먼저**)."""
+    _LEDGER.path = UPLOADED_IDS_FILE
+    previous = _LEDGER.record({book_id: ids})[book_id]
+    merged = len(previous | set(ids))
+    print(f"  벡터 ID {len(ids)}건 기록(누적 {merged}): {UPLOADED_IDS_FILE}")
     return previous
 
 
 def finalize_uploaded_ids(book_id: str, current_ids: list[str]) -> None:
-    """업로드·정리가 모두 성공한 뒤 원장을 현재 집합으로 확정한다.
-
-    이걸 하지 않으면 원장이 합집합으로 남아 다음 실행이 **이미 삭제한 ID를
-    또 stale로 계산**한다. 삭제 자체는 멱등이라 무해하지만, 대량 삭제 가드가
-    한 번 걸리면 원장이 그대로라 이후 실행이 매번 같은 지점에서 멈춘다.
-    """
-    data = _read_ledger()
-    data[book_id] = sorted(current_ids)
-    _write_ledger(data)
+    """업로드·정리가 모두 성공한 뒤 원장을 현재 집합으로 확정한다."""
+    _LEDGER.path = UPLOADED_IDS_FILE
+    _LEDGER.finalize({book_id: current_ids})
 
 
 def prune_stale_vectors(book: Book, current_ids: list[str], previous_ids: set[str],
                         index, allow_large: bool = False) -> None:
-    """이번 업로드에 없는 이전 chunk_id 벡터를 삭제한다.
-
-    청킹이 줄면(`ocr_fixes` 추가로 섹션이 병합되는 등) 이전 실행의 벡터가
-    Pinecone에 남아 **검색 결과에 계속 섞인다.** upsert는 덮어쓸 뿐 지우지
-    않으므로 차집합을 명시 삭제해야 한다.
-
-    업로드가 전부 성공한 뒤에만 호출한다 — 중간 실패 시 삭제하면 아직
-    올리지 못한 벡터를 지울 수 있다. 삭제까지 성공하면 원장을 현재 집합으로
-    확정한다(실패 시엔 합집합을 유지해 추적을 잃지 않는다).
-    """
-    stale = sorted(previous_ids - set(current_ids))
-    if not stale:
-        finalize_uploaded_ids(book.book_id, current_ids)
-        return
-
-    # 대량 삭제는 청킹 규격이 통째로 바뀐 신호다. 조용히 지우면 되돌릴 수 없다.
-    # 탈출구를 '원장 비우기'로 두면 안 된다 — previous가 사라져 stale이 0이 되고
-    # 고아 벡터가 영구히 남는다. 명시 플래그로만 통과시킨다.
-    if not allow_large and len(stale) > len(current_ids) * 0.5:
-        sys.exit(
-            f"[오류] '{book.book_id}' 고아 벡터가 {len(stale)}건으로 현재 청크"
-            f"({len(current_ids)})의 50%를 넘습니다 — chunk_id 규격이 바뀌었을 수 "
-            f"있습니다. 의도한 변경이면 --allow-large-prune 으로 재실행하세요 "
-            f"(원장을 직접 비우면 삭제 대상을 잃어 고아가 영구히 남습니다)."
-        )
-
-    for i in range(0, len(stale), UPSERT_BATCH):
-        index.delete(ids=stale[i:i + UPSERT_BATCH], namespace=NAMESPACE)
-    print(f"  고아 벡터 {len(stale)}건 삭제 (예: {stale[:2]})")
-    finalize_uploaded_ids(book.book_id, current_ids)
+    """이번 업로드에 없는 이전 chunk_id 벡터를 삭제한다(위임)."""
+    _LEDGER.path = UPLOADED_IDS_FILE
+    _LEDGER.prune({book.book_id: current_ids}, {book.book_id: previous_ids},
+                  index, NAMESPACE, batch_size=UPSERT_BATCH,
+                  allow_large=allow_large, label=f"'{book.book_id}'")
 
 
 def upload_book(book: Book, chunks: list[dict], openai_client: OpenAI, index,

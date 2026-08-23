@@ -23,10 +23,16 @@ python3 crawl_qna.py              # General Q&A (10K posts → output_qna/), res
 python3 crawl_boards.py           # 자료실/판례/행정해석 등 게시판 크롤 → output_*/
 python3 generate_metadata.py      # Generate metadata.json from output/
 
-# Pinecone upload (one variant per corpus source)
-python3 pinecone_upload.py        # Chunk + embed + upsert to Pinecone (Q&A)
-python3 pinecone_upload.py --reset  # Reset index and re-upload
-python3 pinecone_upload_legal.py  # 법원 노동판례 업로드 (다른 변형: _2025/_imgum/_counsel/_contextual)
+# Pinecone upload — ⚠️ 프로덕션 검색이 읽는 네임스페이스는 laborlaw-v2 / counsel / qa 뿐이다
+# (`app/core/rag.py::NS_GROUPS`). 다른 곳에 올리면 임베딩 비용만 쓰고 검색에 반영되지 않는다.
+python3 pinecone_upload_court_precedents.py    # 판례 → laborlaw-v2 (현역)
+python3 pinecone_upload_textbook.py --book X   # 해설서 → laborlaw-v2 (현역)
+python3 pinecone_upload_contextual.py --source Q&A   # Q&A·상담 → qa/counsel (현역)
+# pinecone_upload.py / _2025 / _imgum — ⛔ 실행 봉인됨(2026-08-23). --reset이 인덱스를
+#   **통째로** 삭제해 공유 인덱스의 타 프로젝트 데이터(139,776벡터)까지 파괴했고,
+#   무지정 upsert가 반도체 프로젝트의 기본 네임스페이스에 썼다. 사유는 각 파일 docstring.
+# pinecone_upload_legal.py / _contextual의 판례·행정해석·훈령 소스 — 사장 NS에 적재된다
+#   (실행 시 경고 배너 출력). 판례는 pinecone_upload_court_precedents.py를 쓸 것.
 python3 upload_new_precedents.py  # 신규 판례 증분 업로드
 
 # 법제처 API 판례 보강 (사건번호 목록 → 원문 수집 → 쟁점 태깅 → 업로드)
@@ -36,7 +42,8 @@ python3 fetch_court_precedents.py --cases <csv>  # 명시 대상 재수집(L2 �
 python3 fetch_court_precedents.py --input <csv>  # 입력 CSV 교체(L2 유지 — 신규 수집용, --cases와 의미가 다름)
 python3 enrich_court_precedents.py             # 교재 목차에서 '관련 쟁점' 태깅 (멱등, 저작권 경계는 스크립트 docstring)
 python3 pinecone_upload_court_precedents.py --dry-run  # 청킹 검증
-python3 pinecone_upload_court_precedents.py    # laborlaw-v2 업로드
+python3 pinecone_upload_court_precedents.py    # laborlaw-v2 업로드 (고아 벡터 자동 정리)
+python3 pinecone_upload_court_precedents.py --allow-large-prune  # ID 규격을 의도적으로 바꿨을 때만
 python3 sync_overlap_precedents.py --emit-targets      # 교재∩기존코퍼스 겹침 대상 CSV 생성 (교재 원본 필요, 로컬 전용)
 python3 sync_overlap_precedents.py --delete-ctx --dry-run  # 대체 성공분의 ctx 구벡터 삭제 (실행 전 반드시 dry-run)
 python3 test_precedent_ingest.py               # 오프라인 회귀 테스트 (API 키 불요)
@@ -74,6 +81,8 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
 # 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.json.gz 커밋 필수
 # (gz 미커밋 시 프로덕션 하이브리드 검색이 Dense-only로 폴백됨)
+# 저장 전 가드 3종: NS 조회 예외 / NS 0건 / 직전 대비 20% 초과 감소 → 저장 건너뛰고 기존 파일 보존.
+# gz라 커밋 diff로 내용을 볼 수 없어(크기 변화만 보임) 이 자동 검사가 유일한 방어다.
 python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json.gz
 
 # NLRC 판정사례 번들 갱신 (odcloud API 키 필요, 주기 실행 후 커밋)
@@ -257,11 +266,21 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **G4는 BM25 경로에서 새기 쉽다** — BM25 코퍼스는 `{id,text,title,section,source_type}`만 담아 `book_id`가 없었다. `build_bm25_corpus.py`가 `book_id`를 보존하고 `rag.py::_book_id_of()`가 벡터 ID(`textbook_{book_id}_...`)에서 되뽑는 폴백을 갖는 2중 구조다. 둘 중 하나만 두면 구 코퍼스나 신규 소스에서 가드가 무력화된다.
   - **G5** — `rag.py` 라벨 맵과 `public/index.html::renderSources`의 `labels` 양쪽. 한쪽만 고치면 raw `textbook`이 노출된다.
   - **G6 — 해설서 근거 답변은 공개 게시판에서 제외한다**(`metadata.textbook` → `api/index.py::_PUBLIC_EXCLUDE_KEYS`). G1이 소프트 가드라 축자 인용이 새어나갈 수 있는데, 그 답변이 크롤 가능한 공개 페이지로 재게시되면 노출이 1:1 상담에서 공개 배포로 확대된다. 부착 판정과 게시판 제외는 **같은 `used_textbook` 변수**를 써야 한다 — 판정을 복제하면 한쪽만 어긋나 "가드는 붙는데 게시판엔 올라가는" 상태가 된다. 회귀는 T19b.
-  - 롤백은 `output_노동법교재/_uploaded_ids.json`의 ID 목록으로만 가능하다(Pinecone Serverless는 메타데이터 필터 삭제 미지원). 이 파일을 지우면 되돌릴 방법이 사실상 없다. 기록은 **upsert보다 먼저** 쓰고 기존 기록과 합집합을 취한다 — 중간에 죽으면 적재분이 추적에서 빠지고, 존재하지 않는 ID의 delete는 무해하므로 상위집합이 안전한 방향이다.
+  - 롤백은 `output_노동법교재/_uploaded_ids.json`의 ID 목록으로만 가능하다(Pinecone Serverless는 메타데이터 필터 삭제 미지원). 이 파일을 지우면 되돌릴 방법이 사실상 없다. 기록은 **upsert보다 먼저** 쓰고 기존 기록과 합집합을 취한다 — 중간에 죽으면 적재분이 추적에서 빠지고, 존재하지 않는 ID의 delete는 무해하므로 상위집합이 안전한 방향이다. **원장 구현은 `vector_ledger.py`가 단일 출처**이고 판례 코퍼스도 같은 것을 쓴다(아래).
+- **고아 벡터 정리(원장)는 `laborlaw-v2`에 쓰는 모든 스크립트에 필요하다** — 판례 쪽에는 없었다(외부감사 2026-08-23 H3). `upsert`는 덮어쓸 뿐 지우지 않으므로, 한 문서의 청크 수가 **줄면**(재수집·`enrich_court_precedents.py` 재태깅·`EMBED_SECTIONS` 조정) 이전 벡터가 프로덕션 검색 대상 NS에 남아 결과에 계속 섞인다 — 어떤 게이트에도 안 걸리는 조용한 오염이다. 구현 시 주의 셋:
+  - **그룹 키는 "한 번의 실행이 항상 통째로 다루는 단위"여야 한다.** prune은 차집합을 지우므로 그룹을 넓게 잡으면 **부분 실행이 나머지를 고아로 오판한다** — court는 `--limit`이 있어 코퍼스 전체를 한 그룹으로 두면 `--limit 20`이 나머지 수천 건을 삭제 대상으로 계산한다. textbook은 `book_id`, court는 **사건번호**가 그 단위다. 회귀는 T25-c.
+  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 둘 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다.
+  - **대량 삭제 가드는 합계로 판정한다.** 그룹별로 걸면 청크 1개짜리 판례에서 1건만 줄어도 50%를 넘어 상시 발동하고, 경고가 일상이 되면 아무도 읽지 않는다.
 - **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.
 - **해설서 헤딩 위생 처리는 "폐기만 범용, 복원은 명시 치환"이다**(`sanitize_heading`). 오폐기는 섹션 경계 하나를 잃을 뿐이지만 오복원은 코퍼스에 오정보를 남긴다. 규칙 수정 시 주의점 셋 — (1) 의미문자 비율의 **분모에서 공백·구두점을 빼야** 한다(`2. 요 건`이 2/6=0.33로 오폐기됨), (2) 조문 표기 추출은 **길이 검사보다 먼저** 해야 한다(59자짜리가 상한 60을 통과해 잡음째 살아남음), (3) `ocr_fixes`는 **원문 키**로 매칭한다(정제 후 매칭하면 정제 로직 변경 시 치환 키가 조용히 무효). 폐기율 10% 초과 시 업로드가 중단된다. 회귀는 T18.
 - **해설서에서 사건번호를 뽑을 땐 사건부호 화이트리스트가 필수다**(`extract_textbook_cases.py::CASE_RE`). 범용 `CASE_NO_RE`(`\d{2,4}[가-힣]{1,4}\d+`)는 **조문 표기를 사건번호로 오인한다** — 실측(주해Ⅲ): 308건 중 113건이 노이즈였고 상위 오탐이 `43조의2`(31회)·`43조의4`(28)·`109조2`(7)였다. 조문 해설서는 판례 수험서보다 조문 표기 밀도가 훨씬 높아 이 오염이 크다. 화이트리스트는 **긴 부호를 먼저** 나열해야 한다(`다`가 `다카`보다 앞서면 `87다카2803`이 `87다`로 잘린다). 회귀는 T20.
-- **macOS 파일명은 NFD(자모 분해)로 저장된다.** 사건번호를 파일명에서 뽑는 코드는 `unicodedata.normalize("NFC", ...)`를 먼저 걸어야 한다 — `[다두도가누]` 같은 완성형 문자 클래스는 NFD 문자열에 절대 매치되지 않고, 폴백이 연도만 잡으면 같은 해 판례들이 동일 ID로 충돌해 Pinecone에서 서로를 덮어쓴다. `pinecone_upload_legal.py::extract_post_id()`가 실제로 이 버그를 갖고 있었고(판례 836개 → 고유 post_id 362개, 474개 덮어쓰기) **2026-08-09 봉인됨**(NFC 선행 + 부호 매핑 + hex 폴백, 회귀는 `test_precedent_ingest.py` T14). 이미 손상된 `precedent` 네임스페이스 자체는 복구하지 않았다 — 프로덕션 검색 대상이 아니고, 그 안의 교재 인용 판례들은 laborlaw-v2에 `precedent_{사건번호}` ID로 재수집돼 있다.
+- **macOS 파일명은 NFD(자모 분해)로 저장된다.** 사건번호를 파일명에서 뽑는 코드는 `unicodedata.normalize("NFC", ...)`를 먼저 걸어야 한다 — `[다두도가누]` 같은 완성형 문자 클래스는 NFD 문자열에 절대 매치되지 않고, 폴백이 연도만 잡으면 같은 해 판례들이 동일 ID로 충돌해 Pinecone에서 서로를 덮어쓴다. `pinecone_upload_legal.py::extract_post_id()`가 실제로 이 버그를 갖고 있었고(판례 836개 → 고유 post_id 362개, 474개 덮어쓰기) **2026-08-09 봉인됨**(NFC 선행 + 부호 매핑 + hex 폴백, 회귀는 `test_precedent_ingest.py` T14). **그런데 그 수정이 `pinecone_upload_contextual.py`에 전파되지 않아 같은 결함이 3.5개월간 남아 있었다**(외부감사 2026-08-23 M1 — 4줄짜리 구버전이 `90누9421`에서 연도 `90`만 뽑고 있었다). 원인은 "업로드 스크립트 간 유틸 복사"라는 관례 자체이므로, 사본을 최신화하는 대신 **contextual이 legal의 함수를 import하는 단일 출처**로 합쳤다. 회귀 T14-g~j가 **두 모듈의 결과 동일성**으로 고정한다(사본 대조가 아니라 구조적 보장). 같은 수정에서 `case_\d+` 판정을 `source_type` 조건에서 분리했다 — 같은 `output_legal_cases/`를 legal은 `legal_case`로, contextual은 `qa`로 부르기 때문에 조건에 걸어두면 한쪽에서 한글 제목이 언더스코어로 뭉개진다(`case_001_채용_취소_` → `case_001_____`). 이미 손상된 `precedent` 네임스페이스 자체는 복구하지 않았다 — 프로덕션 검색 대상이 아니고, 그 안의 교재 인용 판례들은 laborlaw-v2에 `precedent_{사건번호}` ID로 재수집돼 있다.
+
+- **Pinecone 인덱스는 다른 프로젝트와 공유한다 — Supabase 공유 스키마와 같은 클래스의 지뢰다.** 인덱스명 `semiconductor-lithography`가 그 흔적이고, 계정에는 인덱스가 5개(`accmanage`·`safecam`·`osh-rag`·`laborsafecam` 포함), 이 인덱스에는 네임스페이스가 19개·139,776벡터 있는데 그중 **기본 네임스페이스 12,169벡터는 반도체 프로젝트 소유다**(실측 2026-08-23: `domain=semiconductor`). 외부감사에서 드러난 규칙 셋:
+  - **`pc.delete_index()`를 쓰지 말 것.** 네임스페이스가 아니라 **인덱스 전체**가 대상이라 남의 프로덕션까지 지우고, Pinecone Serverless에는 복구 수단이 없다. `pinecone_upload.py`/`_2025`/`_imgum`의 `--reset`이 정확히 그 구현이었고 CLAUDE.md가 그것을 일상 명령으로 안내하고 있었다. 삭제는 `index.delete(delete_all=True, namespace=<자기 NS>)`로 범위를 좁힌다. 회귀는 `test_offline_units.py::test_upload_namespace_contract`.
+  - **upsert에 네임스페이스를 반드시 명시할 것.** 무지정은 기본 네임스페이스 = 남의 영역이다. 봉인 전 `pinecone_upload.py`가 그랬다.
+  - **프로덕션 검색이 읽는 곳은 `laborlaw-v2`/`counsel`/`qa` 뿐이다**(`rag.py::NS_GROUPS`). 다른 NS 적재는 **조용한 실패** — 임베딩 비용을 쓰고 성공 메시지·벡터 수가 정상 출력되지만 답변에 영원히 쓰이지 않는다. 실측: `precedent` 6,540벡터가 사장 상태이고 `interpretation`/`regulation`/`legal_cases`는 인덱스에 아예 없다. 의도적으로 사장 NS에 쓰는 스크립트는 `NS-CONTRACT: unsearched` 마커를 달아야 테스트를 통과한다.
+- **BEST Q&A 274건은 프로덕션 코퍼스에 없다**(실측 2026-08-23: `qa` NS 조회 0/274, 일반 Q&A 9,809건과 교집합 0건 — 중복 수록이 아니라 진짜 공백). 로컬 원본 `output/`도 비어 있어 재적재하려면 `crawl_bestqna.py` 재크롤이 선행돼야 하고, 업로더는 `qa` NS에 `ctx_qa_{post_id}_c{i}` 규약으로 쓰는 것을 새로 작성해야 한다(구 `pinecone_upload.py`는 봉인).
 
 ### RAG Pipeline
 
