@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
 """
-노동OK BEST Q&A 2025년 게시글 → Pinecone 벡터 업로드
+노동OK BEST Q&A 2025년 게시글 → Pinecone 벡터 업로드  ⛔ **실행 봉인됨 (2026-08-23)**
 
-파이프라인:
+봉인 사유(`pinecone_upload.py`와 같은 계열 결함):
+1. **전용 인덱스가 실재하지 않는다** — 기본값 `laborconsult-bestqna-2025`는 계정에
+   없다(실측 2026-08-23: 계정 인덱스는 semiconductor-lithography / accmanage /
+   safecam / osh-rag / laborsafecam 5개뿐). 실행하면 `get_or_create_index`가 **새
+   인덱스를 만들고**, 프로덕션 검색(`app/core/rag.py::NS_GROUPS`)은 그 인덱스를
+   읽지 않으므로 임베딩 비용만 쓰고 검색에는 영원히 반영되지 않는다.
+2. **`--reset`이 인덱스를 통째로 삭제했다** — `pc.delete_index()`라 네임스페이스가
+   아니라 인덱스 전체가 대상이다. 이 계정에는 타 프로젝트 인덱스가 4개 더 있고
+   대상 인덱스명은 `PINECONE_INDEX_NAME_2025` 환경변수로 바뀌므로, **환경변수 하나로
+   남의 프로덕션을 지울 수 있는 구조**였다. 이 경로는 제거했다.
+
+되살리려면 `pinecone_upload_court_precedents.py`를 본떠 새로 쓸 것 — 네임스페이스
+명시·ID 충돌 검사·zip 길이 검증을 갖췄고 프로덕션 검색 대상 NS에 쓴다.
+
+파이프라인(참고):
   1. metadata_2025.json 로드 (없으면 generate_metadata_2025.py 자동 실행)
   2. 각 markdown 파일을 섹션 단위로 청킹
   3. OpenAI text-embedding-3-small 로 임베딩 생성
-  4. Pinecone에 배치 upsert (인덱스: laborconsult-bestqna-2025)
+  4. Pinecone에 배치 upsert
   5. metadata_2025.json의 chunk_count, upload_status 갱신
-
-사용법:
-  python3 pinecone_upload_2025.py              # 전체 업로드
-  python3 pinecone_upload_2025.py --reset      # 인덱스 초기화 후 재업로드
-  python3 pinecone_upload_2025.py --pending    # pending 상태만 업로드
 """
 
 import os
@@ -248,10 +257,26 @@ def save_metadata(metadata: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Pinecone 2025 업로드")
-    parser.add_argument("--reset",   action="store_true", help="인덱스 초기화 후 전체 재업로드")
+    parser = argparse.ArgumentParser(description="Pinecone 2025 업로드 (봉인됨)")
+    parser.add_argument("--reset",   action="store_true", help="[제거됨] 인덱스 전체를 삭제하던 옵션")
     parser.add_argument("--pending", action="store_true", help="pending 상태만 업로드")
     args = parser.parse_args()
+
+    # ── 실행 봉인 ────────────────────────────────────────────────────────────
+    # 사유는 모듈 docstring. 요약: 대상 인덱스가 실재하지 않아 실행하면 새 인덱스를
+    # 만들고, 프로덕션 검색은 그 인덱스를 읽지 않는다. 실패가 조용해서 차단으로 둔다.
+    #
+    # **해제 플래그를 두지 않는다**(CodeRabbit 리뷰 2026-08-23). 결함이 그대로인
+    # 채 우회로만 있으면 그 문을 여는 순간 정확히 봉인이 막으려던 사고가 난다.
+    # 되살리는 방법은 이 파일을 고치는 게 아니라 새로 작성하는 것이다.
+    if True:
+        sys.exit(
+            "[봉인] 이 스크립트는 실행이 차단돼 있습니다 (2026-08-23).\n"
+            "  · 대상 인덱스 laborconsult-bestqna-2025가 계정에 없음 → 실행 시 새로 생성됨\n"
+            "  · 프로덕션 검색(rag.py::NS_GROUPS)은 laborlaw-v2/counsel/qa만 읽음 → 검색 불가\n"
+            "  재적재가 필요하면 pinecone_upload_court_precedents.py를 본떠 "
+            "프로덕션 NS에 쓰는 스크립트를 새로 작성하세요."
+        )
 
     openai_key   = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
@@ -265,12 +290,16 @@ def main():
     openai_client = OpenAI(api_key=openai_key)
     pc = Pinecone(api_key=pinecone_key)
 
+    # `--reset`의 pc.delete_index()는 제거됐다 — 네임스페이스가 아니라 **인덱스
+    # 전체**가 대상이고, 인덱스명이 환경변수로 바뀌므로 이 계정의 타 프로젝트
+    # 인덱스를 지울 수 있었다. Pinecone Serverless에는 복구 수단이 없다.
     if args.reset:
-        existing = [idx.name for idx in pc.list_indexes()]
-        if index_name in existing:
-            print(f"인덱스 삭제: {index_name}")
-            pc.delete_index(index_name)
-            time.sleep(3)
+        sys.exit(
+            "[차단] --reset은 제거됐습니다. 인덱스 전체 삭제라 환경변수 설정에 따라 "
+            "타 프로젝트 인덱스를 파괴할 수 있습니다.\n"
+            "  네임스페이스 한정 삭제가 필요하면 "
+            "index.delete(delete_all=True, namespace=...)를 명시적으로 작성하세요."
+        )
     index = get_or_create_index(pc, index_name)
 
     metadata = load_metadata()

@@ -420,6 +420,33 @@ def t14_nfd_bug_sealed() -> None:
           legal.extract_post_id("2020훼1234_x.md", "precedent").startswith("case_x"),
           legal.extract_post_id("2020훼1234_x.md", "precedent"))
 
+    # T14-f: contextual도 같은 구현을 써야 한다 (외부감사 2026-08-23 M1).
+    # legal은 2026-08-09에 봉인됐는데 contextual에는 전파되지 않아 **같은 결함이
+    # 3.5개월간 남아 있었다** — 원인은 "업로드 스크립트 간 유틸 복사"라는 관례
+    # 자체다. 사본 최신화가 아니라 **함수 동일성**으로 고정해야 다시 갈라지지 않는다.
+    import pinecone_upload_contextual as ctxup
+    ctx_nfd = unicodedata.normalize("NFD", "90누9421_해고무효확인.md")
+    check("T14-ctx-a contextual NFD 파일명",
+          ctxup.extract_post_id(ctx_nfd, "precedent") == "90nu9421",
+          ctxup.extract_post_id(ctx_nfd, "precedent"))
+    check("T14-ctx-b 두 모듈 결과 동일",
+          all(ctxup.extract_post_id(unicodedata.normalize("NFD", f), st)
+              == legal.extract_post_id(unicodedata.normalize("NFD", f), st)
+              for f, st in [("2020다242423_수당.md", "precedent"),
+                            ("86다카24445_x.md", "precedent"),
+                            ("1877294_상담글.md", "qa"),
+                            ("case_001_채용_취소.md", "qa")]),
+          "contextual과 legal의 post_id가 갈라졌다")
+    # qa 소스의 숫자ID는 프로덕션 벡터 49,842건의 ID 근거다 — 바뀌면 전량 고아.
+    check("T14-ctx-c qa 숫자ID 불변",
+          ctxup.extract_post_id("output_qna/1877294_상담글.md", "qa") == "1877294",
+          ctxup.extract_post_id("output_qna/1877294_상담글.md", "qa"))
+    # 한글 제목이 언더스코어로 뭉개지지 않는지(case_001_____ 회귀)
+    check("T14-ctx-d legal_cases 제목 뭉개짐 없음",
+          ctxup.extract_post_id("output_legal_cases/case_001_채용_취소_시.md", "qa")
+          == "case_001",
+          ctxup.extract_post_id("output_legal_cases/case_001_채용_취소_시.md", "qa"))
+
     # T14-e: upload_new_precedents 대표 사건번호 — NFD 원문·NFD 파일명을
     # 정규화 없이 그대로 넘겨 내부 NFC 처리를 검증한다.
     doc_nfd = unicodedata.normalize("NFD", """# 제목
@@ -1289,6 +1316,87 @@ def t23_textbook_diversity_promotion() -> None:
           [h["id"] for h in out_k] == [h["id"] for h in ranked[:5]])
 
 
+def t25_court_ledger() -> None:
+    """판례 코퍼스 고아 벡터 정리 (외부감사 2026-08-23 H3).
+
+    막는 실패: 재수집·재태깅(`enrich_court_precedents.py`)·`EMBED_SECTIONS`
+    조정으로 한 판례의 청크 수가 **줄면** 이전 벡터가 `laborlaw-v2`(프로덕션
+    검색 대상)에 남아 검색에 계속 섞인다 — upsert는 덮어쓸 뿐 지우지 않는다.
+    어떤 게이트에도 걸리지 않는 조용한 오염이었다.
+
+    T25-c가 핵심이다: 그룹 키가 사건번호라 `--limit` 부분 실행이 미처리
+    판례를 고아로 오판하지 않는다. 그룹을 코퍼스 전체로 잡으면 `--limit 20`이
+    나머지 수천 건을 삭제 대상으로 계산한다.
+    """
+    import json
+    import tempfile
+    import pinecone_upload_court_precedents as court
+
+    class _FakeIdx:
+        def __init__(self): self.deleted = []
+        def delete(self, ids, namespace): self.deleted.extend(ids)
+
+    fd, ledger = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    os.unlink(ledger)                      # 최초 실행 상태로 시작
+    orig = court._LEDGER.path
+    court._LEDGER.path = ledger
+    try:
+        ids_a = [f"precedent_2020da111_chunk_{i}" for i in range(3)]
+        ids_b = [f"precedent_2020da222_chunk_{i}" for i in range(2)]
+        g1 = {"2020da111": ids_a, "2020da222": ids_b}
+        prev1 = court._LEDGER.record(g1)
+        check("T25-a 최초 기록은 이전 ID 없음",
+              prev1 == {"2020da111": set(), "2020da222": set()}, prev1)
+
+        idx1 = _FakeIdx()
+        check("T25-b 변화 없으면 삭제 0",
+              court._LEDGER.prune(g1, prev1, idx1, "laborlaw-v2") == 0, idx1.deleted)
+
+        # 사건 A의 청크가 3→1로 줄고, B는 이번 실행에 없다(--limit 재현)
+        g2 = {"2020da111": ids_a[:1]}
+        prev2 = court._LEDGER.record(g2)
+        idx2 = _FakeIdx()
+        court._LEDGER.prune(g2, prev2, idx2, "laborlaw-v2", allow_large=True)
+        check("T25-c 줄어든 청크만 삭제·미실행 그룹 보존",
+              sorted(idx2.deleted) == ids_a[1:], idx2.deleted)
+        with open(ledger, encoding="utf-8") as f:
+            data = json.load(f)
+        check("T25-d 원장 확정(A는 현재분, B는 불변)",
+              data["2020da111"] == ids_a[:1] and data["2020da222"] == ids_b, data)
+
+        # 대량 삭제 가드 — ID 규격이 바뀐 신호이므로 명시 플래그 없이는 중단
+        g3 = {"2020da333": ["precedent_2020da333_chunk_0"]}
+        big = {"2020da333": {f"precedent_2020da333_chunk_{i}" for i in range(10)}}
+        try:
+            court._LEDGER.prune(g3, big, _FakeIdx(), "laborlaw-v2")
+            check("T25-e 50% 초과 고아는 중단", False, "SystemExit 미발생")
+        except SystemExit:
+            check("T25-e 50% 초과 고아는 중단", True)
+
+        # 규격 위반 ID는 원장 로드 단계에서 막는다 — index.delete()로 들어가면
+        # 되돌릴 수 없다. 손상 원본은 .bak으로 보존한다.
+        with open(ledger, "w", encoding="utf-8") as f:
+            json.dump({"2020da111": ["precedent_2020da111_chunk_x"]}, f)
+        try:
+            court._LEDGER.read()
+            check("T25-f 규격 위반 ID는 로드 중단", False, "SystemExit 미발생")
+        except SystemExit:
+            check("T25-f 규격 위반 ID는 로드 중단", os.path.exists(ledger + ".bak"))
+    finally:
+        court._LEDGER.path = orig
+        for p in (ledger, ledger + ".bak", ledger + ".tmp"):
+            if os.path.exists(p):
+                os.unlink(p)
+
+    # 원장 파일은 textbook과 분리돼야 한다 — 한쪽의 손상 격리가 다른 쪽 롤백
+    # 기록까지 묶어 중단시키지 않도록.
+    import pinecone_upload_textbook as tb
+    check("T25-g 원장 파일이 textbook과 분리됨",
+          os.path.abspath(court.UPLOADED_IDS_FILE)
+          != os.path.abspath(tb.UPLOADED_IDS_FILE), court.UPLOADED_IDS_FILE)
+
+
 def t24_legal_diversity_promotion() -> None:
     """법률근거 승격(colloquial-legal-mapping) — 공용화 불변식 + I-7·I-8.
 
@@ -1421,7 +1529,7 @@ def main() -> int:
                t19_citation_guard_cap, t19b_citation_rules_attachment,
                t20_textbook_case_extraction, t21_multipart_book,
                t22_textbook_followup, t23_textbook_diversity_promotion,
-               t24_legal_diversity_promotion):
+               t24_legal_diversity_promotion, t25_court_ledger):
         print(f"\n[{fn.__name__}]")
         fn()
 

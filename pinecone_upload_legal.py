@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
 """
-법률 데이터 → Pinecone 네임스페이스별 벡터 업로드
+법률 데이터 → Pinecone 네임스페이스별 벡터 업로드  ⚠️ **적재해도 검색되지 않는다**
 
 판례·행정해석·훈령/예규·상담사례 마크다운 파일을 청킹 → 임베딩 → Pinecone 업로드.
 기존 pinecone_upload.py의 청킹/임베딩 로직을 재활용하되, 네임스페이스 분리.
+
+**이 스크립트가 쓰는 4개 네임스페이스는 프로덕션 검색 대상이 아니다** —
+`app/core/rag.py::NS_GROUPS`가 읽는 것은 `laborlaw-v2`/`counsel`/`qa` 세 곳뿐이다.
+실측(2026-08-23): `precedent`에 6,540벡터가 실재하지만 사장 상태이고,
+`interpretation`/`regulation`/`legal_cases`는 인덱스에 아예 존재하지 않는다
+(= 이 스크립트로 올린 적이 없거나 지워졌다). 지금 실행하면 **임베딩 비용을 쓰고
+성공 메시지가 정상 출력되지만 검색에는 반영되지 않는다** — 조용한 실패다.
+
+`pinecone_upload.py` 계열과 달리 여기는 `index.delete(delete_all=True, namespace=ns)`로
+삭제 범위가 자기 네임스페이스에 한정돼 있어 **타 프로젝트를 파괴할 위험은 없다.**
+그래서 실행을 차단하지 않고 경고만 낸다.
+
+판례를 프로덕션 검색에 넣으려면 `pinecone_upload_court_precedents.py`를 쓸 것 —
+같은 데이터를 `laborlaw-v2`에 `precedent_{사건번호}_chunk_{i}` 규약으로 올린다.
 
 사용법:
   python3 pinecone_upload_legal.py                     # 전체 업로드
@@ -190,10 +204,16 @@ def extract_post_id(filepath: str, source_type: str) -> str:
     """
     basename = unicodedata.normalize(
         "NFC", os.path.splitext(os.path.basename(filepath))[0])
+    # case_001_제목 → case_001. **source_type과 무관하게** 판정하는 이유:
+    # 같은 `output_legal_cases/` 디렉터리를 pinecone_upload_contextual.py는
+    # source_type="qa"로 처리한다. source_type에 걸어두면 그쪽에서 이 분기를
+    # 놓치고 ASCII 폴백으로 내려가 한글 제목이 언더스코어로 뭉개진다
+    # (실측: 'case_001_채용_취소_' → 'case_001_____' 120건 전량).
+    m = re.match(r"(case_\d+)", basename)
+    if m:
+        return m.group(1)
     if source_type == "legal_case":
-        # case_001_제목 → case_001
-        m = re.match(r"(case_\d+)", basename)
-        return m.group(1) if m else basename[:20]
+        return basename[:20]
     # 사건번호 패턴 — 2자리 연도(90누9421)·복합 부호(다카/헌바) 포함
     case_m = re.match(r"(\d{2,4}[가-힣]{1,4}\d+)", basename)
     if case_m:
@@ -313,7 +333,18 @@ def build_legal_vector(
 def upload_source(
     source_config: dict, index, openai_client: OpenAI, dry_run: bool = False
 ) -> dict:
-    """단일 소스 디렉토리의 모든 마크다운 파일을 처리하여 업로드."""
+    """단일 소스 디렉토리의 모든 마크다운 파일을 처리하여 업로드.
+
+    **실패 정책은 fail-fast다**(외부감사 2026-08-23 M3에서 명시화). 파일 읽기
+    실패만 격리해 다음 파일로 넘어가고, 임베딩·upsert 실패는 즉시 중단한다.
+    근거는 벡터 ID가 결정적이라는 것 — `{source_type}_{post_id}_chunk_{i}`라
+    같은 입력이 같은 ID를 만들므로 **재실행이 안전하다**(중복 벡터가 생기지
+    않는다). 부분 실패를 삼키고 계속하면 어디까지 올라갔는지 알 수 없는 상태로
+    "완료"가 출력되는 게 더 나쁘다.
+
+    한계: 재개 상태를 추적하지 않으므로 중단 후 재실행은 **전량 재임베딩**한다.
+    대량 소스에서는 비용이 든다 — 부분 처리가 필요하면 `--source`로 좁힐 것.
+    """
     directory = os.path.join(BASE_DIR, source_config["directory"])
     namespace = source_config["namespace"]
     source_type = source_config["source_type"]
@@ -337,6 +368,8 @@ def upload_source(
 
     total_chunks = 0
     errors = 0
+    skipped_body = 0      # 본문 추출 실패·20자 미만
+    skipped_chunks = 0    # 청킹 결과 0
     all_vectors = []
 
     for i, filepath in enumerate(md_files, 1):
@@ -362,12 +395,16 @@ def upload_source(
         url = meta_table.get("원문", "")
         date_str = meta_table.get("작성일", "")
 
+        # 스킵은 **세어서 보고한다** — 카운트가 없으면 파싱이 대량으로 깨져도
+        # "0 오류"로 정상 종료해 성공으로 위장된다(외부감사 2026-08-23 M3).
         body = extract_legal_body(md_content)
         if not body or len(body) < 20:
+            skipped_body += 1
             continue
 
         chunks = chunk_legal_doc(post_id, title, category, body, source_type)
         if not chunks:
+            skipped_chunks += 1
             continue
 
         doc_meta = {
@@ -391,6 +428,13 @@ def upload_source(
             embeddings.extend(embed_texts(batch, openai_client))
             time.sleep(0.3)
 
+        # zip은 길이가 다르면 남는 쪽을 조용히 버린다 — 부분 임베딩은 오류로
+        # 처리한다(외부감사 2026-08-23 M5). 결정적 벡터 ID라 재실행이 안전하므로
+        # 즉시 중단이 맞다. court/textbook이 이미 이 방어를 갖고 있다.
+        if len(embeddings) != len(chunks):
+            sys.exit(f"[오류] 임베딩 수 불일치: {len(embeddings)} != {len(chunks)} "
+                     f"({os.path.basename(filepath)}) — 업로드 중단, 재실행으로 재개")
+
         # 벡터 구성
         for chunk, emb in zip(chunks, embeddings):
             all_vectors.append(build_legal_vector(chunk, emb, doc_meta, source_type))
@@ -400,18 +444,31 @@ def upload_source(
         if i % 50 == 0 or i == len(md_files):
             print(f"  진행: {i}/{len(md_files)} 파일, {total_chunks} 청크")
 
-        # 벡터 배치 upsert (메모리 관리)
-        if len(all_vectors) >= UPSERT_BATCH:
-            index.upsert(vectors=all_vectors, namespace=namespace)
-            all_vectors = []
+        # 벡터 배치 upsert — **정확히 UPSERT_BATCH만큼** 잘라 보낸다.
+        # 누적 전량을 보내면 배치 크기가 사실상 무제한이 된다: 긴 판례 하나가
+        # 수백 청크면 단일 요청이 Pinecone 2MB 한도를 넘겨 통째로 실패한다
+        # (외부감사 2026-08-23 M2). court/textbook은 while + 슬라이스 방식이다.
+        while len(all_vectors) >= UPSERT_BATCH:
+            index.upsert(vectors=all_vectors[:UPSERT_BATCH], namespace=namespace)
+            all_vectors = all_vectors[UPSERT_BATCH:]
             time.sleep(0.1)
 
     # 남은 벡터 upsert
     if all_vectors and not dry_run:
         index.upsert(vectors=all_vectors, namespace=namespace)
 
-    print(f"\n  [{label}] 완료: {len(md_files) - errors}개 파일, {total_chunks} 청크, {errors} 오류")
-    return {"files": len(md_files), "chunks": total_chunks, "errors": errors}
+    skipped = skipped_body + skipped_chunks
+    print(f"\n  [{label}] 완료: {len(md_files) - errors - skipped}개 파일, "
+          f"{total_chunks} 청크, {errors} 오류, {skipped} 스킵")
+    if skipped:
+        # 스킵 사유를 나눠 보여야 "파싱이 깨졌다"와 "원래 빈 문서다"를 구분한다.
+        print(f"    스킵 내역: 본문 없음/20자 미만 {skipped_body}건, "
+              f"청킹 결과 0 {skipped_chunks}건")
+        if skipped > len(md_files) * 0.1:
+            print(f"    ⚠️ 스킵이 전체의 {skipped / len(md_files) * 100:.0f}%입니다 — "
+                  f"파서가 소스 형식과 어긋났을 수 있습니다.")
+    return {"files": len(md_files), "chunks": total_chunks, "errors": errors,
+            "skipped": skipped}
 
 
 # ── 메인 ──────────────────────────────────────────────────────────────────────
@@ -422,6 +479,17 @@ def main():
     parser.add_argument("--reset", action="store_true", help="대상 네임스페이스 초기화 후 재업로드")
     parser.add_argument("--dry-run", action="store_true", help="청킹만 수행 (업로드 안 함)")
     args = parser.parse_args()
+
+    # NS-CONTRACT: unsearched — 이 스크립트의 4개 NS는 프로덕션 검색 대상이 아니다.
+    # 사장 네임스페이스 경고 — 조용한 실패를 막는 유일한 신호다(업로드 자체는
+    # 정상 종료하고 벡터 수도 맞게 찍힌다). 사유는 모듈 docstring 참조.
+    if not args.dry_run:
+        print("\n" + "=" * 62)
+        print("⚠️  이 스크립트의 네임스페이스는 프로덕션 검색 대상이 아닙니다.")
+        print("    rag.py::NS_GROUPS가 읽는 곳: laborlaw-v2 / counsel / qa")
+        print("    여기 올린 벡터는 챗봇 답변에 절대 쓰이지 않습니다.")
+        print("    판례를 검색에 넣으려면 pinecone_upload_court_precedents.py를 쓰세요.")
+        print("=" * 62 + "\n")
 
     openai_key = os.getenv("OPENAI_API_KEY")
     pinecone_key = os.getenv("PINECONE_API_KEY")
@@ -456,7 +524,13 @@ def main():
                 index.delete(delete_all=True, namespace=ns)
                 time.sleep(1)
             except Exception as e:
-                print(f"  초기화 실패 (무시): {e}")
+                # 무시하고 진행하면 "초기화 재업로드"라고 믿는 결과가 실제로는
+                # 구·신 벡터 혼재가 된다(외부감사 2026-08-23 M4). 삭제 실패는
+                # 중단이 맞다 — 사용자가 --reset을 준 것은 기존분을 비우겠다는
+                # 뜻이고, 그게 안 됐다면 전제가 깨진 것이다.
+                sys.exit(f"[오류] 네임스페이스 '{ns}' 초기화 실패: {e}\n"
+                         f"       그대로 진행하면 구·신 벡터가 섞입니다. "
+                         f"원인을 해소한 뒤 재실행하세요.")
 
     # 업로드 실행
     print(f"\n{'='*60}")

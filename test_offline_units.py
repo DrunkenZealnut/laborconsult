@@ -742,6 +742,129 @@ def test_colloquial_map() -> None:
     print(f"  ✅ 구어 사전: 양성 {len(positives)}건 매핑·음성 {len(negatives)}건 통과·상한 고정")
 
 
+def test_upload_namespace_contract() -> None:
+    """업로드 스크립트의 네임스페이스 계약 (외부감사 2026-08-23 H1·H2).
+
+    막는 실패 셋 — **전부 조용하다**:
+    ① `pc.delete_index()` 부활 — 네임스페이스가 아니라 **인덱스 전체**가 대상이라
+       공유 인덱스의 타 프로젝트 데이터(실측 139,776벡터, 5개 인덱스 계정)까지
+       파괴한다. Pinecone Serverless에는 복구 수단이 없다.
+    ② 프로덕션이 읽지 않는 네임스페이스에 적재 — 임베딩 비용을 쓰고 성공
+       메시지·벡터 수가 정상 출력되지만 검색에는 영원히 반영되지 않는다
+       (실측: `precedent` 6,540벡터가 사장 상태).
+    ③ `rag.py::NS_GROUPS`와 업로더의 검색 NS 상수가 갈라짐.
+    """
+    import ast as _ast
+    import re as _re
+    from pathlib import Path
+
+    from app.core import rag
+
+    searched = {ns for group in rag.NS_GROUPS for ns in group}
+
+    def _is_sys_exit(node) -> bool:
+        f = getattr(node, "func", None)
+        return (isinstance(node, _ast.Call) and isinstance(f, _ast.Attribute)
+                and f.attr == "exit" and isinstance(f.value, _ast.Name)
+                and f.value.id == "sys")
+
+    def _seals_main(src: str) -> bool:
+        """main() 진입 후 무조건 종료해 이후 코드가 **도달 불가**한지 AST로 본다.
+
+        파일 전체 정규식으로 `if True: sys.exit`를 찾으면 봉인이 호출되지 않는
+        함수 안에 있거나 upsert **뒤**에 있어도 통과한다(CodeRabbit 재리뷰
+        2026-08-23). 실행 경로를 확인해야 봉인이 실제로 막는지 알 수 있다.
+        """
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:
+            return False
+        main = next((n for n in tree.body
+                     if isinstance(n, _ast.FunctionDef) and n.name == "main"), None)
+        if main is None:
+            return False
+        for idx, stmt in enumerate(main.body):
+            unconditional = (isinstance(stmt, _ast.If)
+                             and isinstance(stmt.test, _ast.Constant)
+                             and stmt.test.value is True
+                             and any(_is_sys_exit(getattr(s, "value", None))
+                                     for s in _ast.walk(stmt)))
+            if not unconditional:
+                continue
+            # 봉인 **앞** 구간에 업로드로 이어지는 호출이 있으면 소용없다.
+            for pre in main.body[:idx]:
+                for node in _ast.walk(pre):
+                    if isinstance(node, _ast.Call):
+                        fn = node.func
+                        name = getattr(fn, "attr", None) or getattr(fn, "id", "")
+                        if "upsert" in name or "upload" in name:
+                            return False
+            return True                     # 이 지점 이후는 전부 도달 불가
+        return False
+
+    # ① 인덱스 전체 삭제 금지 — 주석·docstring의 언급은 허용(사유 기록이다)
+    for path in sorted(Path(".").glob("pinecone_upload*.py")):
+        code = "\n".join(
+            ln for ln in path.read_text(encoding="utf-8").splitlines()
+            if not ln.lstrip().startswith("#"))
+        code = _re.sub(r'""".*?"""', "", code, flags=_re.S)
+        assert "delete_index(" not in code, (
+            f"{path.name}: pc.delete_index()는 인덱스 전체를 삭제한다 — 공유 "
+            f"인덱스의 타 프로젝트까지 파괴된다. index.delete(delete_all=True, "
+            f"namespace=...)로 범위를 좁힐 것")
+
+    # ② 사장 NS에 쓰는 스크립트는 경고/봉인 마커가 있어야 한다.
+    #    마커는 기계 판독용 고정 문자열 — 자연어 문구로 판정하면 정상 스크립트의
+    #    설명문이 오탐된다(court_precedents가 실제로 그랬다).
+    MARKER = "NS-CONTRACT: unsearched"
+    # 리터럴(`"namespace": "qa"`, `namespace="qa"`)과 모듈 상수(`NAMESPACE = "counsel"`)
+    # 양쪽을 본다 — 리터럴만 보면 상수를 쓰는 스크립트가 "무지정"으로 오탐된다.
+    ns_re = _re.compile(r'"namespace":\s*"([a-z0-9_-]+)"|namespace="([a-z0-9_-]+)"'
+                        r'|^NAMESPACE\s*=\s*"([a-z0-9_-]+)"', _re.M)
+    for path in sorted(Path(".").glob("pinecone_upload*.py")):
+        src = path.read_text(encoding="utf-8")
+        declared = {g for m in ns_re.finditer(src) for g in m.groups() if g}
+        dead = declared - searched
+        if dead:
+            assert MARKER in src, (
+                f"{path.name}: 프로덕션이 읽지 않는 NS {sorted(dead)}에 적재한다. "
+                f"검색 대상은 {sorted(searched)}뿐 — '{MARKER}' 마커로 의도를 "
+                f"명시하거나 적재 대상을 바꿀 것")
+        # 무지정 upsert도 같은 부류다 — 기본 NS는 타 프로젝트 소유로 실측됐다.
+        # 판정은 "upsert 호출에 namespace 인자가 없다"로 한다(선언 유무가 아니라).
+        #
+        # 봉인 표식의 **존재**로 면제하지 않는다(CodeRabbit 리뷰 2026-08-23):
+        # 표식이 있어도 우회 플래그로 실행에 도달할 수 있으면 그 문을 여는 순간
+        # 정확히 봉인이 막으려던 사고가 난다. 도달 **불가능**함을 요구한다 —
+        # main() 진입 직후 무조건 sys.exit 하는 형태(`if True:` 게이트)여야 하고,
+        # 조건부 게이트(`if not args.<우회플래그>:`)는 통과시키지 않는다.
+        bare = [c for c in _re.findall(r"\.upsert\((?:[^()]|\([^()]*\))*\)", src)
+                if "namespace" not in c]
+        if bare:
+            # `MARKER`로 면제하지 않는다(CodeRabbit 재리뷰 2026-08-23). 마커는
+            # "사장 NS에 의도적으로 쓴다"는 기록일 뿐, 무지정 upsert가 **타
+            # 프로젝트의 기본 NS**를 오염시키는 것과는 다른 문제다. 두 개념을
+            # or로 묶으면 마커만 붙인 실행 가능 스크립트가 통과한다.
+            sealed = _seals_main(src)
+            assert sealed, (
+                f"{path.name}: 네임스페이스 무지정 upsert {bare[:1]} — 기본 NS는 "
+                f"반도체 프로젝트 소유다(실측). namespace를 명시하거나, 우회 불가능한 "
+                f"봉인(`if True:` + sys.exit)을 둘 것")
+            # 우회 플래그가 남아 있으면 봉인이 뚫린다.
+            assert not _re.search(r"--i-know|args\.i_know", src), (
+                f"{path.name}: 봉인 우회 플래그가 있다 — 결함(무지정 upsert)이 "
+                f"그대로인 채 우회로만 열려 있으면 봉인의 의미가 없다")
+
+    # ③ 업로더가 복제한 검색 NS 상수가 rag.py와 일치하는지
+    ctx = Path("pinecone_upload_contextual.py").read_text(encoding="utf-8")
+    m = _re.search(r"SEARCHED_NAMESPACES\s*=\s*frozenset\(\{([^}]*)\}\)", ctx)
+    assert m, "pinecone_upload_contextual.py: SEARCHED_NAMESPACES 상수가 없다"
+    assert {s.strip().strip('"\'') for s in m.group(1).split(",") if s.strip()} \
+        == searched, "SEARCHED_NAMESPACES가 rag.py::NS_GROUPS와 갈라졌다"
+
+    print(f"  ✅ 업로드 NS 계약: 검색 대상 {sorted(searched)}·인덱스 삭제 금지·마커 일치")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -763,6 +886,7 @@ def main() -> None:
     test_ddl_search_path()
     test_ddl_no_quoted_identifiers()
     test_code_tables_defined_in_ddl()
+    test_upload_namespace_contract()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 

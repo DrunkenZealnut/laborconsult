@@ -84,6 +84,14 @@ def build_corpus() -> None:
                 if not pagination_token:
                     break
             print(f"    {ns}: {count} documents")
+            # 0건은 **예외 없이** 나온다 — 메타데이터 필터가 스키마 변경과
+            # 어긋나거나 SDK 페이지네이션 동작이 바뀌면 조용히 빈 결과가 온다
+            # (외부감사 2026-08-23 M7). 그대로 저장하면 부분 코퍼스가 정상
+            # 파일을 덮어쓰고, gz라 커밋 diff로도 내용을 볼 수 없어 크기 변화
+            # 외에는 알아챌 단서가 없다. 검색 대상 NS는 비어 있을 수 없다.
+            if count == 0:
+                print(f"    {ns}: 0건 — 조회는 성공했으나 문서가 없습니다")
+                failed_namespaces.append(f"{ns} (0건)")
         except Exception as e:
             print(f"    {ns}: ERROR — {e}")
             failed_namespaces.append(ns)
@@ -101,6 +109,24 @@ def build_corpus() -> None:
     out_path = Path("data/bm25_corpus.json.gz")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+
+    # 급감 가드 — NS별 0건 검사(위)를 통과해도 페이지네이션이 조기 종료하면
+    # 각 NS가 '일부'만 담긴 채 정상으로 보인다. 코퍼스는 단조 증가가 정상이고
+    # (삭제는 prune 정도), 20% 넘는 감소는 수집 결함을 의심할 신호다.
+    # gz 산출물이라 커밋 diff로 내용을 검토할 수 없어 이 자동 검사가 유일한 방어다.
+    if out_path.exists():
+        try:
+            with gzip.open(out_path, "rt", encoding="utf-8") as f:
+                prev_count = len(json.load(f))
+        except Exception as e:                      # 기존 파일 손상은 차단 사유가 아니다
+            print(f"\n[경고] 기존 코퍼스를 읽지 못해 급감 검사를 건너뜁니다: {e}")
+            prev_count = 0
+        if prev_count and len(corpus) < prev_count * 0.8:
+            print(f"\nERROR: 문서 수가 {prev_count:,} → {len(corpus):,}로 "
+                  f"{(1 - len(corpus) / prev_count) * 100:.0f}% 감소했습니다 "
+                  f"— 저장 건너뜀 (기존 파일 보존).\n"
+                  f"       의도한 축소라면 기존 {out_path}를 옮긴 뒤 재실행하세요.")
+            sys.exit(1)
 
     with gzip.open(tmp_path, "wt", encoding="utf-8") as f:
         json.dump(corpus, f, ensure_ascii=False, separators=(",", ":"))

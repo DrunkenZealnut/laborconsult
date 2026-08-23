@@ -30,6 +30,8 @@ import xml.etree.ElementTree as ET
 import requests
 from dotenv import load_dotenv
 
+from vector_ledger import atomic_write_json
+
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
             override=True)
 
@@ -398,9 +400,16 @@ def load_progress() -> dict:
 
 
 def save_progress(progress: dict) -> None:
+    """재개 상태를 원자적으로 저장한다.
+
+    수집 루프가 건건이 호출하므로 중단 확률이 높은 지점이다. 직접 쓰기는
+    truncate 직후 죽으면 빈 파일을 남기고, `load_progress()`가 그것을 '최초
+    실행'으로 읽어 **수백 건의 수집 이력을 통째로 잃는다**(외부감사 M8).
+    법제처 API가 실제로 전면 장애를 낸 적이 있어(2026-08-22) 중단은 가정이
+    아니라 겪은 일이다.
+    """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-        json.dump(progress, f, ensure_ascii=False, indent=2)
+    atomic_write_json(PROGRESS_FILE, progress, indent=2)
 
 
 # ── 메인 ──────────────────────────────────────────────────────────────────────

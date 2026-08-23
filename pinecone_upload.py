@@ -1,18 +1,40 @@
 #!/usr/bin/env python3
 """
-노동OK BEST Q&A → Pinecone 벡터 업로드
+노동OK BEST Q&A → Pinecone 벡터 업로드  ⛔ **실행 봉인됨 (2026-08-23)**
 
-파이프라인:
+**이 스크립트를 되살리려면 아래 두 결함을 먼저 고쳐야 한다.** 봉인 해제 전에
+실행하면 둘 다 조용히, 그리고 되돌릴 수 없게 남의 데이터를 건드린다.
+
+1. **네임스페이스 무지정 upsert** — 이 스크립트는 `index.upsert(vectors=...)`를
+   네임스페이스 없이 호출해 기본 네임스페이스에 쓴다. 그런데 이 Pinecone 인덱스는
+   **다른 프로젝트와 공유**하고 있고(인덱스명 `semiconductor-lithography`가 그
+   흔적), 기본 네임스페이스 12,169벡터는 전부 반도체 프로젝트 소유다
+   (실측 2026-08-23: `domain=semiconductor`, `category=반도체개발/재료/제조`).
+   즉 **남의 영역에 우리 데이터를 섞는다.** 게다가 프로덕션 검색
+   (`app/core/rag.py::NS_GROUPS`)은 `laborlaw-v2`/`counsel`/`qa` 세 곳만 읽으므로
+   여기 올린 벡터는 **검색되지 않는다** — 임베딩 비용만 쓰고 성공 메시지는 정상
+   출력되는 조용한 실패다.
+2. **`--reset`이 인덱스를 통째로 삭제했다** — 구현이 `pc.delete_index()`였다.
+   네임스페이스가 아니라 **인덱스 전체**라, 실행 시 반도체 프로젝트를 포함한
+   139,776벡터가 전멸하고 Pinecone Serverless에는 복구 수단이 없다. 이 경로는
+   제거했다(아래 `--reset` 처리 참조). 되살리더라도
+   `index.delete(delete_all=True, namespace=...)`로 자기 네임스페이스에 한정할 것.
+
+**현황**: BEST Q&A 274건은 프로덕션 코퍼스에 **없다**(실측: `qa` 네임스페이스
+조회 0/274, 일반 Q&A 9,809건과 교집합 0건 — 중복 수록도 아니다). 로컬 원본
+`output/`도 비어 있어 재적재하려면 `crawl_bestqna.py` 재크롤이 선행돼야 한다.
+
+**되살리는 방법**: 이 파일을 고치지 말고 `pinecone_upload_court_precedents.py`나
+`pinecone_upload_textbook.py`를 본떠 새로 쓰는 편이 안전하다. 그쪽은 네임스페이스
+명시·ID 충돌 검사·zip 길이 검증·원장 기반 prune을 갖췄다. 벡터 ID는 `qa`
+네임스페이스의 현행 규약인 `ctx_qa_{post_id}_c{i}`를 따를 것.
+
+파이프라인(참고):
   1. metadata.json 로드 (없으면 generate_metadata.py 자동 실행)
   2. 각 markdown 파일을 섹션 단위로 청킹
   3. OpenAI text-embedding-3-small 로 임베딩 생성
   4. Pinecone에 배치 upsert
   5. metadata.json의 chunk_count, upload_status 갱신
-
-사용법:
-  python3 pinecone_upload.py              # 전체 업로드
-  python3 pinecone_upload.py --reset      # 인덱스 초기화 후 전체 재업로드
-  python3 pinecone_upload.py --pending    # pending 상태인 것만 업로드
 """
 
 import os
@@ -28,6 +50,7 @@ from openai import OpenAI
 from pinecone import Pinecone, ServerlessSpec
 
 from app.config import resolve_index_name
+from vector_ledger import atomic_write_json
 
 load_dotenv()
 
@@ -270,16 +293,41 @@ def load_metadata() -> dict:
 
 
 def save_metadata(metadata: dict):
+    """업로드 상태를 원자적으로 저장한다(외부감사 2026-08-23 M8).
+
+    직접 쓰기는 중단 시 빈 파일을 남겨 274건의 `upload_status`를 통째로 잃는다.
+    """
     metadata["last_upload"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    with open(METADATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    atomic_write_json(METADATA_FILE, metadata, indent=2)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Pinecone 업로드")
-    parser.add_argument("--reset",   action="store_true", help="인덱스 초기화 후 전체 재업로드")
+    parser = argparse.ArgumentParser(description="Pinecone 업로드 (봉인됨)")
+    parser.add_argument("--reset",   action="store_true", help="[제거됨] 인덱스 전체를 삭제하던 옵션")
     parser.add_argument("--pending", action="store_true", help="pending 상태만 업로드")
     args = parser.parse_args()
+
+    # ── 실행 봉인 ────────────────────────────────────────────────────────────
+    # 사유는 모듈 docstring에 있다. 요약: 네임스페이스 무지정 upsert가 다른
+    # 프로젝트의 기본 네임스페이스에 쓰고, 그 벡터는 프로덕션 검색 대상도 아니다.
+    # 실패가 조용하므로(성공 메시지·정상 벡터 수가 그대로 찍힌다) 경고가 아니라
+    # 차단으로 둔다.
+    #
+    # **해제 플래그를 두지 않는다**(CodeRabbit 리뷰 2026-08-23). 결함이 그대로인
+    # 채 우회로만 있으면 그 문을 여는 순간 정확히 봉인이 막으려던 사고가 난다 —
+    # 아래 upsert는 여전히 네임스페이스 무지정이다. 되살리는 방법은 이 파일을
+    # 고치는 게 아니라 docstring의 안내대로 새로 작성하는 것이다.
+    if True:
+        sys.exit(
+            "[봉인] 이 스크립트는 실행이 차단돼 있습니다 (2026-08-23).\n"
+            "  · 네임스페이스 무지정 upsert → 반도체 프로젝트의 기본 네임스페이스에 기록됨\n"
+            "  · 프로덕션 검색(rag.py::NS_GROUPS)은 laborlaw-v2/counsel/qa만 읽음 → 검색 불가\n"
+            "  · BEST Q&A 274건은 현재 프로덕션에 없고 로컬 원본(output/)도 비어 있음\n"
+            "  재적재가 필요하면 crawl_bestqna.py로 재크롤 후, "
+            "pinecone_upload_court_precedents.py를 본떠\n"
+            "  qa 네임스페이스에 ctx_qa_{post_id}_c{i} 규약으로 올리는 스크립트를 새로 작성하세요.\n"
+            "  자세한 사유: 이 파일 상단 docstring"
+        )
 
     # API 키 확인
     openai_key   = os.getenv("OPENAI_API_KEY")
@@ -295,12 +343,17 @@ def main():
     pc = Pinecone(api_key=pinecone_key)
 
     # 인덱스 준비
+    # `--reset`의 pc.delete_index()는 제거됐다 — 네임스페이스가 아니라 **인덱스
+    # 전체**를 지워 공유 인덱스의 타 프로젝트 데이터(139,776벡터)까지 파괴했고,
+    # Pinecone Serverless에는 복구 수단이 없다. 삭제가 정말 필요하면
+    # index.delete(delete_all=True, namespace=<자기 NS>)로 범위를 좁힐 것.
     if args.reset:
-        existing = [idx.name for idx in pc.list_indexes()]
-        if index_name in existing:
-            print(f"인덱스 삭제: {index_name}")
-            pc.delete_index(index_name)
-            time.sleep(3)
+        sys.exit(
+            "[차단] --reset은 제거됐습니다. 인덱스 전체 삭제라 공유 인덱스의 "
+            "타 프로젝트 데이터까지 파괴합니다.\n"
+            "  네임스페이스 한정 삭제가 필요하면 "
+            "index.delete(delete_all=True, namespace=...)를 명시적으로 작성하세요."
+        )
     index = get_or_create_index(pc, index_name)
 
     # 메타데이터 로드
