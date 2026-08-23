@@ -800,8 +800,12 @@ def test_upload_namespace_contract() -> None:
         bare = [c for c in _re.findall(r"\.upsert\((?:[^()]|\([^()]*\))*\)", src)
                 if "namespace" not in c]
         if bare:
+            # `MARKER`로 면제하지 않는다(CodeRabbit 재리뷰 2026-08-23). 마커는
+            # "사장 NS에 의도적으로 쓴다"는 기록일 뿐, 무지정 upsert가 **타
+            # 프로젝트의 기본 NS**를 오염시키는 것과는 다른 문제다. 두 개념을
+            # or로 묶으면 마커만 붙인 실행 가능 스크립트가 통과한다.
             sealed = _re.search(r"\n    if True:\n        sys\.exit\(", src)
-            assert MARKER in src or sealed, (
+            assert sealed, (
                 f"{path.name}: 네임스페이스 무지정 upsert {bare[:1]} — 기본 NS는 "
                 f"반도체 프로젝트 소유다(실측). namespace를 명시하거나, 우회 불가능한 "
                 f"봉인(`if True:` + sys.exit)을 둘 것")
