@@ -27,7 +27,10 @@ python3 generate_metadata.py      # Generate metadata.json from output/
 # (`app/core/rag.py::NS_GROUPS`). 다른 곳에 올리면 임베딩 비용만 쓰고 검색에 반영되지 않는다.
 python3 pinecone_upload_court_precedents.py    # 판례 → laborlaw-v2 (현역)
 python3 pinecone_upload_textbook.py --book X   # 해설서 → laborlaw-v2 (현역)
-python3 pinecone_upload_contextual.py --source Q&A   # Q&A·상담 → qa/counsel (현역)
+# --source는 SOURCES의 label 부분일치다 — 소스 3개가 qa NS를 공유하므로 NS 이름으로는 못 고른다.
+python3 pinecone_upload_contextual.py --source Q&A     # 'Q&A 상담 (1·2차)' → qa
+python3 pinecone_upload_contextual.py --source 법률     # '법률 상담사례' → qa (Q&A로는 안 잡힌다)
+python3 pinecone_upload_contextual.py --source 노무사   # '노무사 상담' → counsel
 # pinecone_upload.py / _2025 / _imgum — ⛔ 실행 봉인됨(2026-08-23). --reset이 인덱스를
 #   **통째로** 삭제해 공유 인덱스의 타 프로젝트 데이터(139,776벡터)까지 파괴했고,
 #   무지정 upsert가 반도체 프로젝트의 기본 네임스페이스에 썼다. 사유는 각 파일 docstring.
@@ -271,6 +274,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **그룹 키는 "한 번의 실행이 항상 통째로 다루는 단위"여야 한다.** prune은 차집합을 지우므로 그룹을 넓게 잡으면 **부분 실행이 나머지를 고아로 오판한다** — court는 `--limit`이 있어 코퍼스 전체를 한 그룹으로 두면 `--limit 20`이 나머지 수천 건을 삭제 대상으로 계산한다. textbook은 `book_id`, court는 **사건번호**가 그 단위다. 회귀는 T25-c.
   - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 둘 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다.
   - **대량 삭제 가드는 합계로 판정한다.** 그룹별로 걸면 청크 1개짜리 판례에서 1건만 줄어도 50%를 넘어 상시 발동하고, 경고가 일상이 되면 아무도 읽지 않는다.
+  - ⚠️ **`pinecone_upload_contextual.py`에는 아직 원장이 없다**(알려진 갭). 소스별로 ID 생성 경로가 갈려(`process_source`는 `extract_post_id` 기반, `process_counsel_source`는 `ctx_counsel_{fk_hash}_{seq}` 기반) 그룹 키를 하나로 정의할 수 없기 때문이다. **청킹 규칙이나 `extract_post_id`를 바꾼 뒤 `qa`·`counsel`에 재업로드할 때는 구 ID를 사전에 명시 삭제할 것** — `--reset`은 NS 전체(49,842벡터)를 지우므로 부분 정리 수단이 아니다. 절차는 그 파일 상단 주석에 있다.
 - **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.
 - **해설서 헤딩 위생 처리는 "폐기만 범용, 복원은 명시 치환"이다**(`sanitize_heading`). 오폐기는 섹션 경계 하나를 잃을 뿐이지만 오복원은 코퍼스에 오정보를 남긴다. 규칙 수정 시 주의점 셋 — (1) 의미문자 비율의 **분모에서 공백·구두점을 빼야** 한다(`2. 요 건`이 2/6=0.33로 오폐기됨), (2) 조문 표기 추출은 **길이 검사보다 먼저** 해야 한다(59자짜리가 상한 60을 통과해 잡음째 살아남음), (3) `ocr_fixes`는 **원문 키**로 매칭한다(정제 후 매칭하면 정제 로직 변경 시 치환 키가 조용히 무효). 폐기율 10% 초과 시 업로드가 중단된다. 회귀는 T18.
 - **해설서에서 사건번호를 뽑을 땐 사건부호 화이트리스트가 필수다**(`extract_textbook_cases.py::CASE_RE`). 범용 `CASE_NO_RE`(`\d{2,4}[가-힣]{1,4}\d+`)는 **조문 표기를 사건번호로 오인한다** — 실측(주해Ⅲ): 308건 중 113건이 노이즈였고 상위 오탐이 `43조의2`(31회)·`43조의4`(28)·`109조2`(7)였다. 조문 해설서는 판례 수험서보다 조문 표기 밀도가 훨씬 높아 이 오염이 크다. 화이트리스트는 **긴 부호를 먼저** 나열해야 한다(`다`가 `다카`보다 앞서면 `87다카2803`이 `87다`로 잘린다). 회귀는 T20.

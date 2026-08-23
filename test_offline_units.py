@@ -791,12 +791,24 @@ def test_upload_namespace_contract() -> None:
                 f"명시하거나 적재 대상을 바꿀 것")
         # 무지정 upsert도 같은 부류다 — 기본 NS는 타 프로젝트 소유로 실측됐다.
         # 판정은 "upsert 호출에 namespace 인자가 없다"로 한다(선언 유무가 아니라).
+        #
+        # 봉인 표식의 **존재**로 면제하지 않는다(CodeRabbit 리뷰 2026-08-23):
+        # 표식이 있어도 우회 플래그로 실행에 도달할 수 있으면 그 문을 여는 순간
+        # 정확히 봉인이 막으려던 사고가 난다. 도달 **불가능**함을 요구한다 —
+        # main() 진입 직후 무조건 sys.exit 하는 형태(`if True:` 게이트)여야 하고,
+        # 조건부 게이트(`if not args.<우회플래그>:`)는 통과시키지 않는다.
         bare = [c for c in _re.findall(r"\.upsert\((?:[^()]|\([^()]*\))*\)", src)
                 if "namespace" not in c]
         if bare:
-            assert MARKER in src or "실행 봉인됨" in src, (
+            sealed = _re.search(r"\n    if True:\n        sys\.exit\(", src)
+            assert MARKER in src or sealed, (
                 f"{path.name}: 네임스페이스 무지정 upsert {bare[:1]} — 기본 NS는 "
-                f"반도체 프로젝트 소유다(실측). 명시하거나 봉인할 것")
+                f"반도체 프로젝트 소유다(실측). namespace를 명시하거나, 우회 불가능한 "
+                f"봉인(`if True:` + sys.exit)을 둘 것")
+            # 우회 플래그가 남아 있으면 봉인이 뚫린다.
+            assert not _re.search(r"--i-know|args\.i_know", src), (
+                f"{path.name}: 봉인 우회 플래그가 있다 — 결함(무지정 upsert)이 "
+                f"그대로인 채 우회로만 열려 있으면 봉인의 의미가 없다")
 
     # ③ 업로더가 복제한 검색 NS 상수가 rag.py와 일치하는지
     ctx = Path("pinecone_upload_contextual.py").read_text(encoding="utf-8")

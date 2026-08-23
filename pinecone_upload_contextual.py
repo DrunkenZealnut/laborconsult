@@ -70,7 +70,23 @@ SEARCHED_NAMESPACES = frozenset({"laborlaw-v2", "counsel", "qa"})
 
 # NS-CONTRACT: unsearched — precedent/interpretation/regulation 소스는 사장 NS에 쓴다.
 #   판례를 프로덕션 검색에 넣으려면 pinecone_upload_court_precedents.py를 쓸 것
-#   (같은 데이터를 laborlaw-v2에 올린다). 실행 시 _warn_unsearched()가 경고한다.
+#   (같은 데이터를 laborlaw-v2에 올린다). 실행 시 사장 NS 경고가 출력된다.
+
+# ⚠️ **이 스크립트에는 고아 벡터 정리(원장)가 없다** — 알려진 갭이다
+# (CodeRabbit 리뷰 2026-08-23). `upsert`는 덮어쓸 뿐 지우지 않으므로, 어떤 문서의
+# 청크 수가 **줄어든 채로 재업로드하면** 이전 벡터가 `qa`(49,842)·`counsel`(1,244)에
+# 남아 검색 결과에 계속 섞인다. court/textbook은 `vector_ledger.VectorLedger`로
+# 이를 처리한다(외부감사 H3).
+#
+# 여기 아직 도입하지 않은 이유는 소스별로 ID 생성 경로가 갈리기 때문이다 —
+# process_source()는 extract_post_id 기반, process_counsel_source()는
+# `ctx_counsel_{fk_hash}_{seq}` 기반이라 그룹 키를 하나로 정의할 수 없다.
+#
+# **그때까지의 규약**: 청킹 규칙·`extract_post_id`·소스 디렉터리 구성을 바꾼 뒤
+# 재업로드할 때는 사전에 구 ID 목록을 산출해 명시 삭제할 것.
+#   ids = [i for page in index.list(namespace="qa", prefix="ctx_qa_") for i in page]
+#   index.delete(ids=<현재 청킹에 없는 것>, namespace="qa")
+# `--reset`은 해당 NS **전체**를 지우므로 부분 정리 수단이 아니다.
 
 # 소스 정의 — 소스별 네임스페이스 분리
 SOURCES = [
@@ -241,6 +257,11 @@ def extract_post_id(filepath: str, source_type: str = "") -> str:
     `1877294_제목` 같은 숫자ID 파일명에 매치되지 않아 숫자 폴백으로 내려가고,
     기존 프로덕션 벡터(`ctx_qa_{post_id}_c{i}` 49,842건)와 같은 값이 나온다.
     회귀는 `test_precedent_ingest.py` T14가 두 모듈 모두에 대해 고정한다.
+
+    `output_legal_cases/`만 ID가 바뀐다(`case_001_채용_취소_` → `case_001`, 120건).
+    **고아 벡터는 생기지 않는다** — 이 소스는 프로덕션에 적재된 적이 없다
+    (실측 2026-08-23: `qa` NS에서 `ctx_qa_case*` 접두사 조회 0건). CLAUDE.md의
+    "120건"은 로컬 파일 수이지 적재된 벡터 수가 아니다.
     """
     from pinecone_upload_legal import extract_post_id as _legal_extract_post_id
 

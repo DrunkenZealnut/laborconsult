@@ -260,14 +260,16 @@ def main():
     parser = argparse.ArgumentParser(description="Pinecone 2025 업로드 (봉인됨)")
     parser.add_argument("--reset",   action="store_true", help="[제거됨] 인덱스 전체를 삭제하던 옵션")
     parser.add_argument("--pending", action="store_true", help="pending 상태만 업로드")
-    parser.add_argument("--i-know-this-creates-an-unsearched-index", action="store_true",
-                        help="봉인 해제 (docstring의 결함을 고친 뒤에만 사용)")
     args = parser.parse_args()
 
     # ── 실행 봉인 ────────────────────────────────────────────────────────────
     # 사유는 모듈 docstring. 요약: 대상 인덱스가 실재하지 않아 실행하면 새 인덱스를
     # 만들고, 프로덕션 검색은 그 인덱스를 읽지 않는다. 실패가 조용해서 차단으로 둔다.
-    if not args.i_know_this_creates_an_unsearched_index:
+    #
+    # **해제 플래그를 두지 않는다**(CodeRabbit 리뷰 2026-08-23). 결함이 그대로인
+    # 채 우회로만 있으면 그 문을 여는 순간 정확히 봉인이 막으려던 사고가 난다.
+    # 되살리는 방법은 이 파일을 고치는 게 아니라 새로 작성하는 것이다.
+    if True:
         sys.exit(
             "[봉인] 이 스크립트는 실행이 차단돼 있습니다 (2026-08-23).\n"
             "  · 대상 인덱스 laborconsult-bestqna-2025가 계정에 없음 → 실행 시 새로 생성됨\n"

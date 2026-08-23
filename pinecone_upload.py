@@ -305,8 +305,6 @@ def main():
     parser = argparse.ArgumentParser(description="Pinecone 업로드 (봉인됨)")
     parser.add_argument("--reset",   action="store_true", help="[제거됨] 인덱스 전체를 삭제하던 옵션")
     parser.add_argument("--pending", action="store_true", help="pending 상태만 업로드")
-    parser.add_argument("--i-know-this-writes-to-a-shared-namespace", action="store_true",
-                        help="봉인 해제 (docstring의 결함 2건을 고친 뒤에만 사용)")
     args = parser.parse_args()
 
     # ── 실행 봉인 ────────────────────────────────────────────────────────────
@@ -314,7 +312,12 @@ def main():
     # 프로젝트의 기본 네임스페이스에 쓰고, 그 벡터는 프로덕션 검색 대상도 아니다.
     # 실패가 조용하므로(성공 메시지·정상 벡터 수가 그대로 찍힌다) 경고가 아니라
     # 차단으로 둔다.
-    if not args.i_know_this_writes_to_a_shared_namespace:
+    #
+    # **해제 플래그를 두지 않는다**(CodeRabbit 리뷰 2026-08-23). 결함이 그대로인
+    # 채 우회로만 있으면 그 문을 여는 순간 정확히 봉인이 막으려던 사고가 난다 —
+    # 아래 upsert는 여전히 네임스페이스 무지정이다. 되살리는 방법은 이 파일을
+    # 고치는 게 아니라 docstring의 안내대로 새로 작성하는 것이다.
+    if True:
         sys.exit(
             "[봉인] 이 스크립트는 실행이 차단돼 있습니다 (2026-08-23).\n"
             "  · 네임스페이스 무지정 upsert → 반도체 프로젝트의 기본 네임스페이스에 기록됨\n"
