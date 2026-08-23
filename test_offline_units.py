@@ -754,12 +754,53 @@ def test_upload_namespace_contract() -> None:
        (실측: `precedent` 6,540벡터가 사장 상태).
     ③ `rag.py::NS_GROUPS`와 업로더의 검색 NS 상수가 갈라짐.
     """
+    import ast as _ast
     import re as _re
     from pathlib import Path
 
     from app.core import rag
 
     searched = {ns for group in rag.NS_GROUPS for ns in group}
+
+    def _is_sys_exit(node) -> bool:
+        f = getattr(node, "func", None)
+        return (isinstance(node, _ast.Call) and isinstance(f, _ast.Attribute)
+                and f.attr == "exit" and isinstance(f.value, _ast.Name)
+                and f.value.id == "sys")
+
+    def _seals_main(src: str) -> bool:
+        """main() 진입 후 무조건 종료해 이후 코드가 **도달 불가**한지 AST로 본다.
+
+        파일 전체 정규식으로 `if True: sys.exit`를 찾으면 봉인이 호출되지 않는
+        함수 안에 있거나 upsert **뒤**에 있어도 통과한다(CodeRabbit 재리뷰
+        2026-08-23). 실행 경로를 확인해야 봉인이 실제로 막는지 알 수 있다.
+        """
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:
+            return False
+        main = next((n for n in tree.body
+                     if isinstance(n, _ast.FunctionDef) and n.name == "main"), None)
+        if main is None:
+            return False
+        for idx, stmt in enumerate(main.body):
+            unconditional = (isinstance(stmt, _ast.If)
+                             and isinstance(stmt.test, _ast.Constant)
+                             and stmt.test.value is True
+                             and any(_is_sys_exit(getattr(s, "value", None))
+                                     for s in _ast.walk(stmt)))
+            if not unconditional:
+                continue
+            # 봉인 **앞** 구간에 업로드로 이어지는 호출이 있으면 소용없다.
+            for pre in main.body[:idx]:
+                for node in _ast.walk(pre):
+                    if isinstance(node, _ast.Call):
+                        fn = node.func
+                        name = getattr(fn, "attr", None) or getattr(fn, "id", "")
+                        if "upsert" in name or "upload" in name:
+                            return False
+            return True                     # 이 지점 이후는 전부 도달 불가
+        return False
 
     # ① 인덱스 전체 삭제 금지 — 주석·docstring의 언급은 허용(사유 기록이다)
     for path in sorted(Path(".").glob("pinecone_upload*.py")):
@@ -804,7 +845,7 @@ def test_upload_namespace_contract() -> None:
             # "사장 NS에 의도적으로 쓴다"는 기록일 뿐, 무지정 upsert가 **타
             # 프로젝트의 기본 NS**를 오염시키는 것과는 다른 문제다. 두 개념을
             # or로 묶으면 마커만 붙인 실행 가능 스크립트가 통과한다.
-            sealed = _re.search(r"\n    if True:\n        sys\.exit\(", src)
+            sealed = _seals_main(src)
             assert sealed, (
                 f"{path.name}: 네임스페이스 무지정 upsert {bare[:1]} — 기본 NS는 "
                 f"반도체 프로젝트 소유다(실측). namespace를 명시하거나, 우회 불가능한 "
