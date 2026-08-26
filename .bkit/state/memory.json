@@ -124,5 +124,18 @@
     "notes": "완료·아카이브(2026-08-19). PR #52 머지, 도달률 50→75%, 프로덕션 실측 확인. 잔여: 검색 미도달 4건(별도 사이클)·승격 발동 관찰·part6 title 게이트.",
     "matchRate": 97.8,
     "archivedTo": "docs/archive/2026-08/textbook-retrieval-balance/"
+  },
+  "legal-corpus-coverage": {
+    "phase": "act",
+    "startedAt": "2026-08-20",
+    "designAt": "2026-08-23",
+    "note": "Check 지적 16건 처리(A-2~A-16·D-1~D-5). 최종 공공 21·도달 12/12·상담 63%·저작물 65%. 미해소: A-17 BM25 메모리 119%(별도 사이클), A-1 커밋 대기.",
+    "doAt": "2026-08-23",
+    "progress": "T1(2단 쿼터)·T2(상담 가드)·T3(사후 대조)·T5(훈령) 전부 완료. T4는 후속 이관.",
+    "measured": "공공 2→16건, 법률도달 2/12→12/12, 상담 89%→64%, 해설서 77.8% 무회귀, T3 임계 0.45 실측 검증",
+    "matchRate": 82,
+    "checkAt": "2026-08-23",
+    "analysis": "docs/03-analysis/legal-corpus-coverage.analysis.md",
+    "actAt": "2026-08-25"
   }
 }
