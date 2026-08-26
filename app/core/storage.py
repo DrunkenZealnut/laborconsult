@@ -245,6 +245,7 @@ def board_post_select(columns=BOARD_POST_PUBLIC_COLUMNS) -> str:
 #   guard_flag — 가드 의심(monitor) 대화 (chatbot-security FR-09)
 #   truncated  — 스트림 절단으로 완결되지 않은 답변 (llm-fallback-hardening FR-02)
 #   textbook   — 저작권 있는 해설서를 근거로 쓴 답변 (textbook-corpus-embedding G6)
+#   counsel    — 제3자 상담 게시물을 근거로 쓴 답변 (legal-corpus-coverage Q6)
 #   synthetic  — 벤치마크·CLI·테스트가 만든 대화 (board-duplicate-cleanup)
 #
 # 여기(app/core/storage.py)에 두는 이유: 노출 여부를 **읽는** 쪽은 api/index.py이고
@@ -255,7 +256,7 @@ def board_post_select(columns=BOARD_POST_PUBLIC_COLUMNS) -> str:
 # ⚠️ 이 키들은 **True일 때만 기록한다.** PostgREST 필터는 키 부재(`IS NULL`)로,
 #    Python 후처리는 truthiness로 판정하므로 `{"truncated": False}`처럼 명시적
 #    False를 쓰면 두 경로가 갈라진다.
-PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "synthetic")
+PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "counsel", "synthetic")
 
 
 def is_public_excluded(meta) -> bool:

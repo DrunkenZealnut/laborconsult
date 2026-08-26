@@ -1286,6 +1286,7 @@ async function readSSE(resp, onActivity) {
   let fullText = '';
   let pendingContacts = null;
   let pendingSources = null;
+  let pendingCases = null;
   let pendingCalc = null;
   let streamDone = false;
 
@@ -1319,6 +1320,8 @@ async function readSSE(resp, onActivity) {
         if (pendingContacts) renderContacts(pendingContacts, el);
       } else if (event.type === 'sources') {
         pendingSources = event.hits || null;   // 답변 완료 후 출처 표시
+      } else if (event.type === 'cases') {
+        pendingCases = event.items || null;    // 결론이 같은 유사 상담 사례
       } else if (event.type === 'meta') {
         if (event.calc_result) pendingCalc = event.calc_result;   // 답변 완료 후 정확 계산값 카드로 표시
       } else if (event.type === 'replace') {
@@ -1349,7 +1352,8 @@ async function readSSE(resp, onActivity) {
   var lastAssistant = assistantEl || chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant');
   if (lastAssistant) {
     renderCalcResult(pendingCalc, lastAssistant);
-    renderSources(pendingSources, lastAssistant);
+    renderCases(pendingCases, lastAssistant);
+    renderSources(pendingSources, lastAssistant, pendingCases);
     if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
     showAnswerActions(lastAssistant);
@@ -1367,8 +1371,15 @@ async function readSSE(resp, onActivity) {
 // ── 답변 출처 표시 (sources 이벤트) ──────────────────────────────────────────
 // 말풍선(innerHTML 교체 대상) 바깥에 붙여 replace 이벤트에도 보존된다.
 
-function renderSources(hits, el) {
+function renderSources(hits, el, shownCases) {
   if (!hits || !hits.length || !el) return;
+  // 이미 "유사 사례"로 표시한 상담은 "근거 자료"에서 뺀다 — 같은 항목이 양쪽에
+  // 뜨면 "상담은 근거가 아니라 참고 사례"라는 구분이 무너진다.
+  if (shownCases && shownCases.length) {
+    var caseTitles = shownCases.map(function (c) { return c.title || ''; });
+    hits = hits.filter(function (h) { return caseTitles.indexOf(h.title || '') < 0; });
+    if (!hits.length) return;
+  }
   var labels = { precedent: '판례', interpretation: '행정해석', regulation: '훈령·예규',
                  counsel: '노무사 상담', qa: '상담 Q&A', textbook: '노동법 해설서',
                  law_article: '법령', nlrc_case: '판정사례', graph: '지식그래프' };
@@ -1377,6 +1388,24 @@ function renderSources(hits, el) {
   div.textContent = '근거 자료: ' + hits.map(function (h) {
     var label = labels[h.source_type] || h.source_type || '자료';
     return '[' + label + '] ' + h.title + (h.section ? ' — ' + h.section : '');
+  }).join('  ·  ');
+  el.insertAdjacentElement('afterend', div);
+}
+
+// ── 유사 상담 사례 (cases) ───────────────────────────────────────────────────
+// 답변의 '근거'가 아니라 생성된 답변과 결론이 같은 '참고 사례'다. 결론이 갈리는
+// 사례는 서버가 보내지 않는다(상충 정보는 사용자를 혼란시킨다).
+// 말풍선 바깥이라 인용 교정(replace)에도 지워지지 않는다.
+
+function renderCases(items, el) {
+  if (!items || !items.length || !el) return;
+  var labels = { counsel: '노무사 상담', qa: '상담 Q&A' };
+  var div = document.createElement('div');
+  div.className = 'sources';
+  // 제목은 게시물 원문이 아니라 목록 표시용이므로 textContent로 안전하게 넣는다.
+  div.textContent = '유사 사례(참고): ' + items.map(function (c) {
+    var label = labels[c.source_type] || '상담';
+    return '[' + label + '] ' + (c.title || '');
   }).join('  ·  ');
   el.insertAdjacentElement('afterend', div);
 }

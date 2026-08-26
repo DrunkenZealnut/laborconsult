@@ -190,6 +190,62 @@ def uses_textbook(precedent_meta: list[dict] | None) -> bool:
     )
 
 
+def uses_counsel(precedent_meta: list[dict] | None) -> bool:
+    """LLM 컨텍스트에 제3자 상담 게시물이 **1건이라도** 실렸는가.
+
+    인용 가드 Q1~Q3 부착 판정이다 — 상담이 한 건만 있어도 풀어쓰기·단독 근거
+    금지 지시가 필요하다. 판정 술어는 `rag.is_counsel_source`가 단일 출처이고
+    여기서 재선언하지 않는다.
+
+    **게시판 제외(Q6)는 이 판정을 쓰지 않는다** — `counsel_dominant()`를 쓴다.
+    두 판정이 다른 이유는 그 함수 docstring에 있다.
+    """
+    from app.core.rag import is_counsel_source
+
+    return any(is_counsel_source(m or {}) for m in (precedent_meta or []))
+
+
+# Q6 제외 임계 — 상담이 컨텍스트의 이 비율을 **넘을 때만** 게시판에서 뺀다.
+# 분수로 두는 이유: 비율 비교를 정수 곱으로 하면 부동소수 경계 오차가 없다
+# (2/3 컨텍스트에서 상담 2건은 통과, 3건은 제외 — 의도한 경계다).
+COUNSEL_DOMINANT_NUM, COUNSEL_DOMINANT_DEN = 2, 3
+
+
+def counsel_dominant(precedent_meta: list[dict] | None) -> bool:
+    """상담 게시물이 답변 근거를 **지배**하는가 — Q6(공개 게시판 제외) 판정.
+
+    **왜 `uses_counsel`(1건 기준)을 쓰지 않는가.** 그 기준으로 제외하면 공개
+    게시판이 사실상 멈춘다 — 상담은 코퍼스의 72%이고 거의 모든 답변에 실린다
+    (실측 2026-08-23: 12주제 **전부** 상담 2~4건 포함 → 신규 대화 ~100% 제외).
+    해설서 G6를 그대로 베낀 것이 원인이었다: 해설서는 도달률 75%에 권당 3·총량 6
+    상한이 걸린 소수 소스라 제외 빈도가 낮지만, 상담은 성격이 다르다.
+    게시판은 슬라이드 메뉴의 주요 진입점이자 SEO 자산이므로 그 정지는
+    저작권 이득보다 비싸다.
+
+    **왜 비중 기준인가.** Q6이 막으려는 것은 "상담 원문이 답변에 새어나간 채
+    크롤 가능한 공개 페이지로 재게시되는 것"이다. 그 위험은 상담이 답변 골격을
+    이룰 때 크고, 법령·판례가 주근거이고 상담이 보조일 때 작다. Q1(풀어쓰기)이
+    부착된 상태에서 상담 1~2건은 후자다.
+
+    **임계 2/3의 근거**(프로덕션 실측 12주제, 상담 비중 분포):
+      20% 1건 · 40% 1건 · **60% 8건** · 80% 2건
+    60%(3/5)와 80%(4/5) 사이에 경계가 있다. `> 1/2`로 잡으면 60% 무리가 전부
+    걸려 10/12가 제외되고(게시판 여전히 정지), `= 100%`는 0/12로 Q6이 무효가
+    된다. 2/3은 **2/12(17%)만 제외**해 게시판을 살리면서 상담 지배 답변은 막는다.
+
+    비중 계산의 분모는 `precedent_meta`(RAG 컨텍스트) 전체다 — 법제처 조문·
+    노동위 판정례는 이 목록에 없으므로 분모에 들어가지 않는다.
+    """
+    from app.core.rag import is_counsel_source
+
+    metas = [m or {} for m in (precedent_meta or [])]
+    if not metas:
+        return False
+    counsel = sum(1 for m in metas if is_counsel_source(m))
+    # counsel / len(metas) > NUM / DEN  ⟺  counsel * DEN > len * NUM
+    return counsel * COUNSEL_DOMINANT_DEN > len(metas) * COUNSEL_DOMINANT_NUM
+
+
 def _build_sources_payload(
     precedent_meta: list[dict] | None,
     consultation_hits: list[dict] | None,
@@ -271,6 +327,13 @@ def _citation_source_hits(
         if text:
             hits.append({"title": label, "chunk_text": text})
     return hits
+
+
+# 판례·행정해석 컨텍스트 길이 예산 (DB-5).
+# **format_pinecone_hits(max_chars=)가 청크 단위로 자르는 것이 1차 통제**다.
+# 아래 _cap은 문자 단위 절삭이라 meta_list와 어긋날 수 있어(외부 리뷰 A-9)
+# 이제 이중 안전망 역할만 한다 — 청크 단위 절단을 거친 텍스트는 이미 예산 안이다.
+PRECEDENT_TEXT_BUDGET = 8000
 
 
 def _cap(text: str | None, limit: int) -> str | None:
@@ -1410,6 +1473,7 @@ def process_question(query: str, session: Session, config: AppConfig,
       {"type": "status", "text": "..."}       — 진행 상태
       {"type": "meta",   "calc_result": ...}  — 계산기 결과 (있을 때만)
       {"type": "sources", "hits": [...]}      — 검색 출처
+      {"type": "cases",  "items": [...]}      — 답변과 결론이 같은 유사 상담 사례(T3)
       {"type": "chunk",  "text": "..."}       — 스트리밍 답변 텍스트
       {"type": "done"}                        — 완료
 
@@ -1684,9 +1748,23 @@ def process_question(query: str, session: Session, config: AppConfig,
             if adaptive_params["self_rag"] and pinecone_hits and len(pinecone_hits) > 2:
                 try:
                     from app.core.self_rag import filter_by_relevance
+                    from app.core.rag import _is_public_source
+                    _before_self_rag = list(pinecone_hits)
                     pinecone_hits, needs_wider = filter_by_relevance(
                         query, pinecone_hits, config.claude_client,
                     )
+                    # Self-RAG는 T1 2단 **뒤**에 돌고, 쿼터 승격분은 rerank 하위라
+                    # 목록 말미에 있다. Haiku가 그것을 irrelevant로 판정하면 공공
+                    # 근거가 통째로 사라지는데 재적용 지점이 없었다(외부 리뷰 A-6).
+                    # 전멸했을 때만 최상위 1건을 되살린다 — 필터의 판단은 존중하되
+                    # "법률 근거 0건"이라는 결과만 막는 최소 보장이다.
+                    if (any(_is_public_source(h) for h in _before_self_rag)
+                            and not any(_is_public_source(h) for h in pinecone_hits)):
+                        restored = next(h for h in _before_self_rag
+                                        if _is_public_source(h))
+                        pinecone_hits = list(pinecone_hits) + [restored]
+                        logger.info("Self-RAG가 공공 근거를 전멸시켜 1건 복원: %s",
+                                    restored.get("id"))
                     if needs_wider:
                         logger.info("Self-RAG wider search: top_k %d → %d",
                                     search_top_k, search_top_k * 2)
@@ -1705,7 +1783,12 @@ def process_question(query: str, session: Session, config: AppConfig,
                     logger.warning("Self-RAG 실패 (rerank 결과 유지): %s", e)
 
             if pinecone_hits:
-                precedent_text, precedent_meta = format_pinecone_hits(pinecone_hits)
+                # top_n을 넘기지 않으면 상담 상한(Q4)이 `len(hits)-1`이 되어
+                # 사실상 발동하지 않는다 — 그 목록은 이미 가드·Self-RAG가 줄인
+                # 뒤라 원래 의도한 상한과 다르다(외부 리뷰 A-5).
+                precedent_text, precedent_meta = format_pinecone_hits(
+                    pinecone_hits, top_n=adaptive_params["rerank_top_n"],
+                    max_chars=PRECEDENT_TEXT_BUDGET)
                 logger.info("Pinecone 판례·행정해석 %d건 사용", len(pinecone_hits))
 
             # ② Pinecone 결과 부족 시 법제처 API 폴백
@@ -1825,7 +1908,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     if graph_context:
         parts.append(f"법령 관계 분석 (지식 그래프):\n\n{graph_context}")
     if precedent_text:
-        parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{_cap(precedent_text, 8000)}")
+        parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{_cap(precedent_text, PRECEDENT_TEXT_BUDGET)}")
     if calc_result:
         parts.append(f"임금계산기 결과 (정확한 계산 — 이 수치를 사용하세요):\n\n{calc_result}")
     # 지식 모듈: 트리거되는 모듈의 검증된 사실 블록을 순서대로 주입
@@ -1997,6 +2080,9 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 전에 확정된다(RAG 또는 법제처 폴백). 판정을 두 곳에 복제하면 한쪽만
     # 어긋나 조용히 새므로 단일 변수로 둔다.
     used_textbook = uses_textbook(precedent_meta)
+    # 상담 게시물(제3자 저작물)이 실렸는가 — 가드 Q1~Q3 부착과 Q6(게시판 제외)의
+    # 공용 변수. used_textbook과 같은 이유로 판정을 복제하지 않는다.
+    used_counsel = uses_counsel(precedent_meta)
     full_text = ""
     used_provider = None
     outcome = AnswerOutcome()
@@ -2017,6 +2103,12 @@ def process_question(query: str, session: Session, config: AppConfig,
         if used_textbook:
             from app.templates.prompts import TEXTBOOK_CITATION_RULES
             system_prompt = system_prompt + TEXTBOOK_CITATION_RULES
+        # 상담 인용 가드 Q1~Q3 — 같은 이유로 두 분기 공통 접미한다.
+        # 상담 코퍼스(qa 49,842 + counsel 1,244)는 제3자 게시물인데 지금까지
+        # 어떤 인용 규칙도 적용되지 않았다(해설서 6,635건에는 가드 6종이 있다).
+        if used_counsel:
+            from app.templates.prompts import COUNSEL_CITATION_RULES
+            system_prompt = system_prompt + COUNSEL_CITATION_RULES
         for provider, text in _stream_answer(messages, system_prompt, config, outcome):
             if not text:
                 # 전환 하트비트 — 내용 없음. 프론트 idle 타이머만 리셋한다 (FR-03).
@@ -2101,6 +2193,27 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "replace", "text": full_text}
             logger.info("환각 판례 교정 완료 — replace 이벤트 전송")
 
+    # 6-b. 사후 상담 사례 대조 (T3) — 답변이 **완성된 뒤** 실행한다.
+    #
+    # 상담 Q&A는 제3자 게시물이라 답변의 근거로 쓰면 저작권·품질 위험이지만,
+    # "내 상황과 비슷한 사례"는 실사용 가치가 크다. 그래서 없애지 않고 위치를
+    # 옮긴다 — 답변은 법령·판례로 짓고, 상담은 결론이 같을 때만 참고로 덧붙인다.
+    # 결론이 갈리면 **표시하지 않고 기록만** 한다(2026-08-20 사용자 확정).
+    #
+    # 스트리밍이 끝난 뒤라 체감 지연이 아니고, 임베딩 1회(배치)뿐이다.
+    case_match = None
+    # 절단 답변은 대조하지 않는다 — 본문이 잘린 상태로 잰 유사도는 낮게
+    # 나오고, 그것이 `divergent`(우리 답과 실무 상담이 갈림)로 기록되면
+    # 품질 신호가 오염된다(외부 리뷰 A-14). 절단은 이미 `truncated`로
+    # 기록되고 게시판에서도 제외된다.
+    if full_text and used_counsel and not outcome.truncated:
+        from app.core.case_match import match_counsel_cases
+        case_match = match_counsel_cases(full_text, precedent_meta, config)
+        if case_match["cases"]:
+            # 답변 본문을 갈아끼우지 않는다 — replace(인용 교정)와 충돌하지
+            # 않도록 별도 이벤트로 내보내 말풍선 바깥에 렌더한다.
+            yield {"type": "cases", "items": case_match["cases"]}
+
     # 7. 세션에 이력 저장
     session.add_user(query)
     session.add_assistant(full_text)
@@ -2149,6 +2262,26 @@ def process_question(query: str, session: Session, config: AppConfig,
     # Plan §3.2는 chunk_text 미노출만 근거로 삼았고 답변 재게시를 다루지 않았다.
     if used_textbook:
         conv_metadata["textbook"] = True
+    # 상담이 답변 근거를 **지배할 때만** 게시판에서 제외한다(Q6).
+    #
+    # 가드 부착(`used_counsel`, 1건 기준)과 **일부러 다른 판정**이다. 1건 기준으로
+    # 제외하면 상담이 거의 모든 답변에 실리므로 게시판이 통째로 멈춘다(실측
+    # 12주제 전부 해당). 근거와 임계는 counsel_dominant() docstring 참조.
+    # 두 판정 모두 각자 단일 함수를 단일 호출부에서 쓴다 — 복제하지 않는 것이
+    # 원래 불변식의 취지이고, 그것은 유지된다(회귀 T26-h).
+    if counsel_dominant(precedent_meta):
+        conv_metadata["counsel"] = True
+    # T3 대조 결과는 **버리지 않는다** — "우리 답과 실무 상담이 갈리는 주제"는
+    # 품질 모니터링·코퍼스 공백 탐지의 신호다. 표시 여부와 무관하게 기록한다.
+    # 게시판 제외는 이미 `counsel` 키가 담당하므로 별도 제외 키를 두지 않는다.
+    if case_match and case_match["checked"]:
+        conv_metadata["case_match"] = {
+            "checked": case_match["checked"],
+            "shown": len(case_match["cases"]),
+            "max_similarity": case_match["max_similarity"],
+        }
+        if case_match["divergent"]:
+            conv_metadata["case_match"]["divergent"] = True
     # 웹 요청이 아닌 호출부(벤치마크·CLI·테스트)의 대화는 저장하되 공개 게시판에서
     # 제외한다 (board-duplicate-cleanup G-A). guard_ctx는 웹 엔드포인트만 넘기므로
     # None이면 비웹 호출이다 — ABUSE_GUARD_MODE=off에서도 _guard_chat_request()는

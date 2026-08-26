@@ -742,6 +742,36 @@ def test_colloquial_map() -> None:
     print(f"  ✅ 구어 사전: 양성 {len(positives)}건 매핑·음성 {len(negatives)}건 통과·상한 고정")
 
 
+def test_bm25_interning() -> None:
+    """BM25 로드의 문자열 인터닝 (legal-corpus-coverage Act, A-17).
+
+    막는 실패: 인터닝 없이 76,983문서를 로드하면 RSS가 **1,218MB**로 Vercel
+    기본 한도 1024MB를 넘는다(실측 2026-08-25). 넘으면 소프트 MemoryError는
+    `search_hybrid`가 Dense-only로 조용히 흡수해 **하이브리드 검색이 반쪽**이
+    되고, 하드 OOM-kill은 방어 불가다. 인터닝 적용 시 683MB(67%).
+
+    토큰의 94.1%가 중복이라(549만 → 고유 32.6만) 효과가 크다. 코퍼스 로드는
+    느리므로 여기서는 **구현이 살아 있는지**만 구조로 고정한다.
+    """
+    import re as _re
+    from pathlib import Path
+
+    src = Path("app/core/bm25_search.py").read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in src.splitlines()
+                     if not ln.lstrip().startswith("#"))
+    assert "import sys" in code, "sys.intern 사용을 위한 import"
+    assert _re.search(r"sys\.intern\(w\)\s+for\s+w\s+in\s+_tokenize_ko", code), \
+        "토큰 인터닝이 사라졌다 — 이것이 없으면 RSS가 한도를 넘는다(1,218MB)"
+    assert _re.search(r'for key in \("source_type", "title", "section", "book_id"\)', code), \
+        "반복 필드 인터닝이 사라졌다"
+    # text는 인터닝 대상이 아니다 — 문서마다 달라 공유되지 않고 사전만 키운다
+    assert '"text"' not in _re.search(
+        r'for key in \([^)]*\)', code).group(0), "text를 인터닝 대상에 넣지 말 것"
+    assert _re.search(r"del tokenized\s*\n\s*gc\.collect\(\)", code), \
+        "토큰 리스트 명시 해제가 사라졌다"
+    print("  ✅ BM25 인터닝: 토큰·반복필드 인터닝 + 명시 해제 유지")
+
+
 def test_upload_namespace_contract() -> None:
     """업로드 스크립트의 네임스페이스 계약 (외부감사 2026-08-23 H1·H2).
 
@@ -887,6 +917,7 @@ def main() -> None:
     test_ddl_no_quoted_identifiers()
     test_code_tables_defined_in_ddl()
     test_upload_namespace_contract()
+    test_bm25_interning()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 

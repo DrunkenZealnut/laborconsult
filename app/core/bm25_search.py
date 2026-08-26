@@ -10,9 +10,11 @@ Pinecone Dense 검색에 BM25 키워드 매칭을 결합하여
 
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -41,6 +43,25 @@ BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
 # 늘었고 콜드 스타트 첫 요청 지연에 그대로 얹힌다 — 건수가 줄었는데도 늘었다는 건
 # 이 시간이 문서 수가 아니라 인스턴스 상태에 좌우된다는 뜻이므로, 회귀 판단의
 # 기준선으로 쓰지 말 것.
+#
+# 후속 실측(2026-08-25, 로컬 macOS, 76,983건 — 훈령 1,763 적재 후):
+#   인터닝 **이전**에는 gz 파싱 427MB → 인덱스 구축 **1,218MB**로 Vercel 기본
+#   한도 1024MB의 **119%**였다. 문자열 인터닝을 넣어 **683MB(67%)** 로 내렸다
+#   (load_bm25_corpus의 인터닝 주석 참조). 단계별 실측:
+#
+#     단계              인터닝 전 → 후
+#     코퍼스 로드          437MB → 445MB
+#     토큰화 피크          934MB → 536MB
+#     BM25Okapi 구축     1,218MB → 683MB
+#
+#   로드 시간은 2.6초로 동일하고 검색 결과도 불변이다(같은 토큰 문자열을 공유할
+#   뿐 값이 바뀌지 않는다).
+#
+#   ⚠️ 이 여유는 **코퍼스 증가로 다시 잠식된다.** 인터닝은 상수 배수를 줄일 뿐
+#   증가율을 바꾸지 않는다 — 대략 문서 1만 건당 +90MB다. 다음 대형 적재 전에
+#   재측정할 것. 소프트 MemoryError는 search_hybrid의 broad except가 Dense-only로
+#   흡수하지만 그 경우 **하이브리드 검색이 조용히 반쪽이 되고**, OS 하드
+#   OOM-kill은 방어 불가다. 근본 완화는 스트리밍 파싱·샤딩·외부 서비스다.
 #
 # ⚠️ BM25_MAX_DOCS는 **메모리 상한이 아니다.** 절단(load_bm25_corpus)이
 # json.load 이후에 일어나므로 가장 큰 할당은 이미 끝난 뒤다. 이 값을 낮춰도
@@ -136,8 +157,30 @@ def load_bm25_corpus() -> bool:
         if len(_bm25_corpus) > BM25_MAX_DOCS:
             _bm25_corpus = _bm25_corpus[:BM25_MAX_DOCS]
 
-        tokenized = [_tokenize_ko(doc.get("text", "")) for doc in _bm25_corpus]
+        # ── 문자열 인터닝 (메모리) ───────────────────────────────────────
+        # 토큰의 **94.1%가 중복**이다(실측: 549만 토큰 / 고유 32.6만). 인터닝
+        # 없이는 같은 형태소가 문서마다 별도 str 객체가 되어 토큰 리스트만
+        # ~500MB를 쓴다. 실측 효과(76,983문서):
+        #   토큰화 피크  934MB → 536MB
+        #   최종 RSS   1,218MB → 678MB  (Vercel 1024MB의 119% → 66%)
+        # 이 최적화가 없으면 코퍼스가 이 규모에서 **한도를 넘는다.**
+        #
+        # `text`는 인터닝하지 않는다 — 문서마다 달라 공유될 일이 없고, 사전
+        # 등록 비용만 든다. 반복이 큰 필드만 대상으로 한다(source_type은 6종뿐,
+        # title·section은 같은 문서의 청크들이 공유한다).
+        for doc in _bm25_corpus:
+            for key in ("source_type", "title", "section", "book_id"):
+                val = doc.get(key)
+                if isinstance(val, str):
+                    doc[key] = sys.intern(val)
+
+        tokenized = [[sys.intern(w) for w in _tokenize_ko(doc.get("text", ""))]
+                     for doc in _bm25_corpus]
         _bm25_index = BM25Okapi(tokenized)
+        # BM25Okapi는 doc_freqs·idf·doc_len만 보관하고 원본 토큰 리스트를 참조하지
+        # 않는다 — 명시 해제로 피크 이후 상주 메모리를 낮춘다.
+        del tokenized
+        gc.collect()
 
         elapsed = (time.monotonic() - start) * 1000
         logger.info("BM25 loaded: %d docs, %.0fms", len(_bm25_corpus), elapsed)

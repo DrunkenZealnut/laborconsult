@@ -1316,6 +1316,256 @@ def t23_textbook_diversity_promotion() -> None:
           [h["id"] for h in out_k] == [h["id"] for h in ranked[:5]])
 
 
+def t26_public_quota() -> None:
+    """공공저작물 쿼터 + 상담 인용 가드 (legal-corpus-coverage T1·T2).
+
+    막는 실패:
+      · pool에만 넣고 끝내면 rerank가 전부 밀어내 최종 컨텍스트는 0건이다
+        (실측: pool 3건 → 최종 0건). 2단 보장이 있어야 실제로 실린다.
+      · victim이 해설서까지 번지면 저작권 노출은 줄어도 해설서 도달률이 회귀한다.
+      · 상담을 전멸시키면 "내 상황과 비슷한 사례"의 실용성이 사라진다.
+      · 가드 부착 판정과 게시판 제외 판정이 갈리면 "가드는 붙는데 게시판엔
+        올라가는" 상태가 된다(해설서 G6가 겪은 문제).
+    """
+    from app.core import rag
+    from app.core.pipeline import uses_counsel, uses_textbook
+
+    def _h(i, st, score=0.5, **kw):
+        return {"id": i, "score": score, "source_type": st, "title": "t",
+                "section": "", "content": "c", "book_id": "", **kw}
+
+    # ── T1 1단: pool 쿼터 ──
+    hits = [_h(f"qa{i}", "qa") for i in range(8)]
+    pub = [_h(f"p{i}", "precedent") for i in range(4)]
+    out = rag._apply_public_quota(hits, pub, top_k=8)
+    check("T26-a pool 쿼터는 부족분만 채운다",
+          sum(1 for h in out if rag._is_public_source(h)) == rag._pool_public_quota(8),
+          sum(1 for h in out if rag._is_public_source(h)))
+    check("T26-c pool 크기 불변(Cohere 과금·지연 불변의 전제)",
+          len(out) == len(hits), len(out))
+    check("T26-b victim은 상담만 — 해설서 불변",
+          all(h.get("source_type") != "textbook" or h in hits for h in out))
+
+    # 해설서가 섞여 있어도 밀려나지 않는다
+    mixed = [_h("tb", "textbook", book_id="win")] + [_h(f"qa{i}", "qa") for i in range(7)]
+    out2 = rag._apply_public_quota(mixed, pub, top_k=8)
+    check("T26-b2 해설서는 victim이 되지 않는다",
+          any(h["id"] == "tb" for h in out2))
+
+    # 상담 하한
+    few = [_h("qa0", "qa"), _h("qa1", "qa"), _h("tb", "textbook", book_id="w")]
+    out3 = rag._apply_public_quota(few, pub, top_k=8)
+    check("T26-d 상담을 전멸시키지 않는다",
+          sum(1 for h in out3 if h["source_type"] == "qa") >= rag.MIN_COUNSEL_IN_POOL,
+          [h["source_type"] for h in out3])
+
+    check("T26-e 공공 후보가 없으면 무발동",
+          rag._apply_public_quota(hits, [], top_k=8) == hits)
+
+    # ── T1 2단: 최종 top_n 보장 ──
+    # rerank가 주입분을 전부 밀어낸 상황 — 1단만으로는 최종 0건이 된다.
+    ranked = ([_h(f"qa{i}", "qa") for i in range(5)]
+              + [_h("pq", "precedent", quota_injected=True)])
+    sel = rag._ensure_public_quota(ranked[:5], ranked, top_n=5)
+    check("T26-a2 2단이 주입분을 최종 목록으로 되돌린다",
+          any(h["id"] == "pq" for h in sel), [h["id"] for h in sel])
+    check("T26-c2 2단도 건수 불변", len(sel) == 5, len(sel))
+    # 표식 없는 자연 유입 공공은 2단 대상이 아니다(rerank 판단을 존중)
+    natural = [_h(f"qa{i}", "qa") for i in range(5)] + [_h("np", "precedent")]
+    check("T26-a3 표식 없는 후보는 승격하지 않는다",
+          not any(h["id"] == "np" for h in rag._ensure_public_quota(
+              natural[:5], natural, top_n=5)))
+
+    # ── 킬스위치 ──
+    old = os.environ.get("LEGAL_POOL_QUOTA")
+    os.environ["LEGAL_POOL_QUOTA"] = "off"
+    try:
+        check("T26-f LEGAL_POOL_QUOTA=off 킬스위치", not rag._pool_quota_enabled())
+    finally:
+        if old is None:
+            os.environ.pop("LEGAL_POOL_QUOTA", None)
+        else:
+            os.environ["LEGAL_POOL_QUOTA"] = old
+
+    # ── T2: 상담 가드 ──
+    from pathlib import Path
+    pipe = Path("app/core/pipeline.py").read_text(encoding="utf-8")
+    # 두 답변 경로 공통 접미 — 한쪽에만 넣으면 임금계산·괴롭힘 판정 경로에서
+    # 무가드로 나간다(해설서가 실제로 겪은 결함).
+    check("T26-g 상담 가드가 프롬프트 본문이 아니라 접미로 부착",
+          "system_prompt = system_prompt + COUNSEL_CITATION_RULES" in pipe)
+    prompts = Path("app/templates/prompts.py").read_text(encoding="utf-8")
+    check("T26-g2 COUNSEL_CITATION_RULES가 두 시스템 프롬프트 본문에 없다",
+          "COUNSEL_CITATION_RULES" not in prompts.split(
+              "COUNSEL_CITATION_RULES = ")[0])
+
+    # 가드 부착(1건 기준)과 게시판 제외(지배 기준)는 **일부러 다른 판정**이다.
+    # 1건 기준으로 제외하면 상담이 거의 모든 답변에 실려 게시판이 통째로 멈춘다
+    # (실측: 12주제 전부 해당). 원래 불변식의 취지인 "판정을 복제하지 않는다"는
+    # 유지된다 — 각 판정이 자기 함수를 단일 호출부에서 쓴다.
+    from app.core.pipeline import counsel_dominant
+    check("T26-h 두 판정이 각자 단일 함수·단일 호출부",
+          pipe.count("used_counsel = uses_counsel(") == 1
+          and pipe.count("counsel_dominant(precedent_meta)") == 1
+          and "if used_counsel:\n            from app.templates.prompts import COUNSEL_CITATION_RULES" in pipe
+          and 'if counsel_dominant(precedent_meta):\n        conv_metadata["counsel"] = True' in pipe)
+    from app.core.storage import PUBLIC_EXCLUDE_KEYS
+    check("T26-h2 counsel이 게시판 제외 키에 등록",
+          "counsel" in PUBLIC_EXCLUDE_KEYS, PUBLIC_EXCLUDE_KEYS)
+    check("T26-h3 uses_counsel은 1건 기준",
+          uses_counsel([{"source_type": "qa"}])
+          and uses_counsel([{"source_type": "counsel"}])
+          and not uses_counsel([{"source_type": "precedent"}])
+          and not uses_textbook([{"source_type": "qa"}]))
+
+    # Q6 임계 — 2/3 경계. 정수 곱 비교라 부동소수 오차가 없다.
+    _qa, _pc = {"source_type": "qa"}, {"source_type": "precedent"}
+    check("T26-h4 상담 2/3은 통과(경계 포함)",
+          not counsel_dominant([_qa, _qa, _pc]))
+    check("T26-h5 상담 3/3은 제외", counsel_dominant([_qa, _qa, _qa]))
+    check("T26-h6 상담 3/5(60%)은 통과 — 실측 분포의 최대 무리",
+          not counsel_dominant([_qa, _qa, _qa, _pc, _pc]))
+    check("T26-h7 상담 4/5(80%)는 제외",
+          counsel_dominant([_qa, _qa, _qa, _qa, _pc]))
+    check("T26-h8 빈 컨텍스트는 제외 아님", not counsel_dominant([]) and not counsel_dominant(None))
+    # 지배는 1건 기준의 부분집합이어야 한다 — 제외되는데 가드가 안 붙으면 최악이다
+    for meta in ([_qa, _qa, _qa], [_qa, _qa, _qa, _qa, _pc]):
+        check("T26-h9 지배 ⊆ 1건 기준 (제외되면 가드도 반드시 붙는다)",
+              not counsel_dominant(meta) or uses_counsel(meta))
+
+    # ── Q4 상담 총량 상한 ──
+    many = [_h(f"qa{i}", "qa") for i in range(6)]
+    capped = rag._cap_counsel_total(many, top_n=5)
+    check("T26-i 상담 총량 상한(max(2, top_n-1))",
+          len(capped) == 4, len(capped))
+    check("T26-i2 비상담은 상한 대상이 아니다",
+          len(rag._cap_counsel_total(
+              [_h(f"p{i}", "precedent") for i in range(6)], top_n=3)) == 6)
+    check("T26-i3 SIMPLE에서도 최소 2건은 남는다",
+          len(rag._cap_counsel_total([_h(f"qa{i}", "qa") for i in range(5)],
+                                     top_n=2)) == 2)
+
+    # ── Act 수정분 (Check 리뷰 A-3·A-5·A-10·A-11) ──
+    # wider 경로(search_top_k*2)는 미등록 top_k라 폴백이 걸린다. `top_k//2`였을 때
+    # COMPLEX wider(40)에서 쿼터가 20 = pool의 50%가 됐다.
+    check("T26-o wider top_k 쿼터가 pool의 25% 이하·상한 6",
+          all(rag._pool_public_quota(k) <= min(k // 4, 6) or rag._pool_public_quota(k) <= 6
+              for k in (16, 30, 40))
+          and rag._pool_public_quota(40) == 6 and rag._pool_public_quota(16) == 4,
+          {k: rag._pool_public_quota(k) for k in (8, 15, 16, 20, 30, 40)})
+    check("T26-o2 등록값은 그대로",
+          [rag._pool_public_quota(k) for k in (8, 15, 20)] == [2, 3, 4])
+
+    # 2단 하한이 1단과 같은 값이어야 한다 — `< 2`면 2단에서만 상담이 1건까지 준다
+    many_qa = ([_h(f"qa{i}", "qa") for i in range(3)]
+               + [_h("pq", "precedent", quota_injected=True),
+                  _h("pq2", "precedent", quota_injected=True)])
+    sel2 = rag._ensure_public_quota(many_qa[:3], many_qa, top_n=3)
+    check("T26-p 2단 상담 하한이 1단과 동일(MIN_COUNSEL_IN_POOL)",
+          sum(1 for h in sel2 if rag.is_counsel_source(h)) >= rag.MIN_COUNSEL_IN_POOL,
+          [h["source_type"] for h in sel2])
+
+    # 공공 집합이 두 벌이면 I-9 보호와 쿼터가 다른 집합을 본다(무증상 결함)
+    check("T26-q 공공 집합은 단일 객체",
+          rag.LEGAL_PROMOTE_SOURCES is rag.POOL_PUBLIC_SOURCES)
+    src = Path("app/core/rag.py").read_text(encoding="utf-8")
+    code_only = "\n".join(ln for ln in src.splitlines()
+                          if not ln.lstrip().startswith("#"))
+    check("T26-q2 상담 판정 리터럴 재선언 없음",
+          '("qa", "counsel")' not in code_only,
+          [ln for ln in code_only.splitlines() if '("qa", "counsel")' in ln][:2])
+
+    # Q4는 top_n을 받아야 의도한 상한이 걸린다
+    pipe_src = Path("app/core/pipeline.py").read_text(encoding="utf-8")
+    # 호출 인자를 본다 — 줄바꿈·인자 순서에 의존하는 문자열 매칭은 서식만
+    # 바뀌어도 깨지고, 그 실패는 실제 결함처럼 보인다(작성 중 실제로 겪음).
+    # 주석을 걸러야 한다 — 주석 안의 예시 문구가 먼저 잡힌다(작성 중 실제로 겪음)
+    _pipe_code = "\n".join(ln for ln in pipe_src.splitlines()
+                           if not ln.lstrip().startswith("#"))
+    _fmt_call = re.search(
+        r"format_pinecone_hits\((?:[^()]|\([^()]*\))*\)", _pipe_code, re.S)
+    check("T26-r 파이프라인이 format_pinecone_hits에 top_n을 넘긴다",
+          bool(_fmt_call) and "top_n=" in _fmt_call.group(0),
+          _fmt_call.group(0)[:80] if _fmt_call else None)
+
+    # Self-RAG가 공공 근거를 전멸시키면 1건 복원
+    check("T26-s Self-RAG 공공 전멸 시 복원 배선",
+          "Self-RAG가 공공 근거를 전멸시켜" in pipe_src
+          and "_before_self_rag" in pipe_src)
+
+    # 길이 예산은 청크 단위 — 문자 단위로 자르면 meta_list가 그대로 남아
+    # **본문이 잘린 판례를 인용 화이트리스트가 "인용 가능"으로 제시**한다
+    big = [_h(f"p{i}", "precedent") for i in range(5)]
+    for h in big:
+        h["content"] = "가" * 900
+    txt, meta = rag.format_pinecone_hits(big, top_n=5, max_chars=2000)
+    check("T26-u 예산 초과분은 텍스트·meta에서 함께 제외",
+          len(txt) <= 2000 and len(meta) == len(txt.split("\n\n---\n\n")),
+          (len(txt), len(meta)))
+    check("T26-u2 예산 미지정이면 전량 통과(구 호출부 호환)",
+          len(rag.format_pinecone_hits(big, top_n=5)[1]) == 5)
+    check("T26-u3 첫 청크는 예산을 넘어도 남긴다(빈 컨텍스트 방지)",
+          len(rag.format_pinecone_hits(big[:1], top_n=1, max_chars=10)[1]) == 1)
+    check("T26-u4 파이프라인이 예산을 넘긴다",
+          "max_chars=PRECEDENT_TEXT_BUDGET" in pipe_src)
+
+    # cases 제목은 비식별화를 거친다
+    cm_src = Path("app/core/case_match.py").read_text(encoding="utf-8")
+    check("T26-t cases 제목 비식별화 + 길이 상한",
+          "from app.anonymize import anonymize" in cm_src
+          and 'anonymize(m.get("title", ""))[:120]' in cm_src)
+
+    # ── T3: 사후 상담 사례 대조 ──
+    from app.core import case_match as cm
+
+    class _FakeEmb:
+        """답변 벡터와 각 상담 벡터를 지정해 유사도를 통제한다."""
+        def __init__(self, vecs): self.vecs = vecs
+        def with_options(self, **kw): return self
+        @property
+        def embeddings(self): return self
+        def create(self, model, input):
+            objs = [type("D", (), {"index": i, "embedding": v})()
+                    for i, v in enumerate(self.vecs[:len(input)])]
+            return type("R", (), {"data": objs})()
+
+    class _Cfg:
+        embed_model = "x"
+        def __init__(self, vecs): self.openai_client = _FakeEmb(vecs)
+
+    meta_counsel = [{"source_type": "qa", "title": "사례A", "chunk_text": "본문"},
+                    {"source_type": "qa", "title": "사례B", "chunk_text": "본문"}]
+    # 답변=[1,0], 사례A=[1,0](동일=1.0), 사례B=[0,1](직교=0.0)
+    r = cm.match_counsel_cases("답변", meta_counsel, _Cfg([[1, 0], [1, 0], [0, 1]]))
+    check("T26-j 결론이 같은 사례만 표시",
+          [c["title"] for c in r["cases"]] == ["사례A"], r["cases"])
+    check("T26-j2 표시분이 있으면 divergent 아님", r["divergent"] is False)
+
+    # 전부 임계 미만 = 결론이 갈린다 → **표시하지 않고 기록만**
+    r2 = cm.match_counsel_cases("답변", meta_counsel, _Cfg([[1, 0], [0, 1], [0, 1]]))
+    check("T26-k 결론이 다르면 제시하지 않는다", r2["cases"] == [], r2["cases"])
+    check("T26-k2 상이는 divergent로 기록", r2["divergent"] is True and r2["checked"] == 2)
+
+    # 상담이 컨텍스트에 없으면 대조 자체를 하지 않는다(임베딩 비용 0)
+    r3 = cm.match_counsel_cases("답변", [{"source_type": "precedent",
+                                        "chunk_text": "x"}], _Cfg([[1, 0]]))
+    check("T26-l 상담 없으면 무동작", r3["checked"] == 0 and not r3["cases"])
+
+    # 임베딩 실패가 답변을 막지 않는다
+    class _Boom(_FakeEmb):
+        def create(self, model, input): raise RuntimeError("boom")
+    cfg_boom = _Cfg([[1, 0]])
+    cfg_boom.openai_client = _Boom([])
+    r4 = cm.match_counsel_cases("답변", meta_counsel, cfg_boom)
+    check("T26-m 대조 실패는 fail-open", r4["cases"] == [] and not r4["divergent"])
+
+    # 파이프라인 배선 — 표시 여부와 무관하게 기록한다
+    check("T26-n cases 이벤트는 본문을 갈아끼우지 않는다(별도 이벤트)",
+          'yield {"type": "cases", "items": case_match["cases"]}' in pipe)
+    check("T26-n2 대조 결과를 metadata에 기록",
+          'conv_metadata["case_match"]' in pipe)
+
+
 def t25_court_ledger() -> None:
     """판례 코퍼스 고아 벡터 정리 (외부감사 2026-08-23 H3).
 
@@ -1529,7 +1779,8 @@ def main() -> int:
                t19_citation_guard_cap, t19b_citation_rules_attachment,
                t20_textbook_case_extraction, t21_multipart_book,
                t22_textbook_followup, t23_textbook_diversity_promotion,
-               t24_legal_diversity_promotion, t25_court_ledger):
+               t24_legal_diversity_promotion, t25_court_ledger,
+               t26_public_quota):
         print(f"\n[{fn.__name__}]")
         fn()
 
