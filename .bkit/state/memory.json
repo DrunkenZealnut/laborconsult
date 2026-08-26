@@ -141,7 +141,7 @@
     "pr": 58
   },
   "bm25-memory-scaling": {
-    "phase": "check",
+    "phase": "completed",
     "startedAt": "2026-08-26",
     "note": "두 리뷰가 독립적으로 같은 High 결함 적발 — ru_maxrss 플랫폼 단위 차이로 회귀 테스트가 CI에서 무조건 통과. Act 15건 전건 처리(단위 위생 검사 추가, 프로즌 기준값 → 신·구 경로 상호 대조 재설계, health 관측 등). 남은 것: CI 1회 실측으로 상한 확정, 구 json.gz 삭제 시점.",
     "designAt": "2026-08-26",
@@ -149,6 +149,10 @@
     "measured": "692MB(68%) → 400MB(39%). 검색 결과 8/8 완전 일치. 로드 2.7초 불변. 구 배열 포맷 폴백 정상(687MB, 결과 동일).",
     "matchRate": 88,
     "checkAt": "2026-08-26",
-    "analysis": "docs/03-analysis/bm25-memory-scaling.analysis.md"
+    "analysis": "docs/03-analysis/bm25-memory-scaling.analysis.md",
+    "reportAt": "2026-08-27",
+    "report": "docs/04-report/features/bm25-memory-scaling.report.md",
+    "pr": 59,
+    "keyFinding": "CI Linux 실측이 출발점 진단을 흔듦 — 구 배열 경로도 Linux 384MB라 '한도 119%'는 macOS 아티팩트였을 가능성. 방향·회귀·관측 장치는 유효."
   }
 }
