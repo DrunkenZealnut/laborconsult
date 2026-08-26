@@ -126,7 +126,7 @@
     "archivedTo": "docs/archive/2026-08/textbook-retrieval-balance/"
   },
   "legal-corpus-coverage": {
-    "phase": "merged",
+    "phase": "completed",
     "startedAt": "2026-08-20",
     "designAt": "2026-08-23",
     "note": "Check 지적 16건 처리(A-2~A-16·D-1~D-5). 최종 공공 21·도달 12/12·상담 63%·저작물 65%. 미해소: A-17 BM25 메모리 119%(별도 사이클), A-1 커밋 대기.",
@@ -138,7 +138,10 @@
     "analysis": "docs/03-analysis/legal-corpus-coverage.analysis.md",
     "actAt": "2026-08-25",
     "mergedAt": "2026-08-26",
-    "pr": 58
+    "pr": 58,
+    "reportAt": "2026-08-27",
+    "report": "docs/04-report/features/legal-corpus-coverage.report.md",
+    "keyFinding": "실측이 네 번 방향을 바꿈(착수 가설 반증→Plan 처방 무효→계층 이동→2단 추가). Q6이 게시판을 100% 정지시키던 설계 결함을 경로 리뷰가 적발, 사용자 지시로 2/3 임계로 축소."
   },
   "bm25-memory-scaling": {
     "phase": "archived",
