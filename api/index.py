@@ -110,7 +110,29 @@ def _restore_fn(session_id: str) -> dict | None:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    """헬스체크 + BM25 적재 상태.
+
+    BM25는 실패해도 `search_hybrid`가 Dense-only로 **조용히** 흡수하므로,
+    프로덕션에서 하이브리드 검색이 살아 있는지 확인할 외부 수단이 없었다.
+    특히 `bm25_corpus.jsonl.gz` 커밋 누락은 구 배열 포맷(메모리 300MB↑)으로
+    조용히 되돌아가거나, 그 파일마저 없으면 Dense-only가 된다 — 어느 쪽도
+    응답 품질로만 나타난다. `src`가 그 진단의 단일 신호다.
+
+    로드를 **유발하지 않는다**(전역 상태만 읽는다) — 헬스체크가 400MB 로드를
+    트리거하면 그 자체가 장애 요인이 된다.
+    """
+    info: dict = {"status": "ok"}
+    try:
+        from app.core import bm25_search as _bm
+
+        info["bm25"] = {
+            "loaded": _bm._bm25_index is not None,
+            "docs": len(_bm._bm25_corpus) if _bm._bm25_corpus else 0,
+            "src": _bm._loaded_src,
+        }
+    except Exception:      # 관측 실패가 헬스체크를 죽이지 않는다
+        pass
+    return info
 
 
 # ── 챗봇 남용 가드 (chatbot-security) ────────────────────────────────────────

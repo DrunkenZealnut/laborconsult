@@ -4,7 +4,7 @@
     python build_bm25_corpus.py
 
 출력:
-    data/bm25_corpus.json.gz — BM25 검색용 코퍼스 (커밋 대상, raw json은 gitignore)
+    data/bm25_corpus.jsonl.gz — BM25 검색용 코퍼스 (커밋 대상, raw json은 gitignore)
 """
 
 from __future__ import annotations
@@ -106,18 +106,34 @@ def build_corpus() -> None:
     # gzip 출력 — Vercel 배포용 커밋 대상 (raw json은 .gitignore) (DB-1)
     # 임시 파일에 먼저 쓰고 성공 시에만 교체 — 쓰기 도중 중단돼도 기존 파일이 손상되지 않음
     import gzip
-    out_path = Path("data/bm25_corpus.json.gz")
+    # **JSONL**(한 줄 = 문서 1건)로 쓴다 — 배열이면 로더가 `json.load()`로 전체를
+    # 파싱해야 하고, 그때 코퍼스 dict 전체와 토큰 리스트가 **동시에** 살아 있어
+    # RSS 피크가 692MB까지 올라간다(Vercel 한도 1024MB). 줄 단위면 한 문서씩
+    # 처리하고 놓아줄 수 있어 415MB로 내려간다(bm25-memory-scaling 실측).
+    # gzip 압축률은 배열과 같다(19.8MB).
+    out_path = Path("data/bm25_corpus.jsonl.gz")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    legacy_path = Path("data/bm25_corpus.json.gz")   # 구 포맷(급감 검사 폴백용)
 
     # 급감 가드 — NS별 0건 검사(위)를 통과해도 페이지네이션이 조기 종료하면
     # 각 NS가 '일부'만 담긴 채 정상으로 보인다. 코퍼스는 단조 증가가 정상이고
     # (삭제는 prune 정도), 20% 넘는 감소는 수집 결함을 의심할 신호다.
     # gz 산출물이라 커밋 diff로 내용을 검토할 수 없어 이 자동 검사가 유일한 방어다.
-    if out_path.exists():
+    # 전환 첫 실행에는 신 포맷이 없다 — 구 포맷을 기준으로 비교해야 급감 검사가
+    # 한 번 비는 일이 없다(그 한 번이 하필 결함 있는 빌드일 수 있다).
+    prev_path = out_path if out_path.exists() else legacy_path
+    if prev_path.exists():
         try:
-            with gzip.open(out_path, "rt", encoding="utf-8") as f:
-                prev_count = len(json.load(f))
+            with gzip.open(prev_path, "rt", encoding="utf-8") as f:
+                # 앞 64바이트에서 첫 실질 문자를 본다 — `read(1)`은 파일이
+                # 공백·BOM으로 시작하면 빈 문자열이 되어 JSONL로 오판하고,
+                # 한 줄짜리 배열을 1건으로 세어 **급감 가드를 조용히 무효화**한다
+                # (0.8 × 1보다 작은 값은 없다). 이 가드가 유일한 방어다.
+                head = f.read(64).lstrip("\ufeff \t\r\n")[:1]
+                f.seek(0)
+                prev_count = (len(json.load(f)) if head == "["
+                              else sum(1 for ln in f if ln.strip()))
         except Exception as e:                      # 기존 파일 손상은 차단 사유가 아니다
             print(f"\n[경고] 기존 코퍼스를 읽지 못해 급감 검사를 건너뜁니다: {e}")
             prev_count = 0
@@ -129,7 +145,8 @@ def build_corpus() -> None:
             sys.exit(1)
 
     with gzip.open(tmp_path, "wt", encoding="utf-8") as f:
-        json.dump(corpus, f, ensure_ascii=False, separators=(",", ":"))
+        for doc in corpus:
+            f.write(json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n")
     tmp_path.replace(out_path)
 
     size_mb = out_path.stat().st_size / 1e6

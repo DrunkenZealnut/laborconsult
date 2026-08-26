@@ -45,6 +45,12 @@ jobs:
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 
+      # 메모리는 사람이 기억해서 재는 값이었고, 그래서 RSS가 Vercel 한도의
+      # 119%가 될 때까지 아무도 몰랐다. 초과 시 하이브리드 검색이 조용히
+      # Dense-only로 떨어진다 — 경고가 아니라 실패로 둔다.
+      - name: BM25 메모리·검색 동일성 테스트
+        run: python3 test_bm25_memory.py
+
       - name: 답변 렌더러 회귀 테스트
         run: node --test test_answer_renderer.js
 
