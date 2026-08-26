@@ -82,11 +82,11 @@ python3 test_llm_fallback.py      # LLM 폴백(빈응답·절단·전환 하트�
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
-# 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.json.gz 커밋 필수
+# 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.jsonl.gz 커밋 필수
 # (gz 미커밋 시 프로덕션 하이브리드 검색이 Dense-only로 폴백됨)
 # 저장 전 가드 3종: NS 조회 예외 / NS 0건 / 직전 대비 20% 초과 감소 → 저장 건너뛰고 기존 파일 보존.
 # gz라 커밋 diff로 내용을 볼 수 없어(크기 변화만 보임) 이 자동 검사가 유일한 방어다.
-python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.json.gz
+python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.jsonl.gz
 
 # NLRC 판정사례 번들 갱신 (odcloud API 키 필요, 주기 실행 후 커밋)
 python3 refresh_nlrc_cases.py     # odcloud → data/nlrc_cases.json
@@ -292,8 +292,8 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - **Chunking**: Section-based (h2/h3) split, max 700 chars, 80 char overlap. Critical: `split_by_size` must have `end >= len(text): break` guard to prevent tiny trailing chunks.
 - **Embedding**: OpenAI text-embedding-3-small (1536 dim)
 - **Vector DB**: Pinecone Serverless (AWS us-east-1, cosine metric), 3 namespaces
-- **BM25 로드에는 문자열 인터닝이 필수다** — 토큰의 **94.1%가 중복**이라(실측: 549만 토큰 / 고유 32.6만) 인터닝 없이는 76,983문서에서 RSS가 **1,218MB**가 되어 Vercel 기본 한도 1024MB를 **넘는다**. 인터닝 적용 시 **683MB(67%)**, 로드 시간·검색 결과는 불변. `source_type`·`title`·`section`·`book_id`만 대상이고 `text`는 제외한다(문서마다 달라 공유될 일이 없다). ⚠️ 이 여유는 **문서 1만 건당 약 +90MB**로 잠식되므로 대형 적재 전 재측정할 것 — 초과 시 소프트 MemoryError는 Dense-only로 조용히 흡수되고(하이브리드가 반쪽이 된다) 하드 OOM-kill은 방어 불가다.
-- **Hybrid Search**: `bm25_search.py` (BM25 keyword, 쿼리별 검색 후 `rrf_merge_ranked_lists()` 병합) + Dense (Pinecone) → Reciprocal Rank Fusion (`search_hybrid()` in `rag.py`). BM25 uses `rank_bm25` with Mecab tokenizer (fallback: regex). Corpus built by `build_bm25_corpus.py` → `data/bm25_corpus.json.gz`(**커밋 대상** — 없으면 프로덕션이 Dense-only 폴백, raw json은 gitignore). Graceful fallback to Dense-only if BM25 unavailable.
+- **BM25 로드는 스트리밍 + 인터닝 둘 다 필요하다** — 둘 중 하나만으로는 Vercel 한도(1024MB)를 지키지 못한다. 실측(76,983문서): 배열+인터닝 없음 **1,218MB(119%)** → 배열+인터닝 692MB(68%) → **JSONL 스트리밍+인터닝 400MB(39%)**. ⚠️ **CI(Linux) 실측은 370MB(36%)이고 구 배열 경로도 384MB**다 — 플랫폼별 절대값·절감폭이 크게 달라(macOS 42% vs Linux 3.6%) **판단은 Linux 값으로** 해야 한다. 로드 시간도 macOS 2.6초 vs Linux 7.0초로 콜드 스타트에 그대로 얹힌다. 스트리밍이 효과를 내는 이유는 배열 파싱 시 코퍼스 dict 전체와 토큰 리스트가 **동시에** 살아 있기 때문이고, 인터닝이 필요한 이유는 토큰의 94.1%가 중복이기 때문이다(549만 → 고유 32.6만). ⚠️ **원본 줄 dict를 그대로 보관하면 스트리밍 이득이 사라진다** — `_slim()`이 필요한 필드만 새 dict로 옮긴다. 회귀는 `test_bm25_memory.py`(별도 프로세스에서 RSS 측정, 상한 550MB, **초과 시 실패**)와 `test_offline_units.py::test_bm25_interning`. **상한 초과 시 상한을 올리는 것이 기본 대응이 아니다** — 그때가 다음 구조 개선(text 미보관+fetch 보충·샤딩·Vercel 메모리 상향)을 검토할 시점이고, 대안별 실측 비교는 `docs/02-design/features/bm25-memory-scaling.design.md` §1에 있다.
+- **Hybrid Search**: `bm25_search.py` (BM25 keyword, 쿼리별 검색 후 `rrf_merge_ranked_lists()` 병합) + Dense (Pinecone) → Reciprocal Rank Fusion (`search_hybrid()` in `rag.py`). BM25 uses `rank_bm25` with Mecab tokenizer (fallback: regex). Corpus built by `build_bm25_corpus.py` → `data/bm25_corpus.jsonl.gz`(**커밋 대상** — 없으면 프로덕션이 Dense-only 폴백, raw는 gitignore). **JSONL(줄 단위)이다** — 배열이면 로더가 전체를 파싱해야 해서 RSS 피크가 692MB까지 오른다(bm25-memory-scaling). 구 `.json.gz`도 계속 읽지만 그 경로는 피크가 높다. Graceful fallback to Dense-only if BM25 unavailable.
 - **Adaptive Retrieval**: `classify_complexity()` in `query_decomposer.py` scores query complexity → SIMPLE (top_k=8, no decomposition) / MODERATE (top_k=15) / COMPLEX (top_k=20, force decomposition, Self-RAG enabled). `COMPLEXITY_PARAMS` dict drives all dynamic parameters.
 - **Multi-query**: `query_decomposer.py` decomposes user query via LLM, merged with rule-based queries, deduped. `force` param bypasses `_should_decompose()` for COMPLEX queries.
 - **Reranking**: Cohere Rerank v3.5 (optional, falls back to cosine score sorting)

@@ -23,13 +23,29 @@ logger = logging.getLogger(__name__)
 # ── BM25 인덱스 (글로벌 캐시) ────────────────────────────────────────────
 
 _bm25_index = None       # rank_bm25.BM25Okapi | None
-_bm25_corpus = None      # list[dict] — [{id, text, title, section, source_type}, ...]
+_bm25_corpus = None      # list[dict] — _KEEP_FIELDS만 보관(book_id 포함)
 _bm25_loaded = False
+_loaded_src: str | None = None   # 어느 코퍼스 파일을 읽었는지(/api/health 관측용)
 
 _BM25_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 # gz(배포용 커밋 대상) 우선, raw json(로컬 빌드 산출물) 폴백 (DB-1)
-BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
+# JSONL(신) 우선, JSON 배열(구) 폴백. **양쪽을 계속 지원한다** — 코드와 데이터의
+# 배포 시점이 어긋날 수 있어서다(코드가 먼저 나가면 구 gz를, 데이터가 먼저 나가면
+# 신 gz를 읽어야 한다). 구 포맷 지원 제거는 전환이 끝난 뒤 별도 커밋으로 한다.
+BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.jsonl.gz",
+                     _BM25_DATA_DIR / "bm25_corpus.jsonl",
+                     _BM25_DATA_DIR / "bm25_corpus.json.gz",
                      _BM25_DATA_DIR / "bm25_corpus.json"]
+
+# 코퍼스에서 보관할 필드 — 원본 줄 dict를 그대로 담으면 스트리밍의 의미가 없다
+# (같은 객체를 계속 들고 있게 된다). 검색 결과 반환에 쓰이는 것만 옮긴다.
+# **build_bm25_corpus.py가 이 상수를 import한다** — 두 곳에서 손으로 선언하면
+# 빌더가 필드를 추가해도 `_slim()`이 말없이 버려, Dense 히트에는 있고 BM25
+# 히트에만 빈 값인 상태가 된다(경로 리뷰 M4). 회귀는 test_offline_units.py.
+CORPUS_FIELDS = ("id", "text", "title", "section", "source_type", "book_id")
+_KEEP_FIELDS = CORPUS_FIELDS
+# 그중 반복이 큰 것만 인터닝한다(text는 문서마다 달라 공유될 일이 없다).
+_INTERN_FIELDS = ("title", "section", "source_type", "book_id")
 # 실측(60,174건 전체 로드 시 BM25Okapi 인덱스까지 프로세스 RSS 약 815MB, 2026-07-14).
 # "여유"라 부를 수준은 아님 — Vercel 함수 메모리가 1GB라면 남는 건 ~185MB뿐이고,
 # 여기 도달하기 전에 이 프로세스 다른 부분(FastAPI·다른 SDK 클라이언트·GraphRAG 등)도
@@ -57,16 +73,31 @@ BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.json.gz",
 #   로드 시간은 2.6초로 동일하고 검색 결과도 불변이다(같은 토큰 문자열을 공유할
 #   뿐 값이 바뀌지 않는다).
 #
-#   ⚠️ 이 여유는 **코퍼스 증가로 다시 잠식된다.** 인터닝은 상수 배수를 줄일 뿐
-#   증가율을 바꾸지 않는다 — 대략 문서 1만 건당 +90MB다. 다음 대형 적재 전에
-#   재측정할 것. 소프트 MemoryError는 search_hybrid의 broad except가 Dense-only로
-#   흡수하지만 그 경우 **하이브리드 검색이 조용히 반쪽이 되고**, OS 하드
-#   OOM-kill은 방어 불가다. 근본 완화는 스트리밍 파싱·샤딩·외부 서비스다.
+#   ⚠️ 이 여유는 **코퍼스 증가로 다시 잠식된다** — 대략 문서 1만 건당 +90MB다.
+#   소프트 MemoryError는 search_hybrid의 broad except가 Dense-only로 흡수하지만
+#   그 경우 **하이브리드 검색이 조용히 반쪽이 되고**, OS 하드 OOM-kill은 방어 불가다.
 #
-# ⚠️ BM25_MAX_DOCS는 **메모리 상한이 아니다.** 절단(load_bm25_corpus)이
-# json.load 이후에 일어나므로 가장 큰 할당은 이미 끝난 뒤다. 이 값을 낮춰도
-# 피크 RSS는 줄지 않는다 — 줄이려면 스트리밍 파싱이나 외부 저장이 필요하고,
-# 그건 이 상수를 만지는 일이 아니다.
+# 최종 실측(2026-08-26, JSONL 스트리밍 전환 후): 로컬 macOS **약 410MB(40%)**, 로드 2.6초.
+#
+# ⚠️ **CI(Linux) 실측은 다르다** — 370MB(36%), 로드 **7.0초**, 그리고 구 배열 경로도
+#   384MB뿐이다(로컬은 704MB). 즉 **플랫폼별 절대값·절감폭이 크게 다르다**:
+#     macOS: 704 → 409MB (42% 절감)
+#     Linux: 384 → 370MB (3.6% 절감)   ← 프로덕션이 Linux다
+#   할당자·페이지 회수 정책 차이로 보인다. 판단 근거로는 **Linux 값을 쓸 것** —
+#   "한도의 119%"라는 최초 진단도 macOS 측정이었고, Linux 기준으로는 그만큼
+#   임박한 위험이 아니었을 수 있다. 다만 스트리밍이 더 낮다는 방향은 두 플랫폼에서
+#   일치하고, 증가율을 낮추는 구조적 이점은 그대로다.
+#   로드 시간 7.0초는 콜드 스타트 첫 요청에 그대로 얹힌다(개선 대상이 아니었다).
+#   스트리밍이 배열 파싱의 이중 상주(코퍼스 dict + 토큰 리스트)를 없앤 결과다.
+#   구 배열 폴백 경로는 여전히 약 700MB(69%)이므로 신 포맷 커밋이 전제다.
+#   회귀는 test_bm25_memory.py(별도 프로세스, 상한 550MB, 초과 시 **실패**).
+#   남은 완화 후보: text 미보관+fetch 보충 · 샤딩 · Vercel 메모리 상향
+#   (대안별 실측은 docs/02-design/features/bm25-memory-scaling.design.md §1).
+#
+# BM25_MAX_DOCS의 의미가 **스트리밍 전환으로 바뀌었다**(2026-08-26).
+#   · JSONL 경로: 루프 안에서 절단하므로 이 값이 **실제로 메모리를 제한한다.**
+#   · 구 배열 경로(폴백): 여전히 json.load 이후 절단이라 피크를 줄이지 못한다.
+# 즉 지금은 신 포맷에서만 유효한 상한이다.
 BM25_MAX_DOCS = 100_000
 
 
@@ -121,16 +152,103 @@ def _tokenize_ko(text: str) -> list[str]:
 
 # ── BM25 코퍼스 로드 ─────────────────────────────────────────────────────
 
+def _slim(doc: dict) -> dict:
+    """원본 줄 dict → 보관용 dict.
+
+    **원본을 그대로 담지 않는 것이 핵심**이다 — 그대로 append하면 파싱된 객체를
+    계속 참조하게 되어 스트리밍의 이득이 사라진다. 검색 결과 반환에 쓰이는
+    필드만 새 dict로 옮기고, 반복이 큰 것은 인터닝한다.
+    """
+    out = {}
+    for key in _KEEP_FIELDS:
+        val = doc.get(key)
+        if val is None:
+            continue
+        if key in _INTERN_FIELDS and isinstance(val, str):
+            val = sys.intern(val)
+        out[key] = val
+    return out
+
+
+def _load_streaming(corpus_path) -> tuple[list[dict], list[list[str]]]:
+    """코퍼스를 읽어 (보관용 문서 목록, 토큰 리스트)를 만든다.
+
+    **JSONL이면 한 줄씩 처리해 원본 dict를 즉시 놓아준다.** 배열(구 포맷)은
+    `json.load()`가 전체를 파싱할 수밖에 없어 피크가 높다 — 폴백 경로다.
+
+    실측(76,983문서, 인터닝 포함):
+      배열 일괄  692MB / 2.7초
+      JSONL 스트리밍  415MB / 2.8초   ← Vercel 1024MB의 41%
+
+    토큰 인터닝은 **여기서도 반드시 유지**한다. 토큰의 94.1%가 중복이라
+    (549만 → 고유 32.6만) 인터닝이 없으면 스트리밍을 해도 한도를 넘는다.
+    회귀 `test_offline_units.py::test_bm25_interning`이 고정한다.
+    """
+    import gzip
+
+    opener = (gzip.open if str(corpus_path).endswith(".gz") else open)
+    corpus: list[dict] = []
+    tokenized: list[list[str]] = []
+    is_jsonl = corpus_path.name.endswith((".jsonl", ".jsonl.gz"))
+
+    with opener(corpus_path, "rt", encoding="utf-8") as f:
+        if is_jsonl:
+            for lineno, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                if len(corpus) >= BM25_MAX_DOCS:
+                    # 코퍼스는 네임스페이스 순차 수집이라 파일 **뒷부분이 qa**다
+                    # (build_bm25_corpus.py의 NS 순서). 상한에 걸리면 무작위가
+                    # 아니라 최대 코퍼스인 Q&A의 꼬리가 통째로 잘린다 — Dense가
+                    # 받쳐주므로 증상이 "특정 주제만 BM25 미도달"로만 나타난다.
+                    logger.warning("BM25_MAX_DOCS(%d) 도달 — 코퍼스 뒷부분이 "
+                                   "잘렸습니다(주로 qa 네임스페이스)", BM25_MAX_DOCS)
+                    break            # 스트리밍이라 이 상한이 실제 메모리를 제한한다
+                try:
+                    doc = json.loads(line)
+                except json.JSONDecodeError as e:
+                    # **전량 중단이 옳다** — 줄 단위 skip은 "부분 데이터가 정상으로
+                    # 보이는" 실패를 만든다(빌더에 급감 가드가 있는 이유와 같다).
+                    # 다만 어디서 깨졌는지는 남겨야 진단이 가능하다.
+                    raise ValueError(
+                        f"{corpus_path.name} {lineno}번째 줄 파싱 실패 "
+                        f"(그때까지 {len(corpus)}건 읽음): {e}") from e
+                tokenized.append([sys.intern(w)
+                                  for w in _tokenize_ko(doc.get("text", ""))])
+                corpus.append(_slim(doc))
+        else:
+            # 구 포맷 — 전체 파싱이 불가피하다. 파싱본을 빨리 놓아주려고
+            # 순회하며 옮긴 뒤 원본을 해제한다(피크는 낮아지지 않는다).
+            #
+            # ⚠️ 빌더는 더 이상 이 포맷을 쓰지 않는다 — 여기 진입했다는 것은
+            # 신 포맷이 배포본에 없다는 뜻이고, 그 파일은 **갱신이 멈춘 코퍼스**일
+            # 수 있다(law-version-drift와 같은 실패 클래스: 낡은 데이터를 조용히
+            # 계속 쓴다). 메모리도 약 300MB 높다.
+            logger.warning("BM25: 구 배열 포맷(%s) 사용 — 갱신이 멈춘 코퍼스일 수 "
+                           "있고 메모리 피크가 약 300MB 높습니다. "
+                           "bm25_corpus.jsonl.gz 커밋을 확인하세요.", corpus_path.name)
+            raw = json.load(f)
+            for doc in raw[:BM25_MAX_DOCS]:
+                tokenized.append([sys.intern(w)
+                                  for w in _tokenize_ko(doc.get("text", ""))])
+                corpus.append(_slim(doc))
+            del raw
+            gc.collect()
+    return corpus, tokenized
+
+
 def load_bm25_corpus() -> bool:
     """BM25 코퍼스 로드 (서버 시작 시 1회).
 
-    data/bm25_corpus.json 형식:
-    [{"id": "...", "text": "...", "title": "...", "section": "...", "source_type": "..."}, ...]
+    포맷: `data/bm25_corpus.jsonl.gz` (한 줄 = 문서 1건, 신)
+          `data/bm25_corpus.json.gz`  (JSON 배열, 구 — 폴백. 피크가 약 300MB 높다)
+    문서: {"id", "text", "title", "section", "source_type", "book_id"?}
 
     Returns:
         True if loaded successfully, False otherwise
     """
-    global _bm25_index, _bm25_corpus, _bm25_loaded
+    global _bm25_index, _bm25_corpus, _bm25_loaded, _loaded_src
 
     if _bm25_loaded:
         return _bm25_index is not None
@@ -139,43 +257,19 @@ def load_bm25_corpus() -> bool:
 
     corpus_path = next((p for p in BM25_CORPUS_PATHS if p.exists()), None)
     if corpus_path is None:
-        logger.info("BM25 corpus not found: %s — BM25 disabled", BM25_CORPUS_PATHS[0])
+        # **warning 이상이어야 한다.** 코퍼스 미커밋은 프로덕션이 조용히
+        # Dense-only로 떨어지는 가장 흔한 원인이고, 이 로그가 유일한 신호다.
+        logger.warning("BM25 corpus not found: %s — 하이브리드 검색이 "
+                       "Dense-only로 동작합니다(gz 커밋 누락 확인)",
+                       BM25_CORPUS_PATHS[0])
         return False
 
     try:
         from rank_bm25 import BM25Okapi
 
         start = time.monotonic()
-        if corpus_path.suffix == ".gz":
-            import gzip
-            with gzip.open(corpus_path, "rt", encoding="utf-8") as f:
-                _bm25_corpus = json.load(f)
-        else:
-            with open(corpus_path, "r", encoding="utf-8") as f:
-                _bm25_corpus = json.load(f)
+        _bm25_corpus, tokenized = _load_streaming(corpus_path)
 
-        if len(_bm25_corpus) > BM25_MAX_DOCS:
-            _bm25_corpus = _bm25_corpus[:BM25_MAX_DOCS]
-
-        # ── 문자열 인터닝 (메모리) ───────────────────────────────────────
-        # 토큰의 **94.1%가 중복**이다(실측: 549만 토큰 / 고유 32.6만). 인터닝
-        # 없이는 같은 형태소가 문서마다 별도 str 객체가 되어 토큰 리스트만
-        # ~500MB를 쓴다. 실측 효과(76,983문서):
-        #   토큰화 피크  934MB → 536MB
-        #   최종 RSS   1,218MB → 678MB  (Vercel 1024MB의 119% → 66%)
-        # 이 최적화가 없으면 코퍼스가 이 규모에서 **한도를 넘는다.**
-        #
-        # `text`는 인터닝하지 않는다 — 문서마다 달라 공유될 일이 없고, 사전
-        # 등록 비용만 든다. 반복이 큰 필드만 대상으로 한다(source_type은 6종뿐,
-        # title·section은 같은 문서의 청크들이 공유한다).
-        for doc in _bm25_corpus:
-            for key in ("source_type", "title", "section", "book_id"):
-                val = doc.get(key)
-                if isinstance(val, str):
-                    doc[key] = sys.intern(val)
-
-        tokenized = [[sys.intern(w) for w in _tokenize_ko(doc.get("text", ""))]
-                     for doc in _bm25_corpus]
         _bm25_index = BM25Okapi(tokenized)
         # BM25Okapi는 doc_freqs·idf·doc_len만 보관하고 원본 토큰 리스트를 참조하지
         # 않는다 — 명시 해제로 피크 이후 상주 메모리를 낮춘다.
@@ -183,13 +277,24 @@ def load_bm25_corpus() -> bool:
         gc.collect()
 
         elapsed = (time.monotonic() - start) * 1000
-        logger.info("BM25 loaded: %d docs, %.0fms", len(_bm25_corpus), elapsed)
+        # **어느 파일을 읽었는지 남긴다.** 신·구 포맷의 로그가 같으면 "고쳤다고
+        # 믿는데 프로덕션은 구 경로(700MB)"가 아무 신호 없이 성립한다(경로 리뷰 H2).
+        _loaded_src = corpus_path.name
+        logger.info("BM25 loaded: %d docs, %.0fms, src=%s",
+                    len(_bm25_corpus), elapsed, corpus_path.name)
         return True
 
     except ImportError:
         logger.warning("rank_bm25 not installed — BM25 disabled")
         return False
     except Exception as e:
+        # **코퍼스를 반드시 놓아준다.** _bm25_corpus는 인덱스 구축 **전**에 채워지므로,
+        # BM25Okapi가 MemoryError로 죽으면 쓸모없는 코퍼스 400MB가 프로세스 수명 내내
+        # 남는다 — 메모리가 모자라 실패한 상황에서 메모리를 붙들어 이후 요청
+        # (FastAPI·Pinecone·GraphRAG)의 OOM 위험을 키운다(경로 리뷰 M7).
+        _bm25_corpus = None
+        _bm25_index = None
+        gc.collect()
         logger.warning("BM25 load failed: %s", e)
         return False
 

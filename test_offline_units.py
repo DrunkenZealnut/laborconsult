@@ -743,33 +743,72 @@ def test_colloquial_map() -> None:
 
 
 def test_bm25_interning() -> None:
-    """BM25 로드의 문자열 인터닝 (legal-corpus-coverage Act, A-17).
+    """BM25 로드의 메모리 최적화 — 인터닝 + 스트리밍 (bm25-memory-scaling).
 
-    막는 실패: 인터닝 없이 76,983문서를 로드하면 RSS가 **1,218MB**로 Vercel
-    기본 한도 1024MB를 넘는다(실측 2026-08-25). 넘으면 소프트 MemoryError는
-    `search_hybrid`가 Dense-only로 조용히 흡수해 **하이브리드 검색이 반쪽**이
-    되고, 하드 OOM-kill은 방어 불가다. 인터닝 적용 시 683MB(67%).
+    막는 실패: 둘 중 하나만 빠져도 Vercel 한도(1024MB)를 넘고, 넘으면 소프트
+    MemoryError를 `search_hybrid`가 Dense-only로 **조용히 흡수**한다.
+    실측(76,983문서): 배열+인터닝없음 1,218MB(119%) → 배열+인터닝 692MB(68%)
+    → JSONL 스트리밍+인터닝 **400MB(39%)**.
 
-    토큰의 94.1%가 중복이라(549만 → 고유 32.6만) 효과가 크다. 코퍼스 로드는
-    느리므로 여기서는 **구현이 살아 있는지**만 구조로 고정한다.
+    **문자열 매칭이 아니라 동작으로 검증한다** — 구현 위치가 바뀌면 매칭은
+    깨지지만 기능은 멀쩡한 경우가 있고, 그 실패는 실제 결함처럼 보인다
+    (스트리밍 전환에서 실제로 겪음). 여기서는 인터닝의 **효과**(같은 값이 같은
+    객체가 되는가)를 직접 확인한다.
+
+    피크 RSS 자체는 `test_bm25_memory.py`가 별도 프로세스에서 잰다.
     """
-    import re as _re
-    from pathlib import Path
+    import re
 
-    src = Path("app/core/bm25_search.py").read_text(encoding="utf-8")
-    code = "\n".join(ln for ln in src.splitlines()
-                     if not ln.lstrip().startswith("#"))
-    assert "import sys" in code, "sys.intern 사용을 위한 import"
-    assert _re.search(r"sys\.intern\(w\)\s+for\s+w\s+in\s+_tokenize_ko", code), \
-        "토큰 인터닝이 사라졌다 — 이것이 없으면 RSS가 한도를 넘는다(1,218MB)"
-    assert _re.search(r'for key in \("source_type", "title", "section", "book_id"\)', code), \
-        "반복 필드 인터닝이 사라졌다"
-    # text는 인터닝 대상이 아니다 — 문서마다 달라 공유되지 않고 사전만 키운다
-    assert '"text"' not in _re.search(
-        r'for key in \([^)]*\)', code).group(0), "text를 인터닝 대상에 넣지 말 것"
-    assert _re.search(r"del tokenized\s*\n\s*gc\.collect\(\)", code), \
-        "토큰 리스트 명시 해제가 사라졌다"
-    print("  ✅ BM25 인터닝: 토큰·반복필드 인터닝 + 명시 해제 유지")
+    from pathlib import Path as _Path
+
+    from app.core import bm25_search as B
+
+    # ① 반복 필드 인터닝 — 서로 다른 dict의 같은 값이 **같은 객체**가 되는가.
+    #
+    # ⚠️ 입력은 반드시 **런타임 생성 문자열**이어야 한다. 같은 리터럴을 쓰면
+    #    파이썬이 컴파일 타임에 이미 하나의 객체로 만들어, `sys.intern()`을
+    #    제거해도 `is` 검사가 통과한다 — 검증이 통째로 무효가 된다
+    #    (CodeRabbit 리뷰 2026-08-27에서 지적, 실제로 그 상태였다).
+    t1, t2 = "".join(["제", "목"]), "".join(["제", "목"])
+    s1, s2 = "".join(["q", "a"]), "".join(["q", "a"])
+    assert t1 is not t2 and s1 is not s2, "입력이 이미 같은 객체 — 이 검증은 무의미하다"
+
+    a = B._slim({"id": "x1", "text": "본문A", "title": t1, "source_type": s1})
+    b = B._slim({"id": "x2", "text": "본문B", "title": t2, "source_type": s2})
+    assert a["title"] is b["title"], "title 인터닝이 동작하지 않는다"
+    assert a["source_type"] is b["source_type"], "source_type 인터닝이 동작하지 않는다"
+    # text는 인터닝 대상이 아니다(문서마다 달라 공유될 일이 없고 사전만 키운다)
+    assert "text" in B._KEEP_FIELDS and "text" not in B._INTERN_FIELDS
+
+    # ② 원본 dict를 그대로 보관하지 않는다 — 그러면 스트리밍 이득이 사라진다
+    src = {"id": "x3", "text": "t", "title": "T", "extra": "버려야 함"}
+    slim = B._slim(src)
+    assert slim is not src and "extra" not in slim, "원본 참조 보관 금지"
+
+    # ③ JSONL 경로가 우선이고 구 배열 포맷 폴백이 남아 있다(배포 순서 대비)
+    names = [p.name for p in B.BM25_CORPUS_PATHS]
+    assert names[0].endswith(".jsonl.gz"), names
+    assert any(n.endswith(".json.gz") for n in names), "구 포맷 폴백 유지"
+
+    # ④ 빌더가 만드는 필드 ⊆ 로더가 보관하는 필드 — 두 파일에 손으로 선언돼 있어
+    #    갈라지기 쉽다. `_slim()`은 모르는 키를 **말없이 버리므로**, 빌더가 필드를
+    #    추가하고 로더를 잊으면 Dense 히트에는 있고 BM25 히트에만 빈 값이 된다.
+    builder = _Path("build_bm25_corpus.py").read_text(encoding="utf-8")
+    entry = re.search(r"entry = \{(.*?)\}", builder, re.S)
+    assert entry, "빌더의 entry 리터럴을 찾지 못했다"
+    built = set(re.findall(r'"(\w+)":', entry.group(1)))
+    built.update(re.findall(r'entry\["(\w+)"\]', builder))   # 조건부 추가(book_id)
+    missing = built - set(B.CORPUS_FIELDS)
+    assert not missing, f"빌더가 만드는데 로더가 버리는 필드: {missing}"
+
+    # ⑤ 토큰 인터닝이 로더에 남아 있는지(구조) — 이건 동작 검증이 어려워 소스로 본다
+    code = "\n".join(
+        ln for ln in _Path("app/core/bm25_search.py").read_text(encoding="utf-8")
+        .splitlines() if not ln.lstrip().startswith("#"))
+    assert "sys.intern(w)" in code, \
+        "토큰 인터닝이 사라졌다 — 토큰의 94.1%가 중복이라 이것 없이는 한도를 넘는다"
+    assert "del tokenized" in code, "토큰 리스트 명시 해제가 사라졌다"
+    print("  ✅ BM25 메모리: 인터닝 동작·필드 선별·JSONL 우선·토큰 인터닝 유지")
 
 
 def test_upload_namespace_contract() -> None:

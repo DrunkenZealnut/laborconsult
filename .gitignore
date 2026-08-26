@@ -15,6 +15,7 @@ _contextual_upload_progress.json
 
 # BM25 raw 코퍼스 (gz만 커밋 — build_bm25_corpus.py 산출물)
 data/bm25_corpus.json
+data/bm25_corpus.jsonl
 
 # pip 리다이렉트 오류 산출물 (예: `pip install 'pkg>=1.0'`에서 따옴표 누락 시 생성)
 =*
