@@ -46,7 +46,7 @@ Plan §5의 "피크 ≤ 400MB"는 실측 전 임의값이었다. 실질 기준�
 
 **JSONL**(줄 단위 JSON)로 바꾸면 한 문서씩 읽어 토큰화하고 그 줄의 dict를 즉시 놓아줄 수 있다.
 
-```
+```text
 data/bm25_corpus.jsonl.gz   ← 신규 (한 줄 = 문서 1건)
 data/bm25_corpus.json.gz    ← 구 포맷, 당분간 폴백으로 계속 읽는다
 ```
@@ -83,7 +83,7 @@ def load_bm25_corpus() -> bool:
 
 지금까지 메모리는 **사람이 기억해서 재는 값**이었고, 그래서 119%가 될 때까지 아무도 몰랐다. 이번 사이클의 가장 오래 남는 산출물은 이 테스트다.
 
-```
+```text
 test_bm25_memory.py (신규, CI 편입)
   1) 별도 프로세스에서 load_bm25_corpus() 실행
   2) ru_maxrss를 상한과 비교, 초과 시 실패

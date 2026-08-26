@@ -763,9 +763,18 @@ def test_bm25_interning() -> None:
 
     from app.core import bm25_search as B
 
-    # ① 반복 필드 인터닝 — 서로 다른 dict의 같은 값이 **같은 객체**여야 한다
-    a = B._slim({"id": "x1", "text": "본문A", "title": "제목", "source_type": "qa"})
-    b = B._slim({"id": "x2", "text": "본문B", "title": "제목", "source_type": "qa"})
+    # ① 반복 필드 인터닝 — 서로 다른 dict의 같은 값이 **같은 객체**가 되는가.
+    #
+    # ⚠️ 입력은 반드시 **런타임 생성 문자열**이어야 한다. 같은 리터럴을 쓰면
+    #    파이썬이 컴파일 타임에 이미 하나의 객체로 만들어, `sys.intern()`을
+    #    제거해도 `is` 검사가 통과한다 — 검증이 통째로 무효가 된다
+    #    (CodeRabbit 리뷰 2026-08-27에서 지적, 실제로 그 상태였다).
+    t1, t2 = "".join(["제", "목"]), "".join(["제", "목"])
+    s1, s2 = "".join(["q", "a"]), "".join(["q", "a"])
+    assert t1 is not t2 and s1 is not s2, "입력이 이미 같은 객체 — 이 검증은 무의미하다"
+
+    a = B._slim({"id": "x1", "text": "본문A", "title": t1, "source_type": s1})
+    b = B._slim({"id": "x2", "text": "본문B", "title": t2, "source_type": s2})
     assert a["title"] is b["title"], "title 인터닝이 동작하지 않는다"
     assert a["source_type"] is b["source_type"], "source_type 인터닝이 동작하지 않는다"
     # text는 인터닝 대상이 아니다(문서마다 달라 공유될 일이 없고 사전만 키운다)
