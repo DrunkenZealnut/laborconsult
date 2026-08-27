@@ -944,7 +944,12 @@ def test_tokenizer_contract() -> None:
     """
     from app.core import bm25_search as B
 
-    T = B._tokenize_ko
+    # ⚠️ **정규식 경로를 지목한다.** T-a~T-j는 프로덕션 경로(정규식)의 계약이다.
+    #    `_tokenize_ko`를 쓰면 konlpy가 설치된 개발기에서 Mecab 분기를 타 전혀
+    #    다른 토큰이 나오고, 그러면 이 테스트가 프로덕션이 아닌 것을 검증한다 —
+    #    CI에 konlpy가 없어 **우연히** 통과할 뿐이다(CodeRabbit 2026-08-27).
+    #    T-e는 호출부가 `_tokenize_ko`(폴백 포함 디스패처)를 쓰는지 별도로 본다.
+    T = B._tokenize_regex
 
     # T-a — 같은 단어가 문맥 3종(공백·조사·구두점)에서 **동일 토큰**이어야 한다.
     #   구 구현은 셋이 전부 달랐다: `연차휴가 `→`연차휴`, `연차휴가를`→`연차휴가`,

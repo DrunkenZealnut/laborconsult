@@ -387,6 +387,22 @@ def _tokenize_ko(text: str, cache: dict | None = None) -> list[str]:
         except Exception:
             pass  # Mecab 실패 → 정규식 경로
 
+    return _tokenize_regex(text, cache)
+
+
+def _tokenize_regex(text: str, cache: dict | None = None) -> list[str]:
+    """정규식 경로 — **프로덕션이 실제로 타는 유일한 경로.**
+
+    `_tokenize_ko`에서 분리해 둔 이유는 **테스트가 이 경로를 지목할 수 있게**
+    하기 위해서다. konlpy가 설치된 개발기에서 `_tokenize_ko`를 부르면 Mecab
+    분기를 타 전혀 다른 토큰이 나오고, 그러면 정규식 계약 테스트(T-a~T-j)가
+    프로덕션이 아닌 것을 검증하게 된다 — CI에 konlpy가 없어 **우연히** 통과할
+    뿐이다. 모듈 상단의 "로컬 Mecab 수치를 프로덕션 근거로 쓰지 말 것" 경고와
+    같은 함정이라 구조로 막는다.
+
+    호출부(`_load_streaming`·`search_bm25`)는 계속 `_tokenize_ko`를 쓴다 —
+    폴백 분기가 프로덕션 동작의 일부이기 때문이다.
+    """
     # ⓪ NFC 정규화 — `_SPLIT_RE`의 `가-힣`은 **NFD(자모 분해) 문자열에 절대
     #    매치되지 않는다.** NFD 입력은 어절이 통째로 버려져 `[]`가 나온다(실측).
     #    웹 경로는 `abuse_guard.validate_message`가 NFC를 걸어 주지만

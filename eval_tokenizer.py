@@ -135,7 +135,7 @@ def _load_corpus_texts() -> list[str]:
     path = next((p for p in BM25_CORPUS_PATHS if p.exists()), None)
     if path is None:
         print(f"ERROR: 코퍼스 없음({BM25_CORPUS_PATHS[0]}) — "
-              f"build_bm25_corpus.py 실행 또는 gz 커밋 확인")
+              "build_bm25_corpus.py 실행 또는 gz 커밋 확인")
         sys.exit(2)
     opener = gzip.open if path.name.endswith(".gz") else open
     texts: list[str] = []
@@ -377,14 +377,15 @@ def main() -> int:
         for q, term, toks in m2_rows:
             print(f"   {term!r} 소실 — {q[:40]}… → {toks}")
 
-    print(f"\n[최빈 토큰 20] (불용어 후보 관찰용 — '경우'류는 의도적 보류)")
+    print("\n[최빈 토큰 20] (불용어 후보 관찰용 — '경우'류는 의도적 보류)")
     print("   " + ", ".join(f"{w}({c // 1000}k)" for w, c in vocab.most_common(20)))
 
     if args.discover:
         cands = discover_candidates(texts, vocab)
-        print(f"\n[보호어 후보 상위 40] — 원문 어절로 30회 이상인데 색인에 없는 것")
+        print("\n[보호어 후보 상위 40] — 원문 어절로 30회 이상인데 색인에 없는 것")
         print("   ⚠️ 대부분은 정상 절단(조사)이다. 도메인 용어만 골라 "
-              "PROTECTED_TERMS와 TOPIC_TERMS에 **함께** 넣을 것.")
+              "bm25_search.py의 PROTECTED_TERMS에 추가할 것 "
+              "(M2 검사 대상도 그 목록이라 자동으로 함께 커버된다).")
         for w, c in cands[:40]:
             print(f"   {w:<18} {c:>6,}  → 현재 색인형 {_tokenize_ko(w)}")
 
