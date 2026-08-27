@@ -142,10 +142,12 @@
     "pr": 59
   },
   "tokenizer-quality": {
-    "phase": "check",
+    "phase": "completed",
     "matchRate": 100,
     "iterationCount": 1,
-    "startedAt": "2026-08-27T00:00:00Z"
+    "startedAt": "2026-08-27T00:00:00Z",
+    "completedAt": "2026-08-27",
+    "pr": 60
   },
   "currentFeature": "tokenizer-quality"
 }
