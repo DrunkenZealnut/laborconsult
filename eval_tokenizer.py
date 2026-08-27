@@ -145,11 +145,14 @@ def _load_corpus_texts() -> list[str]:
             for line in f:
                 line = line.strip()
                 if line:
-                    texts.append(json.loads(line).get("text", ""))
+                    # `or ""` — `get(..., "")`이 아니다. `"text": null`이면
+                    # 기본값이 쓰이지 않고 None이 나와 토크나이저에서 터진다
+                    # (`_load_streaming::_ingest`와 같은 가드).
+                    texts.append(json.loads(line).get("text") or "")
                     if len(texts) >= BM25_MAX_DOCS:
                         break
         else:
-            texts = [d.get("text", "") for d in json.load(f)[:BM25_MAX_DOCS]]
+            texts = [d.get("text") or "" for d in json.load(f)[:BM25_MAX_DOCS]]
     if path.name != BM25_CORPUS_PATHS[0].name:
         print(f"  ⚠️ 구 포맷({path.name})을 읽었다 — 갱신이 멈춘 코퍼스일 수 있다")
     return texts
