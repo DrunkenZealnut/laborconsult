@@ -82,7 +82,7 @@ _INTERN_FIELDS = ("title", "section", "source_type", "book_id")
 #
 # 후속 실측(2026-08-27, tokenizer-quality 적용 후) — **플랫폼 격차가 또 갈렸다**:
 #     macOS  410 → 446MB / 로드 2.6 → 3.4초   (+36MB, +31%)
-#     Linux  370 → **367MB** / 로드 7.0 → **6.9초**   (−3MB, −1%)  ← 프로덕션
+#     Linux  370 → **367MB** / 로드 7.0 → **6.9초**   (-3MB, -1%)  ← 프로덕션
 #   (Linux는 CI 실측 = GitHub Actions ubuntu-latest, Python 3.12, PR #60)
 #
 #   ⚠️ **판단은 Linux 값으로 한다**(위 경고와 같은 이유). 어절 캐시(약 42만 항목)와
@@ -484,9 +484,16 @@ def _load_streaming(corpus_path) -> tuple[list[dict], list[list[str]]]:
     is_jsonl = corpus_path.name.endswith((".jsonl", ".jsonl.gz"))
 
     def _ingest(doc: dict) -> None:
-        """두 분기(JSONL·배열)가 공유하는 적재부. 루프 제어만 서로 다르다."""
+        """두 분기(JSONL·배열)가 공유하는 적재부. 루프 제어만 서로 다르다.
+
+        `doc.get("text") or ""` — **`get(..., "")`이 아니다.** JSON에 `"text": null`이
+        있으면 기본값이 쓰이지 않고 `None`이 그대로 나와 `_tokenize_regex`의
+        `text.isascii()`가 AttributeError를 던진다. 그 예외는 `load_bm25_corpus`의
+        broad except가 삼켜 **하이브리드 검색이 조용히 Dense-only로 떨어진다** —
+        코퍼스 한 줄 때문에 전체가 반쪽이 되는데 로그도 warning 한 줄뿐이다.
+        """
         tokenized.append([sys.intern(w)
-                          for w in _tokenize_ko(doc.get("text", ""), tok_cache)])
+                          for w in _tokenize_ko(doc.get("text") or "", tok_cache)])
         corpus.append(_slim(doc))
 
     try:

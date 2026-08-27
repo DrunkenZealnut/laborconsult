@@ -14,9 +14,10 @@
 
 설계: docs/02-design/features/tokenizer-quality.design.md §8
 
-⚠️ **어느 토크나이저 경로를 쟀는지 반드시 확인할 것.** konlpy가 설치된 로컬
-   개발기에서는 Mecab 경로가 돌아 프로덕션(정규식)과 다른 수치가 나온다.
-   이 스크립트는 매 실행 시 경로를 출력한다. CI에는 konlpy가 없다.
+**측정은 항상 정규식 경로(`_tokenize_regex`)를 직접 부른다.** `_tokenize_ko`를
+쓰면 konlpy가 설치된 개발기에서 Mecab 분기를 타 프로덕션과 다른 수치가 나오는데,
+그러면 이 스크립트가 재는 대상이 배포본이 아니게 된다 — CI에 konlpy가 없어
+**우연히** 맞을 뿐이다(CodeRabbit 2026-08-27). Mecab 설치 여부는 참고로 출력만 한다.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ from app.core.bm25_search import (  # noqa: E402
     PROTECTED_TERMS,
     STOPWORDS,
     _get_mecab,
-    _tokenize_ko,
+    _tokenize_regex,
 )
 
 EVAL_QUERIES = Path("data/eval_retrieval_queries.json")
@@ -167,7 +168,7 @@ def _tokenize_corpus(texts: list[str]) -> tuple[collections.Counter, list, float
     cache: dict = {}
     t0 = time.monotonic()
     for t in texts:
-        tok = _tokenize_ko(t, cache)
+        tok = _tokenize_regex(t, cache)
         tokens.append(tok)
         vocab.update(tok)
     return vocab, tokens, time.monotonic() - t0
@@ -277,7 +278,7 @@ def m2_topic_preserved() -> tuple[int, list]:
         q = it.get("query") if isinstance(it, dict) else it
         if not q:
             continue
-        toks = _tokenize_ko(q)
+        toks = _tokenize_regex(q)
         for term in PROTECTED_TERMS:
             if term in q and not any(term in t for t in toks):
                 bad.append((q, term, toks[:6]))
@@ -308,7 +309,7 @@ def m4_keyword_rate(texts: list[str], tokens: list) -> tuple[float, list]:
     idx = BM25Okapi(tokens)
     rows, hit_sum = [], 0
     for q, key in M4_QUERIES:
-        scores = idx.get_scores(_tokenize_ko(q))
+        scores = idx.get_scores(_tokenize_regex(q))
         top = sorted(range(len(scores)), key=lambda i: -scores[i])[:20]
         hit = sum(1 for i in top if key in texts[i])
         hit_sum += hit
@@ -324,8 +325,10 @@ def main() -> int:
                     help="보호어 후보 나열(사람이 판단)")
     args = ap.parse_args()
 
-    path = "Mecab(⚠️ 프로덕션 아님)" if _get_mecab() is not None else "정규식(프로덕션 동일)"
-    print(f"토크나이저 경로: {path}")
+    # 측정 경로는 항상 정규식이다. Mecab 설치 여부는 참고 정보로만 알린다 —
+    # 설치돼 있어도 이 스크립트의 수치는 영향받지 않는다.
+    mecab_note = " (Mecab 설치돼 있으나 측정에는 쓰지 않음)" if _get_mecab() else ""
+    print(f"측정 경로: 정규식(_tokenize_regex — 프로덕션 동일){mecab_note}")
     print(f"사전: 보호어 {len(PROTECTED_TERMS)}종 / 불용어 {len(STOPWORDS)}종 "
           f"/ 교집합 {len(PROTECTED_TERMS & STOPWORDS)}종")
 
@@ -387,7 +390,7 @@ def main() -> int:
               "bm25_search.py의 PROTECTED_TERMS에 추가할 것 "
               "(M2 검사 대상도 그 목록이라 자동으로 함께 커버된다).")
         for w, c in cands[:40]:
-            print(f"   {w:<18} {c:>6,}  → 현재 색인형 {_tokenize_ko(w)}")
+            print(f"   {w:<18} {c:>6,}  → 현재 색인형 {_tokenize_regex(w)}")
 
     if args.full:
         print("\n[M4] BM25 전량 색인 중…")

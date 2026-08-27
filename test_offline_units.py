@@ -996,20 +996,36 @@ def test_tokenizer_contract() -> None:
         "T-e: 두 경로가 다른 모듈에 있다 — 토크나이저가 갈라질 수 있다"
     assert B._load_streaming.__globals__["_tokenize_ko"] is B._tokenize_ko, \
         "T-e: 호출 시 해석되는 _tokenize_ko가 모듈의 그것과 다르다"
-    src_load = inspect.getsource(B._load_streaming)
-    src_search = inspect.getsource(B.search_bm25)
-    assert "_tokenize_ko(" in src_load and "_tokenize_ko(" in src_search, \
-        "T-e: 코퍼스 측·질의 측이 같은 토크나이저를 쓰지 않는다"
+    #   ⚠️ 캐시 배선은 **AST로 본다.** 소스 문자열 매칭은 주석·docstring에만 그
+    #      이름이 있어도 통과한다(CodeRabbit 2026-08-27). 실제 `ast.Call` 노드의
+    #      인자를 확인해야 "정말 그렇게 부르는가"가 고정된다.
+    import ast
+    import textwrap
+
+    def _tokenizer_calls(fn):
+        """fn 안의 `_tokenize_ko(...)` 호출들 → 인자 이름 목록."""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        return [[getattr(a, "id", "<expr>") for a in node.args]
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "_tokenize_ko"]
+
+    load_calls = _tokenizer_calls(B._load_streaming)
+    search_calls = _tokenizer_calls(B.search_bm25)
+    assert load_calls, "T-e: 로드 경로가 _tokenize_ko를 호출하지 않는다"
+    assert search_calls, "T-e: 질의 경로가 _tokenize_ko를 호출하지 않는다"
     # 로드 경로는 캐시를 넘기고, 질의 경로는 넘기지 않아야 한다(캐시는 로드 스코프).
-    assert "tok_cache" in src_load, "T-e: 로드 경로의 어절 캐시가 사라졌다"
+    assert all("tok_cache" in args for args in load_calls), \
+        f"T-e: 로드 경로가 어절 캐시를 넘기지 않는다 → {load_calls}"
+    assert all(len(args) == 1 for args in search_calls), \
+        f"T-e: 질의 경로가 캐시를 쓴다 — 전역 누적으로 무한히 자란다 → {search_calls}"
+    src_load = inspect.getsource(B._load_streaming)
     #   해제는 **`finally`**여야 한다 — 줄 파싱 실패(raise) 경로에서도 42만 항목을
     #   놓아야 하고, 예외는 호출부 broad except까지 traceback으로 이 프레임을
     #   붙들고 간다. `_ingest` 클로저가 참조하므로 `del`이 아니라 `clear()`다.
     assert "finally:" in src_load and "tok_cache.clear()" in src_load, \
         "T-e: 캐시 해제가 사라졌거나 finally 밖으로 나갔다 — " \
         "BM25Okapi 구축(RSS 피크) 전에, 예외 경로에서도 놓아야 한다"
-    assert "tok_cache" not in src_search, \
-        "T-e: 질의 경로가 캐시를 쓴다 — 전역 누적으로 무한히 자란다"
 
     # T-f — 불용어 제거는 **색인 토큰에만** 영향한다. 저장 text·반환 content 불변.
     doc = {"id": "x", "text": "안녕하세요 한국노총입니다 퇴직금 문의",
