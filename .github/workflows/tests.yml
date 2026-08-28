@@ -51,6 +51,17 @@ jobs:
       - name: BM25 메모리·검색 동일성 테스트
         run: python3 test_bm25_memory.py
 
+      # 토크나이저는 API 키 없이 전량 측정이 가능한 몇 안 되는 영역이고,
+      # 이 결함(연차휴가→연차휴 등)이 오래 살아남은 이유가 측정 수단의 부재였다.
+      # CI 러너에는 konlpy가 없어 자동으로 프로덕션 경로(정규식)를 잰다.
+      #
+      # **`--full`(M4)을 반드시 포함할 것.** M4가 유일한 *검색 품질* 지표이고
+      # 나머지(M1~M3·M5~M7)는 전부 구조·성능 검사다. `--check`만 돌리면 토큰화가
+      # 랭킹을 어떻게 바꿨는지 아무도 보지 않는다 — 이 사이클이 고치려던 것과
+      # 정확히 같은 실패 모드다. 실측 약 4.5초·460MB(macOS 76,983문서).
+      - name: 토크나이저 품질 측정
+        run: python3 eval_tokenizer.py --check --full
+
       - name: 답변 렌더러 회귀 테스트
         run: node --test test_answer_renderer.js
 

@@ -934,6 +934,162 @@ def test_upload_namespace_contract() -> None:
     print(f"  ✅ 업로드 NS 계약: 검색 대상 {sorted(searched)}·인덱스 삭제 금지·마커 일치")
 
 
+def test_tokenizer_contract() -> None:
+    """BM25 한국어 토크나이저 계약 (tokenizer-quality) — T-a~T-h.
+
+    막는 실패: 전부 **조용하다.** 토크나이저가 망가져도 예외가 나지 않고 검색
+    결과만 나빠진다. 실제로 이 결함들은 배포 후 오래 살아 있었다.
+
+    설계: docs/02-design/features/tokenizer-quality.design.md §9
+    """
+    from app.core import bm25_search as B
+
+    # ⚠️ **정규식 경로를 지목한다.** T-a~T-j는 프로덕션 경로(정규식)의 계약이다.
+    #    `_tokenize_ko`를 쓰면 konlpy가 설치된 개발기에서 Mecab 분기를 타 전혀
+    #    다른 토큰이 나오고, 그러면 이 테스트가 프로덕션이 아닌 것을 검증한다 —
+    #    CI에 konlpy가 없어 **우연히** 통과할 뿐이다(CodeRabbit 2026-08-27).
+    #    T-e는 호출부가 `_tokenize_ko`(폴백 포함 디스패처)를 쓰는지 별도로 본다.
+    T = B._tokenize_regex
+
+    # T-a — 같은 단어가 문맥 3종(공백·조사·구두점)에서 **동일 토큰**이어야 한다.
+    #   구 구현은 셋이 전부 달랐다: `연차휴가 `→`연차휴`, `연차휴가를`→`연차휴가`,
+    #   `연차휴가(`→`연차휴가`. 한 단어가 두 토큰으로 갈려 어느 쪽으로 질의해도
+    #   나머지를 못 만났다(실측 분열률 43%).
+    for term in ("연차휴가", "출산전후휴가", "연장근로", "휴일근로"):
+        forms = {
+            "공백": T(f"{term} 사용"),
+            "조사": T(f"{term}를 사용"),
+            "구두점": T(f"{term}(유급)"),
+        }
+        for ctx, toks in forms.items():
+            assert term in toks, f"T-a: {ctx} 문맥에서 {term!r}가 깨졌다 → {toks}"
+
+    # T-b — 구두점 앞 조사도 절단된다. 구 구현은 룩어헤드가 `(?=\s|$)`뿐이라
+    #   구두점 앞 조사를 놓쳤다(그 지문이 어휘의 `근로자와` 271회였다).
+    assert T("근로자와, 사용자") == ["근로자", "사용자"], T("근로자와, 사용자")
+    assert T("퇴직금을. 지급") == ["퇴직금", "지급"], T("퇴직금을. 지급")
+
+    # T-c — 누락 조사(`에`·`으로`). 구 구현의 조사 목록에 `에`가 아예 없어
+    #   `노동청에`와 `노동청`이 다른 토큰이었고, `으로`가 없어 `괴롭힘으로`가
+    #   존재하지 않는 토큰 `괴롭힘으`가 됐다.
+    assert T("노동청에 진정") == ["노동청", "진정"], T("노동청에 진정")
+    assert T("괴롭힘으로 신고") == ["괴롭힘", "신고"], T("괴롭힘으로 신고")
+    assert "에" in B.JOSA_SINGLE and "으로" in B.JOSA_MULTI
+
+    # T-d — 두 사전은 분리돼 있고 교집합이 없다.
+    #   같은 탐지가 찾아낸 45종이 정반대 처방을 요구하는 두 부류로 나뉜다
+    #   (도메인 실단어는 보호, 연결어는 제거). 하나로 합치면 그 구분이 사라지고,
+    #   45종을 일괄 "보호"하면 색인에 연결어 노이즈를 주입하게 된다.
+    assert B.PROTECTED_TERMS.isdisjoint(B.STOPWORDS), \
+        f"T-d: 두 사전의 교집합 {B.PROTECTED_TERMS & B.STOPWORDS}"
+    assert "연차휴가" in B.PROTECTED_TERMS and "하더라도" in B.STOPWORDS
+
+    # T-e — 코퍼스 측과 질의 측이 **같은 함수 객체**를 쓴다(구조적 보장).
+    #   두 경로가 갈라지면 색인과 질의의 토큰이 어긋나 검색이 조용히 죽는다.
+    #
+    #   ⚠️ 소스 문자열 검사만으로는 부족하다 — 주석에만 `_tokenize_ko(`가 있어도
+    #      통과한다(초기 구현이 그랬다). 두 함수가 **같은 globals를 공유하고**
+    #      그 globals의 `_tokenize_ko`가 모듈의 그것과 **동일 객체**임을 본다.
+    #      호출 시점에 이름이 해석되므로 이것이 곧 "같은 함수를 부른다"의 보장이다.
+    import inspect
+    assert B._load_streaming.__globals__ is B.search_bm25.__globals__, \
+        "T-e: 두 경로가 다른 모듈에 있다 — 토크나이저가 갈라질 수 있다"
+    assert B._load_streaming.__globals__["_tokenize_ko"] is B._tokenize_ko, \
+        "T-e: 호출 시 해석되는 _tokenize_ko가 모듈의 그것과 다르다"
+    #   ⚠️ 캐시 배선은 **AST로 본다.** 소스 문자열 매칭은 주석·docstring에만 그
+    #      이름이 있어도 통과한다(CodeRabbit 2026-08-27). 실제 `ast.Call` 노드의
+    #      인자를 확인해야 "정말 그렇게 부르는가"가 고정된다.
+    import ast
+    import textwrap
+
+    def _tokenizer_calls(fn):
+        """fn 안의 `_tokenize_ko(...)` 호출들 → 인자 이름 목록."""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        return [[getattr(a, "id", "<expr>") for a in node.args]
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "_tokenize_ko"]
+
+    load_calls = _tokenizer_calls(B._load_streaming)
+    search_calls = _tokenizer_calls(B.search_bm25)
+    assert load_calls, "T-e: 로드 경로가 _tokenize_ko를 호출하지 않는다"
+    assert search_calls, "T-e: 질의 경로가 _tokenize_ko를 호출하지 않는다"
+    # 로드 경로는 캐시를 넘기고, 질의 경로는 넘기지 않아야 한다(캐시는 로드 스코프).
+    assert all("tok_cache" in args for args in load_calls), \
+        f"T-e: 로드 경로가 어절 캐시를 넘기지 않는다 → {load_calls}"
+    assert all(len(args) == 1 for args in search_calls), \
+        f"T-e: 질의 경로가 캐시를 쓴다 — 전역 누적으로 무한히 자란다 → {search_calls}"
+    src_load = inspect.getsource(B._load_streaming)
+    #   해제는 **`finally`**여야 한다 — 줄 파싱 실패(raise) 경로에서도 42만 항목을
+    #   놓아야 하고, 예외는 호출부 broad except까지 traceback으로 이 프레임을
+    #   붙들고 간다. `_ingest` 클로저가 참조하므로 `del`이 아니라 `clear()`다.
+    assert "finally:" in src_load and "tok_cache.clear()" in src_load, \
+        "T-e: 캐시 해제가 사라졌거나 finally 밖으로 나갔다 — " \
+        "BM25Okapi 구축(RSS 피크) 전에, 예외 경로에서도 놓아야 한다"
+
+    # T-f — 불용어 제거는 **색인 토큰에만** 영향한다. 저장 text·반환 content 불변.
+    doc = {"id": "x", "text": "안녕하세요 한국노총입니다 퇴직금 문의",
+           "title": "T", "section": "S", "source_type": "qa"}
+    assert B._slim(doc)["text"] == doc["text"], "T-f: 저장 text가 변형됐다"
+    assert "안녕하세요" not in T(doc["text"]), "T-f: 불용어가 색인에 남았다"
+
+    # T-g — 2음절 핵심어 소멸 방지(MIN_STEM). **이 사이클에서 영향이 가장 컸다.**
+    #   어간 최소 길이 가드가 없으면 `합의`→`합`(1음절)→최종 길이 필터가 폐기해
+    #   단어가 통째로 사라진다. 실측 16종 중 13종이 그랬고, 거기에 노동법의
+    #   기본 어휘인 `근로`·`휴가`가 포함돼 있었다.
+    for w in ("합의", "근로", "휴가", "동의", "협의", "이의", "임의",
+              "대가", "차이", "고의", "사이", "별도", "연도"):
+        assert w in T(f"{w} 검증"), f"T-g: {w!r}가 색인에서 소멸했다 → {T(f'{w} 검증')}"
+    assert B.MIN_STEM >= 2, "T-g: MIN_STEM 가드가 풀렸다"
+
+    # T-h — 어미(④)가 조사(⑤)보다 먼저. **순서를 뒤집어도 대부분은 통과하므로
+    #   아래 세 입력이 유일한 경보다.** 조사를 먼저 처리하면 `지급하는`의 `는`이
+    #   조사로 오인돼 떨어지고 `지급하`라는 쓰레기 토큰이 남는다(역전 시 잔재가
+    #   약 18배로 늘어난다 — 실측치는 `eval_tokenizer.py`의 M7 임계 주석 참조).
+    assert T("지급하는") == ["지급"], T("지급하는")
+    assert T("신청하는") == ["신청"], T("신청하는")
+    assert T("해고되는") == ["해고"], T("해고되는")
+    #   어형 수렴 — 활용형이 전부 한 토큰으로 모인다
+    for form in ("지급해야", "지급하여야", "지급한다", "지급합니다", "지급하는"):
+        assert T(form) == ["지급"], f"T-h: {form!r} → {T(form)}"
+    #   과교정 점검 — 도메인 복합명사는 건드리면 안 된다
+    for w in ("근로시간", "퇴직금", "연차휴가", "최저임금", "산업재해", "취업규칙",
+              "부당해고", "노동조합", "단체협약", "통상임금", "평균임금", "고용보험"):
+        assert T(w) == [w], f"T-h: {w!r}가 과교정됐다 → {T(w)}"
+
+    # T-i — 보호어는 **단독 입력에서 자기 자신으로 토큰화**된다(40종 전량).
+    #   이것이 `eval_tokenizer.py`의 M1(존재 단언)과 같은 불변식의 단위테스트판이다.
+    #
+    #   ⚠️ **이 검사를 "분열률"로 바꾸지 말 것.** 원래 M1이 분열률이었는데 보호를
+    #      제거하는 정확히 그 회귀에서 값이 거꾸로 내려가 통과했다 — 실측과 원인은
+    #      `eval_tokenizer.py::THRESHOLDS`의 M1 주석이 단일 출처다.
+    #      **회귀 지표는 고치기 전의 증상이 아니라 불변식으로 세운다.**
+    for term in sorted(B.PROTECTED_TERMS):
+        assert T(term) == [term], f"T-i: 보호어 {term!r}가 {T(term)}로 깨졌다"
+    #   보호가 실제로 작동 중인지(장식이 아닌지) — 보호를 벗기면 달라져야 한다
+    saved = B.PROTECTED_TERMS
+    try:
+        B.PROTECTED_TERMS = frozenset()
+        assert T("연차휴가") != ["연차휴가"], \
+            "T-i: 보호를 벗겨도 결과가 같다 — PROTECTED_TERMS가 무의미하다"
+    finally:
+        B.PROTECTED_TERMS = saved
+    assert T("연차휴가") == ["연차휴가"], "T-i: 보호어 복원 실패"
+
+    # T-j — NFD(자모 분해) 입력이 NFC와 같은 토큰을 낸다.
+    #   `_SPLIT_RE`의 `가-힣`은 NFD 문자열에 **절대 매치되지 않아** 어절이 통째로
+    #   버려진다(가드 없을 때 실측 `[]`). 웹 경로는 `abuse_guard`가 NFC를 걸지만
+    #   chatbot.py·eval·benchmark·LLM 분해 쿼리에는 정규화가 없다.
+    #   macOS 파일명 NFD로 판례 474벡터가 덮어써진 사고와 같은 함정 계열이다.
+    import unicodedata as _ud
+    for q in ("연차휴가를 사용", "퇴직금 지급해야"):
+        assert T(_ud.normalize("NFD", q)) == T(q), \
+            f"T-j: NFD 입력이 다르게 토큰화된다 — {T(_ud.normalize('NFD', q))}"
+
+    print("  ✅ 토크나이저 계약: 문맥 불변·구두점 조사·누락 조사·사전 분리·"
+          "단일 출처·색인 한정·2음절 보존·어미 우선·보호어 40종 자기보존·NFD 정규화")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -957,6 +1113,7 @@ def main() -> None:
     test_code_tables_defined_in_ddl()
     test_upload_namespace_contract()
     test_bm25_interning()
+    test_tokenizer_contract()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 
