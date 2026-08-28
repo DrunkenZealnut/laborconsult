@@ -18,6 +18,17 @@
 | law-version-drift | 97% | 2026-08-21 | [Plan](law-version-drift/law-version-drift.plan.md), [Design](law-version-drift/law-version-drift.design.md), [Analysis](law-version-drift/law-version-drift.analysis.md), [Report](law-version-drift/law-version-drift.report.md) |
 | legal-corpus-coverage | 82% (Act 전건) | 2026-08-27 | [Plan](legal-corpus-coverage/legal-corpus-coverage.plan.md), [Design](legal-corpus-coverage/legal-corpus-coverage.design.md), [Analysis](legal-corpus-coverage/legal-corpus-coverage.analysis.md), [Report](legal-corpus-coverage/legal-corpus-coverage.report.md) |
 | bm25-memory-scaling | 88% (Act 전건) | 2026-08-27 | [Plan](bm25-memory-scaling/bm25-memory-scaling.plan.md), [Design](bm25-memory-scaling/bm25-memory-scaling.design.md), [Analysis](bm25-memory-scaling/bm25-memory-scaling.analysis.md), [Report](bm25-memory-scaling/bm25-memory-scaling.report.md) |
+| tokenizer-quality | 100% | 2026-08-28 | [Plan](tokenizer-quality/tokenizer-quality.plan.md), [Design](tokenizer-quality/tokenizer-quality.design.md), [Analysis](tokenizer-quality/tokenizer-quality.analysis.md), [Report](tokenizer-quality/tokenizer-quality.report.md) |
+
+> **Note**: `tokenizer-quality`는 **프로덕션 BM25가 Mecab을 한 번도 쓴 적이 없다**는 발견에서 출발했다 — `konlpy`가 `requirements.txt`에 없어 항상 정규식 폴백이 돌았는데, 코드 주석과 `CLAUDE.md`는 일관되게 "Mecab 우선"이라 적혀 있어 아무도 그 폴백을 검증할 이유를 갖지 못했다. 그 폴백이 `연차휴가`를 `연차휴`로 자르고(분열률 43~68%), 2음절 단어 16종 중 13종(`근로`·`휴가` 포함)을 색인에서 통째로 삭제하고 있었다. 핵심어 포함률 74.5%→**90.0%**, 파이프라인 도달률 61.1%→**80.0%**, 공공저작물 15→**23건**. 프로덕션(Linux) 비용은 −3MB·−0.1초로 사실상 0. PR [#60](https://github.com/DrunkenZealnut/laborconsult/pull/60).
+>
+> 이 사이클의 교훈은 결함보다 **검증 장치의 실패**에 있다(상세는 Report §교훈):
+> - **회귀 지표를 "고치기 전의 증상"으로 정의하면 고친 뒤의 실패 모드를 못 잡는다.** M1을 처음에 *분열률*로 뒀는데, 보호어를 비워 회귀를 재현하니 3.75%→**0.00%로 더 좋은 점수를 내며 통과**했다. 분열률은 원형·절단형이 둘 다 어휘에 있을 때만 후보로 삼는데 새 구현은 일관 절단이라 원형이 통째로 사라진다 — 구 구현의 지문으로 지표를 만들었고 그 지문을 없앤 것이 바로 이 변경이었다. 지표는 증상이 아니라 **불변식**(보호어는 어휘에 존재한다)으로 세운다.
+> - **경고를 써 놓는 것과 지키는 것은 다르다.** 모듈 상단에 "로컬 Mecab 수치를 프로덕션 근거로 쓰지 말 것"이라 직접 적어 놓고, 바로 아래 테스트에서 `_tokenize_ko`를 불러 그 함정에 빠졌다. `_tokenize_regex` 분리로 구조로 막았다.
+> - **병렬 호출부 둘 중 하나만 고치는 패턴이 세 번 반복됐다**(전부 CodeRabbit이 잡음). 같은 결함이 두 곳에 있으면 grep으로 전수 확인할 것 — 이 저장소가 이미 아는 교훈이다(`extract_post_id` NFC 수정 3.5개월 미전파).
+> - **메모리 판단에 macOS 수치를 쓰면 과대평가한다.** Do 단계에서 "여유 140MB→97MB"로 기록했으나 Linux 실측은 370→367MB로 불변이었다. `CLAUDE.md`가 이미 "판단은 Linux 값으로"라 지시하고 있었는데 **그 Linux 값이 변경 전 것이라 지시가 무효**였다 — 지시만 남기고 값을 갱신하지 않으면 지시가 죽는다.
+>
+> 선행 사이클: [bm25-memory-scaling](bm25-memory-scaling/) · [legal-corpus-coverage](legal-corpus-coverage/).
 
 > **Note**: `answer-renderer-test-harness`는 Design·Analysis 문서가 없다. 설계 결정은 Plan 문서의 "설계 결정" 절이 겸했고, Check 단계는 `node --test` 실행 결과(8/8 통과)로 갈음했다(사유는 Report의 Check 절에 기재). 선행 사이클은 [2026-07/answer-ui-readability](../2026-07/answer-ui-readability/).
 >
