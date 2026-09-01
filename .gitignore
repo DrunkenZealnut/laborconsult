@@ -53,3 +53,7 @@ venv/
 # 게시판 중복 정리 백업 — 상담 원문(개인정보)이 그대로 들어간다
 backup_board_dedupe_*.json
 dedupe_board_*.sql
+
+# 판례 크롤분 비공개 보관본 — 게이트 미통과 계층(editorial·post)은 제3자 편집
+# 게시물이라 PUBLIC 저장소 커밋 금지. 우발 커밋은 회수 불가(precedent-archive 설계 §4.1)
+precedent_crawl_*.tar.gz

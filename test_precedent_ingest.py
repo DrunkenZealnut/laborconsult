@@ -1766,6 +1766,244 @@ def t24_legal_diversity_promotion() -> None:
           [h["id"] for h in out_base] == [h["id"] for h in both[:5]])
 
 
+def t27_precedent_archive() -> None:
+    """T27 — 판례 아카이브(archive_precedents.py). 설계 §11.
+
+    픽스처 미니 코퍼스(NFD 파일명 포함)로 build→gate→verify→extract 전 경로를
+    오프라인 검증한다. gitignore 데이터 없이 CI에서 돈다.
+    """
+    import io
+    import json
+    import shutil
+    import hashlib
+    import tempfile
+
+    import archive_precedents as arc
+
+    def _w(path: str, text: str) -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    META = ("| 항목 | 내용 |\n| --- | --- |\n| 분류 | {cat} |\n"
+            "| 작성일 | {date} |\n{extra}")
+
+    def _judgment(case_no: str, front: str = "", back: str = "") -> str:
+        return (f"# 판결 {case_no}\n\n"
+                + META.format(cat="근로기준", date="2021.01.14",
+                              extra=f"| 사건번호 | {case_no} |\n")
+                + f"\n---\n\n{front}대법 2021.1.14. 선고 {case_no}\n\n"
+                f"【원 고, 상고인】  원고 1\n\n【주 문】\n\n상고를 기각한다.\n\n"
+                f"【이 유】\n\n원심의 판단은 정당하다.\n\n"
+                f"대법관 김하늘(재판장) 이바다\n{back}")
+
+    tmp = tempfile.mkdtemp(prefix="t27_")
+    try:
+        letec = os.path.join(tmp, "output_판례_보강")
+        crawl = os.path.join(tmp, "output_법원 노동판례")
+        out = os.path.join(tmp, "data", "precedent_archive")
+        paths = arc.Paths(
+            letec_dir=letec, crawl_dir=crawl, out_dir=out,
+            textbook_csv=os.path.join(tmp, "누락_판례목록.csv"),
+            code_scan_base=tmp)
+
+        # letec — NFD 파일명(macOS 재현) + 관련 쟁점
+        letec_body = ("# 부당이득금\n\n"
+                      + META.format(cat="민사", date="2000.06.09",
+                                    extra="| 사건번호 | 2000다15869 |\n| 법원 | 대법원 |\n"
+                                          "| 원문 | [원문](https://law.go.kr/x) |\n")
+                      + "\n---\n\n## 관련 쟁점\n\n- 임금채권 우선변제\n\n"
+                        "## 판시사항\n\n체납처분 청산절차의 임금채권.\n")
+        _w(os.path.join(letec, unicodedata.normalize(
+            "NFD", "2000다15869_부당이득금.md")), letec_body)
+        with open(os.path.join(letec, "_uploaded_ids.json"), "w", encoding="utf-8") as f:
+            json.dump({"2000da15869": ["precedent_2000da15869_chunk_0",
+                                       "precedent_2000da15869_chunk_1"]}, f)
+        _w(os.path.join(letec, "_미발견.csv"), "사건번호,사유\n2013다4174,검색 정확일치 없음\n")
+        _w(os.path.join(letec, "_겹침대상.csv"),
+           "사건번호,법원,게시글ID\n2001다53875,대법원,403768\n")
+        _w(paths.textbook_csv, "사건번호,법원,날짜,인용횟수\n1992다28556,대법원,1992.5.12.,3\n")
+
+        # crawl — 신세대 verbatim / editorial 서두·말미 / 미매핑 부호 /
+        #         구세대 파일명·겹침·게시물형·비법원·본문1500자밖
+        gu = os.path.join(crawl, "근로기준")
+        _w(os.path.join(gu, "2020다242423_추가수당.md"), _judgment("2020다242423"))
+        _w(os.path.join(gu, "2019두11111_해고사건.md"),
+           _judgment("2019두11111", front="편집자 요약입니다.\n" * 6))
+        _w(os.path.join(gu, "2018다22222_임금사건.md"),
+           _judgment("2018다22222", back="해설: 이 판결의 의미는.\n" * 6))
+        _w(os.path.join(gu, "2020카기123_담보취소.md"), _judgment("2020카기123"))
+        _w(os.path.join(gu, "500002_2019다33333 판례 소개.md"),
+           "# 소개\n\n" + META.format(cat="근로기준", date="2020.01.01",
+                                      extra="| 조회수 | 1 |\n")
+           + "\n---\n\n본문 소개글.\n")
+        _w(os.path.join(gu, "403768_판례해설.md"),
+           "# 해설\n\n" + META.format(cat="근로기준", date="2020.01.01",
+                                      extra="| 조회수 | 1 |\n")
+           + "\n---\n\n해설 본문뿐.\n")
+        _w(os.path.join(gu, "442109_사례모음.md"),
+           "# 모음\n\n" + META.format(cat="기타", date="2020.01.01",
+                                      extra="| 조회수 | 1 |\n")
+           + "\n---\n\n사례 나열.\n")
+        _w(os.path.join(gu, "442200_진차사례.md"),
+           "# 진정\n\n" + META.format(cat="기타", date="2020.01.01",
+                                      extra="| 조회수 | 1 |\n")
+           + "\n---\n\n09진차219 결정 요지.\n")
+        _w(os.path.join(gu, "500001_참조만있는글.md"),
+           "# 참조\n\n" + META.format(cat="근로기준", date="2020.01.01",
+                                      extra="| 조회수 | 1 |\n")
+           + "\n---\n\n" + ("채움글입니다. " * 200)
+           + "\n참조판례: 2015다99999 판결\n")
+        _w(os.path.join(gu, "500003_서두선고문만.md"),
+           "# 서두\n\n" + META.format(cat="근로기준", date="2020.01.01",
+                                      extra="| 조회수 | 1 |\n")
+           + "\n---\n\n대법 2020.1.1. 선고 2017다55555 판결의 소개.\n\n본문 요약.\n")
+        _w(os.path.join(crawl, "_index.md"),
+           "# 목록\n- [해설](./근로기준/403768_판례해설.md)\n"
+           "- [유실](./근로기준/999999_색인에만있음.md)\n")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            build_res = arc.run_build(paths, quiet=True)
+            base_rc = arc.run_verify(paths)
+
+        inv = {r["case_no"]: r for r in arc._read_csv(os.path.join(out, "inventory.csv"))}
+        docs = {d["doc_id"]: d for d in arc._read_csv(os.path.join(out, "documents.csv"))}
+        gu_doc = lambda n: docs["output_법원 노동판례/근로기준/" + n]
+        bundle = arc.read_bundle(os.path.join(out, "letec_precedents.jsonl.gz"))
+
+        # T27-a — NFD 파일명 → NFC doc_id·case_no, body 바이트 보존
+        rec = next((r for r in bundle if r["case_no"] == "2000다15869"), None)
+        check("T27-a letec 레코드 추출(NFD 파일명)", rec is not None)
+        check("T27-a2 doc_id NFC",
+              rec and rec["doc_id"] == "output_판례_보강/2000다15869_부당이득금.md")
+        check("T27-a3 body_md 바이트 보존", rec and rec["body_md"] == letec_body)
+        check("T27-a4 관련 쟁점 추출", rec and rec["issues"] == ["임금채권 우선변제"])
+        check("T27-a5 원장 청크 수 반영", inv.get("2000다15869", {}).get("vec_chunks") == "2")
+
+        # T27-b — 원장 생산 함수와 같은 객체(사본 드리프트 구조 차단)
+        check("T27-b case_no_to_ascii 동일 객체",
+              arc.case_no_to_ascii is upload.case_no_to_ascii)
+        check("T27-b2 미매핑 부호 → case_key 없음+note",
+              inv.get("2020카기123", {}).get("case_key") == ""
+              and "미매핑부호" in inv.get("2020카기123", {}).get("note", ""))
+
+        # T27-c — 본문 1,500자 밖 참조판례는 대표가 아니다(음성) +
+        #          서두 1,500자 안 선고문은 채택된다(양성 — 실데이터 crawl 대표의 주경로)
+        c_doc = gu_doc("500001_참조만있는글.md")
+        check("T27-c 1500자 밖 참조판례 미채택",
+              c_doc["doctype"] == "post" and not c_doc["case_no"])
+        check("T27-c2 참조 사건이 행으로 새지 않음", "2015다99999" not in inv)
+        c_pos = gu_doc("500003_서두선고문만.md")
+        check("T27-c3 서두 선고문 채택(body_head)",
+              c_pos["case_no"] == "2017다55555" and c_pos["case_src"] == "body_head")
+
+        # T27-h — 게이트 3버킷(서두·말미 양끝) — 승인 전이라 verbatim은 pending
+        check("T27-h verbatim 후보는 승인 전 pending",
+              gu_doc("2020다242423_추가수당.md")["gate"] == "pending")
+        check("T27-h2 서두 요약 6줄 → editorial",
+              gu_doc("2019두11111_해고사건.md")["gate"] == "editorial")
+        check("T27-h3 말미 해설 6줄 → editorial",
+              gu_doc("2018다22222_임금사건.md")["gate"] == "editorial")
+
+        # T27-i — 세대·대표 채택 경로(case_src)
+        check("T27-i 신세대 메타 채택",
+              gu_doc("2020다242423_추가수당.md")["case_src"] == "meta")
+        check("T27-i2 구세대 파일명 제목부 채택",
+              gu_doc("500002_2019다33333 판례 소개.md")["case_src"] == "filename")
+        check("T27-i3 겹침 대응 채택(overlap)",
+              gu_doc("403768_판례해설.md")["case_src"] == "overlap"
+              and gu_doc("403768_판례해설.md")["case_no"] == "2001다53875")
+        check("T27-i4 게시물형 post",
+              gu_doc("442109_사례모음.md")["doctype"] == "post")
+        check("T27-i5 비법원 번호(진차) 기각 → post",
+              gu_doc("442200_진차사례.md")["doctype"] == "post")
+
+        # T27-j — 4자리 연도 표기 병합
+        check("T27-j 1992다28556 → 92다28556 병합",
+              "92다28556" in inv and "1992다28556" not in inv)
+        check("T27-j2 원표기 alias 보존",
+              inv.get("92다28556", {}).get("case_alias") == "1992다28556"
+              and inv.get("92다28556", {}).get("cited_textbook") == "3")
+
+        # 인벤토리 부속 통합 + 색인 누락 보고(M8)
+        check("T27 미발견 행 통합", inv.get("2013다4174", {}).get("not_found") == "1")
+        check("T27 색인 누락 보고(summary)",
+              "999999_색인에만있음.md" in build_res["summary"]["index_missing"])
+
+        # H4 — MAJOR_PRECEDENTS 교차검증은 실저장소 base에서 별도 확인
+        # (픽스처 base에는 build_graph.py가 없어 백스톱이 돌지 않는 것이 정상)
+        import build_graph
+        real_scan = {r["case_no"]
+                     for r in arc.scan_code_citations(arc.BASE_DIR)}
+        graph_nos = {arc.canonicalize(k)[0] for k in build_graph.MAJOR_PRECEDENTS
+                     if arc.canonicalize(k)}
+        check("T27 MAJOR_PRECEDENTS 전량 스캔 포함(H4)", graph_nos <= real_scan,
+              f"누락: {sorted(graph_nos - real_scan)}")
+
+        # 기준선 verify 통과
+        check("T27 기준선 verify 통과", base_rc == 0)
+
+        # T27-e — extract round-trip 무손실
+        out_md = os.path.join(tmp, "extract.md")
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc_e = arc.run_extract(paths, "2000다15869", None, out_md)
+        with open(out_md, "rb") as f:
+            check("T27-e extract 무손실", rc_e == 0
+                  and f.read() == letec_body.encode("utf-8"))
+
+        # 게이트 승인 — 추첨 기록 없이 approve하면 거부(M1: 표본 재추첨 금지),
+        # 추첨 → 승인 순서로만 verbatim 번들이 생성된다
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc_no_sample = arc.run_gate(paths, approve=True, as_of="2026-09-01")
+        check("T27 표본 기록 없는 승인 거부(M1)", rc_no_sample == 1)
+        with contextlib.redirect_stdout(io.StringIO()):
+            arc.run_gate(paths, approve=False, as_of=None)
+            arc.run_gate(paths, approve=True, as_of="2026-09-01")
+            arc.run_build(paths, quiet=True)
+            rc_apv = arc.run_verify(paths)
+        docs2 = {d["doc_id"]: d for d in arc._read_csv(os.path.join(out, "documents.csv"))}
+        apv = docs2["output_법원 노동판례/근로기준/2020다242423_추가수당.md"]
+        check("T27 승인 후 verbatim 확정+번들",
+              apv["gate"] == "verbatim" and apv["bundled"] == "1"
+              and os.path.exists(os.path.join(out, "crawl_verbatim.jsonl.gz")))
+        check("T27 승인 후 verify 통과", rc_apv == 0)
+
+        # T27-f — 결정적 재빌드(gzip mtime·순서)
+        h1 = hashlib.sha256(
+            open(os.path.join(out, "letec_precedents.jsonl.gz"), "rb").read()).hexdigest()
+        with contextlib.redirect_stdout(io.StringIO()):
+            arc.run_build(paths, quiet=True)
+        h2 = hashlib.sha256(
+            open(os.path.join(out, "letec_precedents.jsonl.gz"), "rb").read()).hexdigest()
+        check("T27-f build 멱등(바이트 동일)", h1 == h2)
+
+        # T27-d — 공개 불변식: editorial을 bundled=1로 변조하면 V7이 잡는다
+        doc_csv = os.path.join(out, "documents.csv")
+        with open(doc_csv, encoding="utf-8-sig") as f:
+            tampered = f.read().replace("editorial,0", "editorial,1", 1)
+        with open(doc_csv, "w", encoding="utf-8-sig") as f:
+            f.write(tampered)
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc_tampered = arc.run_verify(paths)
+        check("T27-d 게이트 불변식 위반 검출(V7)", rc_tampered == 1)
+        with contextlib.redirect_stdout(io.StringIO()):
+            arc.run_build(paths, quiet=True)  # 원복
+
+        # T27-g — 역매핑 불가 원장 키는 조용히 빠지지 않는다(V4)
+        ledger_path = os.path.join(letec, "_uploaded_ids.json")
+        with open(ledger_path, encoding="utf-8") as f:
+            ledger = json.load(f)
+        ledger["77xx999"] = ["precedent_77xx999_chunk_0"]
+        with open(ledger_path, "w", encoding="utf-8") as f:
+            json.dump(ledger, f)
+        with contextlib.redirect_stdout(io.StringIO()):
+            arc.run_build(paths, quiet=True)
+            rc_orphan = arc.run_verify(paths)
+        check("T27-g 원장 포섭 구멍 검출(V4)", rc_orphan == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -1780,7 +2018,7 @@ def main() -> int:
                t20_textbook_case_extraction, t21_multipart_book,
                t22_textbook_followup, t23_textbook_diversity_promotion,
                t24_legal_diversity_promotion, t25_court_ledger,
-               t26_public_quota):
+               t26_public_quota, t27_precedent_archive):
         print(f"\n[{fn.__name__}]")
         fn()
 
