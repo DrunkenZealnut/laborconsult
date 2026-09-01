@@ -1868,9 +1868,14 @@ def t27_precedent_archive() -> None:
            "# 목록\n- [해설](./근로기준/403768_판례해설.md)\n"
            "- [유실](./근로기준/999999_색인에만있음.md)\n")
 
-        with contextlib.redirect_stdout(io.StringIO()):
+        # verify 출력은 실패 시 보여야 한다 — CI에서 V 몇 번이 죽었는지
+        # 로그에 안 남아 재현 비용이 컸다(Linux NFD 실측).
+        vbuf = io.StringIO()
+        with contextlib.redirect_stdout(vbuf):
             build_res = arc.run_build(paths, quiet=True)
             base_rc = arc.run_verify(paths)
+        if base_rc != 0:
+            print(vbuf.getvalue())
 
         inv = {r["case_no"]: r for r in arc._read_csv(os.path.join(out, "inventory.csv"))}
         docs = {d["doc_id"]: d for d in arc._read_csv(os.path.join(out, "documents.csv"))}
@@ -1964,11 +1969,14 @@ def t27_precedent_archive() -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             rc_no_sample = arc.run_gate(paths, approve=True, as_of="2026-09-01")
         check("T27 표본 기록 없는 승인 거부(M1)", rc_no_sample == 1)
-        with contextlib.redirect_stdout(io.StringIO()):
+        vbuf2 = io.StringIO()
+        with contextlib.redirect_stdout(vbuf2):
             arc.run_gate(paths, approve=False, as_of=None)
             arc.run_gate(paths, approve=True, as_of="2026-09-01")
             arc.run_build(paths, quiet=True)
             rc_apv = arc.run_verify(paths)
+        if rc_apv != 0:
+            print(vbuf2.getvalue()[-1500:])
         docs2 = {d["doc_id"]: d for d in arc._read_csv(os.path.join(out, "documents.csv"))}
         apv = docs2["output_법원 노동판례/근로기준/2020다242423_추가수당.md"]
         check("T27 승인 후 verbatim 확정+번들",

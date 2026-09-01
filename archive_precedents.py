@@ -69,7 +69,16 @@ class Paths:
         return os.path.dirname(self.letec_dir)
 
     def doc_path(self, doc_id: str) -> str:
-        return os.path.join(self.doc_root, doc_id)
+        p = os.path.join(self.doc_root, doc_id)
+        if not os.path.exists(p):
+            # doc_id는 NFC 규약이지만 실파일명은 macOS 유래 NFD일 수 있다.
+            # APFS는 정규화-비민감이라 로컬에선 그냥 열리지만 Linux(ext4)는
+            # 바이트 보존이라 NFC 경로가 ENOENT — verify V3가 전부 오탐한다
+            # (CI 실측 2026-09-01, 이 저장소의 NFD 실패 클래스 그 자체).
+            alt = os.path.join(self.doc_root, unicodedata.normalize("NFD", doc_id))
+            if os.path.exists(alt):
+                return alt
+        return p
 
     def snapshot_origins(self) -> dict[str, str]:
         """records/ 스냅샷(ASCII 파일명, 설계 D-8) → 로컬 원본 경로.
