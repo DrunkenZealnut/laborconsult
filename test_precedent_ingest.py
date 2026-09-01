@@ -1833,6 +1833,12 @@ def t27_precedent_archive() -> None:
         _w(os.path.join(gu, "2018다22222_임금사건.md"),
            _judgment("2018다22222", back="해설: 이 판결의 의미는.\n" * 6))
         _w(os.path.join(gu, "2020카기123_담보취소.md"), _judgment("2020카기123"))
+        # 마커 내부 개행 — has_required는 통과(\s가 개행 포함)하지만 줄 단위
+        # 앵커가 0개가 되는 서식. IndexError가 아니라 editorial이어야 한다.
+        _w(os.path.join(gu, "2021다77777_개행마커.md"),
+           "# 개행\n\n" + META.format(cat="근로기준", date="2021.01.01",
+                                      extra="| 사건번호 | 2021다77777 |\n")
+           + "\n---\n\n대법 2021.1.1. 선고 2021다77777\n\n【주\n문】\n\n기각\n\n【이\n유】\n\n이유.\n")
         _w(os.path.join(gu, "500002_2019다33333 판례 소개.md"),
            "# 소개\n\n" + META.format(cat="근로기준", date="2020.01.01",
                                       extra="| 조회수 | 1 |\n")
@@ -1904,6 +1910,8 @@ def t27_precedent_archive() -> None:
               gu_doc("2019두11111_해고사건.md")["gate"] == "editorial")
         check("T27-h3 말미 해설 6줄 → editorial",
               gu_doc("2018다22222_임금사건.md")["gate"] == "editorial")
+        check("T27-h4 앵커 0개(개행 마커) → editorial (IndexError 아님)",
+              gu_doc("2021다77777_개행마커.md")["gate"] == "editorial")
 
         # T27-i — 세대·대표 채택 경로(case_src)
         check("T27-i 신세대 메타 채택",

@@ -403,6 +403,11 @@ def classify_gate_bucket(doc: dict) -> tuple[str, dict]:
     lines = tail.splitlines()
     anchor_idx = [i for i, ln in enumerate(lines)
                   if _MARKER_RE.search(ln) or _SIGN_RE.match(ln) or _TERMINAL_RE.search(ln)]
+    if not anchor_idx:
+        # 마커 내부에 개행이 낀 문서(【주\n문】)는 has_required(\s가 개행 포함)를
+        # 통과하지만 줄 단위 앵커에는 안 잡힌다 — 빈 리스트로 build를 죽이는 대신
+        # 보수 방향인 editorial로(CodeRabbit PR#61 지적).
+        return "editorial", {"reason": "no_anchor"}
     first, last = anchor_idx[0], anchor_idx[-1]
     front = sum(1 for ln in lines[:first] if not _SUBSTANTIVE_SKIP.match(ln))
     back = sum(1 for ln in lines[last + 1:] if not _SUBSTANTIVE_SKIP.match(ln))
@@ -459,7 +464,7 @@ def scan_code_citations(base: str) -> list[dict]:
         cli = os.path.basename(path) == "wage_calculator_cli.py"
         try:
             tokens = list(tokenize.generate_tokens(io.StringIO(src).readline))
-        except tokenize.TokenizeError:
+        except tokenize.TokenError:
             continue
         for tok in tokens:
             if tok.type == tokenize.COMMENT:
