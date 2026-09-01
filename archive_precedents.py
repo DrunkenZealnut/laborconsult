@@ -70,15 +70,28 @@ class Paths:
 
     def doc_path(self, doc_id: str) -> str:
         p = os.path.join(self.doc_root, doc_id)
-        if not os.path.exists(p):
-            # doc_id는 NFC 규약이지만 실파일명은 macOS 유래 NFD일 수 있다.
-            # APFS는 정규화-비민감이라 로컬에선 그냥 열리지만 Linux(ext4)는
-            # 바이트 보존이라 NFC 경로가 ENOENT — verify V3가 전부 오탐한다
-            # (CI 실측 2026-09-01, 이 저장소의 NFD 실패 클래스 그 자체).
-            alt = os.path.join(self.doc_root, unicodedata.normalize("NFD", doc_id))
-            if os.path.exists(alt):
-                return alt
-        return p
+        if os.path.exists(p):
+            return p
+        # doc_id는 NFC 규약이지만 실경로의 정규화 형식은 제각각일 수 있다 —
+        # macOS 유래 파일명은 NFD, 디렉토리명은 생성 경로에 따라 NFC(소스
+        # 리터럴)일 수도 있다. APFS는 정규화-비민감이라 로컬에선 어느 조합도
+        # 열리지만 Linux(ext4)는 바이트 보존이라 ENOENT — verify V3가 오탐한다
+        # (CI 실측 2026-09-01: 전체 NFD 변환 폴백도 NFC 디렉토리에 막혔다).
+        # 컴포넌트별로 NFC-동등 항목을 찾아 실경로를 재조립한다.
+        cur = self.doc_root
+        for part in doc_id.split("/"):
+            nxt = os.path.join(cur, part)
+            if not os.path.exists(nxt):
+                try:
+                    match = next((e for e in os.listdir(cur)
+                                  if NFC(e) == NFC(part)), None)
+                except OSError:
+                    return p
+                if match is None:
+                    return p
+                nxt = os.path.join(cur, match)
+            cur = nxt
+        return cur
 
     def snapshot_origins(self) -> dict[str, str]:
         """records/ 스냅샷(ASCII 파일명, 설계 D-8) → 로컬 원본 경로.
