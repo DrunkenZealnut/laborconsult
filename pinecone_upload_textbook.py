@@ -210,23 +210,30 @@ _JUHAE3_DIR = "근로기준법주해-3"
 
 
 def _juhae3_md(filename: str) -> str:
-    """근로기준법주해-3/ 직속 파일 경로 — 한글 경로라 NFC/NFD 폴백(_gaebyeol_md와 동일 이유)."""
-    for form in ("NFC", "NFD"):
-        p = os.path.join(CORPUS_DIR, unicodedata.normalize(form, _JUHAE3_DIR),
-                         unicodedata.normalize(form, filename))
-        if os.path.exists(p):
-            return p
+    """근로기준법주해-3/ 직속 파일 경로 — 한글 경로라 NFC/NFD 폴백(_gaebyeol_md와 동일 이유).
+
+    디렉터리와 파일명의 정규화 형태를 **독립적으로** 순회한다 — 혼합 조합
+    (NFC 디렉터리 + NFD 파일명)은 바이트 보존 FS에서 단일 form 순회로는
+    못 찾는다(precedent-archive PR#61 doc_path에서 실증된 클래스).
+    """
+    for dir_form in ("NFC", "NFD"):
+        for file_form in ("NFC", "NFD"):
+            p = os.path.join(CORPUS_DIR, unicodedata.normalize(dir_form, _JUHAE3_DIR),
+                             unicodedata.normalize(file_form, filename))
+            if os.path.exists(p):
+                return p
     return os.path.join(CORPUS_DIR, _JUHAE3_DIR, filename)
 
 
 def _juhae3_scan(name: str) -> str:
     """근로기준법주해-3/ 하위 marker 스캔 조각({name}/{name}.md) 경로."""
-    for form in ("NFC", "NFD"):
-        n = unicodedata.normalize(form, name)
-        p = os.path.join(CORPUS_DIR, unicodedata.normalize(form, _JUHAE3_DIR),
-                         n, f"{n}.md")
-        if os.path.exists(p):
-            return p
+    for dir_form in ("NFC", "NFD"):
+        for file_form in ("NFC", "NFD"):
+            n = unicodedata.normalize(file_form, name)
+            p = os.path.join(CORPUS_DIR, unicodedata.normalize(dir_form, _JUHAE3_DIR),
+                             n, f"{n}.md")
+            if os.path.exists(p):
+                return p
     return os.path.join(CORPUS_DIR, _JUHAE3_DIR, name, f"{name}.md")
 
 

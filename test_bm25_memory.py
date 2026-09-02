@@ -103,7 +103,7 @@ def main() -> int:
             failures.append(name)
             print(f"  ❌ {name}" + (f"  {detail}" if detail is not None else ""))
 
-    print("\n[BM25 메모리·동일성]")
+    print("\n[BM25 메모리]")
     probe = _run_probe()
 
     check("로드 성공", probe["ok"], probe)
@@ -145,7 +145,7 @@ def main() -> int:
     if failures:
         print(f"실패 {len(failures)}건: {failures}")
         return 1
-    print("✅ BM25 메모리·동일성 테스트 통과")
+    print("✅ BM25 메모리 테스트 통과")
     return 0
 
 
