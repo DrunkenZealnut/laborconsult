@@ -51,6 +51,14 @@ python3 sync_overlap_precedents.py --emit-targets      # 교재∩기존코퍼�
 python3 sync_overlap_precedents.py --delete-ctx --dry-run  # 대체 성공분의 ctx 구벡터 삭제 (실행 전 반드시 dry-run)
 python3 test_precedent_ingest.py               # 오프라인 회귀 테스트 (API 키 불요)
 
+# 판례 아카이브 (문서 번들 + 인벤토리 장부 → data/precedent_archive/, 커밋 대상)
+# 수집·업로드·ctx 정리 후 build 재실행 → 커밋 (스냅샷 갱신 누락은 로컬 verify V4가 탐지)
+python3 archive_precedents.py build            # 번들·inventory.csv·records/ 스냅샷 (오프라인)
+python3 archive_precedents.py build --pinecone # + ctx·사장 NS 벡터 열거 (조회 전용)
+python3 archive_precedents.py verify           # 정합 V0~V8 — 커밋 전 필수 관문
+python3 archive_precedents.py extract 2000다15869  # 번들 → md 복원
+python3 archive_precedents.py gate             # 크롤 재분류 시에만 (승인 절차는 §7.2 — 표본 육안 필수)
+
 # 노동법 해설서 코퍼스 (본문 임베딩 + 인용 판례 추출)
 python3 pinecone_upload_textbook.py --all --dry-run   # 청킹 검증 (서적 간 chunk_id 충돌 검사 포함)
 python3 pinecone_upload_textbook.py --book juhae3     # 1권 업로드 (--all은 전권)
@@ -254,7 +262,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - 새 소스 추가 시 해당 계열의 세트를 함께 추가/동기화할 것
 - **`output_판례_보강/`는 크롤러가 아니라 법제처 Open API로 채운다** (`fetch_court_precedents.py`). 사건번호 목록만 있으면 원문을 받아올 수 있는 유일한 경로다 — nodong.kr 크롤러들은 게시판 순회 방식이라 특정 사건을 지목할 수 없다. 설계·실측 근거는 `docs/02-design/features/precedent-corpus-expansion.design.md`. 주의점 셋(전부 **조용히** 실패한다):
   - **법제처 검색은 사건명 기준 fuzzy 매칭**이라 사건번호로 조회해도 무관한 판례를 반환한다(실측: `90누9421` → 6건 반환, 요청 사건 없음). 응답 XML의 `<사건번호>` 정확일치 게이트 없이 채택하면 엉뚱한 판례가 코퍼스에 섞인다.
-  - **법제처 수집 성공률 예측은 72%를 기준선으로 쓸 것.** 표본으로 잡으면 낙관 편향이 크다 — 40건 표본 95% → 전량 83%(precedent-corpus-expansion), 교재 인용 판례는 하급심·구판례 비중이 높아 다시 72%(textbook-corpus-embedding, 166건 중 120건)였다. 미달분은 법제처 DB 미수록이라 재시도해도 회수되지 않고 `_미발견.csv`에 누적된다(현재 156건).
+  - **법제처 수집 성공률 예측은 72%를 기준선으로 쓸 것.** 표본으로 잡으면 낙관 편향이 크다 — 40건 표본 95% → 전량 83%(precedent-corpus-expansion), 교재 인용 판례는 하급심·구판례 비중이 높아 다시 72%(textbook-corpus-embedding, 166건 중 120건)였다. 미달분은 법제처 DB 미수록이라 재시도해도 회수되지 않고 `_미발견.csv`에 누적된다(2026-08-30 실측 967건 — 여러 사이클 누적치. 한때 문서들이 156으로 적고 있었다).
   - **판례 중복 판정은 파일당 대표 사건번호 1개로 해야 한다.** 본문 전체를 정규식으로 긁으면 참조판례 인용까지 잡혀 "A가 B를 인용"을 "B가 코퍼스에 있음"으로 오판한다(실측: 836개 파일에서 819개가 아니라 2,450개가 잡혀 수집 대상 601건 중 133건이 부당 스킵).
   - **`prec`(법원)와 `detc`(헌재)는 XML 스키마가 다르다** — 결과 태그 대소문자(`prec`/`Detc`), `판결요지`↔`결정요지`, `판례내용`↔`전문`, `선고일자`↔`종국일자`. 법원명·판결유형은 detc에 없다.
 - **노동법 해설서 코퍼스(`source_type="textbook"`)는 저작물 본문이라 인용 가드 5종이 전제다.** 2026-08-10에 "교재 본문은 Pinecone에 올리지 않는다"는 기존 결정(`precedent-corpus-expansion` 사이클)을 **가드 구현을 조건으로 변경**했다. 가드 중 하나라도 빠지면 설계 전제가 깨진다:
@@ -279,6 +287,12 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.
 - **해설서 헤딩 위생 처리는 "폐기만 범용, 복원은 명시 치환"이다**(`sanitize_heading`). 오폐기는 섹션 경계 하나를 잃을 뿐이지만 오복원은 코퍼스에 오정보를 남긴다. 규칙 수정 시 주의점 셋 — (1) 의미문자 비율의 **분모에서 공백·구두점을 빼야** 한다(`2. 요 건`이 2/6=0.33로 오폐기됨), (2) 조문 표기 추출은 **길이 검사보다 먼저** 해야 한다(59자짜리가 상한 60을 통과해 잡음째 살아남음), (3) `ocr_fixes`는 **원문 키**로 매칭한다(정제 후 매칭하면 정제 로직 변경 시 치환 키가 조용히 무효). 폐기율 10% 초과 시 업로드가 중단된다. 회귀는 T18.
 - **해설서에서 사건번호를 뽑을 땐 사건부호 화이트리스트가 필수다**(`extract_textbook_cases.py::CASE_RE`). 범용 `CASE_NO_RE`(`\d{2,4}[가-힣]{1,4}\d+`)는 **조문 표기를 사건번호로 오인한다** — 실측(주해Ⅲ): 308건 중 113건이 노이즈였고 상위 오탐이 `43조의2`(31회)·`43조의4`(28)·`109조2`(7)였다. 조문 해설서는 판례 수험서보다 조문 표기 밀도가 훨씬 높아 이 오염이 크다. 화이트리스트는 **긴 부호를 먼저** 나열해야 한다(`다`가 `다카`보다 앞서면 `87다카2803`이 `87다`로 잘린다). 회귀는 T20.
+- **판례 아카이브(`data/precedent_archive/`, `archive_precedents.py`)는 공개 계층 경계가 생명이다.** 저장소가 PUBLIC이므로 커밋 가능한 문서는 두 부류뿐 — ① letec(법제처 원문, 저작권법 제7조 비보호) 전량 ② crawl 중 육안 게이트 통과 `verbatim`(판결문 원문). 게이트 미통과분(editorial 363·post 13 — 판시사항 발췌 게시물·편집 고지·JS 크롤 오염 포함)은 로컬 원본 + `precedent_crawl_*.tar.gz`(gitignore) 저장소 밖 보관. 지킬 것:
+  - **게이트 규칙(`classify_gate_bucket`)을 완화하려면 §7.2 육안 절차를 다시 거칠 것** — 표본 육안(무작위 60+경계 20)에서 혼입 1건이라도 나오면 패턴 추가 후 전량 재분류. 규칙 변경 시 `GATE_RULE_VERSION`을 올려야 기존 승인이 자동 무효화된다. 실측 이력: v1→v2(전합 별개의견·종결문구 앵커), v2→v3(※ 편집 고지·JS 잔재 — 1차 육안에서 2건 발견).
+  - **`records/` 스냅샷은 원본→아카이브 단방향 복사**이고 실사용 원장은 여전히 `output_판례_보강/_uploaded_ids.json`이다(스냅샷은 디스크 유실 대비 백업). 수집·업로드 후 build 재실행을 잊으면 낡은 스냅샷이 남는데, **로컬 `verify` V4가 원본 sha256 대조로 탐지한다(CI 단독으로는 못 잡는다 — 커밋 전 로컬 verify가 유일한 탐지점).**
+  - 대표 사건번호 판정은 `fetch_court_precedents.extract_representative_case_no` import(후속 수집 L2와 같은 답) + `CASE_RE` 화이트리스트 게이트 + 연도 유효성(3자리 기각 — "50~299인 2020" 오탐 실측). **본문 전량 스캔 금지**(참조판례 함정).
+  - `case_key`는 `pinecone_upload_court_precedents.case_no_to_ascii` import — **원장을 만든 바로 그 함수**다(legal의 `_case_no_to_ascii`는 다른 계약: None 반환·NFC 미수행). 회귀는 `test_precedent_ingest.py` T27(is 동일성).
+  - `inventory.csv`에서 doc·vec 계열이 전부 0인 행이 곧 공백 목록 — 실인용 코드 공백 10건(2023다302838 포함)이 후속 수집 대상이고, `note=예시확정` 3건(placeholder)은 수집 불요. 예시/실인용 판정은 `EXAMPLE_CONFIRMED`/`EXAMPLE_OVERRIDE_REAL` 상수가 단일 출처(자동 휴리스틱은 comment 실인용을 구분 못 한다 — insurance.py 근로자성 체크리스트 실측).
 - **macOS 파일명은 NFD(자모 분해)로 저장된다.** 사건번호를 파일명에서 뽑는 코드는 `unicodedata.normalize("NFC", ...)`를 먼저 걸어야 한다 — `[다두도가누]` 같은 완성형 문자 클래스는 NFD 문자열에 절대 매치되지 않고, 폴백이 연도만 잡으면 같은 해 판례들이 동일 ID로 충돌해 Pinecone에서 서로를 덮어쓴다. `pinecone_upload_legal.py::extract_post_id()`가 실제로 이 버그를 갖고 있었고(판례 836개 → 고유 post_id 362개, 474개 덮어쓰기) **2026-08-09 봉인됨**(NFC 선행 + 부호 매핑 + hex 폴백, 회귀는 `test_precedent_ingest.py` T14). **그런데 그 수정이 `pinecone_upload_contextual.py`에 전파되지 않아 같은 결함이 3.5개월간 남아 있었다**(외부감사 2026-08-23 M1 — 4줄짜리 구버전이 `90누9421`에서 연도 `90`만 뽑고 있었다). 원인은 "업로드 스크립트 간 유틸 복사"라는 관례 자체이므로, 사본을 최신화하는 대신 **contextual이 legal의 함수를 import하는 단일 출처**로 합쳤다. 회귀 T14-g~j가 **두 모듈의 결과 동일성**으로 고정한다(사본 대조가 아니라 구조적 보장). 같은 수정에서 `case_\d+` 판정을 `source_type` 조건에서 분리했다 — 같은 `output_legal_cases/`를 legal은 `legal_case`로, contextual은 `qa`로 부르기 때문에 조건에 걸어두면 한쪽에서 한글 제목이 언더스코어로 뭉개진다(`case_001_채용_취소_` → `case_001_____`). 이미 손상된 `precedent` 네임스페이스 자체는 복구하지 않았다 — 프로덕션 검색 대상이 아니고, 그 안의 교재 인용 판례들은 laborlaw-v2에 `precedent_{사건번호}` ID로 재수집돼 있다.
 
 - **Pinecone 인덱스는 다른 프로젝트와 공유한다 — Supabase 공유 스키마와 같은 클래스의 지뢰다.** 인덱스명 `semiconductor-lithography`가 그 흔적이고, 계정에는 인덱스가 5개(`accmanage`·`safecam`·`osh-rag`·`laborsafecam` 포함), 이 인덱스에는 네임스페이스가 19개·139,776벡터 있는데 그중 **기본 네임스페이스 12,169벡터는 반도체 프로젝트 소유다**(실측 2026-08-23: `domain=semiconductor`). 외부감사에서 드러난 규칙 셋:

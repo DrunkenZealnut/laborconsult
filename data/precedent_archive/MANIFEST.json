@@ -1,0 +1,52 @@
+{
+ "bundles": [
+  {
+   "bytes": 4892135,
+   "path": "letec_precedents.jsonl.gz",
+   "records": 1578,
+   "sha256": "a13cbc4c522ef9551216522f8e9ef8a99e05d25d5a6179f236847c6c4cdb7a12"
+  },
+  {
+   "bytes": 1136357,
+   "path": "crawl_verbatim.jsonl.gz",
+   "records": 460,
+   "sha256": "2c1dc9c580f7e29ecb3599e200142d9ad95a7140a94eb5055907a3a35d3aa405"
+  }
+ ],
+ "counts": {
+  "crawl": 836,
+  "documents_rows": 2414,
+  "inventory_rows": 3082,
+  "letec": 1578
+ },
+ "gate_rule_version": 3,
+ "scope_notes": [
+  "NLRC 제외 — data/nlrc_cases.json에 사건번호·본문 필드 없음(설계 §5.3)",
+  "사장 NS는 vec_dead 존재 표시만 — NFD 손상 이력으로 역매핑은 가능분만(설계 D-11)"
+ ],
+ "snapshot_map": {
+  "records/ctx_deleted.json": "output_판례_보강/_ctx_deleted.json",
+  "records/ledger_uploaded_ids.json": "output_판례_보강/_uploaded_ids.json",
+  "records/not_found.csv": "output_판례_보강/_미발견.csv",
+  "records/overlap_targets.csv": "output_판례_보강/_겹침대상.csv",
+  "records/textbook_citations.csv": "output_노동법교재/누락_판례목록.csv"
+ },
+ "snapshot_origin_digests": {
+  "records/ctx_deleted.json": {
+   "sha256": "996d9c5856a33ebc364944155cc1d771c5596d7e13fd15e8b88b28cf1832a788"
+  },
+  "records/ledger_uploaded_ids.json": {
+   "groups": 1568,
+   "sha256": "254999c80c5e264674ce7c103fbdd0536438a1bc2adb9599c204d915eec449f8"
+  },
+  "records/not_found.csv": {
+   "sha256": "4fe5c418ee0d853d894dd5d73c2457f2d6cb88fe5b4dd38c32a9f896a143e02e"
+  },
+  "records/overlap_targets.csv": {
+   "sha256": "c940574a62e9db77a59311b4d41ed840b3cbdf33121b4b02212e7016f06d4ad0"
+  },
+  "records/textbook_citations.csv": {
+   "sha256": "2d8cd00dd66defa65f9f89d1db499e28e20f45ddbda0a276cfe20aaf7b359742"
+  }
+ }
+}

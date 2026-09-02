@@ -336,18 +336,30 @@ def extract_representative_case_no(text: str, filename: str) -> str | None:
 
     우선순위: 메타 테이블 → 파일명 → 본문 앞부분.
     """
+    case_no, _src = extract_representative_case_no_with_src(text, filename)
+    return case_no
+
+
+def extract_representative_case_no_with_src(
+        text: str, filename: str) -> tuple[str | None, str | None]:
+    """extract_representative_case_no + 채택 경로(meta/filename/body_head).
+
+    어느 분기가 채택됐는지는 이 함수만 안다 — 호출부가 값 대조로 역추적하면
+    우선순위 변경 시 라벨이 조용히 오표기된다(archive_precedents의 case_src가
+    소비자, simplify 리뷰 F5).
+    """
     meta = re.search(r"\|\s*사건번호\s*\|\s*([^|]+?)\s*\|", text)
     if meta:
         m = CASE_NO_RE.search(meta.group(1))
         if m:
-            return m.group(1)
+            return m.group(1), "meta"
 
     m = CASE_NO_RE.search(unicodedata.normalize("NFC", filename))
     if m:
-        return m.group(1)
+        return m.group(1), "filename"
 
     m = CASE_NO_RE.search(text[:1500])
-    return m.group(1) if m else None
+    return (m.group(1), "body_head") if m else (None, None)
 
 
 def resolve_existing(cases_mode: bool) -> set[str]:
