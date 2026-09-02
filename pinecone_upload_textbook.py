@@ -206,6 +206,30 @@ def _gaebyeol_md(name: str) -> str:
     return os.path.join(CORPUS_DIR, _GAEBYEOL_DIR, name, "_markdown", name, f"{name}.md")
 
 
+_JUHAE3_DIR = "근로기준법주해-3"
+
+
+def _juhae3_md(filename: str) -> str:
+    """근로기준법주해-3/ 직속 파일 경로 — 한글 경로라 NFC/NFD 폴백(_gaebyeol_md와 동일 이유)."""
+    for form in ("NFC", "NFD"):
+        p = os.path.join(CORPUS_DIR, unicodedata.normalize(form, _JUHAE3_DIR),
+                         unicodedata.normalize(form, filename))
+        if os.path.exists(p):
+            return p
+    return os.path.join(CORPUS_DIR, _JUHAE3_DIR, filename)
+
+
+def _juhae3_scan(name: str) -> str:
+    """근로기준법주해-3/ 하위 marker 스캔 조각({name}/{name}.md) 경로."""
+    for form in ("NFC", "NFD"):
+        n = unicodedata.normalize(form, name)
+        p = os.path.join(CORPUS_DIR, unicodedata.normalize(form, _JUHAE3_DIR),
+                         n, f"{n}.md")
+        if os.path.exists(p):
+            return p
+    return os.path.join(CORPUS_DIR, _JUHAE3_DIR, name, f"{name}.md")
+
+
 BOOKS: dict[str, Book] = {
     "win": Book(
         book_id="win",
@@ -217,11 +241,28 @@ BOOKS: dict[str, Book] = {
     ),
     "juhae3": Book(
         book_id="juhae3",
-        title="근로기준법 주해 Ⅲ — 임금(제2판 수정증보판)",
-        path=os.path.join(CORPUS_DIR, "근로기준법주해3_임금.md"),
+        # 수록 범위를 title에 명시한다(부분 수록 규칙 — G3가 이 문자열을 인용
+        # 서명으로 쓴다). 2026-09-02에 같은 권의 4개 장 스캔이 추가됐다:
+        # 제3장 임금(1~185) → 제4장 근로시간과 휴식(186~) → 제5장 여성과
+        # 소년 → 제6장의2 직장 내 괴롭힘(590~) → 제8장 재해보상(644~721).
+        # 스캔 확보분만 수록(제6장·제7장 없음). 조각은 **뒤에만 추가할 것.**
+        title="근로기준법 주해 Ⅲ — 임금·근로시간과 휴식·여성과 소년·"
+              "직장 내 괴롭힘·재해보상(제2판 수정증보판)",
+        path=_juhae3_md("근로기준법주해3_임금.md"),
         # 1~5페이지가 표지·목차. page 6 직후에 '# 제 3장 임 금'이 나온다.
         body_start="<!-- page: 6 -->",
         ocr_fixes=JUHAE3_OCR_FIXES,
+        # 각 조각의 page 0은 속표지(장 제목뿐) — page 1부터 본문.
+        extra_parts=(
+            BookPart(path=_juhae3_scan("iPhone_15_-_근로기준법주해_근로시간과_휴식"),
+                     body_start="<!-- page: 1 -->"),
+            BookPart(path=_juhae3_scan("iPhone_15_-_근로기준법주해_여성과소년"),
+                     body_start="<!-- page: 1 -->"),
+            BookPart(path=_juhae3_scan("iPhone_15_-_근로기준법주해_직장내괴롭힘금지"),
+                     body_start="<!-- page: 1 -->"),
+            BookPart(path=_juhae3_scan("iPhone_15_-_근로기준법주해_재해보상"),
+                     body_start="<!-- page: 1 -->"),
+        ),
     ),
     "gaebyeol": Book(
         book_id="gaebyeol",

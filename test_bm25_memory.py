@@ -134,30 +134,12 @@ def main() -> int:
     else:
         print(f"  ✅ 로드 시간 {probe['elapsed']:.1f}초")
 
-    # ── 신·구 포맷 등가성 ────────────────────────────────────────────────
-    # 프로즌 기준값 대신 **같은 실행에서 두 경로를 대조**한다(위 주석 참조).
-    jsonl = os.path.join(BASE_DIR, "data", "bm25_corpus.jsonl.gz")
-    legacy = os.path.join(BASE_DIR, "data", "bm25_corpus.json.gz")
-    if os.path.exists(jsonl) and os.path.exists(legacy):
-        a = _run_probe(only=jsonl)
-        b = _run_probe(only=legacy)
-        diffs = [q for q in IDENTITY_QUERIES
-                 if a["results"].get(q) != b["results"].get(q)]
-        check(f"신·구 포맷 검색 결과 동일 {len(IDENTITY_QUERIES) - len(diffs)}"
-              f"/{len(IDENTITY_QUERIES)} 쿼리", not diffs, diffs[:2])
-        check(f"스트리밍이 배열보다 메모리 절감 "
-              f"({a['rss']:.0f}MB < {b['rss']:.0f}MB)",
-              a["rss"] < b["rss"], (a["rss"], b["rss"]))
-    else:
-        # **건너뛰고 성공시키지 않는다.** 이 대조가 "스트리밍이 값을 보존한다"는
-        # 유일한 증거이고, 구 파일 삭제는 **이 검증이 CI에서 성공한 뒤**가 순서다.
-        # 생략을 허용하면 검증 없이 머지되는 경로가 열린다(CodeRabbit 리뷰 2026-08-27).
-        #
-        # 전환이 끝나 구 파일을 지울 때는 이 블록과 위 대조를 **함께** 제거한다
-        # — 그때는 대조할 대상이 없는 것이 정상이기 때문이다.
-        check("신·구 포맷 등가성 대조 가능", False,
-              f"구 포맷({os.path.basename(legacy)})이 없어 대조를 못 했습니다.\n"
-              f"     전환 완료로 삭제한 것이라면 이 검사 블록도 함께 제거하세요.")
+    # ── 신·구 포맷 등가성 대조는 종결됨(2026-09-02) ──────────────────────
+    # 전환기 검증("스트리밍이 값을 보존한다")은 PR #60 이후 CI에서 성공을
+    # 반복했고, 주해Ⅲ 증분 재빌드로 두 파일이 다른 코퍼스가 되는 시점에
+    # 이 블록의 원 주석이 지시한 종결 절차대로 구 파일(bm25_corpus.json.gz,
+    # 20MB)과 대조 검사를 **함께** 제거했다. 로더의 구 포맷 폴백 경로는
+    # 남아 있다(bm25_search — 외부 사본 대비 무해).
 
     print()
     if failures:
