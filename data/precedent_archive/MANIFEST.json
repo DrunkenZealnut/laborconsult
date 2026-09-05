@@ -1,10 +1,10 @@
 {
  "bundles": [
   {
-   "bytes": 5295700,
+   "bytes": 5322387,
    "path": "letec_precedents.jsonl.gz",
-   "records": 1734,
-   "sha256": "061c323952b95f2225b6deb1c3ae6d9e9bf3b0f1d4af465b514bdd2f2e64eb95"
+   "records": 1744,
+   "sha256": "a8a1a67ef999ad0cc16d1989cdb5a89b24befffb6e5a95c38151f4b0bc2d2539"
   },
   {
    "bytes": 1136357,
@@ -15,9 +15,9 @@
  ],
  "counts": {
   "crawl": 836,
-  "documents_rows": 2570,
-  "inventory_rows": 4025,
-  "letec": 1734
+  "documents_rows": 2580,
+  "inventory_rows": 4072,
+  "letec": 1744
  },
  "gate_rule_version": 3,
  "scope_notes": [
@@ -36,11 +36,11 @@
    "sha256": "996d9c5856a33ebc364944155cc1d771c5596d7e13fd15e8b88b28cf1832a788"
   },
   "records/ledger_uploaded_ids.json": {
-   "groups": 1723,
-   "sha256": "d8e4979ef30da8f57349c2fab915112fef30a15872e3a7089fa9881b1e4d0da9"
+   "groups": 1732,
+   "sha256": "07a4cfbdd3935cf191a2e9b859ade1f00c5330718d966791ac4ae6d1bce68354"
   },
   "records/not_found.csv": {
-   "sha256": "ded47876c0147f39eb822686b99785ce1798fd2e0ad377f38fb88a22a9adb226"
+   "sha256": "0d626374f10e6ec9a4815a4e1d196009320c861cc4969ad75ecc4639513caa99"
   },
   "records/overlap_targets.csv": {
    "sha256": "c940574a62e9db77a59311b4d41ed840b3cbdf33121b4b02212e7016f06d4ad0"
