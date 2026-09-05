@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """노동법 해설서 marker 변환본을 Pinecone laborlaw-v2 네임스페이스에 업로드.
 
-대상 서적은 BOOKS 레지스트리로 관리한다(현재 4권 — Win 노동법, 근로기준법 주해 Ⅲ,
-개별 노동법실무, 이론판례 노동법). 각 서적의 마크다운을 헤더 단위로 분할 → 청킹 →
-임베딩 → 업로드한다. 4권 체제의 저작권 영향은 없음 — G4-T 총량 상한 6은 서적 수와
-무관하게 고정이고, 권당 상한의 실효 천장은 rerank_top_n에 막혀 4권에서 포화한다
-(CLAUDE.md G4-T 절의 시나리오 표).
+대상 서적은 BOOKS 레지스트리로 관리한다(현재 5권 — Win 노동법, 근로기준법 주해 Ⅲ,
+개별 노동법실무, 이론판례 노동법, 연차휴가와 노동법). 각 서적의 마크다운을 헤더
+단위로 분할 → 청킹 → 임베딩 → 업로드한다. 5권 체제의 저작권 영향은 없음 — G4-T
+총량 상한 6은 서적 수와 무관하게 고정이고, 권당 상한의 실효 천장은 rerank_top_n에
+막혀 4권에서 이미 포화한다(CLAUDE.md G4-T 절의 시나리오 표).
 원본 스캔이 여러 파일로 쪼개진 서적은 Book.extra_parts로 조각을 이어붙인다.
 crawl/metadata 단계 없이 upload 스크립트 하나로 처리하는 점은
 pinecone_upload_counsel.py와 동일한 관례를 따름.
@@ -14,8 +14,12 @@ pinecone_upload_counsel.py와 동일한 관례를 따름.
 (설계 §4):
   · G1~G3  답변의 축자 인용 금지·단독 근거 금지·서명 표기  (app/templates/prompts.py)
   · G4     동일 서적 청크 상한 3                            (app/core/rag.py::_cap_by_book)
+  · G4-T   해설서 총량 상한 6                               (rag.py::_cap_textbook_total)
   · G5     출처 라벨 "노동법 해설서"                         (rag.py + public/index.html)
-가드 없이 이 스크립트만 실행하면 설계 전제가 깨진다.
+  · G6     해설서 근거 답변은 공개 게시판에서 제외           (storage.py::PUBLIC_EXCLUDE_KEYS)
+가드 없이 이 스크립트만 실행하면 설계 전제가 깨진다. **목록을 줄이지 말 것** —
+이 docstring이 제3자 저작물을 올리는 스크립트의 on-file 계약이라, 빠진 가드는
+다음 유지보수자가 구현을 대조할 때 '없어도 되는 것'으로 읽힌다.
 
 사용법:
   python3 pinecone_upload_textbook.py --book juhae3 --dry-run   # 청킹만
@@ -237,6 +241,41 @@ def _juhae3_scan(name: str) -> str:
     return os.path.join(CORPUS_DIR, _JUHAE3_DIR, name, f"{name}.md")
 
 
+_YEONCHA_DIR = "연차휴가와노동법"
+
+
+def _yeoncha_md(filename: str) -> str:
+    """연차휴가와노동법/ 직속 파일 경로 — 디렉터리·파일명 정규화 형태를 독립 순회.
+
+    _juhae3_md와 같은 이유다(한글 경로 NFC/NFD). 혼합 조합(NFC 디렉터리 +
+    NFD 파일명)은 바이트 보존 FS에서 단일 form 순회로는 못 찾는다.
+    """
+    for dir_form in ("NFC", "NFD"):
+        for file_form in ("NFC", "NFD"):
+            p = os.path.join(CORPUS_DIR, unicodedata.normalize(dir_form, _YEONCHA_DIR),
+                             unicodedata.normalize(file_form, filename))
+            if os.path.exists(p):
+                return p
+    return os.path.join(CORPUS_DIR, _YEONCHA_DIR, filename)
+
+
+# 이 책의 h1~h3 헤딩 중 marker OCR이 깨뜨린 것 + 장 표제의 장식 잔재.
+# '제상.'은 제1장 속표지(page 20)의 헤딩이다. 잔해만으로는 복원할 수 없어
+# 보이지만 **같은 문서 안에 근거가 있다** — 목차(page 1)의 '제1장 서 론'과,
+# 그 속표지 본문이 나열하는 '제1절 연차휴가의 의의와 연혁 / 제2절 연차휴가제도의
+# 적용범위'가 목차의 제1장 구성과 일치한다. 복원하지 않으면 폐기되어 제1장
+# 본문 19쪽이 직전 섹션('일러두기')에 흡수되고, 출처 카드가 그 이름으로 표시된다.
+# 나머지 4건은 장 표제의 구분 장식('...'·'···') 제거뿐이다 — sanitize_heading의
+# strip은 양끝만 훑어 문자열 중간의 장식은 남는다.
+YEONCHA_OCR_FIXES = {
+    "제상.": "제1장 서 론",
+    "제2장 ... 연차휴가의 발생": "제2장 연차휴가의 발생",
+    "제3장 ··· 연차휴가의 사용": "제3장 연차휴가의 사용",
+    "제4장 ... 연차휴가와 임금등": "제4장 연차휴가와 임금등",
+    "제5장 ··· 기타 쟁점": "제5장 기타 쟁점",
+}
+
+
 BOOKS: dict[str, Book] = {
     "win": Book(
         book_id="win",
@@ -353,6 +392,25 @@ BOOKS: dict[str, Book] = {
             BookPart(os.path.join(CORPUS_DIR, "이론판례노동법", "part3", "part3.md"),
                      "<!-- page: 1 -->"),
         ),
+    ),
+    "yeoncha": Book(
+        book_id="yeoncha",
+        # 전권 수록(단일 스캔 파일, 제1장~제5장 + 부록 서식).
+        title="연차휴가와 노동법 — 실무자를 위한 연차휴가 업무처리 지침서"
+              "(조갑식, 중앙경제)",
+        path=_yeoncha_md("연차휴가와노동법.md"),
+        # p0 표지, p1~18 목차·서식목차. **page 19(일러두기)부터 시작하는 것이
+        # 필수다** — 이 책은 소제목 대부분이 h4라 _HEADING_RE(h1~h3)가 잡는 첫
+        # 헤딩이 page 19의 '### 일러두기', 그 다음이 page 20의 '# 제상.'(→
+        # ocr_fixes로 제1장 복원), 그 다음은 **page 40의 제2장**이다.
+        # page 21로 잘라 두면 첫 헤딩이 page 40이 되고, parse_sections가
+        # '첫 헤딩보다 앞선 텍스트'로 취급해 **제1장 본문 19쪽(약 41청크)이
+        # 통째로 사라진다**. 폐기율 게이트는 헤딩만 세므로 이 경로를 못 잡는다
+        # (실측: page 21 시작 시 924청크 vs page 19 시작 시 965청크).
+        # 일러두기 자체도 버릴 내용이 아니다 — 저자가 이 책 전반에서 쓰는
+        # 임의용어(기본연차·가산휴가·정상연차·회계연도) 정의가 여기에만 있다.
+        body_start="<!-- page: 19 -->",
+        ocr_fixes=YEONCHA_OCR_FIXES,
     ),
 }
 
