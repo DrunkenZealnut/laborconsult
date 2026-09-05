@@ -7,7 +7,9 @@ markdownify>=1.2.0
 # 호출 시점에 죽는데, 폴백은 장애 때만 타므로 발견이 늦다.
 openai>=1.45.0
 # >=5: sync_overlap_precedents.py가 쓰는 Index.list(prefix=) 필요 — 3.0.0에는 없다
-pinecone>=5.0.0
+# >=8.0.0: build_bm25_corpus.py가 쓰는 fetch_by_metadata가 8.0.0 도입이다.
+# 5.x가 설치되면 코퍼스 수집이 AttributeError로 죽는다(현재 실행은 9.1.0).
+pinecone>=8.0.0
 anthropic>=0.20.0
 python-dotenv>=1.0.0
 fastapi>=0.115.0

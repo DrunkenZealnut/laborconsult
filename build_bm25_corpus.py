@@ -26,7 +26,10 @@ load_dotenv()
 # 둔다. 이 값은 '느려도 기다린다'는 뜻이지 무한 대기가 아니다 — 진짜 무응답은
 # 재시도 소진 후 예외로 올라온다.
 PAGE_TIMEOUT = 180.0
-PAGE_RETRIES = 4
+# **총 시도 횟수**(최초 호출 + 재시도)이지 재시도 횟수가 아니다 — 이전 이름
+# PAGE_RETRIES는 루프가 실제로 하는 일(4회 호출 = 재시도 3회)과 어긋나 읽는
+# 사람마다 다르게 셌다.
+PAGE_ATTEMPTS = 4
 PAGE_LIMIT = 100  # 상향해도 처리량이 늘지 않는다(실측 limit 100/500/1000 = 6.5/4.0/4.7건/s)
 
 
@@ -39,17 +42,17 @@ def _fetch_page(index, ns: str, pagination_token):
     """
     import time
 
-    # 마지막 시도는 루프 밖에 둔다 — 루프 안에서 `attempt == PAGE_RETRIES - 1`로
-    # 분기하면 PAGE_RETRIES가 0 이하일 때 루프가 통째로 건너뛰어져 **None이
-    # 반환된다**. 호출부의 `resp.vectors`가 AttributeError를 내고, 그것이
-    # 네임스페이스 단위 except에 삼켜져 설정 실수가 '조회 실패'로 둔갑한다.
-    for attempt in range(max(PAGE_RETRIES - 1, 0)):
+    # 마지막 시도는 루프 밖에 둔다 — 루프 안에서 `attempt == 마지막`으로 분기하면
+    # PAGE_ATTEMPTS가 0 이하일 때 루프가 통째로 건너뛰어져 **None이 반환된다**.
+    # 호출부의 `resp.vectors`가 AttributeError를 내고, 그것이 네임스페이스 단위
+    # except에 삼켜져 설정 실수가 '조회 실패'로 둔갑한다.
+    retries = max(PAGE_ATTEMPTS - 1, 0)
+    for attempt in range(retries):
         try:
             return _fetch_once(index, ns, pagination_token)
         except Exception as e:
             wait = 2 ** attempt
-            print(f"      재시도 {attempt + 1}/{PAGE_RETRIES - 1} ({wait}s 후): {e}",
-                  flush=True)
+            print(f"      재시도 {attempt + 1}/{retries} ({wait}s 후): {e}", flush=True)
             time.sleep(wait)
     return _fetch_once(index, ns, pagination_token)
 
