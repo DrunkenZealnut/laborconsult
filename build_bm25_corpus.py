@@ -19,6 +19,51 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# 한 페이지(100건) 조회의 실측 지연은 15~16초이고 첫 페이지는 70초까지 걸린다.
+# SDK 클라이언트 기본 타임아웃은 30초라 **정상 동작 구간이 타임아웃 경계에 걸쳐**
+# 있었다 — 2026-09-04 실행에서 laborlaw-v2·counsel이 "read operation timed out"으로
+# 죽고 qa만 남아 저장이 건너뛰어졌다(가드는 정상 작동). 상한을 지연 실측의 몇 배로
+# 둔다. 이 값은 '느려도 기다린다'는 뜻이지 무한 대기가 아니다 — 진짜 무응답은
+# 재시도 소진 후 예외로 올라온다.
+PAGE_TIMEOUT = 180.0
+PAGE_RETRIES = 4
+PAGE_LIMIT = 100  # 상향해도 처리량이 늘지 않는다(실측 limit 100/500/1000 = 6.5/4.0/4.7건/s)
+
+
+def _fetch_page(index, ns: str, pagination_token):
+    """페이지 1개 조회 — 일시적 오류는 같은 커서로 재시도한다.
+
+    **재시도가 없으면 왕복 800회짜리 수집이 단 한 번의 타임아웃으로 전량
+    폐기된다**(네임스페이스 단위 except가 루프 바깥에 있다). 커서는 성공한
+    뒤에만 전진하므로 같은 토큰 재요청은 중복·누락을 만들지 않는다.
+    """
+    import time
+
+    # 마지막 시도는 루프 밖에 둔다 — 루프 안에서 `attempt == PAGE_RETRIES - 1`로
+    # 분기하면 PAGE_RETRIES가 0 이하일 때 루프가 통째로 건너뛰어져 **None이
+    # 반환된다**. 호출부의 `resp.vectors`가 AttributeError를 내고, 그것이
+    # 네임스페이스 단위 except에 삼켜져 설정 실수가 '조회 실패'로 둔갑한다.
+    for attempt in range(max(PAGE_RETRIES - 1, 0)):
+        try:
+            return _fetch_once(index, ns, pagination_token)
+        except Exception as e:
+            wait = 2 ** attempt
+            print(f"      재시도 {attempt + 1}/{PAGE_RETRIES - 1} ({wait}s 후): {e}",
+                  flush=True)
+            time.sleep(wait)
+    return _fetch_once(index, ns, pagination_token)
+
+
+def _fetch_once(index, ns: str, pagination_token):
+    return index.fetch_by_metadata(
+        filter={"chunk_index": {"$gte": 0}},
+        namespace=ns,
+        limit=PAGE_LIMIT,
+        pagination_token=pagination_token,
+        timeout=PAGE_TIMEOUT,
+    )
+
+
 def build_corpus() -> None:
     api_key = os.getenv("PINECONE_API_KEY")
     if not api_key:
@@ -37,9 +82,10 @@ def build_corpus() -> None:
     failed_namespaces: list[str] = []
 
     for ns in namespaces:
-        print(f"  Fetching namespace: {ns}...")
+        print(f"  Fetching namespace: {ns}...", flush=True)
         try:
             count = 0
+            pages = 0
             pagination_token = None
             while True:
                 # index.list()+fetch(by id)는 이 계정에서 list()가 반환한 ID가
@@ -48,12 +94,8 @@ def build_corpus() -> None:
                 # query()/fetch_by_metadata는 정상 동작함을 확인) 메타데이터
                 # 필터 기반 페이지네이션으로 우회한다. chunk_index는 모든
                 # 청크에 항상 존재하는 정수 필드라 전체 매치용으로 사용.
-                resp = index.fetch_by_metadata(
-                    filter={"chunk_index": {"$gte": 0}},
-                    namespace=ns,
-                    limit=100,
-                    pagination_token=pagination_token,
-                )
+                resp = _fetch_page(index, ns, pagination_token)
+                pages += 1
                 for vid, vec in resp.vectors.items():
                     meta = vec.metadata or {}
                     # laborlaw-v2(Contextual Retrieval)는 "text" 없이 "chunk_text"만 존재
@@ -81,9 +123,19 @@ def build_corpus() -> None:
                     corpus.append(entry)
                     count += 1
                 pagination_token = resp.pagination.next if resp.pagination else None
+                # 왕복 800회 × 15초라 전체가 수 시간이다. 진행 표시가 없으면
+                # '느린 것'과 '멈춘 것'을 밖에서 구분할 수 없다.
+                #
+                # **문서 수가 아니라 페이지 수로 센다.** 문서 카운터는 위의
+                # `if not text: continue` 하나만 걸려도, 또는 API가 100건 미만
+                # 페이지를 한 번만 돌려줘도 2,000의 배수를 영영 비껴가 진행
+                # 표시가 그 뒤로 통째로 침묵한다 — 이 표시가 막으려던 상태와
+                # 정확히 같은 모습이 된다. 페이지 카운터는 무조건 증가한다.
+                if pages % 20 == 0:
+                    print(f"      {ns}: {count:,}건 ({pages}페이지)...", flush=True)
                 if not pagination_token:
                     break
-            print(f"    {ns}: {count} documents")
+            print(f"    {ns}: {count} documents", flush=True)
             # 0건은 **예외 없이** 나온다 — 메타데이터 필터가 스키마 변경과
             # 어긋나거나 SDK 페이지네이션 동작이 바뀌면 조용히 빈 결과가 온다
             # (외부감사 2026-08-23 M7). 그대로 저장하면 부분 코퍼스가 정상
