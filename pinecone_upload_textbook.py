@@ -141,10 +141,17 @@ class Book:
         dup = {p for p in paths if paths.count(p) > 1}
         if dup:
             raise ValueError(f"'{self.book_id}' 조각 경로가 중복됩니다: {sorted(dup)}")
-        if not 1 <= self.heading_max_level <= 6:
+        # 타입까지 본다 — 범위만 검사하면 3.5·True가 통과하고, `#{1,3.5}`는
+        # 정규식 수량자가 아니라 **리터럴**로 해석돼 예외 없이 어떤 헤딩에도
+        # 매치되지 않는다. 그러면 parse_sections가 본문 전체를 '본문' 한 섹션으로
+        # 만들고 폐기율은 0/0이라 게이트도 통과한다 — 전형적인 조용한 실패다.
+        # bool은 int의 서브클래스라 따로 배제한다(True == 1).
+        if (not isinstance(self.heading_max_level, int)
+                or isinstance(self.heading_max_level, bool)
+                or not 1 <= self.heading_max_level <= 6):
             raise ValueError(
-                f"'{self.book_id}' heading_max_level은 1~6이어야 합니다: "
-                f"{self.heading_max_level}")
+                f"'{self.book_id}' heading_max_level은 1~6의 정수여야 합니다: "
+                f"{self.heading_max_level!r}")
 
     @property
     def heading_re(self) -> re.Pattern:

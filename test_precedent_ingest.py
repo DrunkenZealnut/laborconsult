@@ -2143,9 +2143,17 @@ def t29_heading_levels() -> None:
                 if tb.NON_BOUNDARY_RE.match(m.group(2).strip())]
         check(f"T29-h {bid} h1~h3에 콜아웃 매치 0건", not hits, hits[:3])
 
-    check("T29-i heading_max_level 범위 검증", _raises(
-        lambda: tb.Book(book_id="t29c", title="T", path=__file__,
-                        body_start="x", heading_max_level=7), ValueError))
+    # 범위만 보면 3.5·True가 통과하고, `#{1,3.5}`는 수량자가 아니라 리터럴이라
+    # 예외 없이 **어떤 헤딩에도 매치되지 않는다** → 본문 전체가 '본문' 한 섹션이
+    # 되고 폐기율 0/0이라 게이트도 통과한다(CodeRabbit PR#68).
+    for bad in (7, 0, -1, 3.5, True, "3", None):
+        check(f"T29-i heading_max_level 거부: {bad!r}", _raises(
+            lambda v=bad: tb.Book(book_id="t29c", title="T", path=__file__,
+                                  body_start="x", heading_max_level=v),
+            (ValueError, TypeError)))
+    # 그 실패가 왜 조용한지 — 리터럴 패턴이 정상 헤딩에 매치되지 않음을 고정한다.
+    check("T29-j 잘못된 레벨의 패턴은 헤딩에 매치되지 않는다(조용한 실패 근거)",
+          not re.compile(r"^(#{1,3.5})\s+(.+)$", re.M).search("## 제1장 총칙\n"))
 
 
 def _raises(fn, exc) -> bool:
