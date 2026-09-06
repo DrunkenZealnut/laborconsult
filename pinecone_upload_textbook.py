@@ -35,6 +35,7 @@ import sys
 import json
 import time
 import argparse
+import itertools
 import unicodedata
 from dataclasses import dataclass, field
 
@@ -193,70 +194,46 @@ GAEBYEOL_OCR_FIXES = {
 _GAEBYEOL_DIR = "개별노동법실무1"
 
 
-def _gaebyeol_md(name: str) -> str:
-    """조각 경로. macOS는 파일명을 NFD로 저장하므로 정규화 형태를 모두 시도한다.
+def _corpus_path(*segments: str) -> str:
+    """CORPUS_DIR 아래 경로 — 각 구성요소의 정규화 형태를 **독립적으로** 순회한다.
 
-    소스 리터럴은 NFC라 디스크의 NFD 이름과 **바이트가 다르다**. macOS(APFS)는
-    조회 시 정규화해 주지만 Linux/ext4·CI·네트워크 공유는 그러지 않아, 같은
-    코드가 `ls`에 보이는 파일을 '없다'고 말한다. 이 저장소는 NFD로 벡터 474개를
-    잃은 전력이 있다.
+    소스 리터럴은 NFC인데 macOS는 파일명을 NFD로 저장해 디스크 이름과 **바이트가
+    다르다**. macOS(APFS)는 조회 시 정규화해 주지만 Linux/ext4·CI·네트워크 공유는
+    그러지 않아, 같은 코드가 `ls`에 보이는 파일을 '없다'고 말한다. 이 저장소는
+    NFD로 벡터 474개를 잃은 전력이 있고, **macOS 통과는 증거가 아니다**.
+
+    구성요소별로 독립 순회하는 것이 핵심이다 — 혼합 조합(NFC 디렉터리 + NFD
+    파일명)은 바이트 보존 FS에서 단일 form 순회로는 못 찾는다(precedent-archive
+    PR#61 doc_path에서 실증된 클래스). 서적마다 헬퍼를 따로 두던 구조가 정확히
+    그 결함을 만들었다 — `_juhae3_scan`이 디렉터리·파일명을 같은 form으로 묶어
+    4조합만 시도했고, `win`·`ironpanrye`는 폴백 자체가 없었다. 사본을 최신화하는
+    대신 단일 출처로 합친 것은 `vector_ledger.py`와 같은 이유다(업로드 스크립트
+    간 유틸 복사가 3.5개월짜리 드리프트를 만든 전력).
+
+    조합 수는 2^len(segments)이고 실측 stat 비용은 4µs/회라, 최대 5구성요소(32회)
+    여도 임포트 시간에 영향이 없다.
     """
-    for form in ("NFC", "NFD"):
-        p = os.path.join(CORPUS_DIR, unicodedata.normalize(form, _GAEBYEOL_DIR),
-                         name, "_markdown", name, f"{name}.md")
+    for forms in itertools.product(("NFC", "NFD"), repeat=len(segments)):
+        p = os.path.join(CORPUS_DIR, *(unicodedata.normalize(f, s)
+                                       for f, s in zip(forms, segments)))
         if os.path.exists(p):
             return p
-    # 어느 형태로도 없으면 호출부(존재 검사)가 경로를 그대로 보고하게 둔다.
-    return os.path.join(CORPUS_DIR, _GAEBYEOL_DIR, name, "_markdown", name, f"{name}.md")
+    # 어느 조합으로도 없으면 호출부(존재 검사)가 경로를 그대로 보고하게 둔다.
+    return os.path.join(CORPUS_DIR, *segments)
+
+
+def _gaebyeol_md(name: str) -> str:
+    """조각 경로 — {name}/_markdown/{name}/{name}.md 3중으로 name을 쓴다."""
+    return _corpus_path(_GAEBYEOL_DIR, name, "_markdown", name, f"{name}.md")
 
 
 _JUHAE3_DIR = "근로기준법주해-3"
-
-
-def _juhae3_md(filename: str) -> str:
-    """근로기준법주해-3/ 직속 파일 경로 — 한글 경로라 NFC/NFD 폴백(_gaebyeol_md와 동일 이유).
-
-    디렉터리와 파일명의 정규화 형태를 **독립적으로** 순회한다 — 혼합 조합
-    (NFC 디렉터리 + NFD 파일명)은 바이트 보존 FS에서 단일 form 순회로는
-    못 찾는다(precedent-archive PR#61 doc_path에서 실증된 클래스).
-    """
-    for dir_form in ("NFC", "NFD"):
-        for file_form in ("NFC", "NFD"):
-            p = os.path.join(CORPUS_DIR, unicodedata.normalize(dir_form, _JUHAE3_DIR),
-                             unicodedata.normalize(file_form, filename))
-            if os.path.exists(p):
-                return p
-    return os.path.join(CORPUS_DIR, _JUHAE3_DIR, filename)
+_YEONCHA_DIR = "연차휴가와노동법"
 
 
 def _juhae3_scan(name: str) -> str:
     """근로기준법주해-3/ 하위 marker 스캔 조각({name}/{name}.md) 경로."""
-    for dir_form in ("NFC", "NFD"):
-        for file_form in ("NFC", "NFD"):
-            n = unicodedata.normalize(file_form, name)
-            p = os.path.join(CORPUS_DIR, unicodedata.normalize(dir_form, _JUHAE3_DIR),
-                             n, f"{n}.md")
-            if os.path.exists(p):
-                return p
-    return os.path.join(CORPUS_DIR, _JUHAE3_DIR, name, f"{name}.md")
-
-
-_YEONCHA_DIR = "연차휴가와노동법"
-
-
-def _yeoncha_md(filename: str) -> str:
-    """연차휴가와노동법/ 직속 파일 경로 — 디렉터리·파일명 정규화 형태를 독립 순회.
-
-    _juhae3_md와 같은 이유다(한글 경로 NFC/NFD). 혼합 조합(NFC 디렉터리 +
-    NFD 파일명)은 바이트 보존 FS에서 단일 form 순회로는 못 찾는다.
-    """
-    for dir_form in ("NFC", "NFD"):
-        for file_form in ("NFC", "NFD"):
-            p = os.path.join(CORPUS_DIR, unicodedata.normalize(dir_form, _YEONCHA_DIR),
-                             unicodedata.normalize(file_form, filename))
-            if os.path.exists(p):
-                return p
-    return os.path.join(CORPUS_DIR, _YEONCHA_DIR, filename)
+    return _corpus_path(_JUHAE3_DIR, name, f"{name}.md")
 
 
 # 이 책의 h1~h3 헤딩 중 marker OCR이 깨뜨린 것 + 장 표제의 장식 잔재.
@@ -280,7 +257,7 @@ BOOKS: dict[str, Book] = {
     "win": Book(
         book_id="win",
         title="Win 노동법(2025, 공인노무사·5급공채·변호사시험 대비)",
-        path=os.path.join(CORPUS_DIR, "Win노동법_merged.md"),
+        path=_corpus_path("Win노동법_merged.md"),
         # 표지·목차(0~17)는 marker OCR이 표 구조를 깨뜨려 글자 스프뿐이라 전량 제외.
         body_start="<!-- page: 18 -->",
         ocr_fixes=WIN_OCR_FIXES,
@@ -294,7 +271,7 @@ BOOKS: dict[str, Book] = {
         # 스캔 확보분만 수록(제6장·제7장 없음). 조각은 **뒤에만 추가할 것.**
         title="근로기준법 주해 Ⅲ — 임금·근로시간과 휴식·여성과 소년·"
               "직장 내 괴롭힘·재해보상(제2판 수정증보판)",
-        path=_juhae3_md("근로기준법주해3_임금.md"),
+        path=_corpus_path(_JUHAE3_DIR, "근로기준법주해3_임금.md"),
         # 1~5페이지가 표지·목차. page 6 직후에 '# 제 3장 임 금'이 나온다.
         body_start="<!-- page: 6 -->",
         ocr_fixes=JUHAE3_OCR_FIXES,
@@ -377,7 +354,7 @@ BOOKS: dict[str, Book] = {
         title="이론판례 노동법(제15판, 김기범 편저, 2026)",
         # p0 표지, p1 법령 약어표, p2~17 목차, p18 PART 01 속표지(이미지).
         # page 19에서 'Chapter 01 노동법의 법원'으로 본문이 시작한다.
-        path=os.path.join(CORPUS_DIR, "이론판례노동법", "이론판례노동법.md"),
+        path=_corpus_path("이론판례노동법", "이론판례노동법.md"),
         body_start="<!-- page: 19 -->",
         # part3의 저신호 제외율이 10.5%로 전역 상한(10%)을 스치는데, 제외
         # 68건 전량 육안 판정 결과 전부 정당한 잡음이었다 — 빈 표 구분선
@@ -387,9 +364,9 @@ BOOKS: dict[str, Book] = {
         low_signal_cap=0.13,
         # part2·part3은 page 0이 해당 PART 속표지(이미지+장 목록)라 제외.
         extra_parts=(
-            BookPart(os.path.join(CORPUS_DIR, "이론판례노동법", "part2", "part2.md"),
+            BookPart(_corpus_path("이론판례노동법", "part2", "part2.md"),
                      "<!-- page: 1 -->"),
-            BookPart(os.path.join(CORPUS_DIR, "이론판례노동법", "part3", "part3.md"),
+            BookPart(_corpus_path("이론판례노동법", "part3", "part3.md"),
                      "<!-- page: 1 -->"),
         ),
     ),
@@ -398,7 +375,7 @@ BOOKS: dict[str, Book] = {
         # 전권 수록(단일 스캔 파일, 제1장~제5장 + 부록 서식).
         title="연차휴가와 노동법 — 실무자를 위한 연차휴가 업무처리 지침서"
               "(조갑식, 중앙경제)",
-        path=_yeoncha_md("연차휴가와노동법.md"),
+        path=_corpus_path(_YEONCHA_DIR, "연차휴가와노동법.md"),
         # p0 표지, p1~18 목차·서식목차. **page 19(일러두기)부터 시작하는 것이
         # 필수다** — 이 책은 소제목 대부분이 h4라 _HEADING_RE(h1~h3)가 잡는 첫
         # 헤딩이 page 19의 '### 일러두기', 그 다음이 page 20의 '# 제상.'(→

@@ -2020,6 +2020,72 @@ def t27_precedent_archive() -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def t28_corpus_path_normalization() -> None:
+    """해설서 원본 경로가 NFC/NFD 어느 조합으로 저장돼 있어도 해석된다.
+
+    이 저장소는 NFD로 벡터 474개를 잃은 전력이 있고, **macOS 통과는 증거가 아니다.**
+    그래서 이 테스트는 실제 파일을 만들지 않는다 — APFS는 조회 시 정규화해 주므로
+    어떤 구현이든(구 단일 form 순회 포함) 통과해 **검사가 무의미해진다**(실측 확인).
+    대신 `os.path.exists`를 **바이트 정확일치**로 갈아끼워 바이트 보존 FS
+    (Linux/ext4·CI·네트워크 공유)를 흉내 내고, 반환된 경로의 바이트를 직접 본다.
+    호스트 FS 의미론에 의존하지 않으므로 macOS에서도 회귀를 잡는다.
+
+    구성요소별 **독립** 순회가 핵심이다 — 서적별 헬퍼를 복사하던 구조에서
+    `_juhae3_scan`이 디렉터리·파일명을 같은 form으로 묶어 혼합 조합을 놓쳤고
+    `win`·`ironpanrye`는 폴백이 아예 없었다. 그 결함은 macOS에서 영원히
+    보이지 않는다.
+    """
+    import inspect
+    import itertools
+    import pinecone_upload_textbook as tb
+
+    NFC, NFD = "NFC", "NFD"
+    root = tb.CORPUS_DIR
+
+    def resolve(target_forms: tuple[str, ...], segments: tuple[str, ...]) -> str:
+        """디스크에 `target_forms` 조합으로만 존재하는 상황에서의 해석 결과."""
+        target = os.path.join(root, *(unicodedata.normalize(f, s)
+                                      for f, s in zip(target_forms, segments)))
+        real_exists = os.path.exists
+        os.path.exists = lambda p: p == target      # 바이트 정확일치 FS
+        try:
+            return tb._corpus_path(*segments), target
+        finally:
+            os.path.exists = real_exists
+
+    # 2구성요소 4조합 — 디스크가 어느 조합이든 호출은 NFC 리터럴 하나로 도달해야 한다.
+    for forms in itertools.product((NFC, NFD), repeat=2):
+        got, want = resolve(forms, ("연차휴가와노동법", "연차휴가와노동법.md"))
+        check(f"T28-a 디스크 {'/'.join(forms)} 조합 해석", got == want,
+              f"got={got!r} want={want!r}")
+
+    # 3구성요소 8조합 — 구 `_juhae3_scan`은 뒤 두 구성요소를 같은 form으로 묶어
+    # 4조합만 봤다. (NFD, NFC, NFD) 같은 혼합이 정확히 그 사각이다.
+    for forms in itertools.product((NFC, NFD), repeat=3):
+        got, want = resolve(forms, ("근로기준법주해-3", "조각", "조각.md"))
+        check(f"T28-b 3구성요소 {'/'.join(forms)} 해석", got == want,
+              f"got={got!r} want={want!r}")
+
+    # 없는 경로는 리터럴을 그대로 돌려준다 — 호출부(존재 검사)가 사람이 읽을 수
+    # 있는 경로를 보고해야 한다. None을 돌려주면 오류 메시지가 비어 버린다.
+    real_exists = os.path.exists
+    os.path.exists = lambda p: False
+    try:
+        missing = tb._corpus_path("없는디렉터리", "없는파일.md")
+    finally:
+        os.path.exists = real_exists
+    check("T28-c 미해석 시 리터럴 경로 반환",
+          missing == os.path.join(root, "없는디렉터리", "없는파일.md"))
+
+    # BOOKS 5권이 모두 단일 출처를 쓰는지 — 서적별 사본이 되살아나면 그 서적만
+    # 조용히 커버리지가 좁아진다(회귀의 실제 모습).
+    src = inspect.getsource(tb)
+    book_block = src[src.index("BOOKS: dict[str, Book] = {"):]
+    bare = re.findall(r"os\.path\.join\(CORPUS_DIR", book_block)
+    check("T28-d BOOKS 항목이 맨 os.path.join(CORPUS_DIR…)을 쓰지 않음",
+          not bare, f"폴백 없는 경로 {len(bare)}건")
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -2034,7 +2100,8 @@ def main() -> int:
                t20_textbook_case_extraction, t21_multipart_book,
                t22_textbook_followup, t23_textbook_diversity_promotion,
                t24_legal_diversity_promotion, t25_court_ledger,
-               t26_public_quota, t27_precedent_archive):
+               t26_public_quota, t27_precedent_archive,
+               t28_corpus_path_normalization):
         print(f"\n[{fn.__name__}]")
         fn()
 
