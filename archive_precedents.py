@@ -593,9 +593,10 @@ def snapshot_pinecone(paths: Paths) -> None:
     """
     from dotenv import load_dotenv
     load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
-    from pinecone import Pinecone
-    from app.config import resolve_index_name
-    index = Pinecone(api_key=os.getenv("PINECONE_API_KEY")).Index(resolve_index_name())
+    # 조회 전용이지만 사장 NS 전량(6,540+벡터)을 훑으므로 SDK 기본 30초로는
+    # 모자란다 — build_bm25_corpus.py를 죽인 것과 같은 경로다.
+    from app.config import open_offline_index
+    index = open_offline_index()
 
     def _list_ids(prefix: str, namespace: str) -> list[str]:
         out: list[str] = []

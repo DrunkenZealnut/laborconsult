@@ -73,6 +73,32 @@ def resolve_index_name() -> str:
     return os.getenv("PINECONE_INDEX_NAME", DEFAULT_PINECONE_INDEX)
 
 
+# 오프라인 배치 스크립트가 쓰는 Pinecone 조회 타임아웃. SDK 기본값은 30초인데
+# 대량 열거의 실측 페이지 지연이 15~16초(첫 페이지 70초)라 **정상 동작 구간이
+# 타임아웃 경계에 걸친다** — 2026-09-04에 build_bm25_corpus.py가 그것으로
+# laborlaw-v2·counsel을 잃고 3.5시간치 수집을 통째로 폐기했다.
+OFFLINE_PINECONE_TIMEOUT = 180.0
+
+
+def open_offline_index(timeout: float = OFFLINE_PINECONE_TIMEOUT):
+    """대량 열거용 Pinecone 인덱스 핸들 — **오프라인 배치 전용.**
+
+    `AppConfig.from_env()`가 만드는 프로덕션 핸들과 일부러 분리했다. 이 타임아웃은
+    프론트 idle(60초)과 Vercel maxDuration(300초) 예산을 넘도록 잡혀 있어, 요청
+    경로에서 쓰면 사용자가 이미 떠난 뒤에도 함수가 살아 과금된다. 공용 팩토리를
+    하나로 합치지 않는 이유가 그것이다 — 값이 아니라 **용도**가 다르다.
+
+    호출부: archive_precedents.py, sync_overlap_precedents.py 등 `index.list()`로
+    수천 벡터를 열거하는 스크립트. `fetch_by_metadata` 페이지네이션을 쓰는
+    build_bm25_corpus.py는 호출 단위 timeout을 따로 넘기므로 이 함수를 쓰지 않는다.
+
+    회귀는 test_offline_units.py가 고정한다 — 요청 경로 모듈이 이 함수를
+    import하면 실패한다.
+    """
+    return Pinecone(api_key=os.environ["PINECONE_API_KEY"],
+                    timeout=timeout).Index(resolve_index_name())
+
+
 @dataclass
 class AppConfig:
     openai_client: OpenAI

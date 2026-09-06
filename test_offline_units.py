@@ -934,6 +934,47 @@ def test_upload_namespace_contract() -> None:
     print(f"  ✅ 업로드 NS 계약: 검색 대상 {sorted(searched)}·인덱스 삭제 금지·마커 일치")
 
 
+def test_offline_index_not_on_request_path() -> None:
+    """`open_offline_index`(타임아웃 180초)가 요청 경로로 새지 않는다.
+
+    이 핸들은 오프라인 대량 열거용이라 프론트 idle(60초)과 Vercel
+    maxDuration(300초) 예산을 넘도록 잡혀 있다. 요청 경로에서 쓰면 사용자가 이미
+    떠난 뒤에도 함수가 살아 과금되고, 그 사실이 사용자 화면에는 드러나지 않는다.
+
+    이름이 비슷한 두 팩토리를 한 모듈에 두는 이상 오용은 시간 문제라, 값이 아니라
+    **호출부**를 고정한다.
+    """
+    import re
+    import pathlib
+
+    for rel in ("api/index.py", "app/core/rag.py", "app/core/pipeline.py",
+                "app/core/graph.py", "app/core/self_rag.py"):
+        p = pathlib.Path(rel)
+        if not p.exists():
+            continue
+        assert "open_offline_index" not in p.read_text(encoding="utf-8"), (
+            f"{rel}: 요청 경로가 open_offline_index(180초)를 쓴다 — "
+            "프론트 idle 60초·Vercel maxDuration 300초 예산을 넘는다"
+        )
+
+    # 오프라인 스크립트 쪽은 반대로 **쓰고 있어야** 한다 — 맨 Pinecone()으로
+    # 되돌아가면 타임아웃이 조용히 30초로 복귀한다.
+    from app.config import OFFLINE_PINECONE_TIMEOUT
+    assert OFFLINE_PINECONE_TIMEOUT == 180.0, (
+        f"오프라인 타임아웃이 {OFFLINE_PINECONE_TIMEOUT}초 — 실측 페이지 지연"
+        "(15~16초, 첫 페이지 70초)의 몇 배를 유지할 것")
+
+    offline = ("archive_precedents.py", "sync_overlap_precedents.py")
+    for rel in offline:
+        src = pathlib.Path(rel).read_text(encoding="utf-8")
+        assert "open_offline_index" in src, f"{rel}: open_offline_index 미사용"
+        assert not re.search(r"Pinecone\([^)]*\)\s*\.Index\(", src), (
+            f"{rel}: 맨 Pinecone(...).Index( 가 되살아났다 — 타임아웃이 SDK 기본 "
+            "30초로 조용히 복귀한다")
+    print(f"  ✅ 오프라인 인덱스 격리: 요청 경로 5종 미사용 · 배치 {len(offline)}종 사용 "
+          f"· 타임아웃 {OFFLINE_PINECONE_TIMEOUT:.0f}초")
+
+
 def test_tokenizer_contract() -> None:
     """BM25 한국어 토크나이저 계약 (tokenizer-quality) — T-a~T-h.
 
@@ -1112,6 +1153,7 @@ def main() -> None:
     test_ddl_no_quoted_identifiers()
     test_code_tables_defined_in_ddl()
     test_upload_namespace_contract()
+    test_offline_index_not_on_request_path()
     test_bm25_interning()
     test_tokenizer_contract()
     print("\n✅ 오프라인 단위 테스트 전부 통과")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BM25 로드 메모리 상한 + 검색 결과 동일성 회귀 (bm25-memory-scaling).
+"""BM25 로드 메모리 상한 + 색인 생존 회귀 (bm25-memory-scaling).
 
 **왜 이 테스트가 있는가.** 메모리는 지금까지 *사람이 기억해서 재는 값*이었고,
 그래서 RSS가 Vercel 한도의 **119%가 될 때까지 아무도 몰랐다**(2026-08-25 실측).
@@ -47,8 +47,10 @@ IDENTITY_QUERIES = [
 #   ② `search_bm25`는 안정 정렬이라 **동점의 순서가 코퍼스 인덱스 순서에 의존**하고,
 #      코퍼스 순서는 Pinecone 페이지네이션 때문에 재빌드마다 달라진다. 즉 내용이
 #      같아도 재빌드만으로 깨진다 — 실무 대응이 "기준값 삭제"가 되어 가드가 소멸한다.
-# 대신 **같은 실행에서 신·구 포맷 두 경로를 서로 대조**한다. 코퍼스 버전과 무관하게
-# "스트리밍 == 배열"을 검증하므로 이번 변경이 값을 보존하는지에 대한 직접 증거다.
+# 신·구 포맷 등가성 대조로 그 문제를 우회했으나 구 포맷 파일이 삭제되면서
+# 종결됐다(2026-09-02, 아래 main() 주석). 남은 것은 **순위가 아니라 생존**을 보는
+# 검사다 — 어느 쿼리든 0건이면 색인이 죽은 것이고, 그것은 코퍼스 버전과 무관하게
+# 항상 실패여야 한다. 순위를 얼리지 않으므로 재빌드로 깨지지 않는다.
 
 # 별도 프로세스에서 실행할 측정 코드.
 # ⚠️ `ru_maxrss`는 **프로세스 최대치**라 같은 프로세스에서 다른 테스트가 먼저
@@ -58,10 +60,6 @@ import sys, os, json, time, resource
 sys.path.insert(0, {base!r})
 os.chdir({base!r})
 import app.core.bm25_search as B
-from pathlib import Path
-_only = {only!r}
-if _only:                      # 특정 포맷 경로를 강제한다(등가성 대조용)
-    B.BM25_CORPUS_PATHS = [Path(_only)]
 t0 = time.perf_counter()
 ok = B.load_bm25_corpus()
 elapsed = time.perf_counter() - t0
@@ -80,12 +78,9 @@ print(json.dumps({{"ok": ok, "docs": len(B._bm25_corpus or []),
 """
 
 
-def _run_probe(only: str | None = None) -> dict:
-    """하위 프로세스에서 BM25를 로드해 RSS·시간·검색 결과를 잰다.
-
-    `only`를 주면 그 코퍼스 파일만 쓰도록 강제한다 — 신·구 포맷 등가성 대조용.
-    """
-    code = _PROBE.format(base=BASE_DIR, queries=IDENTITY_QUERIES, only=only)
+def _run_probe() -> dict:
+    """하위 프로세스에서 BM25를 로드해 RSS·시간·검색 결과를 잰다."""
+    code = _PROBE.format(base=BASE_DIR, queries=IDENTITY_QUERIES)
     proc = subprocess.run([sys.executable, "-c", code],
                           capture_output=True, text=True, timeout=300)
     if proc.returncode != 0 or not proc.stdout.strip():
@@ -140,6 +135,22 @@ def main() -> int:
     # 이 블록의 원 주석이 지시한 종결 절차대로 구 파일(bm25_corpus.json.gz,
     # 20MB)과 대조 검사를 **함께** 제거했다. 로더의 구 포맷 폴백 경로는
     # 남아 있다(bm25_search — 외부 사본 대비 무해).
+    #
+    # ⚠️ 그 제거가 **검색 출력에 대한 유일한 단언까지 함께 지웠다**(2026-09-06
+    # 코드리뷰 F2). 프로브는 계속 8쿼리를 검색해 결과를 실어 보내는데 main()이
+    # 그것을 읽지 않아, `_slim()`이 text를 떨어뜨리거나 토크나이저 변경으로
+    # 색인이 비어도 로드 성공·문서 수·RSS가 전부 정상이라 **초록으로 통과**했다.
+    # 아래는 순위가 아니라 **생존**만 본다 — 순위를 얼리면 재빌드마다 깨져
+    # 결국 가드가 삭제되는 것이 이 파일의 이력이다(위 프로즌 기준값 주석).
+    empty = [q for q, hits in probe["results"].items() if not hits]
+    check(f"검색 생존: {len(IDENTITY_QUERIES)}쿼리 전부 1건 이상",
+          not empty, f"0건 반환 쿼리: {empty}")
+
+    # 점수가 전부 0이면 색인은 살아 있으나 가중치가 죽은 상태다 — 히트 수만
+    # 보면 통과한다. BM25는 매치가 있으면 양수 점수를 준다.
+    flat = [h["score"] for hits in probe["results"].values() for h in hits]
+    check("검색 점수 > 0 (색인 가중치 생존)",
+          bool(flat) and max(flat) > 0, f"최대 점수 {max(flat) if flat else None}")
 
     print()
     if failures:
