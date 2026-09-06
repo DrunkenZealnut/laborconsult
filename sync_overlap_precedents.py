@@ -169,9 +169,9 @@ def delete_ctx(dry_run: bool) -> None:
 
     from dotenv import load_dotenv
     load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
-    from pinecone import Pinecone
-    from app.config import resolve_index_name
-    index = Pinecone(api_key=os.getenv("PINECONE_API_KEY")).Index(resolve_index_name())
+    # prefix 나열이 수천 벡터를 훑는다 — SDK 기본 30초로는 모자란다.
+    from app.config import open_offline_index
+    index = open_offline_index()
 
     # index.list()는 SDK 버전에 따라 배치를 list[str], list[ListItem],
     # ListResponse(이터러블)로 준다 — 항목 단위로 id를 뽑아 전부 흡수한다.

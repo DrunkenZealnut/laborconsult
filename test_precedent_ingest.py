@@ -2086,6 +2086,78 @@ def t28_corpus_path_normalization() -> None:
           not bare, f"폴백 없는 경로 {len(bare)}건")
 
 
+def t29_heading_levels() -> None:
+    """서적별 섹션 경계 레벨 + 비경계(콜아웃) 판정.
+
+    막는 실패 셋:
+    ① `heading_max_level`을 올린 서적이 다른 서적의 `section_idx`를 밀어 기존
+       chunk_id를 고아로 만드는 것 — 레벨은 **서적별**이어야 한다.
+    ② 콜아웃(`관련법령` 등)이 섹션 경계가 되어 같은 이름의 섹션이 수십 개
+       생기는 것. 출처 카드가 전부 '관련법령'이 된다.
+    ③ 콜아웃을 '폐기'로 세어 폐기율 게이트가 상시 발동하는 것 — 게이트는 위생
+       규칙 오작동 감지기이므로 의도된 비경계를 오작동으로 읽으면 안 된다
+       (yeoncha 실측: 구분 없이 세면 2.5% → 15.2%로 상한 초과).
+    """
+    import pinecone_upload_textbook as tb
+
+    body = ("# 제1장 총칙\n\n본문 하나\n\n"
+            "#### 1. 소제목\n\n본문 둘\n\n"
+            "#### 관련법령\n\n제60조 조문\n\n"
+            "#### ▶ 판단기준 요약\n\n요약 본문\n\n"
+            "#### 2. 다른 소제목\n\n본문 셋\n")
+
+    def _book(level: int) -> tb.Book:
+        return tb.Book(book_id="t29", title="T", path=__file__,
+                       body_start="x", heading_max_level=level)
+
+    secs3, kept3, drop3, dem3 = tb.parse_sections(body, _book(3))
+    check("T29-a h1~h3에서는 h4가 경계가 아니다",
+          [s["heading"] for s in secs3] == ["제1장 총칙"],
+          [s["heading"] for s in secs3])
+
+    secs4, kept4, drop4, dem4 = tb.parse_sections(body, _book(4))
+    heads = [s["heading"] for s in secs4]
+    check("T29-b h1~h4에서 소제목이 경계가 된다",
+          heads == ["제1장 총칙", "1. 소제목", "2. 다른 소제목"], heads)
+    check("T29-c 콜아웃은 경계가 아니다(관련법령·▶)", dem4 == 2, dem4)
+    check("T29-d 콜아웃은 폐기로 세지 않는다", drop4 == 0, drop4)
+    # 본문은 유실되지 않고 직전 섹션에 흡수돼야 한다.
+    absorbed = next(s["text"] for s in secs4 if s["heading"] == "1. 소제목")
+    check("T29-e 콜아웃 본문은 직전 섹션에 흡수",
+          "제60조 조문" in absorbed and "요약 본문" in absorbed, absorbed[:60])
+
+    # 레벨은 서적별이다 — 기본값 서적이 영향받으면 chunk_id가 통째로 밀린다.
+    check("T29-f 기본 heading_max_level은 3", tb.Book(
+        book_id="t29b", title="T", path=__file__, body_start="x"
+    ).heading_max_level == 3)
+    check("T29-g 전역 _HEADING_RE는 h1~h3 유지",
+          tb._HEADING_RE.pattern == tb._heading_re(3).pattern)
+
+    # NON_BOUNDARY_RE를 넓힐 때 기존 서적의 h1~h3에 0건임을 다시 확인할 것.
+    # (실측 근거이자, 넓혔을 때 조용히 section_idx가 밀리는 것을 막는 관문)
+    for bid in ("win", "juhae3", "gaebyeol", "ironpanrye"):
+        b = tb.BOOKS[bid]
+        if not all(os.path.exists(p) for p in b.paths):
+            continue                       # 원본 없는 환경(CI)에서는 건너뛴다
+        hits = [m.group(2).strip() for m in tb._heading_re(3).finditer(tb.load_body(b))
+                if tb.NON_BOUNDARY_RE.match(m.group(2).strip())]
+        check(f"T29-h {bid} h1~h3에 콜아웃 매치 0건", not hits, hits[:3])
+
+    check("T29-i heading_max_level 범위 검증", _raises(
+        lambda: tb.Book(book_id="t29c", title="T", path=__file__,
+                        body_start="x", heading_max_level=7), ValueError))
+
+
+def _raises(fn, exc) -> bool:
+    try:
+        fn()
+    except exc:
+        return True
+    except Exception:
+        return False
+    return False
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -2101,7 +2173,7 @@ def main() -> int:
                t22_textbook_followup, t23_textbook_diversity_promotion,
                t24_legal_diversity_promotion, t25_court_ledger,
                t26_public_quota, t27_precedent_archive,
-               t28_corpus_path_normalization):
+               t28_corpus_path_normalization, t29_heading_levels):
         print(f"\n[{fn.__name__}]")
         fn()
 

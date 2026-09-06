@@ -35,6 +35,7 @@ import sys
 import json
 import time
 import argparse
+import functools
 import itertools
 import unicodedata
 from dataclasses import dataclass, field
@@ -114,6 +115,13 @@ class Book:
     # 있으면 유지로 전환돼 section_idx가 밀린다(실측: 판례 패턴을 전역으로
     # 두면 win에서 6건 전환 → 1,408벡터 뒤쪽이 전부 고아).
     heading_extractors: tuple[re.Pattern, ...] = ()
+    # 섹션 경계로 삼을 최대 헤딩 레벨(옵트인). 기본 3은 조문 해설서 관례다.
+    # **올리면 그 서적의 section_idx가 전부 밀려 chunk_id가 바뀐다** — 재업로드 +
+    # prune_stale_vectors가 필수다. 올릴 근거는 "소제목이 실제로 그 레벨에 있다"
+    # 하나뿐이고, 실측 없이 올리면 콜아웃·표 캡션이 섹션이 되어 출처 표시가
+    # 망가진다(yeoncha 실측: h4 도입 시 섹션 라벨의 16.4%가 '관련법령'류였고,
+    # NON_BOUNDARY_RE로 그것을 경계에서 뺀 뒤에야 쓸 만해졌다).
+    heading_max_level: int = 3
     # 저신호 청크 제외율 상한의 서적별 override(옵트인). None이면 전역 상한
     # (MAX_CHUNK_DROP_RATE). **제외분 전량 육안 판정을 마친 서적에만** 올릴 것
     # — 상한은 "규칙 오작동 감지기"라, 육안 없이 올리면 감지기를 끄는 것과
@@ -133,6 +141,15 @@ class Book:
         dup = {p for p in paths if paths.count(p) > 1}
         if dup:
             raise ValueError(f"'{self.book_id}' 조각 경로가 중복됩니다: {sorted(dup)}")
+        if not 1 <= self.heading_max_level <= 6:
+            raise ValueError(
+                f"'{self.book_id}' heading_max_level은 1~6이어야 합니다: "
+                f"{self.heading_max_level}")
+
+    @property
+    def heading_re(self) -> re.Pattern:
+        """이 서적의 섹션 경계 정규식. 기본은 전역 `_HEADING_RE`와 같다."""
+        return _heading_re(self.heading_max_level)
 
     @property
     def parts(self) -> tuple[BookPart, ...]:
@@ -388,11 +405,43 @@ BOOKS: dict[str, Book] = {
         # 임의용어(기본연차·가산휴가·정상연차·회계연도) 정의가 여기에만 있다.
         body_start="<!-- page: 19 -->",
         ocr_fixes=YEONCHA_OCR_FIXES,
+        # 이 책의 소제목은 h4다(h4 457개 > h1~h3 473개). 기본 h1~h3만 경계로 삼으면
+        # 제1장 본문 20,229자·제2장 15,801자가 각각 **한 섹션**이 되어, 그 안의
+        # 30여 청크가 전부 '제1장 서 론'이라는 장 이름으로 출처 표시된다.
+        # h4를 포함하면 섹션 384 → 633, 청크 965 → 1,028이 되고 실제 소제목이
+        # 라벨이 된다. 콜아웃(`관련법령` 등 110개)은 NON_BOUNDARY_RE가 경계에서
+        # 빼므로 '관련법령' 섹션 73개가 생기는 문제는 없다.
+        heading_max_level=4,
     ),
 }
 
 _PAGE_COMMENT_RE = re.compile(r"<!--\s*page:\s*\d+\s*-->")
-_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
+
+
+@functools.lru_cache(maxsize=8)
+def _heading_re(max_level: int) -> re.Pattern:
+    return re.compile(rf"^(#{{1,{max_level}}})\s+(.+)$", re.MULTILINE)
+
+
+# 기본 경계(h1~h3). Book.heading_max_level을 올린 서적은 book.heading_re를 쓴다.
+_HEADING_RE = _heading_re(3)
+
+# **섹션 경계가 아닌 헤딩** — 손상된 것이 아니라 의미상 상위 표제에 속하는
+# 콜아웃 라벨이다. 폐기(sanitize_heading → None)와 구분해야 하는 이유는 둘이
+# 서로 다른 것을 뜻하기 때문이다: 폐기율 게이트는 "위생 규칙이 오작동해 섹션이
+# 조용히 뭉개진다"를 잡는 감지기인데, 의도적인 비경계 판정을 폐기로 세면 감지기가
+# 상시 발동한다(yeoncha 실측: h4 도입 시 폐기율이 2.5% → 15.2%로 뛰어 상한 초과).
+#
+# 본문 처리는 폐기와 같다 — 직전 섹션에 흡수된다. 그래야 '관련법령' 아래의 조문이
+# 그 조문을 설명하는 소제목 아래 남는다. 경계로 삼으면 73개 섹션이 전부
+# '관련법령'이라는 같은 이름을 갖고, 그것이 출처 카드에 그대로 표시된다.
+#
+# 전역 규칙인 것은 실측 근거가 있다 — 기존 4권(win·juhae3·gaebyeol·ironpanrye)의
+# h1~h3 헤딩에 매치되는 것이 **0건**이라 section_idx가 밀리지 않는다. 패턴을
+# 넓힐 때는 그 0건을 다시 확인할 것(회귀 T29-c).
+NON_BOUNDARY_RE = re.compile(
+    r"^(?:관\s*련\s*법\s*령|\[예시\]|예시|\[Q&A\]|참고)\s*$|^▶"
+)
 
 
 # ── 텍스트 유틸 ───────────────────────────────────────────────────────────────
@@ -554,9 +603,12 @@ def load_body_normalized(book: Book) -> str:
     표제 경로 추출)를 위한 경로다. 손상 헤딩은 줄 자체를 제거하되 본문은
     남긴다 — 위생 규칙을 두 곳에 복제하지 않기 위한 단일 출처.
 
-    위생 처리 범위는 `_HEADING_RE`와 같은 **h1~h3**이다. enrich의 HEADING_RE는
-    `#{1,6}`이라 h4~h6(win 249개, juhae3 29개)은 정제 없이 통과한다 — 청킹
-    경계를 h1~h3으로 고정한 결과이며, 넓히면 chunk_id가 밀려 고아 벡터가 생긴다.
+    위생 처리 범위는 **전역 h1~h3 고정**이고, `Book.heading_max_level`을 따르지
+    **않는다.** 이 함수의 소비자는 청킹이 아니라 enrich이고, enrich의 HEADING_RE는
+    `#{1,6}`이라 h4~h6을 이미 본다 — 여기서 h4까지 정제하면 손상·비경계 h4의 줄이
+    제거돼 **enrich가 보는 표제 집합이 바뀌고, 그 결과 판례 쟁점 태그가 달라져
+    판례 코퍼스 전체가 재업로드 대상이 된다**(태그는 청크 텍스트의 접두사다).
+    청킹 경계와 이 범위는 목적이 다르므로 일부러 분리한다.
     """
     body = load_body(book)
 
@@ -567,11 +619,16 @@ def load_body_normalized(book: Book) -> str:
     return _HEADING_RE.sub(_rewrite, body)
 
 
-def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
-    """헤더(#/##/###) 단위로 섹션 분할. 손상 헤딩은 경계로 쓰지 않는다.
+def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int, int]:
+    """헤더 단위로 섹션 분할(범위는 `book.heading_max_level`). 손상 헤딩은 경계로
+    쓰지 않는다.
 
     폐기된 헤딩의 본문은 직전 섹션에 흡수한다(직전이 없으면 다음 섹션 앞에 붙인다).
     폐기 때문에 본문이 유실되는 경로는 없다.
+
+    `NON_BOUNDARY_RE`에 걸린 콜아웃 라벨도 본문 처리는 폐기와 같지만 **폐기로 세지
+    않는다** — 손상이 아니라 의도된 비경계라, 게이트가 그것을 오작동으로 읽으면
+    안 된다(상수 주석 참조).
 
     단, **책 전체의 첫 헤딩보다 앞선 텍스트는 어떤 섹션에도 들어가지 않는다**.
     body_start 직후에 헤딩이 오는 것을 전제한 동작이다.
@@ -584,17 +641,18 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
     실린다. 폐기율 게이트는 헤딩만 세므로 이 경로를 잡지 못한다.
 
     Returns:
-        (sections, kept_headings, dropped_headings)
+        (sections, kept_headings, dropped_headings, demoted_headings)
         sections: [{"heading": "...", "text": "..."}, ...]
         kept_headings는 len(sections)와 다르다 — 본문이 빈 섹션은 sections에서
         빠지기 때문이다. 폐기율 분모는 반드시 kept_headings를 써야 한다.
+        demoted_headings는 게이트 계산에서 제외한다(분자·분모 모두).
     """
-    matches = list(_HEADING_RE.finditer(body))
+    matches = list(book.heading_re.finditer(body))
     if not matches:
-        return ([{"heading": "본문", "text": clean_text(body)}] if body.strip() else []), 0, 0
+        return ([{"heading": "본문", "text": clean_text(body)}] if body.strip() else []), 0, 0, 0
 
     sections: list[dict] = []
-    dropped = 0
+    dropped = demoted = 0
     pending = ""          # 직전 섹션이 없는 상태에서 폐기된 헤딩의 본문
 
     for i, m in enumerate(matches):
@@ -602,9 +660,18 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
         end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
         raw_text = body[start:end]
 
-        heading = sanitize_heading(m.group(2).strip(), book.ocr_fixes, book.heading_extractors)
+        raw_heading = m.group(2).strip()
+        # 비경계 판정을 위생 처리보다 **먼저** 한다 — 순서가 바뀌면 콜아웃이
+        # sanitize_heading의 길이·의미비율 검사에 걸려 '폐기'로 세어지고,
+        # 그것이 게이트를 밀어 올린다(구분해 세는 목적 자체가 무효).
+        demote = bool(NON_BOUNDARY_RE.match(raw_heading))
+        heading = None if demote else sanitize_heading(
+            raw_heading, book.ocr_fixes, book.heading_extractors)
         if heading is None:
-            dropped += 1
+            if demote:
+                demoted += 1
+            else:
+                dropped += 1
             if sections:
                 sections[-1]["text"] += "\n" + raw_text
             else:
@@ -619,7 +686,7 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int]:
         text = clean_text(s["text"])
         if text:
             cleaned.append({"heading": s["heading"], "text": text})
-    return cleaned, len(sections), dropped
+    return cleaned, len(sections), dropped, demoted
 
 
 def check_drop_rate(book: Book, kept: int, dropped: int,
@@ -672,7 +739,7 @@ def check_part_drop_rates(book: Book, segments: list[str]) -> None:
     if not book.extra_parts:
         return
     for part, seg in zip(book.parts, segments):
-        sections, kept, dropped = parse_sections(seg, book)
+        sections, kept, dropped, _demoted = parse_sections(seg, book)
         scope = f"{os.path.basename(part.path)} ({len(seg):,}자)"
         check_drop_rate(book, kept, dropped, scope=scope, marker=part.body_start)
 
@@ -874,8 +941,12 @@ def build_chunks(book: Book) -> list[dict]:
     # 조각을 한 번만 읽어 병합본과 조각별 검사에 함께 쓴다.
     segments = load_parts(book)
     body = join_parts(segments)
-    sections, kept, dropped = parse_sections(body, book)
+    sections, kept, dropped, demoted = parse_sections(body, book)
     check_drop_rate(book, kept, dropped)
+    if demoted:
+        # 비경계로 내린 헤딩 수를 반드시 보여준다 — NON_BOUNDARY_RE가 과매치하면
+        # 섹션이 조용히 사라지는데, 폐기율에서 뺐으므로 게이트가 잡지 못한다.
+        print(f"  비경계 헤딩(콜아웃) {demoted}개 → 직전 섹션에 흡수")
     check_part_drop_rates(book, segments)
 
     chunks = []
