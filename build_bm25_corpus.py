@@ -46,7 +46,10 @@ def _fetch_page(index, ns: str, pagination_token):
     # PAGE_ATTEMPTS가 0 이하일 때 루프가 통째로 건너뛰어져 **None이 반환된다**.
     # 호출부의 `resp.vectors`가 AttributeError를 내고, 그것이 네임스페이스 단위
     # except에 삼켜져 설정 실수가 '조회 실패'로 둔갑한다.
-    retries = max(PAGE_ATTEMPTS - 1, 0)
+    # max(…, 0)로 감싸지 않는다 — range()는 음수를 빈 시퀀스로 처리하므로 클램프는
+    # 아무 것도 막지 않으면서 '여기가 방어 지점'이라고 잘못 읽힌다. 실제 방어는
+    # 루프 뒤의 무조건 return이다.
+    retries = PAGE_ATTEMPTS - 1
     for attempt in range(retries):
         try:
             return _fetch_once(index, ns, pagination_token)
