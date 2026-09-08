@@ -83,9 +83,10 @@ OFFLINE_PINECONE_TIMEOUT = 180.0
 def open_offline_index(timeout: float = OFFLINE_PINECONE_TIMEOUT):
     """대량 열거용 Pinecone 인덱스 핸들 — **오프라인 배치 전용.**
 
-    `AppConfig.from_env()`가 만드는 프로덕션 핸들과 일부러 분리했다. 이 타임아웃은
-    프론트 idle(60초)과 Vercel maxDuration(300초) 예산을 넘도록 잡혀 있어, 요청
-    경로에서 쓰면 사용자가 이미 떠난 뒤에도 함수가 살아 과금된다. 공용 팩토리를
+    `AppConfig.from_env()`가 만드는 프로덕션 핸들과 일부러 분리했다. 180초는
+    **프론트 idle(60초)의 3배**라 브라우저가 이미 abort한 뒤에도 호출이 이어지고,
+    동시에 **Vercel maxDuration(300초) 안**이라 플랫폼이 끊어 주지도 않는다 —
+    아무도 듣지 않는 채로 최대 180초를 태우고 그만큼 과금된다. 공용 팩토리를
     하나로 합치지 않는 이유가 그것이다 — 값이 아니라 **용도**가 다르다.
 
     호출부: archive_precedents.py, sync_overlap_precedents.py 등 `index.list()`로

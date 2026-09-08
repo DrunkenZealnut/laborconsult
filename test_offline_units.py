@@ -937,9 +937,10 @@ def test_upload_namespace_contract() -> None:
 def test_offline_index_not_on_request_path() -> None:
     """`open_offline_index`(타임아웃 180초)가 요청 경로로 새지 않는다.
 
-    이 핸들은 오프라인 대량 열거용이라 프론트 idle(60초)과 Vercel
-    maxDuration(300초) 예산을 넘도록 잡혀 있다. 요청 경로에서 쓰면 사용자가 이미
-    떠난 뒤에도 함수가 살아 과금되고, 그 사실이 사용자 화면에는 드러나지 않는다.
+    이 핸들은 오프라인 대량 열거용이라 180초로 잡혀 있다 — 프론트 idle(60초)의
+    3배라 브라우저가 이미 abort한 뒤에도 호출이 이어지고, Vercel maxDuration
+    (300초) 안이라 플랫폼이 끊어 주지도 않는다. 요청 경로에서 쓰면 아무도 듣지
+    않는 채로 최대 180초를 태우고, 그 사실이 사용자 화면에는 드러나지 않는다.
 
     이름이 비슷한 두 팩토리를 한 모듈에 두는 이상 오용은 시간 문제라, 값이 아니라
     **호출부**를 고정한다.
@@ -954,7 +955,8 @@ def test_offline_index_not_on_request_path() -> None:
             continue
         assert "open_offline_index" not in p.read_text(encoding="utf-8"), (
             f"{rel}: 요청 경로가 open_offline_index(180초)를 쓴다 — "
-            "프론트 idle 60초·Vercel maxDuration 300초 예산을 넘는다"
+            "프론트 idle(60초) 3배이면서 maxDuration(300초) 안이라 "
+            "아무도 듣지 않는 채로 최대 180초를 태운다"
         )
 
     # 오프라인 스크립트 쪽은 반대로 **쓰고 있어야** 한다 — 맨 Pinecone()으로
