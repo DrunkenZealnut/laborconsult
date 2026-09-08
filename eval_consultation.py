@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""상담 평가 fixture 로더와 결정론적 답변 지표 (표준 라이브러리만 사용).
+"""상담 평가 fixture·지표·파이프라인 수집기 (live 실행만 외부 의존성 로드).
 
 질문은 비식별 합성 데이터다. expected_intent는 analyzer의 consultation_type
 값이며, 계산·괴롭힘·복합 질문의 빈 문자열은 의도 판정을 요구하지 않는다.
@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import math
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
@@ -80,6 +82,104 @@ def validate_cases(cases: list[EvalCase]) -> list[str]:
         if not case.allowed_sources:
             errors.append(f"missing allowed_sources: {case.id}")
     return errors
+
+
+def _analysis_snapshot(analysis) -> dict:
+    return {
+        "intent": getattr(analysis, "consultation_type", None),
+        "topic": getattr(analysis, "consultation_topic", None),
+        "calculation_types": list(getattr(analysis, "calculation_types", []) or []),
+        "missing_info": list(getattr(analysis, "missing_info", []) or []),
+    }
+
+
+def collect_events(events: Iterable[dict], *, clock: Callable[[], float] = time.perf_counter) -> dict:
+    """첫 이벤트부터 done까지 수집한다. clock은 단조 증가하는 초 단위 함수다.
+
+    TTFT는 첫 chunk까지의 시간이며 chunk가 없으면 0이다. replace는 표시된
+    본문 전체를 교체한다. done 없는 종료와 실행 예외도 부분 답변을 보존해
+    실패 레코드로 반환한다. 이벤트 iterable의 자원 정리는 호출자가 담당한다.
+    """
+    observed = {
+        "analysis": _analysis_snapshot(None),
+        "answer": "", "sources": [], "calc_result": None,
+        "assessment_result": None,
+        "timing": {"total_ms": 0, "ttft_ms": 0}, "pipeline_error": None,
+    }
+    started = first_chunk = ended = None
+    chunks = []
+    done = False
+    try:
+        for event in events:
+            ended = clock()
+            if started is None:
+                started = ended
+            event_type = event.get("type")
+            if event_type == "chunk":
+                if first_chunk is None:
+                    first_chunk = ended
+                chunks.append(event.get("text", ""))
+            elif event_type == "replace":
+                chunks = [event.get("text", "")]
+            elif event_type == "sources":
+                observed["sources"] = list(event.get("hits", []))
+            elif event_type == "meta":
+                for key in ("calc_result", "assessment_result"):
+                    if key in event:
+                        observed[key] = event[key]
+            elif event_type == "error":
+                observed["pipeline_error"] = event.get("text") or "pipeline error"
+            elif event_type == "done":
+                done = True
+                break
+    except Exception as error:
+        observed["pipeline_error"] = f"{type(error).__name__}: {error}"
+    if not done:
+        ended = clock()
+        if not observed["pipeline_error"]:
+            observed["pipeline_error"] = "pipeline ended without done event"
+    observed["answer"] = "".join(chunks)
+    if started is not None:
+        observed["timing"]["total_ms"] = round((ended - started) * 1000)
+        if first_chunk is not None:
+            observed["timing"]["ttft_ms"] = round((first_chunk - started) * 1000)
+    return observed
+
+
+def run_case(case: EvalCase, config) -> dict:
+    """독립 세션에서 라이브 평가 1건을 실행한다 (같은 프로세스에서 순차 호출).
+
+    analyze_intent 참조를 잠시 교체하므로 서비스 요청과 동시 실행하지 않는다.
+    analyzer가 반환한 객체를 보관해 파이프라인의 실제 누락정보 정책 적용 후
+    snapshot을 만든다. 외부 모듈은 이 함수에서만 import하여 오프라인 사용은
+    API 클라이언트와 설정 로딩 없이 가능하다.
+    """
+    from app.core import pipeline
+    from app.models.session import Session
+
+    original = pipeline.analyze_intent
+    analysis = None
+
+    def capture_analysis(*args, **kwargs):
+        nonlocal analysis
+        analysis = original(*args, **kwargs)
+        return analysis
+
+    def case_events():
+        # Defer invocation so errors before the first yield also become records.
+        yield from pipeline.process_question(case.question, Session(id=f"eval_{case.id}"), config)
+
+    events = case_events()
+    pipeline.analyze_intent = capture_analysis
+    try:
+        observed = collect_events(events)
+        observed["analysis"] = _analysis_snapshot(analysis)
+        return observed
+    finally:
+        try:
+            events.close()
+        finally:
+            pipeline.analyze_intent = original
 
 
 def _coverage(text: str, required: list[str]) -> float:

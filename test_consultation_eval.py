@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 from app.templates.prompts import ANALYZE_TOOL
 from eval_consultation import (
-    REQUIRED_CASE_KEYS, EvalCase, aggregate_results, load_cases, score_result,
-    validate_cases,
+    REQUIRED_CASE_KEYS, EvalCase, aggregate_results, collect_events, load_cases,
+    run_case, score_result, validate_cases,
 )
 
 
@@ -299,6 +299,179 @@ def test_aggregate_results_latency_uses_nearest_rank_and_measured_runs() -> None
     assert summary["p95_total_ms"] == 100
 
 
+def test_collect_events_builds_observed_shape() -> None:
+    observed = collect_events(iter([
+        {"type": "status", "text": "분석 중"},
+        {"type": "sources", "hits": [{"source_type": "law_article"}]},
+        {"type": "meta", "calc_result": "계산 결과"},
+        {"type": "meta", "assessment_result": "판정 결과"},
+        {"type": "chunk", "text": "법적 효력이 "},
+        {"type": "ping"},
+        {"type": "chunk", "text": "없습니다."},
+        {"type": "done"},
+        {"type": "chunk", "text": "종료 후 무시"},
+    ]), clock=lambda: 10.0)
+    assert observed == {
+        "analysis": {"intent": None, "topic": None,
+                     "calculation_types": [], "missing_info": []},
+        "answer": "법적 효력이 없습니다.",
+        "sources": [{"source_type": "law_article"}],
+        "calc_result": "계산 결과", "assessment_result": "판정 결과",
+        "timing": {"total_ms": 0, "ttft_ms": 0}, "pipeline_error": None,
+    }
+
+
+def test_collect_events_measures_first_chunk_and_done_with_injected_clock() -> None:
+    current = [0.0]
+
+    def events():
+        for timestamp, event in [
+            (10.0, {"type": "status"}),
+            (10.25, {"type": "ping"}),
+            (10.5, {"type": "chunk", "text": "첫 답변"}),
+            (11.0, {"type": "chunk", "text": " 계속"}),
+            (11.5, {"type": "done"}),
+        ]:
+            current[0] = timestamp
+            yield event
+
+    observed = collect_events(events(), clock=lambda: current[0])
+    assert observed["timing"] == {"total_ms": 1500, "ttft_ms": 500}
+
+
+def test_collect_events_replaces_answer_and_retains_pipeline_error() -> None:
+    observed = collect_events([
+        {"type": "chunk", "text": "수정 전"},
+        {"type": "replace", "text": "수정된 답변"},
+        {"type": "chunk", "text": " 법적 효력이 없습니다."},
+        {"type": "error", "text": "서비스 오류"},
+        {"type": "done"},
+    ])
+    assert observed["answer"] == "수정된 답변 법적 효력이 없습니다."
+    assert observed["pipeline_error"] == "서비스 오류"
+    assert score_result(_metric_case(), observed)["pipeline_ok"] is False
+    assert collect_events([{"type": "error"}, {"type": "done"}])["pipeline_error"]
+
+
+def test_collect_events_records_truncation_and_iteration_errors() -> None:
+    def broken_events():
+        yield {"type": "chunk", "text": "부분 답변"}
+        raise RuntimeError("stream failed")
+
+    observed = collect_events(broken_events(), clock=lambda: 10.0)
+    assert observed["answer"] == "부분 답변"
+    assert "stream failed" in observed["pipeline_error"]
+    for events in ([], [{"type": "chunk", "text": "미완성 답변"}]):
+        observed = collect_events(events, clock=lambda: 10.0)
+        assert observed["pipeline_error"]
+        assert observed["timing"] == {"total_ms": 0, "ttft_ms": 0}
+    observed = collect_events([{"type": "done"}], clock=lambda: 10.0)
+    assert observed["answer"] == ""
+    assert observed["pipeline_error"] is None
+    assert observed["timing"] == {"total_ms": 0, "ttft_ms": 0}
+
+
+def test_run_case_captures_effective_analysis_and_restores_analyzer() -> None:
+    from app.core import pipeline
+    from app.core.storage import _is_synthetic_session
+    from app.models.schemas import AnalysisResult
+
+    case, config = _metric_case(), object()
+    analysis = AnalysisResult(consultation_type="law", consultation_topic="해고·징계",
+                              calculation_types=["연장수당"], missing_info=["LLM 누락"])
+    sessions = []
+    missing_policy = pipeline._compute_missing_info
+
+    def analyzer(query, history, received_config, *, summary):
+        assert (query, history, received_config, summary) == (case.question, [], config, "")
+        return analysis
+
+    def process(query, session, received_config):
+        assert query == case.question and received_config is config
+        assert session.history == [] and session.calc_cache == {}
+        sessions.append(session)
+        assert pipeline._compute_missing_info is missing_policy
+        captured = pipeline.analyze_intent(query, session.recent(), received_config,
+                                           summary=session.summary)
+        assert captured is analysis
+        # The real pipeline also replaces missing_info after analyze_intent returns.
+        captured.missing_info = ["실제 정책 누락"]
+        yield {"type": "chunk", "text": "법적 효력이 없습니다."}
+        yield {"type": "done"}
+
+    with patch.object(pipeline, "analyze_intent", analyzer), \
+            patch.object(pipeline, "process_question", process):
+        observed = run_case(case, config)
+        assert pipeline.analyze_intent is analyzer
+        run_case(case, config)
+        assert pipeline.analyze_intent is analyzer
+    assert sessions[0] is not sessions[1]
+    assert all(_is_synthetic_session(session.id) for session in sessions)
+    assert observed["analysis"] == {
+        "intent": "law", "topic": "해고·징계", "calculation_types": ["연장수당"],
+        "missing_info": ["실제 정책 누락"],
+    }
+    analysis.calculation_types.append("야간수당")
+    analysis.missing_info.append("나중 변경")
+    assert observed["analysis"]["calculation_types"] == ["연장수당"]
+    assert observed["analysis"]["missing_info"] == ["실제 정책 누락"]
+    assert observed["pipeline_error"] is None
+    assert json.loads(json.dumps(observed, ensure_ascii=False)) == observed
+
+
+def test_run_case_restores_analyzer_on_failure_and_preserves_partial_output() -> None:
+    from app.core import pipeline
+
+    original = pipeline.analyze_intent
+
+    def fail_at_call(*args):
+        raise RuntimeError("startup failed")
+
+    def fail_during_iteration(*args):
+        yield {"type": "chunk", "text": "부분 답변"}
+        raise RuntimeError("stream failed")
+
+    for process, message, answer in (
+        (fail_at_call, "startup failed", ""),
+        (fail_during_iteration, "stream failed", "부분 답변"),
+    ):
+        with patch.object(pipeline, "process_question", process):
+            observed = run_case(_metric_case(), object())
+            assert pipeline.analyze_intent is original
+        assert message in observed["pipeline_error"]
+        assert observed["answer"] == answer
+
+
+def test_run_case_restores_analyzer_on_interrupt_and_closes_generator() -> None:
+    from app.core import pipeline
+
+    original = pipeline.analyze_intent
+    closed = []
+
+    def process(*args):
+        try:
+            yield {"type": "done"}
+        finally:
+            closed.append(True)
+
+    with patch.object(pipeline, "process_question", process):
+        run_case(_metric_case(), object())
+        assert closed == [True]
+        assert pipeline.analyze_intent is original
+
+    def interrupted(*args):
+        raise KeyboardInterrupt()
+
+    with patch.object(pipeline, "process_question", interrupted):
+        try:
+            run_case(_metric_case(), object())
+        except KeyboardInterrupt:
+            pass
+        else:
+            raise AssertionError("interrupt swallowed")
+        assert pipeline.analyze_intent is original
+
+
 def main() -> int:
     tests = [
         test_fixture_has_exactly_60_unique_cases,
@@ -319,6 +492,13 @@ def main() -> int:
         test_aggregate_results_failed_runs_cannot_inflate_quality,
         test_aggregate_results_empty_and_all_optional,
         test_aggregate_results_latency_uses_nearest_rank_and_measured_runs,
+        test_collect_events_builds_observed_shape,
+        test_collect_events_measures_first_chunk_and_done_with_injected_clock,
+        test_collect_events_replaces_answer_and_retains_pipeline_error,
+        test_collect_events_records_truncation_and_iteration_errors,
+        test_run_case_captures_effective_analysis_and_restores_analyzer,
+        test_run_case_restores_analyzer_on_failure_and_preserves_partial_output,
+        test_run_case_restores_analyzer_on_interrupt_and_closes_generator,
     ]
     try:
         for test in tests:
