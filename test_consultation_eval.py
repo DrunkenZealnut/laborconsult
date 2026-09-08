@@ -11,11 +11,19 @@ import traceback
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+from app.templates.prompts import ANALYZE_TOOL
 from eval_consultation import REQUIRED_CASE_KEYS, load_cases, validate_cases
 
 
 FIXTURE = Path(__file__).resolve().parent / "data/eval_consultation_queries.json"
+_ANALYZER_PROPERTIES = ANALYZE_TOOL["input_schema"]["properties"]
+SUPPORTED_EXPECTED_LABELS = {
+    "expected_intent": set(_ANALYZER_PROPERTIES["consultation_type"]["enum"]),
+    "expected_topic": set(_ANALYZER_PROPERTIES["consultation_topic"]["enum"]),
+    "expected_calculation": set(_ANALYZER_PROPERTIES["calculation_types"]["items"]["enum"]),
+}
 
 
 def test_fixture_has_exactly_60_unique_cases() -> None:
@@ -36,6 +44,10 @@ def test_fixture_has_required_fields_and_valid_enums() -> None:
         assert isinstance(case.expected_intent, str)
         assert case.expected_topic is None or isinstance(case.expected_topic, str)
         assert case.expected_calculation is None or isinstance(case.expected_calculation, str)
+        for field, supported_labels in SUPPORTED_EXPECTED_LABELS.items():
+            value = getattr(case, field)
+            if value:
+                assert value in supported_labels, f"unsupported {field}: {value!r} ({case.id})"
         for values in (case.required_laws, case.allowed_sources,
                        case.required_notices, case.forbidden_claims):
             assert isinstance(values, list)
@@ -59,6 +71,29 @@ def test_fixture_category_distribution_matches_design() -> None:
         "판례·행정해석·법령 조회": 8,
         "정보 부족·복합·구어체 질문": 6,
     }
+
+
+def test_fixture_enum_checks_reject_unsupported_labels() -> None:
+    cases = load_cases(FIXTURE)
+    for field in ("expected_intent", "expected_topic", "expected_calculation"):
+        invalid_cases = [replace(cases[0], **{field: "unsupported_label"}), *cases[1:]]
+        with patch(f"{__name__}.load_cases", return_value=invalid_cases):
+            try:
+                test_fixture_has_required_fields_and_valid_enums()
+            except AssertionError as error:
+                assert f"unsupported {field}:" in str(error)
+            else:
+                raise AssertionError(f"unsupported label accepted for {field}")
+
+
+def test_fixture_enum_checks_allow_optional_empty_labels() -> None:
+    cases = load_cases(FIXTURE)
+    for optional_value in (None, ""):
+        optional_case = replace(cases[0], expected_intent="",
+                                expected_topic=optional_value,
+                                expected_calculation=optional_value)
+        with patch(f"{__name__}.load_cases", return_value=[optional_case, *cases[1:]]):
+            test_fixture_has_required_fields_and_valid_enums()
 
 
 def test_fixture_ids_match_design_ranges() -> None:
@@ -107,6 +142,8 @@ def main() -> int:
     tests = [
         test_fixture_has_exactly_60_unique_cases,
         test_fixture_has_required_fields_and_valid_enums,
+        test_fixture_enum_checks_reject_unsupported_labels,
+        test_fixture_enum_checks_allow_optional_empty_labels,
         test_fixture_category_distribution_matches_design,
         test_fixture_ids_match_design_ranges,
         test_load_cases_rejects_invalid_root_and_records,
