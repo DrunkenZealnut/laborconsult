@@ -41,6 +41,26 @@ REQUIRED_CASE_KEYS = frozenset({
     "risk_level",
 })
 VALID_RISK_LEVELS = frozenset({"low", "medium", "high"})
+# Keep offline validation standard-library-only. Tests check these labels against
+# the production analyzer schema, including labels not yet used by the fixture.
+SUPPORTED_EXPECTED_LABELS = {
+    "expected_intent": frozenset({
+        "law_interpretation", "precedent_search", "procedure_guide",
+        "rights_check", "system_explanation",
+    }),
+    "expected_topic": frozenset({
+        "해고·징계", "임금·통상임금", "근로시간·휴일", "퇴직·퇴직금", "연차휴가",
+        "산재보상", "비정규직", "노동조합", "직장내괴롭힘", "근로계약", "고용보험", "기타",
+    }),
+    "expected_calculation": frozenset({
+        "overtime", "minimum_wage", "weekly_holiday", "annual_leave", "dismissal",
+        "severance", "unemployment", "insurance", "comprehensive", "parental_leave",
+        "maternity_leave", "prorated", "wage_arrears", "flexible_work",
+        "compensatory_leave", "eitc", "average_wage", "shutdown_allowance",
+        "working_hours", "public_holiday", "ordinary_wage", "retirement_tax",
+        "retirement_pension",
+    }),
+}
 DISCLAIMER_MARKER = "법적 효력"
 FIXTURE_PATH = Path(__file__).resolve().parent / "data/eval_consultation_queries.json"
 EXPECTED_DISTRIBUTION = {
@@ -89,15 +109,37 @@ def validate_cases(cases: list[EvalCase]) -> list[str]:
     errors = []
     seen = set()
     for case in cases:
-        if case.id in seen:
-            errors.append(f"duplicate id: {case.id}")
-        seen.add(case.id)
-        if not case.question.strip():
-            errors.append(f"empty question: {case.id}")
-        if case.risk_level not in VALID_RISK_LEVELS:
+        if isinstance(case.id, str) and case.id.strip():
+            if case.id in seen:
+                errors.append(f"duplicate id: {case.id}")
+            seen.add(case.id)
+        for field in ("id", "category", "question"):
+            value = getattr(case, field)
+            if not isinstance(value, str):
+                errors.append(f"invalid {field}: {case.id}")
+            elif not value.strip():
+                errors.append(f"empty {field}: {case.id}")
+        if not isinstance(case.risk_level, str) or case.risk_level not in VALID_RISK_LEVELS:
             errors.append(f"invalid risk level: {case.id}")
         if not case.allowed_sources:
             errors.append(f"missing allowed_sources: {case.id}")
+        for field in ("required_laws", "allowed_sources", "required_notices", "forbidden_claims"):
+            values = getattr(case, field)
+            if not isinstance(values, list) or not all(
+                isinstance(value, str) and value.strip() for value in values
+            ):
+                errors.append(f"invalid {field}: {case.id}; expected a list of nonempty strings")
+        if not isinstance(case.expected_values, dict) or not all(
+            isinstance(key, str) and type(value) in (float, int, str)
+            for key, value in case.expected_values.items()
+        ):
+            errors.append(f"invalid expected_values: {case.id}")
+        for field, supported_labels in SUPPORTED_EXPECTED_LABELS.items():
+            value = getattr(case, field)
+            if value is None and field != "expected_intent":
+                continue
+            if not isinstance(value, str) or (value != "" and value not in supported_labels):
+                errors.append(f"unsupported {field}: {value!r} ({case.id})")
     return errors
 
 
@@ -334,7 +376,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cases = load_cases(FIXTURE_PATH)
         errors = validate_cases(cases)
-        distribution_ok = Counter(case.category for case in cases) == EXPECTED_DISTRIBUTION
+        distribution_ok = (
+            all(isinstance(case.category, str) for case in cases)
+            and Counter(case.category for case in cases) == EXPECTED_DISTRIBUTION
+        )
     except (OSError, ValueError, TypeError, AttributeError) as error:
         print(f"fixture: FAIL: {error}", file=sys.stderr)
         return 1

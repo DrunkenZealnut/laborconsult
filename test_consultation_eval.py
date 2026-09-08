@@ -44,7 +44,9 @@ def test_fixture_has_exactly_60_unique_cases() -> None:
 
 def test_fixture_has_required_fields_and_valid_enums() -> None:
     cases = load_cases(FIXTURE)
-    assert validate_cases(cases) == []
+    errors = validate_cases(cases)
+    assert errors == [], "\n".join(errors)
+    assert harness.SUPPORTED_EXPECTED_LABELS == SUPPORTED_EXPECTED_LABELS
     for case in cases:
         assert set(case.__dataclass_fields__) == REQUIRED_CASE_KEYS
         assert case.risk_level in {"low", "medium", "high"}
@@ -522,6 +524,74 @@ def test_offline_cli_reports_fixture_errors() -> None:
             assert harness.main(["--offline"]) == 1
 
 
+def _assert_cli_rejects_fixture_values(invalid_values) -> None:
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "cases.json"
+        for field, value in invalid_values:
+            # Corrupt an unselected case to verify the full fixture gate.
+            document = [*raw[:-1], dict(raw[-1], **{field: value})]
+            path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+            for mode in ("--offline", "--live"):
+                output, error = io.StringIO(), io.StringIO()
+                with patch.object(harness, "FIXTURE_PATH", path), \
+                        patch.dict(sys.modules, {"app.config": None}), \
+                        redirect_stdout(output), redirect_stderr(error):
+                    status = harness.main([mode, "--case", "wage-01", "--limit", "1"])
+                assert status == 1, (mode, field, value, output.getvalue())
+                assert "schema: FAIL" in error.getvalue(), (field, value, error.getvalue())
+                diagnostic_field = "risk level" if field == "risk_level" else field
+                assert diagnostic_field in error.getvalue(), (field, value, error.getvalue())
+                assert "PASS" not in output.getvalue()
+                assert "live configuration" not in error.getvalue()
+        assert sorted(p.name for p in Path(directory).iterdir()) == ["cases.json"]
+
+
+def test_cli_rejects_malformed_fixture_field_types() -> None:
+    invalid_values = [
+        (field, value)
+        for field in ("id", "category", "question")
+        for value in (None, 42, [], {}, "", " \t")
+    ]
+    invalid_values.extend(
+        (field, value)
+        for field in ("required_laws", "allowed_sources", "required_notices", "forbidden_claims")
+        for value in ("근로기준법 제26조", None, {}, [42], [None], [""], [" \t"])
+    )
+    invalid_values.extend(("expected_values", value) for value in (
+        [], None, "amount", {"amount": True}, {"amount": None},
+        {"amount": []}, {"amount": {}},
+    ))
+    invalid_values.extend(("risk_level", value) for value in (None, [], {}, 42, "urgent"))
+    invalid_values.append(("allowed_sources", []))
+    _assert_cli_rejects_fixture_values(invalid_values)
+    case = load_cases(FIXTURE)[0]
+    assert validate_cases([replace(case, expected_values={42: 100})])
+
+
+def test_cli_rejects_unsupported_and_malformed_routing_labels() -> None:
+    _assert_cli_rejects_fixture_values([
+        (field, value)
+        for field in ("expected_intent", "expected_topic", "expected_calculation")
+        for value in ("unsupported_label", " ", 42, False, [], {})
+    ] + [("expected_intent", None)])
+
+
+def test_offline_cli_accepts_supported_and_optional_routing_labels() -> None:
+    cases = load_cases(FIXTURE)
+    for field, labels in SUPPORTED_EXPECTED_LABELS.items():
+        # Check every production enum, including labels absent from the fixture.
+        for value in [*labels, "", *([None] if field != "expected_intent" else [])]:
+            valid = replace(cases[0], **{field: value}, required_laws=[],
+                            required_notices=[], forbidden_claims=[],
+                            expected_values={"integer": 1, "float": 1.5, "text": "참고값"})
+            with patch.object(harness, "load_cases", return_value=[valid, *cases[1:]]), \
+                    patch.dict(sys.modules, {"app.config": None}), \
+                    redirect_stdout(io.StringIO()) as output:
+                assert harness.main(["--offline"]) == 0, (field, value)
+            assert "schema: PASS" in output.getvalue()
+
+
 def _fake_config_module():
     # AppConfig constructs remote clients and loads .env, so replace that boundary.
     config = SimpleNamespace(supabase=object(), openai_client=object())
@@ -663,6 +733,9 @@ def main() -> int:
         test_offline_cli_needs_only_standard_library_and_writes_nothing,
         test_cli_rejects_bad_arguments_before_loading_clients,
         test_offline_cli_reports_fixture_errors,
+        test_cli_rejects_malformed_fixture_field_types,
+        test_cli_rejects_unsupported_and_malformed_routing_labels,
+        test_offline_cli_accepts_supported_and_optional_routing_labels,
         test_live_cli_serializes_full_scores_bounded_answer_and_metadata,
         test_live_cli_case_selects_from_full_fixture_and_custom_output,
         test_live_cli_persists_pipeline_failures_and_returns_failure,
