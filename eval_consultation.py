@@ -10,11 +10,18 @@ expected_topic=None도 선택 판정이다. expected_calculation은 calculation_
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
+import platform
+import subprocess
+import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable
+from copy import copy
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
 
@@ -35,6 +42,16 @@ REQUIRED_CASE_KEYS = frozenset({
 })
 VALID_RISK_LEVELS = frozenset({"low", "medium", "high"})
 DISCLAIMER_MARKER = "법적 효력"
+FIXTURE_PATH = Path(__file__).resolve().parent / "data/eval_consultation_queries.json"
+EXPECTED_DISTRIBUTION = {
+    "임금·계산": 10,
+    "해고·징계·구제절차": 10,
+    "근로시간·휴일·연차": 10,
+    "퇴직금·퇴직·고용보험": 8,
+    "산재·괴롭힘·차별": 8,
+    "판례·행정해석·법령 조회": 8,
+    "정보 부족·복합·구어체 질문": 6,
+}
 
 
 @dataclass(frozen=True)
@@ -280,3 +297,116 @@ def aggregate_results(results: list[dict]) -> dict:
         "average_total_ms": round(mean(timings)) if timings else 0,
         "p95_total_ms": int(timings[math.ceil(0.95 * len(timings)) - 1]) if timings else 0,
     }
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent,
+            check=True, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    """기본값은 fixture 검증만 수행한다. live는 순차 실행 후 로컬 JSON을 쓴다.
+
+    CLI 오류는 2, fixture·설정·저장·파이프라인 실행 오류는 1이다. 품질 지표
+    미달 자체는 실행 실패가 아니므로 0이며, 결과의 automatic_pass로 확인한다.
+    --case를 먼저 선택한 뒤 --limit을 적용한다. offline은 결과 파일을 쓰지 않는다.
+    """
+    parser = argparse.ArgumentParser(description="상담 평가 fixture 검증 및 라이브 평가")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--offline", action="store_true", help="외부 호출 없이 fixture 검증 (기본값)")
+    mode.add_argument("--live", action="store_true", help="실제 파이프라인을 순차 실행")
+    parser.add_argument("--limit", type=int, help="앞에서부터 실행할 사례 수 (양수)")
+    parser.add_argument("--case", metavar="ID", help="지정 ID 하나만 선택")
+    parser.add_argument("--output", type=Path, default=Path("eval_consultation_results.json"),
+                        help="라이브 결과 JSON 경로 (기본: %(default)s)")
+    try:
+        args = parser.parse_args(argv)
+        if args.limit is not None and args.limit <= 0:
+            parser.error("--limit must be positive")
+    except SystemExit as error:
+        return int(error.code)
+
+    try:
+        cases = load_cases(FIXTURE_PATH)
+        errors = validate_cases(cases)
+        distribution_ok = Counter(case.category for case in cases) == EXPECTED_DISTRIBUTION
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        print(f"fixture: FAIL: {error}", file=sys.stderr)
+        return 1
+    if errors or not distribution_ok:
+        for error in errors:
+            print(f"schema: FAIL: {error}", file=sys.stderr)
+        if not distribution_ok:
+            print("distribution: FAIL", file=sys.stderr)
+        return 1
+
+    selected = cases
+    if args.case is not None:
+        selected = [case for case in cases if case.id == args.case]
+        if not selected:
+            print(f"unknown case ID: {args.case}", file=sys.stderr)
+            return 2
+    if args.limit is not None:
+        selected = selected[:args.limit]
+
+    if not args.live:
+        print(f"fixture: {len(cases)}건")
+        print("schema: PASS")
+        print("distribution: PASS")
+        print("offline evaluation contract: PASS")
+        return 0
+
+    metadata = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "fixture_path": str(FIXTURE_PATH),
+        "fixture_case_count": len(cases),
+        "python_version": platform.python_version(),
+        "git_commit": _git_commit(),
+    }
+    try:
+        from app.config import AppConfig
+
+        config = copy(AppConfig.from_env())
+        # process_question persists answers when supabase is set. Evaluation
+        # records belong only in the local report, even with production .env.
+        config.supabase = None
+    except Exception as error:
+        print(f"live configuration: FAIL: {error}", file=sys.stderr)
+        return 1
+
+    results = []
+    for case in selected:
+        observed = run_case(case, config)
+        scores = score_result(case, observed)
+        results.append({
+            "case_id": case.id,
+            "category": case.category,
+            "question": case.question,
+            "observed": {**observed, "answer": observed["answer"][:3000]},
+            "scores": scores,
+            "pipeline_error": observed["pipeline_error"],
+        })
+    summary = aggregate_results([
+        {**result["scores"], "timing": result["observed"]["timing"]}
+        for result in results
+    ])
+    report = {"run_metadata": metadata, "summary": summary, "results": results}
+    try:
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                               encoding="utf-8")
+    except OSError as error:
+        print(f"output: FAIL: {error}", file=sys.stderr)
+        return 1
+    print(f"live evaluation: {len(results)}건")
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    print(f"output: {args.output}")
+    return 0 if all(result["scores"]["pipeline_ok"] for result in results) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

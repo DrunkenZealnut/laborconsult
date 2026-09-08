@@ -6,13 +6,20 @@
 
 from __future__ import annotations
 
+import io
 import json
+import subprocess
+import sys
 import traceback
+from contextlib import chdir, redirect_stderr, redirect_stdout
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import eval_consultation as harness
 from app.templates.prompts import ANALYZE_TOOL
 from eval_consultation import (
     REQUIRED_CASE_KEYS, EvalCase, aggregate_results, collect_events, load_cases,
@@ -472,6 +479,160 @@ def test_run_case_restores_analyzer_on_interrupt_and_closes_generator() -> None:
         assert pipeline.analyze_intent is original
 
 
+def test_offline_cli_needs_only_standard_library_and_writes_nothing() -> None:
+    script = Path(harness.__file__).resolve()
+    with TemporaryDirectory() as directory:
+        for args in ([], ["--offline"], ["--offline", "--limit", "2"],
+                     ["--offline", "--case", "law-01", "--output", "unused.json"]):
+            result = subprocess.run(
+                [sys.executable, "-I", "-S", str(script), *args],
+                cwd=directory, capture_output=True, text=True, timeout=20,
+            )
+            assert result.returncode == 0, result.stderr
+            assert "fixture: 60건" in result.stdout
+            assert "schema: PASS" in result.stdout
+            assert "distribution: PASS" in result.stdout
+            assert "offline evaluation contract: PASS" in result.stdout
+        assert list(Path(directory).iterdir()) == []
+
+
+def test_cli_rejects_bad_arguments_before_loading_clients() -> None:
+    for args in (["--offline", "--limit", "0"], ["--limit", "-1"],
+                 ["--limit", "no"], ["--case", "unknown"],
+                 ["--live", "--case", "unknown"], ["--live", "--limit", "0"],
+                 ["--offline", "--live"], ["--unknown"]):
+        with patch.dict(sys.modules, {"app.config": None}), \
+                redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            assert harness.main(args) == 2, args
+    with redirect_stdout(io.StringIO()):
+        assert harness.main(["--help"]) == 0
+
+
+def test_offline_cli_reports_fixture_errors() -> None:
+    cases = load_cases(FIXTURE)
+    for broken in ([replace(cases[0], question=""), *cases[1:]], cases[:-1]):
+        output, error = io.StringIO(), io.StringIO()
+        with patch.object(harness, "load_cases", return_value=broken), \
+                redirect_stdout(output), redirect_stderr(error):
+            assert harness.main(["--offline", "--limit", "1"]) == 1
+        assert "FAIL" in output.getvalue() + error.getvalue()
+    for failure in (ValueError("bad JSON"), OSError("missing fixture")):
+        with patch.object(harness, "load_cases", side_effect=failure), \
+                redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            assert harness.main(["--offline"]) == 1
+
+
+def _fake_config_module():
+    # AppConfig constructs remote clients and loads .env, so replace that boundary.
+    config = SimpleNamespace(supabase=object(), openai_client=object())
+    calls = []
+
+    def from_env():
+        calls.append(config)
+        return config
+
+    return SimpleNamespace(AppConfig=SimpleNamespace(from_env=from_env)), config, calls
+
+
+def test_live_cli_serializes_full_scores_bounded_answer_and_metadata() -> None:
+    module, config, config_calls = _fake_config_module()
+    seen = []
+    observations = []
+
+    def run(case, actual_config):
+        assert actual_config is not config
+        assert actual_config.supabase is None
+        assert actual_config.openai_client is config.openai_client
+        seen.append(case.id)
+        observed = collect_events([
+            {"type": "chunk", "text": "가" * 3100 + " 법적 효력 " +
+             " ".join(case.required_laws + case.required_notices)},
+            {"type": "done"},
+        ])
+        observed["analysis"].update(intent=case.expected_intent, topic=case.expected_topic)
+        observed["calc_result"] = "계산 결과"
+        observed["timing"] = {"total_ms": 100 if len(seen) == 1 else 200, "ttft_ms": 10}
+        observations.append(observed)
+        return observed
+
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", run), redirect_stdout(io.StringIO()):
+        assert harness.main(["--live", "--limit", "2"]) == 0
+        report = json.loads(Path("eval_consultation_results.json").read_text())
+    assert config_calls == [config]
+    assert config.supabase is not None
+    assert seen == ["wage-01", "wage-02"]
+    assert set(report) == {"run_metadata", "summary", "results"}
+    metadata = report["run_metadata"]
+    assert datetime.fromisoformat(metadata["started_at"]).tzinfo is not None
+    assert Path(metadata["fixture_path"]) == FIXTURE
+    assert metadata["fixture_case_count"] == 60
+    assert metadata["python_version"] == sys.version.split()[0]
+    assert len(metadata["git_commit"]) == 40
+    assert report["summary"]["total_cases"] == 2
+    assert report["summary"]["average_total_ms"] == 150
+    assert report["summary"]["automatic_pass_rate"] == 1.0
+    for result in report["results"]:
+        assert set(result) == {"case_id", "category", "question", "observed", "scores", "pipeline_error"}
+        assert len(result["observed"]["answer"]) == 3000
+        assert result["scores"]["disclaimer_present"] is True
+        assert result["scores"]["automatic_pass"] is True
+        assert result["pipeline_error"] is None
+    assert all(len(observed["answer"]) > 3000 for observed in observations)
+
+
+def test_live_cli_case_selects_from_full_fixture_and_custom_output() -> None:
+    module, _, _ = _fake_config_module()
+    seen = []
+
+    def run(case, config):
+        seen.append(case.id)
+        return collect_events([{"type": "chunk", "text": "답변"}, {"type": "done"}])
+
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", run), redirect_stdout(io.StringIO()):
+        assert harness.main(["--live", "--case", "law-01", "--limit", "1",
+                             "--output", "custom_results.json"]) == 0
+        report = json.loads(Path("custom_results.json").read_text())
+        assert not Path("eval_consultation_results.json").exists()
+    assert seen == ["law-01"]
+    assert report["results"][0]["case_id"] == "law-01"
+    assert report["summary"]["automatic_pass_rate"] == 0.0
+
+
+def test_live_cli_persists_pipeline_failures_and_returns_failure() -> None:
+    module, _, _ = _fake_config_module()
+
+    def run(case, config):
+        return collect_events([{"type": "error", "text": "service unavailable"},
+                               {"type": "done"}])
+
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", run), redirect_stdout(io.StringIO()):
+        assert harness.main(["--live", "--limit", "2"]) == 1
+        report = json.loads(Path("eval_consultation_results.json").read_text())
+    assert len(report["results"]) == 2
+    assert report["summary"]["pipeline_success_rate"] == 0.0
+    assert all(row["pipeline_error"] == "service unavailable" for row in report["results"])
+
+
+def test_live_cli_reports_configuration_and_output_errors() -> None:
+    module, _, _ = _fake_config_module()
+    with patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(module.AppConfig, "from_env", side_effect=OSError("missing keys")), \
+            redirect_stderr(io.StringIO()) as error:
+        assert harness.main(["--live", "--limit", "1"]) == 1
+        assert "missing keys" in error.getvalue()
+    with TemporaryDirectory() as directory, patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", return_value=collect_events([{"type": "done"}])), \
+            redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()):
+        assert harness.main(["--live", "--limit", "1", "--output", directory]) == 1
+        assert error.getvalue()
+
+
 def main() -> int:
     tests = [
         test_fixture_has_exactly_60_unique_cases,
@@ -499,6 +660,13 @@ def main() -> int:
         test_run_case_captures_effective_analysis_and_restores_analyzer,
         test_run_case_restores_analyzer_on_failure_and_preserves_partial_output,
         test_run_case_restores_analyzer_on_interrupt_and_closes_generator,
+        test_offline_cli_needs_only_standard_library_and_writes_nothing,
+        test_cli_rejects_bad_arguments_before_loading_clients,
+        test_offline_cli_reports_fixture_errors,
+        test_live_cli_serializes_full_scores_bounded_answer_and_metadata,
+        test_live_cli_case_selects_from_full_fixture_and_custom_output,
+        test_live_cli_persists_pipeline_failures_and_returns_failure,
+        test_live_cli_reports_configuration_and_output_errors,
     ]
     try:
         for test in tests:
