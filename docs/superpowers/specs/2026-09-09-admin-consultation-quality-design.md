@@ -68,8 +68,12 @@ CLI 오류(종료 코드 2)로 거부한다. Live 측정 자체는 기존처럼 
 3,000자 상한을 따른다. 운영 DB에 원문 전체 답변을 새로 저장하지 않는다.
 
 RLS를 활성화하고 anon/authenticated 정책은 만들지 않는다. API와 게시 CLI는
-기존 서버 측 Supabase 클라이언트를 사용한다. 관리자 JWT는 Supabase에 전달하지
-않으며, 브라우저가 Supabase에 직접 접속하지 않는다.
+기존 서버 측 Supabase 클라이언트를 사용하되, 기존 운영 테이블의 기본 스키마
+(`laborconsult`)를 바꾸지 않도록 평가 테이블 접근에서만
+`supabase.schema("public").table("consultation_eval_runs")`를 명시한다.
+이 평가 전용 스키마 경계는 오프라인 테스트로 게시자·API·SQL 계약이 같은
+`public` 대상을 사용하는지 검증한다. 관리자 JWT는 Supabase에 전달하지 않으며,
+브라우저가 Supabase에 직접 접속하지 않는다.
 
 인덱스:
 

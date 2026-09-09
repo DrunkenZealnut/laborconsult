@@ -20,6 +20,7 @@
 - Supabase RLS is enabled with no anon/authenticated table policies; only server-side credentials access the table.
 - Existing conversation, attachment, abuse, production pipeline, fixture, and scoring behavior must remain unchanged.
 - Preserve unrelated working-tree changes in `.bkit/state/memory.json` and `.claude/`.
+- The existing Supabase client defaults to `laborconsult`; evaluation table access must explicitly use `.schema("public")` without changing that shared default. Focused tests must assert this boundary.
 
 ---
 
@@ -140,7 +141,7 @@ Expected: the new imports/options or publisher are missing, so the new tests fai
 
 - [ ] **Step 3: Implement the publication boundary**
 
-Add standard-library helpers for a URL-safe `run_id`, report validation, and `publish_admin_run`. Require `run_metadata`, `summary`, and `results`; map `started_at`, `finished_at`, `fixture_case_count`, `evaluated_case_count`, `mode`, and `metadata` into one row; preserve the existing bounded `observed.answer`. Call exactly one `supabase.table("consultation_eval_runs").insert(row).execute()` and return the run ID.
+Add standard-library helpers for a URL-safe `run_id`, report validation, and `publish_admin_run`. Require `run_metadata`, `summary`, and `results`; map `started_at`, `finished_at`, `fixture_case_count`, `evaluated_case_count`, `mode`, and `metadata` into one row; preserve the existing bounded `observed.answer`. Call exactly one `supabase.schema("public").table("consultation_eval_runs").insert(row).execute()` and return the run ID. Add an offline assertion that the publisher uses the explicit public-schema boundary.
 
 Add `--publish-admin` to the parser. Reject it unless `args.live` is true before loading `AppConfig`. In Live mode, keep the original Supabase client only as a publisher client, copy the config for `run_case`, set the copy’s `supabase` to `None`, write the local JSON first, then publish. Return 1 for configuration, output, pipeline, or publication failures and retain the local output file. Do not publish when the selected run is empty.
 
@@ -197,7 +198,7 @@ Expected: `AttributeError` or route-not-found failure for the new functions.
 
 - [ ] **Step 3: Implement the two read-only routes**
 
-Add a private `_validate_eval_run_id` that permits only `eval_` plus ASCII letters, digits, `_`, and `-`, with a bounded length. Query only the summary/list columns for the list endpoint and clamp `limit` to 1–100. Query the full row for detail after validating the path ID. Convert missing rows to `HTTPException(404, ...)`, Supabase exceptions to `HTTPException(503, ...)`, and never expose raw exception strings. All route signatures include `_admin=Depends(require_admin)`.
+Add a private `_validate_eval_run_id` that permits only `eval_` plus ASCII letters, digits, `_`, and `-`, with a bounded length. Query only the summary/list columns for the list endpoint and clamp `limit` to 1–100. Query the full row for detail after validating the path ID. Use `supabase.schema("public").table("consultation_eval_runs")` for both routes and add an offline assertion for that boundary. Convert missing rows to `HTTPException(404, ...)`, Supabase exceptions to `HTTPException(503, ...)`, and never expose raw exception strings. All route signatures include `_admin=Depends(require_admin)`.
 
 - [ ] **Step 4: Run API tests and existing Admin auth checks**
 
