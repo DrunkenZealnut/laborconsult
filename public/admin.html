@@ -73,6 +73,8 @@
 
   /* Consultation quality */
   .quality-status { color: var(--color-text-muted); margin-bottom: var(--space-2); min-height: 20px; }
+  .quality-summary-grid { display: grid; grid-template-columns: repeat(var(--grid-columns), 1fr); gap: var(--grid-gap); margin-bottom: var(--space-2); }
+  .quality-summary-grid .stat-card { grid-column: span 3; }
   .quality-layout { display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.6fr); gap: var(--space-2); }
   .quality-panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-2); }
   .quality-panel h2 { font-size: var(--text-body); margin-bottom: var(--space-1); }
@@ -92,7 +94,10 @@
   .quality-kv dd { margin: 3px 0 0; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .quality-sources { margin: 4px 0 0 18px; }
   .quality-sources li { margin: 3px 0; }
-  @media (max-width: 768px) { .quality-layout { grid-template-columns: 1fr; } }
+  @media (max-width: 768px) {
+    .quality-layout, .quality-summary-grid { grid-template-columns: 1fr; }
+    .quality-summary-grid .stat-card { grid-column: auto; }
+  }
 
   /* Detail Modal */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
@@ -185,7 +190,7 @@
 <div id="quality-view" class="container hidden">
   <div class="conv-header"><h2>상담 답변 품질</h2><button type="button" class="search-btn" onclick="loadEvaluationRuns()">새로고침</button></div>
   <div id="quality-status" class="quality-status" role="status"></div>
-  <div id="quality-stat-cards" class="stat-cards"></div>
+  <div id="quality-stat-cards"></div>
   <div class="quality-layout">
     <section class="quality-panel">
       <h2>평가 실행</h2>
@@ -336,7 +341,7 @@ function evaluationDate(value) {
 function renderEvaluationSummary(run) {
   const item = safeEvaluationObject(run);
   const summary = safeEvaluationObject(item.summary);
-  const measured = item.mode === 'live' && item.status === 'completed';
+  const measured = item.mode === 'live' && item.status !== 'unexecuted' && item.status !== undefined && item.status !== null;
   const metric = (key, unit) => measured ? formatEvaluationMetric(summary[key], unit) : '측정 없음';
   const cards = [
     ['자동 통과율', metric('automatic_pass_rate', 'rate')],
@@ -351,7 +356,7 @@ function renderEvaluationSummary(run) {
   const metadata = safeEvaluationObject(item.metadata);
   const metadataText = Object.keys(metadata).slice(0, 3).map(key =>
     `<span>${escapeHtml(key)}: ${escapeHtml(metadata[key])}</span>`).join('');
-  return `<div class="stat-cards">${cards.map(([label, value]) =>
+  return `<div class="quality-summary-grid">${cards.map(([label, value]) =>
     `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('')}</div>
     <div class="detail-meta"><span>${escapeHtml(evaluationModeLabel(item.mode))}</span><span>${escapeHtml(evaluationStatusLabel(item.status))}</span>${metadataText}</div>`;
 }
