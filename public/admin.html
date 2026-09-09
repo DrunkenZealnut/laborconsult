@@ -71,6 +71,34 @@
   .pagination span { font-size: var(--text-label); color: var(--color-text-muted); }
   .empty-state { text-align: center; padding: 40px; color: var(--color-text-muted); }
 
+  /* Consultation quality */
+  .quality-status { color: var(--color-text-muted); margin-bottom: var(--space-2); min-height: 20px; }
+  .quality-summary-grid { display: grid; grid-template-columns: repeat(var(--grid-columns), 1fr); gap: var(--grid-gap); margin-bottom: var(--space-2); }
+  .quality-summary-grid .stat-card { grid-column: span 3; }
+  .quality-layout { display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.6fr); gap: var(--space-2); }
+  .quality-panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: var(--space-2); }
+  .quality-panel h2 { font-size: var(--text-body); margin-bottom: var(--space-1); }
+  .quality-run-list { display: flex; flex-direction: column; gap: var(--space-1); }
+  .quality-run { width: 100%; text-align: left; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; color: var(--color-text); }
+  .quality-run:hover { border-color: var(--accent); }
+  .quality-run-title { display: flex; justify-content: space-between; gap: var(--space-1); font-weight: var(--weight-semibold); }
+  .quality-run-meta { color: var(--color-text-muted); font-size: var(--text-label); margin-top: 4px; }
+  .quality-run-count { font-size: var(--text-label); color: var(--color-text-muted); }
+  .quality-detail { min-height: 80px; }
+  .quality-case { border-top: 1px solid var(--color-border); padding-top: var(--space-2); margin-top: var(--space-2); }
+  .quality-case h3 { font-size: var(--text-sm); margin-bottom: var(--space-1); }
+  .quality-case pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--color-bg); padding: 10px; border-radius: var(--radius); font: inherit; font-size: var(--text-label); }
+  .quality-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-1); margin: var(--space-1) 0; }
+  .quality-kv div { background: var(--color-bg); border-radius: var(--radius); padding: 8px 10px; }
+  .quality-kv dt { color: var(--color-text-muted); font-size: var(--text-label); }
+  .quality-kv dd { margin: 3px 0 0; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .quality-sources { margin: 4px 0 0 18px; }
+  .quality-sources li { margin: 3px 0; }
+  @media (max-width: 768px) {
+    .quality-layout, .quality-summary-grid { grid-template-columns: 1fr; }
+    .quality-summary-grid .stat-card { grid-column: auto; }
+  }
+
   /* Detail Modal */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
   .modal-overlay.active { display: flex; }
@@ -113,6 +141,7 @@
   <div class="nav-links hidden" id="nav">
     <button id="nav-dashboard" class="active" onclick="showView('dashboard')">대시보드</button>
     <button id="nav-conversations" onclick="showView('conversations')">대화목록</button>
+    <button id="nav-quality" onclick="showView('quality')">답변 품질</button>
     <button class="logout" onclick="logout()">로그아웃</button>
   </div>
 </header>
@@ -157,6 +186,23 @@
   <div class="pagination" id="pagination"></div>
 </div>
 
+<!-- Consultation quality view -->
+<div id="quality-view" class="container hidden">
+  <div class="conv-header"><h2>상담 답변 품질</h2><button type="button" class="search-btn" onclick="loadEvaluationRuns()">새로고침</button></div>
+  <div id="quality-status" class="quality-status" role="status"></div>
+  <div id="quality-stat-cards"></div>
+  <div class="quality-layout">
+    <section class="quality-panel">
+      <h2>평가 실행</h2>
+      <div id="quality-run-list" class="quality-run-list"></div>
+    </section>
+    <section class="quality-panel">
+      <h2>실행 상세</h2>
+      <div id="quality-detail" class="quality-detail"></div>
+    </section>
+  </div>
+</div>
+
 <!-- Detail Modal -->
 <div class="modal-overlay" id="detail-modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
@@ -182,6 +228,9 @@ let dailyChart = null;
 let categoryChart = null;
 let currentPage = 1;
 let categories = [];
+let evaluationListRequest = 0;
+let evaluationDetailRequest = 0;
+let evaluationViewGeneration = 0;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -252,11 +301,179 @@ async function adminFetch(url) {
 function showView(view) {
   document.getElementById('dashboard-view').classList.toggle('hidden', view !== 'dashboard');
   document.getElementById('conversations-view').classList.toggle('hidden', view !== 'conversations');
+  document.getElementById('quality-view').classList.toggle('hidden', view !== 'quality');
   document.getElementById('nav-dashboard').classList.toggle('active', view === 'dashboard');
   document.getElementById('nav-conversations').classList.toggle('active', view === 'conversations');
+  document.getElementById('nav-quality').classList.toggle('active', view === 'quality');
 
   if (view === 'dashboard') loadStats();
   if (view === 'conversations') loadConversations(1);
+  if (view === 'quality') loadEvaluationRuns();
+}
+
+// ── Consultation quality ─────────────────────────────────────────────────────
+
+function safeEvaluationObject(value) {
+  return value && typeof value === 'object' ? value : {};
+}
+
+function formatEvaluationMetric(value, unit) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '측정 없음';
+  if (unit === 'rate') return (value * 100).toFixed(1) + '%';
+  if (unit === 'ms') return Math.round(value).toLocaleString('en-US') + ' ms';
+  if (unit === 'count') return Math.round(value).toLocaleString('en-US');
+  return String(value);
+}
+
+function evaluationStatusLabel(status) {
+  return ({ completed: '완료', partial: '일부 실패', failed: '실패', unexecuted: '미실행' })[status] || String(status || '상태 없음');
+}
+
+function evaluationModeLabel(mode) {
+  return mode === 'offline' ? '구조 검증' : mode === 'live' ? 'Live' : String(mode || '모드 없음');
+}
+
+function evaluationDate(value) {
+  if (typeof value !== 'string' || !value) return '날짜 없음';
+  return value.slice(0, 10);
+}
+
+function renderEvaluationSummary(run) {
+  const item = safeEvaluationObject(run);
+  const summary = safeEvaluationObject(item.summary);
+  const measured = item.mode === 'live' && item.status !== 'unexecuted' && item.status !== undefined && item.status !== null;
+  const metric = (key, unit) => measured ? formatEvaluationMetric(summary[key], unit) : '측정 없음';
+  const cards = [
+    ['자동 통과율', metric('automatic_pass_rate', 'rate')],
+    ['의도 정확도', metric('intent_accuracy', 'rate')],
+    ['주제 정확도', metric('topic_accuracy', 'rate')],
+    ['법령 근거 포함', metric('required_law_coverage', 'rate')],
+    ['필수 안내 포함', metric('required_notice_coverage', 'rate')],
+    ['면책 문구 포함', metric('disclaimer_rate', 'rate')],
+    ['평균 응답 시간', metric('average_total_ms', 'ms')],
+    ['P95 응답 시간', metric('p95_total_ms', 'ms')],
+  ];
+  const metadata = safeEvaluationObject(item.metadata);
+  const metadataText = Object.keys(metadata).slice(0, 3).map(key =>
+    `<span>${escapeHtml(key)}: ${escapeHtml(metadata[key])}</span>`).join('');
+  return `<div class="quality-summary-grid">${cards.map(([label, value]) =>
+    `<div class="stat-card"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('')}</div>
+    <div class="detail-meta"><span>${escapeHtml(evaluationModeLabel(item.mode))}</span><span>${escapeHtml(evaluationStatusLabel(item.status))}</span>${metadataText}</div>`;
+}
+
+function renderEvaluationRuns(runs) {
+  if (!Array.isArray(runs) || runs.length === 0) return '<div class="empty-state">실행 없음</div>';
+  return runs.map((run, index) => {
+    const item = safeEvaluationObject(run);
+    const count = typeof item.fixture_case_count === 'number' ? item.fixture_case_count.toLocaleString('en-US') : item.fixture_case_count;
+    const evaluated = typeof item.evaluated_case_count === 'number' ? item.evaluated_case_count.toLocaleString('en-US') : item.evaluated_case_count;
+    return `<button type="button" class="quality-run" data-evaluation-index="${index}">
+      <span class="quality-run-title"><span>${escapeHtml(item.run_id)}</span><span>${escapeHtml(evaluationModeLabel(item.mode))}</span></span>
+      <span class="quality-run-meta">${escapeHtml(evaluationStatusLabel(item.status))} · ${escapeHtml(evaluationDate(item.started_at || item.created_at))}</span>
+      <span class="quality-run-count">케이스 ${escapeHtml(count)} · 측정 ${escapeHtml(evaluated)}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderEvaluationValue(value) {
+  if (value === null || value === undefined || value === '') return '측정 없음';
+  if (typeof value === 'boolean') return value ? '합격' : '불합격';
+  if (typeof value === 'number') return Number.isFinite(value) ? escapeHtml(value.toLocaleString('en-US')) : '측정 없음';
+  if (typeof value === 'string') return escapeHtml(value);
+  return escapeHtml(JSON.stringify(value));
+}
+
+function renderEvaluationCase(result) {
+  const item = safeEvaluationObject(result);
+  const scores = safeEvaluationObject(item.scores);
+  const observed = safeEvaluationObject(item.observed);
+  const timing = safeEvaluationObject(observed.timing || item.timing);
+  const answer = typeof observed.answer === 'string' ? observed.answer : item.answer;
+  const sources = Array.isArray(observed.sources) ? observed.sources : [];
+  const scoreKeys = ['automatic_pass', 'pipeline_ok', 'intent_match', 'topic_match', 'required_law_coverage', 'required_notice_coverage'];
+  const scoreHtml = scoreKeys.map(key => `<div><dt>${escapeHtml(key)}</dt><dd>${key.includes('coverage') ? formatEvaluationMetric(scores[key], 'rate') : renderEvaluationValue(scores[key])}</dd></div>`).join('');
+  const sourceHtml = sources.map(source => {
+    const entry = safeEvaluationObject(source);
+    return `<li>${renderEvaluationValue(entry.source_type)} · ${renderEvaluationValue(entry.title)}</li>`;
+  }).join('');
+  const text = typeof answer === 'string' ? answer.slice(0, 3000) : answer;
+  return `<article class="quality-case"><h3>${escapeHtml(item.case_id || '사례')} · ${escapeHtml(item.category || '')}</h3>
+    <div class="detail-section"><h4>질문</h4><div class="detail-question">${escapeHtml(item.question || '')}</div></div>
+    <div class="detail-section"><h4>판정</h4><div class="quality-kv">${scoreHtml}</div></div>
+    <div class="detail-section"><h4>답변</h4><pre>${escapeHtml(text)}</pre></div>
+    <div class="detail-section"><h4>파이프라인 오류</h4><div>${renderEvaluationValue(observed.pipeline_error || item.pipeline_error)}</div></div>
+    <div class="detail-section"><h4>분석</h4><div>${renderEvaluationValue(observed.analysis || item.analysis)}</div></div>
+    <div class="detail-section"><h4>계산 결과</h4><div>${renderEvaluationValue(observed.calc_result || item.calc_result)}</div></div>
+    <div class="detail-section"><h4>평가 결과</h4><div>${renderEvaluationValue(observed.assessment_result || item.assessment_result)}</div></div>
+    <div class="detail-section"><h4>응답 시간</h4><div class="quality-kv"><div><dt>전체</dt><dd>${formatEvaluationMetric(timing.total_ms, 'ms')}</dd></div><div><dt>첫 토큰</dt><dd>${formatEvaluationMetric(timing.ttft_ms, 'ms')}</dd></div></div></div>
+    ${sourceHtml ? `<div class="detail-section"><h4>출처</h4><ul class="quality-sources">${sourceHtml}</ul></div>` : ''}
+  </article>`;
+}
+
+function renderEvaluationDetail(run) {
+  const item = safeEvaluationObject(run);
+  const results = Array.isArray(item.results) ? item.results.filter(Boolean) : [];
+  const fallback = results.length ? '' : renderEvaluationCase(item);
+  const metadata = safeEvaluationObject(item.metadata);
+  const metadataHtml = Object.keys(metadata).map(key => `<span>${escapeHtml(key)}: ${renderEvaluationValue(metadata[key])}</span>`).join('');
+  return `<div class="detail-meta"><span>${escapeHtml(item.run_id || '실행 상세')}</span><span>${escapeHtml(evaluationModeLabel(item.mode))}</span><span>${escapeHtml(evaluationStatusLabel(item.status))}</span>${metadataHtml}</div>
+    ${renderEvaluationSummary(item)}${results.map(renderEvaluationCase).join('') || fallback}`;
+}
+
+async function loadEvaluationRuns() {
+  const request = ++evaluationListRequest;
+  const generation = ++evaluationViewGeneration;
+  const status = document.getElementById('quality-status');
+  const list = document.getElementById('quality-run-list');
+  const cards = document.getElementById('quality-stat-cards');
+  const detail = document.getElementById('quality-detail');
+  status.textContent = '평가 실행을 불러오는 중...';
+  list.innerHTML = '';
+  cards.innerHTML = '';
+  detail.innerHTML = '';
+  try {
+    const data = await adminFetch(API + '/evaluation-runs');
+    if (request !== evaluationListRequest || generation !== evaluationViewGeneration) return;
+    if (!data || !Array.isArray(data.runs)) throw new Error('invalid evaluation run response');
+    list.innerHTML = renderEvaluationRuns(data.runs);
+    list.onclick = event => {
+      const target = event.target.closest('.quality-run');
+      if (!target) return;
+      const index = Number(target.dataset.evaluationIndex);
+      const selected = data.runs[index];
+      if (selected && selected.run_id) loadEvaluationRun(selected.run_id);
+    };
+    if (data.runs.length === 0) {
+      status.textContent = '실행 없음';
+      return;
+    }
+    const live = data.runs.find(run => run && run.mode === 'live');
+    status.textContent = live ? `${evaluationStatusLabel(live.status)} · 최근 Live 평가` : 'Live 미실행 · 오프라인 구조 검증만 존재';
+    cards.innerHTML = renderEvaluationSummary(data.runs[0]);
+  } catch (error) {
+    if (request !== evaluationListRequest || generation !== evaluationViewGeneration) return;
+    list.innerHTML = '';
+    cards.innerHTML = '';
+    detail.innerHTML = '';
+    status.textContent = '평가 실행을 불러오지 못했습니다';
+  }
+}
+
+async function loadEvaluationRun(runId) {
+  const request = ++evaluationDetailRequest;
+  const generation = evaluationViewGeneration;
+  const detail = document.getElementById('quality-detail');
+  detail.textContent = '상세 결과를 불러오는 중...';
+  try {
+    const data = await adminFetch(API + '/evaluation-runs/' + encodeURIComponent(runId));
+    if (request !== evaluationDetailRequest || generation !== evaluationViewGeneration) return;
+    if (!data || typeof data !== 'object') throw new Error('invalid evaluation detail response');
+    detail.innerHTML = renderEvaluationDetail(data);
+  } catch (error) {
+    if (request !== evaluationDetailRequest || generation !== evaluationViewGeneration) return;
+    detail.innerHTML = '';
+    detail.textContent = '평가 상세를 불러오지 못했습니다';
+  }
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -429,7 +646,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 // ── Markdown Renderer ─────────────────────────────────────────────────────────
 
 function escapeHtml(text) {
-  return (text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(text ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function md(text) {

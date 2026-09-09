@@ -605,6 +605,57 @@ def admin_stats(_admin=Depends(require_admin)):
     }
 
 
+def _validate_eval_run_id(run_id: str) -> None:
+    """게시 CLI와 동일한 ASCII run ID 계약(최대 128자)."""
+    if not re.fullmatch(r"eval_[A-Za-z0-9_-]{1,123}", run_id):
+        raise HTTPException(400, "올바르지 않은 평가 실행 ID입니다")
+
+
+@app.get("/api/admin/evaluation-runs")
+def admin_evaluation_runs(
+    limit: int = 20,
+    mode: str = "",
+    status: str = "",
+    _admin=Depends(require_admin),
+):
+    """평가 실행 요약 목록 — 사례별 results는 상세에서만 조회한다."""
+    sb = _get_supabase()
+    limit = max(1, min(limit, 100))
+    try:
+        query = sb.schema("laborconsult").table("consultation_eval_runs").select(
+            "run_id, mode, status, started_at, finished_at, created_at, "
+            "fixture_case_count, evaluated_case_count, summary, metadata",
+            count="exact",
+        )
+        if mode:
+            query = query.eq("mode", mode)
+        if status:
+            query = query.eq("status", status)
+        result = query.order("created_at", desc=True).limit(limit).execute()
+        return {"runs": result.data or [], "total": result.count or 0}
+    except Exception as error:
+        logging.warning("평가 실행 목록 조회 실패: %s", error)
+        raise HTTPException(503, "평가 실행 목록을 조회할 수 없습니다")
+
+
+@app.get("/api/admin/evaluation-runs/{run_id}")
+def admin_evaluation_run(run_id: str, _admin=Depends(require_admin)):
+    """특정 평가 실행의 요약과 저장된 사례별 결과를 반환한다."""
+    _validate_eval_run_id(run_id)
+    sb = _get_supabase()
+    try:
+        run = _single_row(
+            sb.schema("laborconsult").table("consultation_eval_runs")
+            .select("*").eq("run_id", run_id).maybe_single()
+        )
+    except Exception as error:
+        logging.warning("평가 실행 상세 조회 실패: %s", error)
+        raise HTTPException(503, "평가 실행을 조회할 수 없습니다")
+    if not run:
+        raise HTTPException(404, "평가 실행을 찾을 수 없습니다")
+    return run
+
+
 @app.get("/api/admin/conversations")
 def admin_conversations(
     page: int = 1,

@@ -535,6 +535,9 @@ _DDL_FILES = (
     "supabase_abuse_guard.sql",
     "supabase_board_posts.sql",
     "supabase_retention_purge.sql",
+    # Keep the evaluation DDL in this inventory so the code↔DDL check cannot
+    # drift silently from the application's laborconsult schema.
+    "supabase_consultation_eval.sql",
 )
 
 

@@ -1,0 +1,1577 @@
+[
+  {
+    "id": "wage-01",
+    "category": "임금·계산",
+    "question": "2025년 기준 시급 1만원으로 주 5일, 하루 8시간 일하는 성인 정규직입니다. 수습이 아닌데 최저임금에 미달하는지 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "최저임금법 제6조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "minimum_wage",
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-02",
+    "category": "임금·계산",
+    "question": "시급 12000원이고 주 5일 하루 8시간씩 소정근로일에 모두 출근했습니다. 이번 주 주휴수당을 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제55조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "weekly_holiday",
+    "expected_values": {
+      "weekly_holiday_pay": 96000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-03",
+    "category": "임금·계산",
+    "question": "상시근로자 10명인 회사에서 통상시급 12000원으로 일합니다. 평일 8시간 근무 뒤 2시간 연장근로했고 야간은 아닙니다. 기본임금을 포함한 이 2시간의 수당은 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "overtime",
+    "expected_values": {
+      "overtime_pay": 36000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-04",
+    "category": "임금·계산",
+    "question": "상시근로자 10명, 통상시급 12000원입니다. 소정근로시간 중 밤 10시부터 자정까지 2시간 일했습니다. 기본임금 외 야간 가산분만 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "overtime",
+    "expected_values": {
+      "night_premium": 12000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-05",
+    "category": "임금·계산",
+    "question": "상시근로자 10명인 회사에서 통상시급 12000원으로 유급휴일에 낮 8시간 일했습니다. 이미 지급된 유급휴일 임금 외에 실제 근로로 추가 지급할 금액을 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "overtime",
+    "expected_values": {
+      "holiday_work_pay": 144000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-06",
+    "category": "임금·계산",
+    "question": "주 40시간 근로자로 2023년 1월 1일 입사해 2025년 1월 1일 퇴직했습니다. 퇴직 전 3개월 임금총액은 900만원이고 그 기간은 92일이며 상여금은 없습니다. 퇴직금 추정액을 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로자퇴직급여 보장법 제8조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "severance",
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-07",
+    "category": "임금·계산",
+    "question": "상시근로자 10명인 회사에서 하루 8시간 일하고 통상시급은 12000원입니다. 적법한 사용촉진 없이 수당 지급 대상 미사용 연차 2일이 확정되었습니다. 통상임금 기준 연차수당을 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제60조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "annual_leave",
+    "expected_values": {
+      "annual_leave_pay": 192000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-08",
+    "category": "임금·계산",
+    "question": "월급 300만원인 근로자입니다. 2025년 4월과 5월에 전혀 받지 못한 임금 원금과 지연이자를 구분해서 계산하려면 무엇이 필요한가요? 아직 재직 중입니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제43조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "wage_arrears",
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium"
+  },
+  {
+    "id": "wage-09",
+    "category": "임금·계산",
+    "question": "2025년 4월부터 6개월간 일반 육아휴직을 사용하려고 합니다. 월 통상임금은 250만원이고 고용보험 피보험 단위기간은 1년입니다. 한부모나 부모 동시 육아휴직 특례 없이 월별 급여를 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "고용보험법 제70조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "parental_leave",
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "wage-10",
+    "category": "임금·계산",
+    "question": "상시근로자 10명인 회사에서 시급 12000원으로 주 5일 하루 8시간 개근했고 평일 낮 연장근로를 2시간 했습니다. 이번 주 주휴수당과 연장근로수당을 각각 계산해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제55조",
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": "weekly_holiday",
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "dismissal-01",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 10명인 회사에서 2년 근무했습니다. 내일부터 나오지 말라는 말을 들었는데 해고예고에 관한 근로기준법 제26조의 의미와 예외를 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제26조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-02",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 10명인 회사에서 해고 사유와 날짜를 구두로만 통보받았습니다. 해고 서면통지에 관한 조문을 해석해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제27조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-03",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 20명인 회사에서 오늘 해고되었습니다. 부당해고 구제신청을 어느 기관에 어떤 절차로 해야 하는지 알려 주세요.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제28조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "노동위원회"
+    ],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-04",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 10명인 회사에서 입사한 지 한 달 된 수습사원입니다. 수습이라는 이유만으로 아무 사유 없이 해고할 수 있나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제23조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "수습은 아무 이유 없이 해고할 수 있습니다"
+    ],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-05",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 30명인 회사가 한 번 지각했다는 이유로 정직 3개월을 통보했습니다. 징계의 정당성을 다툴 수 있나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제23조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-06",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자가 저를 포함해 4명이고 2년째 근무 중입니다. 사장이 당일 해고해도 5인 미만이면 해고예고 의무가 전혀 없는 건가요?",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제26조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "5인 미만은 해고예고가 필요 없습니다"
+    ],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-07",
+    "category": "해고·징계·구제절차",
+    "question": "부당해고 구제신청 기한을 정한 근로기준법 제28조를 설명해 주세요. 회사에 이의를 제기하면 노동위원회 신청 기한도 자동 연장되나요?",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제28조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "회사에 항의하면 신청 기한이 자동 연장됩니다"
+    ],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-08",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 50명인 회사가 매출 감소를 이유로 정리해고를 검토한다고 합니다. 경영상 이유에 의한 해고 제도와 확인해야 할 요건을 설명해 주세요.",
+    "expected_intent": "system_explanation",
+    "expected_topic": "해고·징계",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-09",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 20명인 회사에서 사직서에 서명하라고 압박합니다. 아직 서명하지 않았는데 거절할 수 있나요? 권고사직과 해고도 구별해 주세요.",
+    "expected_intent": "rights_check",
+    "expected_topic": "해고·징계",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "dismissal-10",
+    "category": "해고·징계·구제절차",
+    "question": "상시근로자 10명인 회사에서 징계해고를 당했습니다. 취업규칙의 소명 기회 절차를 지키지 않은 경우를 다룬 판례를 찾아 주세요.",
+    "expected_intent": "precedent_search",
+    "expected_topic": "해고·징계",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "hours-01",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 사업장의 법정 근로시간에 관한 근로기준법 제50조를 설명해 주세요. 휴게시간과 근로시간은 어떻게 구별하나요?",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제50조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-02",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 30명인 일반 사무직 사업장입니다. 특별한 근로시간 제도 없이 근무할 때 연장근로 한도를 정한 조문을 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제53조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-03",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 매장에서 하루 8시간 근무합니다. 점심에도 계속 손님을 응대해야 하는데 자유롭게 쓸 수 있는 휴게시간을 요구할 수 있나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-04",
+    "category": "근로시간·휴일·연차",
+    "question": "주 5일 하루 4시간씩 정해진 근무일에 모두 출근한 시간제 근로자입니다. 주휴일을 받을 수 있나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제55조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-05",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 회사의 연차휴가 제도를 설명해 주세요. 입사 1년 미만과 1년 이상 근로자의 발생 기준이 어떻게 다른가요?",
+    "expected_intent": "system_explanation",
+    "expected_topic": "연차휴가",
+    "required_laws": [
+      "근로기준법 제60조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-06",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 회사입니다. 근로기준법 제61조의 연차휴가 사용촉진이 무엇이고 회사가 어떤 절차를 거쳐야 하는지 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "연차휴가",
+    "required_laws": [
+      "근로기준법 제61조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-07",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 회사에서 4주 평균 주 소정근로시간이 12시간입니다. 근로기준법 제18조에 따른 주휴일과 연차휴가 적용 범위를 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제18조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-08",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 30명인 사업장에서 탄력적 근로시간제 도입을 논의 중입니다. 이 제도가 무엇이고 도입 전 확인할 사항은 무엇인가요?",
+    "expected_intent": "system_explanation",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-09",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 회사가 연장근로수당 대신 보상휴가제를 도입한다고 합니다. 근로기준법 제57조의 요건을 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제57조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "hours-10",
+    "category": "근로시간·휴일·연차",
+    "question": "상시근로자 10명인 회사에서 다음 달 연차를 신청했는데 업무가 바쁘다는 이유로 전부 거절했습니다. 연차 사용 시기와 사용자의 시기변경권에 관해 제 권리를 확인해 주세요.",
+    "expected_intent": "rights_check",
+    "expected_topic": "연차휴가",
+    "required_laws": [
+      "근로기준법 제60조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "retirement-01",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "상시근로자 4명인 가게에서 주 40시간씩 2년 일했습니다. 작은 사업장이라는 이유로 퇴직금을 못 받나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "퇴직·퇴직금",
+    "required_laws": [
+      "근로자퇴직급여 보장법 제4조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "5인 미만은 퇴직금이 없습니다"
+    ],
+    "risk_level": "low"
+  },
+  {
+    "id": "retirement-02",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "퇴직금에 쓰이는 평균임금은 무엇인가요? 근로기준법 제2조의 평균임금 정의와 통상임금과의 차이를 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "퇴직·퇴직금",
+    "required_laws": [
+      "근로기준법 제2조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "retirement-03",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "퇴직금 중간정산 제도가 무엇인가요? 근로자가 원하기만 하면 언제든지 가능한지, 사유 확인이 필요한지 설명해 주세요.",
+    "expected_intent": "system_explanation",
+    "expected_topic": "퇴직·퇴직금",
+    "required_laws": [
+      "근로자퇴직급여 보장법 제8조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "원하면 아무 사유 없이 중간정산할 수 있습니다"
+    ],
+    "risk_level": "low"
+  },
+  {
+    "id": "retirement-04",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "퇴직한 지 한 달이 지났고 지급기한 연장 합의도 없는데 마지막 월급과 퇴직금을 받지 못했습니다. 진정 절차와 상담 전화번호를 알려 주세요.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "퇴직·퇴직금",
+    "required_laws": [
+      "근로기준법 제36조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "1350"
+    ],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "retirement-05",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "고용보험법 제40조에 나오는 구직급여 수급 요건을 설명해 주세요. 퇴사했다는 사실만으로 자동 지급되는 건가요?",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "고용보험",
+    "required_laws": [
+      "고용보험법 제40조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "퇴사하면 누구나 실업급여를 받습니다"
+    ],
+    "risk_level": "low"
+  },
+  {
+    "id": "retirement-06",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "임금이 계속 밀려 자진퇴사를 고민 중입니다. 자진퇴사라도 구직급여를 받을 수 있는지 확인하려면 어떤 사실과 증빙이 필요한가요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "고용보험",
+    "required_laws": [
+      "고용보험법 제40조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium"
+  },
+  {
+    "id": "retirement-07",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "육아휴직급여를 신청하는 절차와 준비할 서류를 알려 주세요. 사업주 확인서와 고용보험 가입 이력을 어디서 확인하는지도 궁금합니다.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "고용보험",
+    "required_laws": [
+      "고용보험법 제70조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "retirement-08",
+    "category": "퇴직금·퇴직·고용보험",
+    "question": "계약기간이 끝나 퇴직했습니다. 구직급여를 처음 신청하려는데 방문할 기관과 신청 순서를 알려 주세요.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "고용보험",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "고용센터"
+    ],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "risk-01",
+    "category": "산재·괴롭힘·차별",
+    "question": "창고에서 업무 중 상자를 옮기다 다쳤습니다. 업무상 재해로 인정받을 수 있는지 확인하려면 어떤 자료가 필요한가요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "산재보상",
+    "required_laws": [
+      "산업재해보상보험법 제37조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-02",
+    "category": "산재·괴롭힘·차별",
+    "question": "출근 중 다친 경우 산재보험의 출퇴근 재해 제도가 어떻게 적용되는지 설명해 주세요. 사고 경로와 사적 용무 여부가 왜 중요한가요?",
+    "expected_intent": "system_explanation",
+    "expected_topic": "산재보상",
+    "required_laws": [
+      "산업재해보상보험법 제37조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-03",
+    "category": "산재·괴롭힘·차별",
+    "question": "직장 내 괴롭힘에 해당하는지 판단하는 세 가지 요소를 근로기준법 제76조의2를 기준으로 설명해 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제76조의2"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-04",
+    "category": "산재·괴롭힘·차별",
+    "question": "상사가 매일 공개적으로 모욕하고 업무에서 배제합니다. 회사에 직장 내 괴롭힘으로 신고하려는데 기록할 내용과 신고 후 조사 절차를 알려 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제76조의3"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-05",
+    "category": "산재·괴롭힘·차별",
+    "question": "직장 내 괴롭힘 신고를 했더니 회사가 저를 불리한 부서로 보내겠다고 합니다. 신고자에게 불리한 처우를 해도 되는지 알려 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제76조의3"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "괴롭힘 신고자를 불리하게 전보해도 됩니다"
+    ],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-06",
+    "category": "산재·괴롭힘·차별",
+    "question": "직장 상사가 반복해서 성적인 발언을 합니다. 직장 내 성희롱을 회사에 신고하고 피해자 보호를 요청하는 절차를 알려 주세요.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "직장내괴롭힘",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-07",
+    "category": "산재·괴롭힘·차별",
+    "question": "상시근로자 30명인 회사에서 같은 업무를 하는 기간제 근로자라는 이유만으로 수당을 제외한다고 합니다. 차별적 처우인지 다툴 수 있나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "비정규직",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "risk-08",
+    "category": "산재·괴롭힘·차별",
+    "question": "업무 중 다쳐 산재를 신청하려는데 회사가 동의해 주지 않습니다. 근로자가 직접 신청하는 절차와 담당 기관을 알려 주세요.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "산재보상",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "근로복지공단"
+    ],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "law-01",
+    "category": "판례·행정해석·법령 조회",
+    "question": "해고 사유를 서면으로 통지하지 않은 사건의 대법원 판례를 찾아 주세요. 확인된 사건번호와 판단 요지를 함께 알려 주세요.",
+    "expected_intent": "precedent_search",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제27조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-02",
+    "category": "판례·행정해석·법령 조회",
+    "question": "고정 상여금의 통상임금 해당 여부를 다룬 대법원 판례를 찾아 주세요. 확인 가능한 사건번호와 선고일을 밝혀 주세요.",
+    "expected_intent": "precedent_search",
+    "expected_topic": "임금·통상임금",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-03",
+    "category": "판례·행정해석·법령 조회",
+    "question": "근로기준법 제55조의 주휴일에 관해 시간제 근로자의 적용 기준을 설명하는 고용노동부 행정해석을 찾아 해석해 주세요. 문서번호가 확인된 것만 알려 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제55조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-04",
+    "category": "판례·행정해석·법령 조회",
+    "question": "근로기준법 제60조의 연차휴가 발생 기준에 관한 고용노동부 행정해석을 찾아 설명해 주세요. 확인되지 않은 문서번호는 만들지 말아 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "연차휴가",
+    "required_laws": [
+      "근로기준법 제60조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-05",
+    "category": "판례·행정해석·법령 조회",
+    "question": "현행 근로기준법 제26조를 조회해서 해고예고 규정의 본문과 적용 예외를 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제26조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-06",
+    "category": "판례·행정해석·법령 조회",
+    "question": "현행 근로기준법 제17조를 조회해서 근로조건을 서면으로 명시하고 교부해야 하는 항목을 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "근로계약",
+    "required_laws": [
+      "근로기준법 제17조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-07",
+    "category": "판례·행정해석·법령 조회",
+    "question": "체불임금 진정을 접수하는 절차를 알려 주세요. 관할 노동관서 확인 방법과 전화 상담 번호도 필요합니다.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "임금·통상임금",
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "1350"
+    ],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "law-08",
+    "category": "판례·행정해석·법령 조회",
+    "question": "현행 근로기준법 제28조를 조회해서 부당해고 구제신청 기관과 신청기간 규정을 설명해 주세요.",
+    "expected_intent": "law_interpretation",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제28조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "missing-01",
+    "category": "정보 부족·복합·구어체 질문",
+    "question": "야근수당 얼마 받아야 돼요? 시급이랑 야근시간은 아직 정리 못 했어요. 계산 전에 필요한 정보를 물어봐 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "야근수당은 정확히 100000원입니다"
+    ],
+    "risk_level": "low"
+  },
+  {
+    "id": "missing-02",
+    "category": "정보 부족·복합·구어체 질문",
+    "question": "연장근로 가산수당을 받을 수 있나요? 매장에 몇 명이 일하는지는 교대마다 달라서 모르겠어요. 확인할 사항을 알려 주세요.",
+    "expected_intent": "rights_check",
+    "expected_topic": "근로시간·휴일",
+    "required_laws": [
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "low"
+  },
+  {
+    "id": "missing-03",
+    "category": "정보 부족·복합·구어체 질문",
+    "question": "계약서에는 프리랜서라고 쓰여 있지만 정해진 시간에 출근하고 업무 지시를 받습니다. 근로자인지 확인하려면 무엇을 더 알아야 하나요?",
+    "expected_intent": "rights_check",
+    "expected_topic": "근로계약",
+    "required_laws": [
+      "근로기준법 제2조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "프리랜서 계약이면 무조건 근로자가 아닙니다"
+    ],
+    "risk_level": "medium"
+  },
+  {
+    "id": "missing-04",
+    "category": "정보 부족·복합·구어체 질문",
+    "question": "상시근로자 10명인 회사에서 해고됐는데 날짜가 정확히 기억나지 않아요. 부당해고 구제신청을 하려면 어떤 날짜와 자료부터 확인해야 하나요?",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "해고·징계",
+    "required_laws": [
+      "근로기준법 제28조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  },
+  {
+    "id": "missing-05",
+    "category": "정보 부족·복합·구어체 질문",
+    "question": "사장님이 월급 담달에 준대요. 벌써 두 번 밀렸는데 어디에 얘기해야 돼요? 상담 전화번호도 좀 알려 주세요.",
+    "expected_intent": "procedure_guide",
+    "expected_topic": "임금·통상임금",
+    "required_laws": [
+      "근로기준법 제43조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "1350"
+    ],
+    "forbidden_claims": [],
+    "risk_level": "medium"
+  },
+  {
+    "id": "missing-06",
+    "category": "정보 부족·복합·구어체 질문",
+    "question": "월급도 밀리고 갑자기 나오지 말라고 해서 퇴직금이랑 실업급여까지 궁금해요. 입사일과 퇴사일도 정리해야 하는데 먼저 확인할 정보와 대응 순서를 알려 주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high"
+  }
+]
