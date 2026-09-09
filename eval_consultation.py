@@ -14,6 +14,7 @@ import argparse
 import json
 import math
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -24,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
+from uuid import uuid4
 
 
 REQUIRED_CASE_KEYS = frozenset({
@@ -351,6 +353,84 @@ def _git_commit() -> str | None:
         return None
 
 
+def _new_run_id() -> str:
+    return f"eval_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}_{uuid4().hex}"
+
+
+def _admin_run_row(report: dict) -> dict:
+    """Validate a finished Live report before accessing the evaluation table."""
+    if not isinstance(report, dict):
+        raise ValueError("report must be an object")
+    metadata, summary, results = (report.get(key) for key in ("run_metadata", "summary", "results"))
+    if not isinstance(metadata, dict) or not isinstance(summary, dict):
+        raise ValueError("run_metadata and summary must be objects")
+    if not isinstance(results, list) or not results:
+        raise ValueError("results must be a nonempty list")
+    run_id = metadata.get("run_id")
+    if not isinstance(run_id, str) or not re.fullmatch(r"eval_[A-Za-z0-9_-]{1,123}", run_id):
+        raise ValueError("invalid evaluation run_id")
+    if metadata.get("mode") != "live":
+        raise ValueError("admin publication requires a Live report")
+    timestamps = []
+    for key in ("started_at", "finished_at"):
+        value = metadata.get(key)
+        if not isinstance(value, str):
+            raise ValueError(f"{key} must be an ISO timestamp")
+        timestamp = datetime.fromisoformat(value)
+        if timestamp.tzinfo is None:
+            raise ValueError(f"{key} must include a timezone")
+        timestamps.append(timestamp)
+    if timestamps[1] < timestamps[0]:
+        raise ValueError("finished_at precedes started_at")
+    for key in ("fixture_case_count", "evaluated_case_count"):
+        value = metadata.get(key)
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{key} must be a nonnegative integer")
+    if not len(results) == metadata["evaluated_case_count"] <= metadata["fixture_case_count"]:
+        raise ValueError("case counts do not match results")
+    failures = 0
+    for result in results:
+        if not isinstance(result, dict) or not isinstance(result.get("case_id"), str) or not result["case_id"]:
+            raise ValueError("each result must have a case_id")
+        observed = result.get("observed")
+        if not isinstance(observed, dict) or not isinstance(observed.get("answer"), str):
+            raise ValueError("each result must have an observed answer string")
+        if len(observed["answer"]) > 3000:
+            raise ValueError("observed answer exceeds 3000 characters")
+        scores = result.get("scores", {})
+        if not isinstance(scores, dict):
+            raise ValueError("result scores must be an object")
+        failures += bool(result.get("pipeline_error") or observed.get("pipeline_error")
+                         or scores.get("pipeline_ok") is False)
+    row = {
+        **{key: metadata[key] for key in (
+            "run_id", "mode", "started_at", "finished_at",
+            "fixture_case_count", "evaluated_case_count",
+        )},
+        "status": "failed" if failures == len(results) else "partial" if failures else "completed",
+        "summary": summary, "results": results, "metadata": metadata,
+    }
+    try:
+        json.dumps(row, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError("report must contain JSON-compatible values") from error
+    return row
+
+
+def publish_admin_run(report: dict, supabase) -> str:
+    """Insert exactly one validated report using the evaluation-only schema."""
+    row = _admin_run_row(report)
+    if supabase is None:
+        raise ValueError("Supabase is not configured for admin publication")
+    try:
+        supabase.schema("public").table("consultation_eval_runs").insert(row).execute()
+    except Exception as error:
+        if getattr(error, "code", None) == "23505":
+            raise ValueError(f"duplicate evaluation run_id: {row['run_id']}") from error
+        raise
+    return row["run_id"]
+
+
 def main(argv: list[str] | None = None) -> int:
     """기본값은 fixture 검증만 수행한다. live는 순차 실행 후 로컬 JSON을 쓴다.
 
@@ -362,12 +442,15 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--offline", action="store_true", help="외부 호출 없이 fixture 검증 (기본값)")
     mode.add_argument("--live", action="store_true", help="실제 파이프라인을 순차 실행")
+    parser.add_argument("--publish-admin", action="store_true", help="Live 결과를 관리자 평가 테이블에 저장")
     parser.add_argument("--limit", type=int, help="앞에서부터 실행할 사례 수 (양수)")
     parser.add_argument("--case", metavar="ID", help="지정 ID 하나만 선택")
     parser.add_argument("--output", type=Path, default=Path("eval_consultation_results.json"),
                         help="라이브 결과 JSON 경로 (기본: %(default)s)")
     try:
         args = parser.parse_args(argv)
+        if args.publish_admin and not args.live:
+            parser.error("--publish-admin requires --live")
         if args.limit is not None and args.limit <= 0:
             parser.error("--limit must be positive")
     except SystemExit as error:
@@ -406,6 +489,10 @@ def main(argv: list[str] | None = None) -> int:
         print("offline evaluation contract: PASS")
         return 0
 
+    if not selected:
+        print("live evaluation: FAIL: no selected cases", file=sys.stderr)
+        return 1
+
     metadata = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "fixture_path": str(FIXTURE_PATH),
@@ -416,9 +503,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from app.config import AppConfig
 
-        config = copy(AppConfig.from_env())
+        original_config = AppConfig.from_env()
+        publisher_client = original_config.supabase if args.publish_admin else None
+        config = copy(original_config)
         # process_question persists answers when supabase is set. Evaluation
-        # records belong only in the local report, even with production .env.
+        # records are published only through the explicit evaluation boundary.
         config.supabase = None
     except Exception as error:
         print(f"live configuration: FAIL: {error}", file=sys.stderr)
@@ -426,7 +515,13 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     for case in selected:
-        observed = run_case(case, config)
+        try:
+            observed = run_case(case, config)
+        except Exception as error:
+            observed = collect_events([
+                {"type": "error", "text": f"{type(error).__name__}: {error}"},
+                {"type": "done"},
+            ])
         scores = score_result(case, observed)
         results.append({
             "case_id": case.id,
@@ -441,15 +536,26 @@ def main(argv: list[str] | None = None) -> int:
         for result in results
     ])
     report = {"run_metadata": metadata, "summary": summary, "results": results}
+    if args.publish_admin:
+        metadata.update(run_id=_new_run_id(), mode="live",
+                        finished_at=datetime.now(timezone.utc).isoformat(),
+                        evaluated_case_count=len(results))
     try:
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                                encoding="utf-8")
-    except OSError as error:
+    except (OSError, TypeError, ValueError) as error:
         print(f"output: FAIL: {error}", file=sys.stderr)
         return 1
     print(f"live evaluation: {len(results)}건")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"output: {args.output}")
+    if args.publish_admin:
+        try:
+            run_id = publish_admin_run(report, publisher_client)
+        except Exception as error:
+            print(f"admin publish: FAIL: {error}; local report: {args.output}", file=sys.stderr)
+            return 1
+        print(f"admin publish: PASS: {run_id}")
     return 0 if all(result["scores"]["pipeline_ok"] for result in results) else 1
 
 

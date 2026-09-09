@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
 import sys
 import traceback
@@ -703,6 +704,128 @@ def test_live_cli_reports_configuration_and_output_errors() -> None:
         assert error.getvalue()
 
 
+
+def test_publish_admin_requires_live_before_loading_clients() -> None:
+    for args in (["--publish-admin"], ["--offline", "--publish-admin"]):
+        with patch.dict(sys.modules, {"app.config": None}), \
+                redirect_stderr(io.StringIO()) as error:
+            assert harness.main(args) == 2
+        assert "--publish-admin requires --live" in error.getvalue()
+
+
+def test_live_cli_publishes_only_after_local_output_with_isolated_config() -> None:
+    from test_admin_consultation_quality import FakeSupabaseInsertRecorder
+
+    module, config, _ = _fake_config_module()
+    reports = []
+    seen = []
+    with TemporaryDirectory() as directory, chdir(directory):
+        path = Path("published.json")
+        fake = FakeSupabaseInsertRecorder(
+            before_execute=lambda: reports.append(json.loads(path.read_text())))
+        config.supabase = fake
+
+        def run(case, actual_config):
+            assert actual_config is not config and actual_config.supabase is None
+            assert config.supabase is fake
+            assert fake.calls == []
+            seen.append(case.id)
+            return collect_events([{"type": "chunk", "text": "가" * 3100}, {"type": "done"}])
+
+        with patch.dict(sys.modules, {"app.config": module}), \
+                patch.object(harness, "run_case", run), redirect_stdout(io.StringIO()) as output:
+            assert harness.main(["--live", "--limit", "2", "--publish-admin",
+                                 "--output", str(path)]) == 0
+        assert "admin publish: PASS" in output.getvalue()
+        assert reports[0]["run_metadata"]["run_id"] in output.getvalue()
+    assert seen == ["wage-01", "wage-02"]
+    assert len(fake.inserted) == 1
+    row = fake.inserted[0]
+    assert row["results"] == reports[0]["results"]
+    assert row["summary"] == reports[0]["summary"]
+    assert row["mode"] == "live" and row["evaluated_case_count"] == 2
+    assert re.fullmatch(r"eval_[A-Za-z0-9_-]{1,123}", row["run_id"])
+    assert datetime.fromisoformat(row["finished_at"]) >= datetime.fromisoformat(row["started_at"])
+    assert all(len(result["observed"]["answer"]) == 3000 for result in row["results"])
+
+
+def test_publish_admin_preserves_local_report_on_missing_client_or_insert_failure() -> None:
+    from test_admin_consultation_quality import FakeSupabaseInsertRecorder
+
+    class DuplicateRunError(RuntimeError):
+        code = "23505"
+
+    for failure in (None, RuntimeError("database unavailable"), DuplicateRunError("duplicate key")):
+        module, config, _ = _fake_config_module()
+        config.supabase = FakeSupabaseInsertRecorder(failure=failure) if failure else None
+        with TemporaryDirectory() as directory, chdir(directory), \
+                patch.dict(sys.modules, {"app.config": module}), \
+                patch.object(harness, "run_case", return_value=collect_events([
+                    {"type": "chunk", "text": "saved answer"}, {"type": "done"}])), \
+                redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as error:
+            assert harness.main(["--live", "--limit", "1", "--publish-admin"]) == 1
+            report = json.loads(Path("eval_consultation_results.json").read_text())
+            assert report["results"][0]["observed"]["answer"] == "saved answer"
+            assert "admin publish: FAIL" in error.getvalue()
+            assert "admin publish: PASS" not in output.getvalue()
+            if isinstance(failure, DuplicateRunError):
+                assert "duplicate" in error.getvalue().lower()
+                assert report["run_metadata"]["run_id"] in error.getvalue()
+        if failure:
+            assert len(config.supabase.inserted) == 1
+            assert config.supabase.calls[-1] == ("execute",)
+
+
+def test_live_cli_does_not_publish_without_flag_or_when_output_fails_or_run_empty() -> None:
+    from test_admin_consultation_quality import FakeSupabaseInsertRecorder
+
+    module, config, _ = _fake_config_module()
+    fake = config.supabase = FakeSupabaseInsertRecorder()
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", return_value=collect_events([
+                {"type": "chunk", "text": "saved"}, {"type": "done"}])), \
+            redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert harness.main(["--live", "--limit", "1"]) == 0
+        first = json.loads(Path("eval_consultation_results.json").read_text())
+        assert harness.main(["--live", "--limit", "1", "--publish-admin", "--output", "."]) == 1
+        assert json.loads(Path("eval_consultation_results.json").read_text()) == first
+        with patch.object(harness, "load_cases", return_value=[]), \
+                patch.object(harness, "EXPECTED_DISTRIBUTION", {}):
+            assert harness.main(["--live", "--publish-admin"]) == 1
+    assert fake.calls == []
+
+
+def test_live_cli_records_unexpected_pipeline_exceptions_and_publishes_failed_status() -> None:
+    from test_admin_consultation_quality import FakeSupabaseInsertRecorder
+
+    module, config, _ = _fake_config_module()
+    config.supabase = FakeSupabaseInsertRecorder()
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", side_effect=RuntimeError("startup failed")), \
+            redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert harness.main(["--live", "--limit", "1", "--publish-admin"]) == 1
+        report = json.loads(Path("eval_consultation_results.json").read_text())
+    assert "startup failed" in report["results"][0]["pipeline_error"]
+    assert config.supabase.inserted[0]["status"] == "failed"
+
+
+def test_live_cli_publish_run_ids_are_unique() -> None:
+    from test_admin_consultation_quality import FakeSupabaseInsertRecorder
+
+    module, config, _ = _fake_config_module()
+    config.supabase = FakeSupabaseInsertRecorder()
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "run_case", return_value=collect_events([
+                {"type": "chunk", "text": "answer"}, {"type": "done"}])), \
+            redirect_stdout(io.StringIO()):
+        for _ in range(2):
+            assert harness.main(["--live", "--limit", "1", "--publish-admin"]) == 0
+    assert len({row["run_id"] for row in config.supabase.inserted}) == 2
+
+
 def main() -> int:
     tests = [
         test_fixture_has_exactly_60_unique_cases,
@@ -740,6 +863,12 @@ def main() -> int:
         test_live_cli_case_selects_from_full_fixture_and_custom_output,
         test_live_cli_persists_pipeline_failures_and_returns_failure,
         test_live_cli_reports_configuration_and_output_errors,
+        test_publish_admin_requires_live_before_loading_clients,
+        test_live_cli_publishes_only_after_local_output_with_isolated_config,
+        test_publish_admin_preserves_local_report_on_missing_client_or_insert_failure,
+        test_live_cli_does_not_publish_without_flag_or_when_output_fails_or_run_empty,
+        test_live_cli_records_unexpected_pipeline_exceptions_and_publishes_failed_status,
+        test_live_cli_publish_run_ids_are_unique,
     ]
     try:
         for test in tests:
