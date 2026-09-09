@@ -89,6 +89,22 @@ python3 test_llm_fallback.py      # LLM 폴백(빈응답·절단·전환 하트�
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 
+# 상담 답변 품질 평가 (오프라인 기본, 외부 호출·DB 쓰기 없음)
+./.venv/bin/python eval_consultation.py --offline
+
+# 운영자 평가 게시: 먼저 로컬 JSON을 확인한 뒤에만 --publish-admin을 붙인다
+./.venv/bin/python eval_consultation.py --live --case wage-01 --limit 1 \
+  --publish-admin --output /tmp/consultation-smoke.json
+./.venv/bin/python eval_consultation.py --live --publish-admin \
+  --output eval_consultation_results.json
+
+# 게시 전 확인 순서: Supabase SQL Editor에서 아래 DDL을 먼저 적용하고,
+# Live 결과 JSON을 검토한 뒤 --publish-admin으로 1회 게시한다.
+#   supabase_schema.sql → supabase_abuse_guard.sql →
+#   supabase_board_posts.sql → supabase_retention_purge.sql →
+#   supabase_consultation_eval.sql
+# Admin은 이미 게시된 결과만 읽으며, 브라우저에서 Live 평가를 시작하지 않는다.
+
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
 # 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.jsonl.gz 커밋 필수
 # (gz 미커밋 시 프로덕션 하이브리드 검색이 Dense-only로 폴백됨)
@@ -159,6 +175,26 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `GET /api/admin/conversations/{conv_id}` — 단일 대화 상세 (+ attachments)
 - `GET /api/admin/abuse?days=7` — 남용 이벤트 집계·최근 목록·활성 차단 (`abuse_summary` RPC)
 - `POST /api/admin/abuse/unblock` — 수동 차단 해제 (`abuse_unblock` RPC)
+- `GET /api/admin/evaluation-runs` — 게시된 상담 답변 품질 평가 실행 목록
+- `GET /api/admin/evaluation-runs/{run_id}` — 게시된 평가 실행 상세
+
+상담 답변 품질 평가 운영 순서:
+
+1. `supabase_consultation_eval.sql`을 SQL Editor에서 적용한다. 이 DDL만 예외적으로
+   `public.consultation_eval_runs`를 만들며, 앱의 기본 접속 스키마(`laborconsult`)와
+   섞지 않는다. 테이블은 RLS를 켜고 anon/authenticated/PUBLIC 권한을 회수하므로
+   서버 측 service-role 자격증명으로만 게시한다.
+2. `--live --case wage-01 --limit 1`로 smoke 평가를 실행하고
+   `/tmp/consultation-smoke.json`을 확인한다. 통과하면 전체 60건 평가를 실행한다.
+3. 로컬 JSON의 `status`, `summary`, `results`를 확인한 뒤에만 `--publish-admin`을
+   사용한다. 게시 실패 시에도 로컬 JSON은 남겨 원인 분석과 재시도에 사용한다.
+4. `/admin`에 로그인하고 `답변 품질` 메뉴에서 목록·요약·상세를 확인한다. Admin
+   화면은 `public.consultation_eval_runs`에 게시된 결과만 표시하고 평가를 실행하지 않는다.
+
+오프라인 모드(`--offline`)는 fixture 계약만 검증하며 결과를 관리자 테이블에 쓰지 않는다.
+`--publish-admin`은 반드시 `--live`와 함께 사용해야 한다. Live 게시에는 `SUPABASE_URL`과
+서버 측 쓰기 권한이 있는 `SUPABASE_KEY`가 필요하다(브라우저 anon 키를 사용하지 말 것).
+기본 테스트에서는 Live 평가와 Supabase migration을 자동 실행하지 않는다.
 
 *Public Q&A board* (all `_anonymize()` applied):
 - `GET /api/board/recent`, `GET /api/board/categories`, `GET /api/board/search?q=&category=`, `GET /api/board/{item_id}` — read AI conversations (`qa_conversations`) + user posts (`board_posts`), merged
@@ -430,7 +466,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 공개 게시판/대화 응답은 반드시 `_anonymize()`(이름·회사·전화·이메일 마스킹) 통과 후 반환. 신규 공개 엔드포인트 추가 시 동일 적용.
 - 신규 채팅 엔드포인트 추가 시 `_guard_chat_request()`를 세션 생성·첨부 파싱보다 먼저 호출하고, `process_question(guard_ctx=...)`으로 컨텍스트를 전달할 것.
 - `qa_conversations` 공개 조회(게시판)는 `_fetch_qa_public()`(내부에서 `_apply_guard_filter()` PostgREST 필터 + `_drop_flagged()` Python 후처리를 이중으로 건다)를 거쳐 제외 대상 대화를 걸러내고, select에 `metadata`를 포함해야 한다. **`board_posts`에는 적용 금지** — metadata 컬럼이 없어 PostgREST 400이 `try/except`에 삼켜져 사용자 게시글이 통째로 사라진다.
-- **Supabase의 모든 객체는 `laborconsult` 스키마에 있고, `public`을 쓰지 않는다.** 이 프로젝트는 다른 앱과 Supabase 프로젝트를 공유할 수 있고, 실제로 2026-08-13에 `public.board_posts`가 **다른 앱의 테이블**(구 단위 권한·승인 사용자·관리자 모델)인데 이름만 같아 우리 코드가 자기 것으로 오인했다. 컬럼 3개(`id`·`category`·`created_at`)가 우연히 겹쳐 "우리 테이블의 스키마 드리프트"로 보였고, Plan·Design·구현까지 간 뒤 `pg_policies`를 보고서야 드러났다. **소유권을 이름으로 판단하지 말 것** — 새 스토어에 손대기 전에 `pg_policies`·`information_schema.columns`로 실제 내용을 먼저 확인한다.
+- **앱 소유 Supabase 객체는 `laborconsult` 스키마에 있고, `public`을 쓰지 않는다.** 유일한 명시적 예외는 관리자 품질 평가 저장소인 `public.consultation_eval_runs`이며, `supabase_consultation_eval.sql`, `eval_consultation.py`, `api/index.py`에서 모두 public 경계를 명시한다. 이 프로젝트는 다른 앱과 Supabase 프로젝트를 공유할 수 있고, 실제로 2026-08-13에 `public.board_posts`가 **다른 앱의 테이블**(구 단위 권한·승인 사용자·관리자 모델)인데 이름만 같아 우리 코드가 자기 것으로 오인했다. 컬럼 3개(`id`·`category`·`created_at`)가 우연히 겹쳐 "우리 테이블의 스키마 드리프트"로 보였고, Plan·Design·구현까지 간 뒤 `pg_policies`를 보고서야 드러났다. **소유권을 이름으로 판단하지 말 것** — 새 스토어에 손대기 전에 `pg_policies`·`information_schema.columns`로 실제 내용을 먼저 확인한다.
   - **테이블만이 아니다. 같은 사이클에서 네 번 반복됐다** — ① `board_posts`(테이블) ② `search_path=public`(함수의 미지정 참조) ③ `attachments` vs `qa_attachments`(이름이 비슷한 남의 테이블) ④ **`update_updated_at()`(공유 트리거 함수)**. ④는 옛 프로젝트에서 그 앱의 테이블 8개가 쓰고 있었고, 우리 `supabase_schema.sql`이 `CREATE OR REPLACE FUNCTION`으로 **덮어쓸 수 있는 상태**였다(본문이 같아 사고가 안 났을 뿐). 정리 단계에서 `pg_trigger`를 조회하지 않았다면 그 함수를 지워 8개 테이블의 UPDATE를 전부 깨뜨렸을 것이다.
   - **공유 DB에서 무언가를 지우기 전 확인 순서**: 테이블은 `pg_policies`·`information_schema.columns`, 함수는 **`pg_trigger`·`pg_depend`로 의존자**를, 이름이 비슷한 것들은 전체 목록을 눈으로. `DROP`·`CREATE OR REPLACE`는 둘 다 남의 것을 조용히 덮어쓸 수 있다.
   - **접속은 `app/core/storage.py::make_supabase_client()` 한 곳에서만 만든다.** `create_client()`를 직접 부르면 스키마 옵션이 빠져 `public`으로 새고, 그 실패가 조용하다(테이블이 없으면 PGRST205, 있으면 남의 것을 건드린다). 기본값이 `public`이 아니라 `laborconsult`인 것이 핵심이다 — fail-closed. 기동 시 `Supabase 연결: schema=…` 로그를 남겨 사후 확인이 가능하게 한다.

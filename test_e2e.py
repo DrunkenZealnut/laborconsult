@@ -125,11 +125,19 @@ def test_admin_stats_unauthorized(base_url: str) -> bool:
     return True
 
 
+def test_admin_evaluation_runs_unauthorized(base_url: str) -> bool:
+    """T-09: 관리자 답변 품질 평가 목록 (인증 없이)"""
+    r = requests.get(f"{base_url}/api/admin/evaluation-runs", timeout=10)
+    assert r.status_code == 401, f"Expected 401, got {r.status_code}"
+    return True
+
+
 ALL_TESTS = [
     ("T-05 헬스체크", test_health),
     ("T-08 잘못된 입력 (422)", test_invalid_input),
     ("T-06 관리자 로그인 실패", test_admin_login_fail),
     ("T-07 관리자 통계 (미인증)", test_admin_stats_unauthorized),
+    ("T-09 관리자 답변 품질 (미인증)", test_admin_evaluation_runs_unauthorized),
     ("T-04 동기 채팅", test_chat_sync),
     ("T-01 SSE 스트리밍", test_chat_stream),
     ("T-02 임금계산 스트리밍", test_chat_stream_calc),
