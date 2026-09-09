@@ -92,7 +92,13 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 # 상담 답변 품질 평가 (오프라인 기본, 외부 호출·DB 쓰기 없음)
 ./.venv/bin/python eval_consultation.py --offline
 
-# 운영자 평가 게시: 먼저 로컬 JSON을 확인한 뒤에만 --publish-admin을 붙인다
+# 운영자 평가: 먼저 게시 없이 로컬 JSON을 만들고 확인한다
+./.venv/bin/python eval_consultation.py --live --case wage-01 --limit 1 \
+  --output /tmp/consultation-smoke.json
+./.venv/bin/python eval_consultation.py --live \
+  --output eval_consultation_results.json
+
+# JSON 확인 후 같은 범위를 --publish-admin으로 재실행해 게시한다
 ./.venv/bin/python eval_consultation.py --live --case wage-01 --limit 1 \
   --publish-admin --output /tmp/consultation-smoke.json
 ./.venv/bin/python eval_consultation.py --live --publish-admin \
@@ -184,10 +190,11 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
    `public.consultation_eval_runs`를 만들며, 앱의 기본 접속 스키마(`laborconsult`)와
    섞지 않는다. 테이블은 RLS를 켜고 anon/authenticated/PUBLIC 권한을 회수하므로
    서버 측 service-role 자격증명으로만 게시한다.
-2. `--live --case wage-01 --limit 1`로 smoke 평가를 실행하고
-   `/tmp/consultation-smoke.json`을 확인한다. 통과하면 전체 60건 평가를 실행한다.
-3. 로컬 JSON의 `status`, `summary`, `results`를 확인한 뒤에만 `--publish-admin`을
-   사용한다. 게시 실패 시에도 로컬 JSON은 남겨 원인 분석과 재시도에 사용한다.
+2. `--live --case wage-01 --limit 1`로 게시 없는 smoke 평가를 실행하고
+   `/tmp/consultation-smoke.json`의 `run_metadata`, `summary`, `results`를 확인한다.
+   통과하면 게시 없는 전체 60건 평가를 실행해 `eval_consultation_results.json`을 확인한다.
+3. 확인한 동일 범위를 `--publish-admin`으로 재실행해 게시한다. 게시 실패 시에도
+   로컬 JSON은 남겨 원인 분석과 재시도에 사용한다.
 4. `/admin`에 로그인하고 `답변 품질` 메뉴에서 목록·요약·상세를 확인한다. Admin
    화면은 `public.consultation_eval_runs`에 게시된 결과만 표시하고 평가를 실행하지 않는다.
 
