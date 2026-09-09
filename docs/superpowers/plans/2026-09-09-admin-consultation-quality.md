@@ -20,7 +20,7 @@
 - Supabase RLS is enabled with no anon/authenticated table policies; only server-side credentials access the table.
 - Existing conversation, attachment, abuse, production pipeline, fixture, and scoring behavior must remain unchanged.
 - Preserve unrelated working-tree changes in `.bkit/state/memory.json` and `.claude/`.
-- The existing Supabase client defaults to `laborconsult`; evaluation table access must explicitly use `.schema("public")` without changing that shared default. Focused tests must assert this boundary.
+- The existing Supabase client defaults to `laborconsult`; evaluation table access must explicitly use `.schema("laborconsult")` without changing that shared default. Focused tests must assert this boundary.
 
 ---
 
@@ -31,7 +31,7 @@
 - Create: `test_admin_consultation_quality.py`
 
 **Interfaces:**
-- Produces table `public.consultation_eval_runs` consumed by the CLI publisher and Admin API.
+- Produces table `laborconsult.consultation_eval_runs` consumed by the CLI publisher and Admin API.
 - Produces static SQL assertions reusable by later reviewers without requiring a live Supabase connection.
 
 - [ ] **Step 1: Write the failing SQL contract test**
@@ -42,13 +42,13 @@ Add a direct-runner test that reads `supabase_consultation_eval.sql` and asserts
 def test_consultation_eval_sql_locks_table_and_has_contract() -> None:
     sql = Path("supabase_consultation_eval.sql").read_text(encoding="utf-8").lower()
     for fragment in (
-        "create table if not exists public.consultation_eval_runs",
+        "create table if not exists laborconsult.consultation_eval_runs",
         "run_id text not null unique",
         "summary jsonb not null",
         "results jsonb not null",
         "enable row level security",
-        "revoke all on public.consultation_eval_runs from anon",
-        "revoke all on public.consultation_eval_runs from authenticated",
+        "revoke all on laborconsult.consultation_eval_runs from anon",
+        "revoke all on laborconsult.consultation_eval_runs from authenticated",
         "idx_consultation_eval_runs_created",
     ):
         assert fragment in sql, fragment
@@ -67,7 +67,7 @@ Expected: FAIL because the migration file does not exist.
 
 - [ ] **Step 3: Write the minimal SQL migration**
 
-Create `public.consultation_eval_runs` with `uuid` primary key, `run_id` uniqueness, `mode` and `status` checks, nonnegative case counts, `jsonb` summary/results/metadata, timestamps, descending created index, mode/status index, RLS enablement, and `REVOKE ALL` from `anon`, `authenticated`, and `PUBLIC`. Do not create policies or SECURITY DEFINER functions; the Python server uses its existing server-side Supabase client.
+Create `laborconsult.consultation_eval_runs` with `uuid` primary key, `run_id` uniqueness, `mode` and `status` checks, nonnegative case counts, `jsonb` summary/results/metadata, timestamps, descending created index, mode/status index, RLS enablement, and `REVOKE ALL` from `anon`, `authenticated`, and `PUBLIC`. Do not create policies or SECURITY DEFINER functions; the Python server uses its existing server-side Supabase client.
 
 - [ ] **Step 4: Run the focused test and verify it passes**
 
@@ -141,7 +141,7 @@ Expected: the new imports/options or publisher are missing, so the new tests fai
 
 - [ ] **Step 3: Implement the publication boundary**
 
-Add standard-library helpers for a URL-safe `run_id`, report validation, and `publish_admin_run`. Require `run_metadata`, `summary`, and `results`; map `started_at`, `finished_at`, `fixture_case_count`, `evaluated_case_count`, `mode`, and `metadata` into one row; preserve the existing bounded `observed.answer`. Call exactly one `supabase.schema("public").table("consultation_eval_runs").insert(row).execute()` and return the run ID. Add an offline assertion that the publisher uses the explicit public-schema boundary.
+Add standard-library helpers for a URL-safe `run_id`, report validation, and `publish_admin_run`. Require `run_metadata`, `summary`, and `results`; map `started_at`, `finished_at`, `fixture_case_count`, `evaluated_case_count`, `mode`, and `metadata` into one row; preserve the existing bounded `observed.answer`. Call exactly one `supabase.schema("laborconsult").table("consultation_eval_runs").insert(row).execute()` and return the run ID. Add an offline assertion that the publisher uses the explicit laborconsult-schema boundary.
 
 Add `--publish-admin` to the parser. Reject it unless `args.live` is true before loading `AppConfig`. In Live mode, keep the original Supabase client only as a publisher client, copy the config for `run_case`, set the copy’s `supabase` to `None`, write the local JSON first, then publish. Return 1 for configuration, output, pipeline, or publication failures and retain the local output file. Do not publish when the selected run is empty.
 
@@ -169,7 +169,7 @@ git commit -m "feat: publish consultation evaluation runs"
 - Modify: `test_admin_consultation_quality.py`
 
 **Interfaces:**
-- Consumes `public.consultation_eval_runs` through the existing `_get_supabase()` client.
+- Consumes `laborconsult.consultation_eval_runs` through the existing `_get_supabase()` client.
 - Produces `GET /api/admin/evaluation-runs` and `GET /api/admin/evaluation-runs/{run_id}`.
 - Reuses `require_admin`, `_get_supabase`, and existing JSON error conventions.
 
@@ -198,7 +198,7 @@ Expected: `AttributeError` or route-not-found failure for the new functions.
 
 - [ ] **Step 3: Implement the two read-only routes**
 
-Add a private `_validate_eval_run_id` that permits only `eval_` plus ASCII letters, digits, `_`, and `-`, with a bounded length. Query only the summary/list columns for the list endpoint and clamp `limit` to 1–100. Query the full row for detail after validating the path ID. Use `supabase.schema("public").table("consultation_eval_runs")` for both routes and add an offline assertion for that boundary. Convert missing rows to `HTTPException(404, ...)`, Supabase exceptions to `HTTPException(503, ...)`, and never expose raw exception strings. All route signatures include `_admin=Depends(require_admin)`.
+Add a private `_validate_eval_run_id` that permits only `eval_` plus ASCII letters, digits, `_`, and `-`, with a bounded length. Query only the summary/list columns for the list endpoint and clamp `limit` to 1–100. Query the full row for detail after validating the path ID. Use `supabase.schema("laborconsult").table("consultation_eval_runs")` for both routes and add an offline assertion for that boundary. Convert missing rows to `HTTPException(404, ...)`, Supabase exceptions to `HTTPException(503, ...)`, and never expose raw exception strings. All route signatures include `_admin=Depends(require_admin)`.
 
 - [ ] **Step 4: Run API tests and existing Admin auth checks**
 

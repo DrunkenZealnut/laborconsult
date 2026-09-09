@@ -428,6 +428,7 @@ async function loadEvaluationRuns() {
   const cards = document.getElementById('quality-stat-cards');
   const detail = document.getElementById('quality-detail');
   status.textContent = '평가 실행을 불러오는 중...';
+  list.innerHTML = '';
   cards.innerHTML = '';
   detail.innerHTML = '';
   try {

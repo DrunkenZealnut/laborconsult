@@ -423,7 +423,7 @@ def publish_admin_run(report: dict, supabase) -> str:
     if supabase is None:
         raise ValueError("Supabase is not configured for admin publication")
     try:
-        supabase.schema("public").table("consultation_eval_runs").insert(row).execute()
+        supabase.schema("laborconsult").table("consultation_eval_runs").insert(row).execute()
     except Exception as error:
         if getattr(error, "code", None) == "23505":
             raise ValueError(f"duplicate evaluation run_id: {row['run_id']}") from error

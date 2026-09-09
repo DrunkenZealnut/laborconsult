@@ -219,7 +219,9 @@ test('detail IDs are encoded and failures clear the previous detail', async () =
 test('refresh discards stale list and detail responses', async () => {
   const pending = [];
   const app = browser(() => new Promise(resolve => pending.push(resolve)));
+  app.elements.get('quality-run-list').innerHTML = '<div class="quality-run">old run</div>';
   const firstList = app.context.loadEvaluationRuns();
+  assert.equal(app.elements.get('quality-run-list').innerHTML, '');
   const detail = app.context.loadEvaluationRun('eval_old');
   const latestList = app.context.loadEvaluationRuns();
   pending[2](response({ runs: [] }));

@@ -187,8 +187,8 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 상담 답변 품질 평가 운영 순서:
 
 1. `supabase_consultation_eval.sql`을 SQL Editor에서 적용한다. 이 DDL만 예외적으로
-   `public.consultation_eval_runs`를 만들며, 앱의 기본 접속 스키마(`laborconsult`)와
-   섞지 않는다. 테이블은 RLS를 켜고 anon/authenticated/PUBLIC 권한을 회수하므로
+   `laborconsult.consultation_eval_runs`를 만든다. 테이블은 RLS를 켜고
+   anon/authenticated/PUBLIC 권한을 회수하므로
    서버 측 service-role 자격증명으로만 게시한다.
 2. `--live --case wage-01 --limit 1`로 게시 없는 smoke 평가를 실행하고
    `/tmp/consultation-smoke.json`의 `run_metadata`, `summary`, `results`를 확인한다.
@@ -196,7 +196,7 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 3. 확인한 동일 범위를 `--publish-admin`으로 재실행해 게시한다. 게시 실패 시에도
    로컬 JSON은 남겨 원인 분석과 재시도에 사용한다.
 4. `/admin`에 로그인하고 `답변 품질` 메뉴에서 목록·요약·상세를 확인한다. Admin
-   화면은 `public.consultation_eval_runs`에 게시된 결과만 표시하고 평가를 실행하지 않는다.
+   화면은 `laborconsult.consultation_eval_runs`에 게시된 결과만 표시하고 평가를 실행하지 않는다.
 
 오프라인 모드(`--offline`)는 fixture 계약만 검증하며 결과를 관리자 테이블에 쓰지 않는다.
 `--publish-admin`은 반드시 `--live`와 함께 사용해야 한다. Live 게시에는 `SUPABASE_URL`과
@@ -473,7 +473,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 공개 게시판/대화 응답은 반드시 `_anonymize()`(이름·회사·전화·이메일 마스킹) 통과 후 반환. 신규 공개 엔드포인트 추가 시 동일 적용.
 - 신규 채팅 엔드포인트 추가 시 `_guard_chat_request()`를 세션 생성·첨부 파싱보다 먼저 호출하고, `process_question(guard_ctx=...)`으로 컨텍스트를 전달할 것.
 - `qa_conversations` 공개 조회(게시판)는 `_fetch_qa_public()`(내부에서 `_apply_guard_filter()` PostgREST 필터 + `_drop_flagged()` Python 후처리를 이중으로 건다)를 거쳐 제외 대상 대화를 걸러내고, select에 `metadata`를 포함해야 한다. **`board_posts`에는 적용 금지** — metadata 컬럼이 없어 PostgREST 400이 `try/except`에 삼켜져 사용자 게시글이 통째로 사라진다.
-- **앱 소유 Supabase 객체는 `laborconsult` 스키마에 있고, `public`을 쓰지 않는다.** 유일한 명시적 예외는 관리자 품질 평가 저장소인 `public.consultation_eval_runs`이며, `supabase_consultation_eval.sql`, `eval_consultation.py`, `api/index.py`에서 모두 public 경계를 명시한다. 이 프로젝트는 다른 앱과 Supabase 프로젝트를 공유할 수 있고, 실제로 2026-08-13에 `public.board_posts`가 **다른 앱의 테이블**(구 단위 권한·승인 사용자·관리자 모델)인데 이름만 같아 우리 코드가 자기 것으로 오인했다. 컬럼 3개(`id`·`category`·`created_at`)가 우연히 겹쳐 "우리 테이블의 스키마 드리프트"로 보였고, Plan·Design·구현까지 간 뒤 `pg_policies`를 보고서야 드러났다. **소유권을 이름으로 판단하지 말 것** — 새 스토어에 손대기 전에 `pg_policies`·`information_schema.columns`로 실제 내용을 먼저 확인한다.
+- **앱 소유 Supabase 객체는 모두 `laborconsult` 스키마에 있고, `public`을 쓰지 않는다.** 관리자 품질 평가 저장소인 `laborconsult.consultation_eval_runs`도 예외가 아니다. `supabase_consultation_eval.sql`, `eval_consultation.py`, `api/index.py`에서 모두 laborconsult 경계를 명시한다. 이 프로젝트는 다른 앱과 Supabase 프로젝트를 공유할 수 있고, 실제로 2026-08-13에 `public.board_posts`가 **다른 앱의 테이블**(구 단위 권한·승인 사용자·관리자 모델)인데 이름만 같아 우리 코드가 자기 것으로 오인했다. 컬럼 3개(`id`·`category`·`created_at`)가 우연히 겹쳐 "우리 테이블의 스키마 드리프트"로 보였고, Plan·Design·구현까지 간 뒤 `pg_policies`를 보고서야 드러났다. **소유권을 이름으로 판단하지 말 것** — 새 스토어에 손대기 전에 `pg_policies`·`information_schema.columns`로 실제 내용을 먼저 확인한다.
   - **테이블만이 아니다. 같은 사이클에서 네 번 반복됐다** — ① `board_posts`(테이블) ② `search_path=public`(함수의 미지정 참조) ③ `attachments` vs `qa_attachments`(이름이 비슷한 남의 테이블) ④ **`update_updated_at()`(공유 트리거 함수)**. ④는 옛 프로젝트에서 그 앱의 테이블 8개가 쓰고 있었고, 우리 `supabase_schema.sql`이 `CREATE OR REPLACE FUNCTION`으로 **덮어쓸 수 있는 상태**였다(본문이 같아 사고가 안 났을 뿐). 정리 단계에서 `pg_trigger`를 조회하지 않았다면 그 함수를 지워 8개 테이블의 UPDATE를 전부 깨뜨렸을 것이다.
   - **공유 DB에서 무언가를 지우기 전 확인 순서**: 테이블은 `pg_policies`·`information_schema.columns`, 함수는 **`pg_trigger`·`pg_depend`로 의존자**를, 이름이 비슷한 것들은 전체 목록을 눈으로. `DROP`·`CREATE OR REPLACE`는 둘 다 남의 것을 조용히 덮어쓸 수 있다.
   - **접속은 `app/core/storage.py::make_supabase_client()` 한 곳에서만 만든다.** `create_client()`를 직접 부르면 스키마 옵션이 빠져 `public`으로 새고, 그 실패가 조용하다(테이블이 없으면 PGRST205, 있으면 남의 것을 건드린다). 기본값이 `public`이 아니라 `laborconsult`인 것이 핵심이다 — fail-closed. 기동 시 `Supabase 연결: schema=…` 로그를 남겨 사후 확인이 가능하게 한다.
@@ -482,7 +482,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
     - **테이블** — RLS 정책만 만들고 `GRANT SELECT, INSERT …`를 빠뜨려 `qa_*`·`law_article_cache`가 전부 `permission denied`. **RLS 정책(어느 **행**)과 GRANT(**접근 자체**)는 다른 계층이라 둘 다 있어야 한다.**
     - **함수** — `REVOKE ALL ON FUNCTION … FROM PUBLIC`이 **service_role의 유일한 경로까지 지웠다.** 함수는 생성 시 PUBLIC에 EXECUTE가 기본 부여되고 `public` 스키마에선 default privileges가 service_role에도 따로 주는데, 커스텀 스키마엔 그게 없다. `service_role`은 BYPASSRLS일 뿐 **superuser가 아니다** — 같은 이유로 자기가 소유하지 않은 함수에 GRANT를 줄 수도 없다(회수하면 SQL Editor로만 복구 가능). `purge_storage_orphans.py`가 `42501 permission denied for function storage_purge_claim`으로 죽었다.
     - 반대로 **`purge_expired_data`는 일부러 service_role에 주지 않는다** — pg_cron이 `postgres`(superuser)로 실행하므로 불필요하고, 영구 삭제 함수라 호출 경로를 좁게 둔다.
-  - **DDL은 최종 상태 4파일이고 적용 순서가 있다**: `supabase_schema.sql`(스키마 생성) → `supabase_abuse_guard.sql` → `supabase_board_posts.sql` → `supabase_retention_purge.sql`. **패치 파일을 따로 두지 말 것** — 이전 프로젝트 전환에서 base만 적용하고 후속 패치를 놓쳐 `qa_sessions.session_data`·`law_article_cache`가 빠진 채 프로덕션이 돌았다(매 채팅 PGRST204 → 후속 질문 맥락 유실, 법령 L2 캐시 404). `supabase_fix_*.sql` 3종은 본문에 흡수됐고 이력으로만 남아 있다.
+  - **DDL은 최종 상태 5파일이고 적용 순서가 있다**: `supabase_schema.sql`(스키마 생성) → `supabase_abuse_guard.sql` → `supabase_board_posts.sql` → `supabase_retention_purge.sql` → `supabase_consultation_eval.sql`. **패치 파일을 따로 두지 말 것** — 이전 프로젝트 전환에서 base만 적용하고 후속 패치를 놓쳐 `qa_sessions.session_data`·`law_article_cache`가 빠진 채 프로덕션이 돌았다(매 채팅 PGRST204 → 후속 질문 맥락 유실, 법령 L2 캐시 404). `supabase_fix_*.sql` 3종은 본문에 흡수됐고 이력으로만 남아 있다.
   - **완료 조건은 "실행했다"가 아니라 `python3 check_schema.py` 전수 통과다.** SQL Editor는 구문 오류 하나로 전량 롤백하고, 선택 영역만 실행되기도 한다(둘 다 실제로 겪음). CI는 DB 자격증명이 없어 **파일↔코드만** 대조한다(D5~D9) — 실제 DB 대조는 이 스크립트가 유일하다.
   - **SQL Editor에 붙여넣을 DDL에는 큰따옴표 식별자를 쓰지 말 것.** 복사 과정에서 스마트 따옴표(U+201C)로 바뀌면 `syntax error at or near …`로 죽는다(실제 발생). 인용부호 없는 이름은 그 실패 모드 자체가 없다. 회귀는 D8.
 - **스키마 파일 없는 테이블을 만들지 말 것.** `board_posts`가 `supabase_schema.sql`에 없이 SQL Editor 수동 실행으로 생겼고, 그 DDL이 **부분만 적용된 채** 사이클이 종료됐다 — 2026-08-13 실측에서 8컬럼 중 5개(`nickname`·`password_hash`·`question_text`·`status`·`ip_hash`)가 없었고, **게시판 글쓰기·삭제는 배포된 채로 한 번도 작동한 적이 없었다**(INSERT에 `try/except`가 없어 HTTP 500). `board_posts` 0행은 "아무도 안 썼다"가 아니라 "쓸 수 없었다"였다. 저장소에 단일 출처가 없으면 **어긋났다는 사실 자체를 아무도 모른다.**

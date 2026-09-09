@@ -535,8 +535,8 @@ _DDL_FILES = (
     "supabase_abuse_guard.sql",
     "supabase_board_posts.sql",
     "supabase_retention_purge.sql",
-    # The evaluation table is the deliberate public-schema exception; keeping it
-    # in this inventory prevents the code↔DDL check from drifting silently.
+    # Keep the evaluation DDL in this inventory so the code↔DDL check cannot
+    # drift silently from the application's laborconsult schema.
     "supabase_consultation_eval.sql",
 )
 
@@ -653,10 +653,6 @@ def test_code_tables_defined_in_ddl() -> None:
 
     ddl = "\n".join(_ddl_sources().values())
     defined = set(re.findall(r"CREATE TABLE IF NOT EXISTS\s+laborconsult\.(\w+)", ddl))
-    defined |= set(re.findall(
-        r"CREATE TABLE IF NOT EXISTS\s+public\.(consultation_eval_runs)", ddl,
-        flags=re.I,
-    ))
 
     used: set[str] = set()
     for path in ("app", "api"):

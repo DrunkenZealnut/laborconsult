@@ -622,7 +622,7 @@ def admin_evaluation_runs(
     sb = _get_supabase()
     limit = max(1, min(limit, 100))
     try:
-        query = sb.schema("public").table("consultation_eval_runs").select(
+        query = sb.schema("laborconsult").table("consultation_eval_runs").select(
             "run_id, mode, status, started_at, finished_at, created_at, "
             "fixture_case_count, evaluated_case_count, summary, metadata",
             count="exact",
@@ -645,7 +645,7 @@ def admin_evaluation_run(run_id: str, _admin=Depends(require_admin)):
     sb = _get_supabase()
     try:
         run = _single_row(
-            sb.schema("public").table("consultation_eval_runs")
+            sb.schema("laborconsult").table("consultation_eval_runs")
             .select("*").eq("run_id", run_id).maybe_single()
         )
     except Exception as error:

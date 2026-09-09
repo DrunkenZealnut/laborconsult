@@ -21,7 +21,7 @@ def test_consultation_eval_sql_locks_table_and_has_contract() -> None:
     sql = re.sub(r"/\*.*?\*/|--[^\n]*", "", sql, flags=re.DOTALL)
     sql = " ".join(sql.lower().split())
     for fragment in (
-        "create table if not exists public.consultation_eval_runs",
+        "create table if not exists laborconsult.consultation_eval_runs",
         "id uuid primary key default gen_random_uuid()",
         "run_id text not null unique",
         "mode text not null check (mode in ('live', 'offline'))",
@@ -35,13 +35,13 @@ def test_consultation_eval_sql_locks_table_and_has_contract() -> None:
         "metadata jsonb not null default '{}'::jsonb",
         "created_at timestamptz not null default now()",
         "create index if not exists idx_consultation_eval_runs_created "
-        "on public.consultation_eval_runs(created_at desc)",
+        "on laborconsult.consultation_eval_runs(created_at desc)",
         "create index if not exists idx_consultation_eval_runs_mode_status "
-        "on public.consultation_eval_runs(mode, status)",
-        "alter table public.consultation_eval_runs enable row level security",
-        "revoke all on public.consultation_eval_runs from anon",
-        "revoke all on public.consultation_eval_runs from authenticated",
-        "revoke all on public.consultation_eval_runs from public",
+        "on laborconsult.consultation_eval_runs(mode, status)",
+        "alter table laborconsult.consultation_eval_runs enable row level security",
+        "revoke all on laborconsult.consultation_eval_runs from anon",
+        "revoke all on laborconsult.consultation_eval_runs from authenticated",
+        "revoke all on laborconsult.consultation_eval_runs from public",
     ):
         assert fragment in sql, fragment
     assert "create policy" not in sql
@@ -60,12 +60,12 @@ class FakeSupabaseInsertRecorder:
 
     def schema(self, name):
         self.calls.append(("schema", name))
-        assert name == "public"
+        assert name == "laborconsult"
         return self
 
     def table(self, name):
         self.calls.append(("table", name))
-        assert self.calls[-2] == ("schema", "public")
+        assert self.calls[-2] == ("schema", "laborconsult")
         assert name == "consultation_eval_runs"
         return self
 
@@ -97,12 +97,12 @@ def _completed_report():
     }
 
 
-def test_publish_admin_inserts_one_valid_payload_in_public_schema() -> None:
+def test_publish_admin_inserts_one_valid_payload_in_laborconsult_schema() -> None:
     report = _completed_report()
     original = deepcopy(report)
     fake = FakeSupabaseInsertRecorder()
     assert harness.publish_admin_run(report, fake) == "eval_20260909T120000Z_abc123"
-    assert fake.calls == [("schema", "public"), ("table", "consultation_eval_runs"),
+    assert fake.calls == [("schema", "laborconsult"), ("table", "consultation_eval_runs"),
                           ("insert",), ("execute",)]
     assert fake.inserted == [{
         "run_id": "eval_20260909T120000Z_abc123", "mode": "live", "status": "completed",
@@ -267,7 +267,7 @@ def _assert_http_error(status, call):
         raise AssertionError(f"expected HTTP {status}")
 
 
-def test_admin_evaluation_runs_lists_summaries_in_public_schema() -> None:
+def test_admin_evaluation_runs_lists_summaries_in_laborconsult_schema() -> None:
     import api.index as api
     row = _stored_run()
     fake = FakeSupabaseRunReader([row])
@@ -275,7 +275,7 @@ def test_admin_evaluation_runs_lists_summaries_in_public_schema() -> None:
         response = api.admin_evaluation_runs(_admin={"role": "admin"})
     expected = {key: value for key, value in row.items() if key not in ("id", "results")}
     assert response == {"runs": [expected], "total": 1}
-    assert fake.calls[:2] == [("schema", "public"), ("table", "consultation_eval_runs")]
+    assert fake.calls[:2] == [("schema", "laborconsult"), ("table", "consultation_eval_runs")]
     assert fake.columns != "*" and "results" not in fake.columns
     assert fake.calls[2][2] == {"count": "exact"}
     assert ("order", "created_at", True) in fake.calls
@@ -303,15 +303,15 @@ def test_admin_evaluation_runs_empty_list() -> None:
         assert api.admin_evaluation_runs(_admin={"role": "admin"}) == {"runs": [], "total": 0}
 
 
-def test_admin_evaluation_run_returns_full_row_in_public_schema() -> None:
+def test_admin_evaluation_run_returns_full_row_in_laborconsult_schema() -> None:
     import api.index as api
     for run_id in ("eval_20260909T120000Z_abc123", "eval_A-z_09", "eval_" + "a" * 123):
         row = _stored_run(run_id=run_id)
         fake = FakeSupabaseRunReader([_stored_run(run_id="eval_other"), row])
         with patch.object(api, "_get_supabase", return_value=fake):
             response = api.admin_evaluation_run(run_id, _admin={"role": "admin"})
-        assert response == row
-        assert fake.calls[:2] == [("schema", "public"), ("table", "consultation_eval_runs")]
+            assert response == row
+            assert fake.calls[:2] == [("schema", "laborconsult"), ("table", "consultation_eval_runs")]
 
 
 def test_admin_evaluation_run_rejects_invalid_ids_before_database_access() -> None:
@@ -368,13 +368,13 @@ def test_admin_evaluation_routes_enforce_existing_auth_and_serialize_results() -
 
 def main() -> int:
     tests = [test_consultation_eval_sql_locks_table_and_has_contract,
-             test_publish_admin_inserts_one_valid_payload_in_public_schema,
+             test_publish_admin_inserts_one_valid_payload_in_laborconsult_schema,
              test_publish_admin_rejects_invalid_reports_before_database_access,
              test_publish_admin_derives_failure_status_and_preserves_bounded_answers,
-             test_admin_evaluation_runs_lists_summaries_in_public_schema,
+             test_admin_evaluation_runs_lists_summaries_in_laborconsult_schema,
              test_admin_evaluation_runs_clamps_limits_and_filters_before_counting,
              test_admin_evaluation_runs_empty_list,
-             test_admin_evaluation_run_returns_full_row_in_public_schema,
+             test_admin_evaluation_run_returns_full_row_in_laborconsult_schema,
              test_admin_evaluation_run_rejects_invalid_ids_before_database_access,
              test_admin_evaluation_run_missing_rows_are_404,
              test_admin_evaluation_database_errors_are_safe_503,
