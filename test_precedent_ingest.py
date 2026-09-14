@@ -2156,6 +2156,134 @@ def t29_heading_levels() -> None:
           not re.compile(r"^(#{1,3.5})\s+(.+)$", re.M).search("## 제1장 총칙\n"))
 
 
+# ── T30 게이트 경계 픽스처 ───────────────────────────────────────────────────
+
+# 아카이브 산출물의 **실제 열 이름·순서**. 실물과 어긋나면 select_targets()가
+# KeyError로 죽으므로, 픽스처만 통과하고 운영에서 실패하는 상태가 되지 않는다.
+_T30_DOC_COLS = ["doc_id", "source", "case_no", "case_src", "doctype", "category",
+                 "category_src", "post_id", "title", "gate", "bundled"]
+_T30_INV_COLS = ["case_no", "case_alias", "case_key", "court", "decided", "title",
+                 "doc_letec", "doc_crawl", "vec_chunks", "vec_ctx", "vec_dead",
+                 "cited_code", "cited_textbook", "not_found", "overlap", "note"]
+
+# 게이트 경계 픽스처. `body`는 **내용만 보고 판정했을 때**의 분류이고 `gate`는
+# documents.csv가 승인한 분류다 — 둘을 일부러 어긋나게 둔 행이 2010다99279(전문
+# 형식인데 editorial)와 2018다88888(발췌 형식인데 verbatim)이다. select_targets()가
+# 내용을 읽는 순간 이 두 행에서 결과가 갈리므로, 게이트 판정을 어떤 이름으로
+# 재구현하든(=식별자 grep으로는 못 잡는 우회) 이 픽스처가 잡는다.
+_T30_GATE_ROWS = [
+    {"case_no": "2014다41520", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": True,
+     "why": "기준선 — verbatim · 문서 보유 · 검색 불가"},
+    {"case_no": "2010다99279", "source": "crawl", "gate": "editorial",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "저작권 경계 — 본문이 전문 형식이어도 CSV가 editorial이면 제외"},
+    {"case_no": "2011다11111", "source": "crawl", "gate": "post",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "editorial", "nfd": False, "expect": False,
+     "why": "post는 판결문이 아니라 게시물"},
+    {"case_no": "2012다22222", "source": "letec", "gate": "exempt",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "letec/exempt — 실데이터 분포(gate·source 양쪽으로 제외)"},
+    # source 조건 단독 고정. 실데이터에 letec/verbatim은 없지만(전량 exempt),
+    # 게이트 규칙이 바뀌면 생길 수 있고 그때 이 스크립트가 집어가면 같은 판례가
+    # `precedent_`(letec)와 `crawlprec_` 두 접두사로 **이중 적재**된다. 다른
+    # 조건이 전부 통과하도록(doc_crawl=1·미검색) 만들어 source만이 제외 사유다.
+    {"case_no": "2019다99999", "source": "letec", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "letec은 verbatim이어도 별도 스크립트 소관 — source 조건 단독"},
+    {"case_no": "2013다33333", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "5", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "이미 laborlaw-v2에 적재됨(선정 술어 수렴, T32와 짝)"},
+    {"case_no": "2015다55555", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "3", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "ctx NS로 이미 검색 도달"},
+    {"case_no": "2016다66666", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "0", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "크롤 문서 미보유(doc_crawl=0)"},
+    {"case_no": "2017다77777", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": False,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "인벤토리에 행이 없음"},
+    {"case_no": "2018다88888", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "editorial", "nfd": True, "expect": True,
+     "why": "본문이 발췌 형식이어도 CSV가 verbatim이면 포함 + NFD 파일명 해석"},
+]
+
+
+def _t30_body(case_no: str, kind: str) -> str:
+    """`kind`가 내용 기반 분류(archive_precedents.classify_gate_bucket 기준)다.
+
+    verbatim: 【주 문】·【이 유】 + `선고 {사건번호}` → 자동 분류도 verbatim
+    editorial: 마커 없음 + ※ 편집 고지 → 자동 분류도 editorial
+    """
+    head = (f"# 테스트 판례 {case_no}\n\n| 항목 | 내용 |\n| 분류 | 근로기준 |\n"
+            f"| 작성일 | 2020.01.16 |\n| 사건번호 | {case_no} |\n\n---\n\n")
+    if kind == "verbatim":
+        return (head + f"대법원 2020. 1. 16. 선고 {case_no} 판결\n\n"
+                "【원 고, 상고인】  원고 1\n\n【피 고, 피상고인】  피고 주식회사\n\n"
+                "【주 문】\n\n상고를 기각한다.\n\n"
+                "【이 유】\n\n상고이유를 판단한다.\n")
+    return (head + "[판시사항]\n\n징계처분이 재량권을 남용한 경우의 판단 기준.\n\n"
+            "※ 이 자료는 편집·정리한 것입니다.\n")
+
+
+def _t30_gate_fixture(tmp: str) -> set[str]:
+    """게이트 경계 픽스처(아카이브 산출물 + 실문서)를 `tmp`에 만든다. → 기대 집합
+
+    **제외 대상에도 실파일을 만든다.** 게이트 필터가 회귀해 editorial이 통과하면
+    `_resolve()`가 파일 부재로 `sys.exit`하고, 그러면 테스트가 단언 실패가 아니라
+    프로세스 종료로 끝나 "무엇이 왜 틀렸는지"가 보고되지 않는다.
+    """
+    arch = os.path.join(tmp, "archive")
+    base = os.path.join(tmp, "base")
+    os.makedirs(arch, exist_ok=True)
+
+    docs, invs = [], []
+    for r in _T30_GATE_ROWS:
+        # doc_id는 실물과 같은 한글 상대경로. 파일명만 NFD로 쓰는 행을 섞어
+        # `_resolve`의 NFC/NFD 순회를 함께 고정한다(Linux는 두 형태가 별개 파일).
+        rel = f"output_법원 노동판례/근로기준/{r['case_no']}_판결.md"
+        path = os.path.join(base, unicodedata.normalize(
+            "NFD" if r["nfd"] else "NFC", rel))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(_t30_body(r["case_no"], r["body"]))
+
+        docs.append({"doc_id": rel, "source": r["source"], "case_no": r["case_no"],
+                     "case_src": "meta", "doctype": "prec", "category": "근로기준",
+                     "category_src": "folder", "post_id": "",
+                     "title": f"테스트 판례 {r['case_no']}", "gate": r["gate"],
+                     "bundled": "1" if r["gate"] == "verbatim" else "0"})
+        if r["inv"]:
+            invs.append({"case_no": r["case_no"], "case_alias": "", "case_key":
+                         upload.case_no_to_ascii(r["case_no"]), "court": "대법원",
+                         "decided": "2020-01-16", "title": "", "doc_letec": "0",
+                         "doc_crawl": r["doc_crawl"], "vec_chunks": r["vec_chunks"],
+                         "vec_ctx": r["vec_ctx"], "vec_dead": "0", "cited_code": "0",
+                         "cited_textbook": "0", "not_found": "0", "overlap": "0",
+                         "note": ""})
+
+    # 실물과 같이 BOM 포함(utf-8-sig) — _read_csv가 utf-8-sig로 읽는 이유다.
+    for name, cols, rows in (("documents.csv", _T30_DOC_COLS, docs),
+                             ("inventory.csv", _T30_INV_COLS, invs)):
+        with open(os.path.join(arch, name), "w", encoding="utf-8-sig",
+                  newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(rows)
+
+    return {r["case_no"] for r in _T30_GATE_ROWS if r["expect"]}
+
+
 def t30_crawl_precedent_upload() -> None:
     """크롤 판례 적재(crawl-precedent-production-ns) 계약.
 
@@ -2194,12 +2322,63 @@ def t30_crawl_precedent_upload() -> None:
     check("T30-c 【이 유】 부재 시 None",
           C.extract_reasoning("# x\n\n---\n\n【주 문】\n\n기각\n") is None)
 
-    # (d)(e) 대상 선정이 아카이브 게이트를 읽는가 — 재구현하면 승인 절차를 우회한다
-    src = inspect.getsource(C)
-    check("T30-d 대상 선정이 documents.csv의 gate 열을 읽음",
-          'd["gate"] != "verbatim"' in src or "gate\"] != \"verbatim\"" in src)
-    check("T30-e 게이트 판정 재구현 없음(classify_gate_bucket 미사용)",
-          "classify_gate_bucket" not in src)
+    # (d)(e) 저작권 경계 — **select_targets()를 실제로 호출해** 확인한다.
+    #
+    # 소스 문자열 grep으로는 두 방향 모두 샌다: 필터를 리팩터링하면(`d.get("gate")`,
+    # 변수 추출) 멀쩡한 코드가 깨져 테스트를 느슨하게 고치는 압력이 생기고,
+    # 반대로 그 문자열이 주석·데드코드에 남아 있거나 뒤 분기가 제외분을 되돌리면
+    # **통과한 채** editorial이 프로덕션 NS로 나간다. 크기가 작지 않다 —
+    # documents.csv 실측(2026-09-14) crawl 823건 = verbatim 460 · editorial 363 ·
+    # post 13이고, editorial은 nodong.kr 편집 발췌(제3자 저작물)다.
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="t30_gate_")
+    saved = (C.ARCHIVE_DIR, C.BASE_DIR)
+    got: set[str] = set()          # 픽스처 단계에서 죽어도 e1·e2가 실패로 보고되게
+    try:
+        expect = _t30_gate_fixture(tmp)
+        # 두 상수 모두 호출 시점에 읽힌다(_read_csv→ARCHIVE_DIR, _resolve→BASE_DIR).
+        C.ARCHIVE_DIR = os.path.join(tmp, "archive")
+        C.BASE_DIR = os.path.join(tmp, "base")
+        try:
+            targets = C.select_targets()
+        except SystemExit as e:          # _resolve 실패는 단언으로 환원해 보고한다
+            targets = None
+            check("T30-d select_targets() 정상 실행", False, f"SystemExit: {e}")
+        if targets is not None:
+            got = {d["case_no"] for d in targets}
+            check("T30-d 선정 결과가 게이트·수렴 계약과 정확히 일치", got == expect,
+                  f"기대 {sorted(expect)} / 실제 {sorted(got)}")
+            for r in _T30_GATE_ROWS:
+                want = r["expect"]
+                check(f"T30-d· {r['case_no']} {'포함' if want else '제외'}"
+                      f"({r['gate']}) — {r['why']}", (r["case_no"] in got) == want)
+            check("T30-d2 반환 path가 실제 파일(NFD 포함)",
+                  all(os.path.exists(d["path"]) for d in targets),
+                  [d["path"] for d in targets if not os.path.exists(d["path"])])
+            check("T30-d3 case_no 오름차순", [d["case_no"] for d in targets]
+                  == sorted(got), [d["case_no"] for d in targets])
+            check("T30-d4 반환 키 집합 고정", all(
+                set(d) == {"case_no", "title", "category", "path"} for d in targets))
+
+        # (e) 게이트 판정을 이 스크립트가 다시 하지 않는다 — 승인(crawl_gate.json,
+        #     GATE_RULE_VERSION) 밖의 독자 판정을 막는 것이 목적이다. 위 픽스처의
+        #     두 어긋난 행이 그것을 **동작으로** 고정한다: 내용 기반으로 다시
+        #     판정하면 2010다99279(전문 형식·editorial)가 포함되고
+        #     2018다88888(발췌 형식·verbatim)이 빠진다.
+        check("T30-e1 CSV가 권위 — 내용이 전문 형식이어도 editorial이면 제외",
+              "2010다99279" not in got)
+        check("T30-e2 CSV가 권위 — 내용이 발췌 형식이어도 verbatim이면 포함",
+              "2018다88888" in got)
+    finally:
+        C.ARCHIVE_DIR, C.BASE_DIR = saved
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # e1·e2가 동작을 고정하고, 아래는 분류기를 끌어다 쓰는 가장 흔한 경로를
+    # 구조로 막는 값싼 백스톱이다(문자열 대조가 아니라 모듈 속성 검사).
+    check("T30-e3 게이트 분류기를 모듈에 들이지 않음",
+          not hasattr(C, "classify_gate_bucket")
+          and not hasattr(C, "archive_precedents"))
 
     # (f) vector_id 접두사 분리 — 같으면 letec 원장·prune 범위와 섞인다
     vid = f"crawlprec_{P.case_no_to_ascii('2014다41520')}_0"
@@ -2222,6 +2401,10 @@ def t30_crawl_precedent_upload() -> None:
     check("T30-h2 source_type이 기존 라벨 맵 값", C.SOURCE_TYPE == "precedent")
 
     # (i)(j) 메타데이터 이중 필드 + chunk_index 연속
+    # ⚠️ T30-i는 여전히 소스 대조다 — upsert 페이로드가 main() 안에서 인라인
+    #    조립돼 네트워크 없이 호출할 수 없기 때문이다. 저작권 경계(d·e)와 달리
+    #    이 실패의 대가는 검색 누락이지 저작물 노출이 아니라 수용한다.
+    src = inspect.getsource(C)
     check("T30-i 메타에 text·chunk_text 양쪽 기록",
           '"text": c["chunk_text"]' in src and '"chunk_text": c["chunk_text"]' in src)
     doc = {"case_no": "2014다41520", "title": "t", "category": "근로기준",
