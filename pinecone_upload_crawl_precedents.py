@@ -65,13 +65,15 @@ SOURCE_TYPE = "precedent"
 
 UPLOADED_IDS_FILE = os.path.join(CRAWL_DIR, "_uploaded_ids.json")
 
-_CASE_RE = re.compile(r"^[0-9]{2,4}[가-힣]{1,4}[0-9]+$")
-
+# 그룹 키는 **letec과 같은 ASCII 사건번호**다(`2014da41520`). 한글로 두면
+# archive_precedents.reverse_case_key가 해석하지 못해 인벤토리의 vec_chunks가
+# 영영 0으로 남고, 그러면 select_targets()가 적재 후에도 같은 318건을 계속
+# 반환해 **재실행이 전량을 재임베딩한다**(2026-09-14 실측).
 _LEDGER = VectorLedger(
     UPLOADED_IDS_FILE,
-    group_re=_CASE_RE,
-    id_re_for=lambda case: re.compile(
-        rf"^crawlprec_{re.escape(case_no_to_ascii(case))}_\d+$"),
+    group_re=re.compile(r"^[A-Za-z0-9_]+$"),
+    id_re_for=lambda case_key: re.compile(
+        rf"^crawlprec_{re.escape(case_key)}_\d+$"),
 )
 
 
@@ -221,7 +223,7 @@ def main() -> None:
             continue
         with open(doc["path"], encoding="utf-8") as f:
             date = parse_date(f.read())
-        groups[doc["case_no"]] = [c["vector_id"] for c in chunks]
+        groups[case_no_to_ascii(doc["case_no"])] = [c["vector_id"] for c in chunks]
         built.append((doc, chunks, date))
 
     total = sum(len(c) for _, c, _ in built)

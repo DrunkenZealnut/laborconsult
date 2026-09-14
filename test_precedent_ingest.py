@@ -2205,8 +2205,11 @@ def t30_crawl_precedent_upload() -> None:
     vid = f"crawlprec_{P.case_no_to_ascii('2014다41520')}_0"
     check("T30-f vector_id 접두사가 letec과 분리",
           vid.startswith("crawlprec_") and not vid.startswith("precedent_"), vid)
-    check("T30-f2 원장 ID 정규식이 그 접두사를 요구",
-          bool(C._LEDGER._id_re_for("2014다41520").match(vid)))
+    # 원장 그룹 키는 **ASCII**다(letec과 같은 규약) — id_re_for도 ASCII를 받는다.
+    # 한글 키를 쓰면 archive의 reverse_case_key가 해석하지 못해 인벤토리에서
+    # 조용히 빠지고 선정 술어가 수렴하지 않는다(T32 참조).
+    check("T30-f2 원장 ID 정규식이 ASCII 키로 그 접두사를 요구",
+          bool(C._LEDGER._id_re_for(P.case_no_to_ascii("2014다41520")).match(vid)))
 
     # (g) 사본 금지 — 원장을 만든 바로 그 함수여야 한다
     check("T30-g case_no_to_ascii를 import(동일성)",
@@ -2293,6 +2296,49 @@ def t31_citation_whitelist_meta() -> None:
           '"case_no": h.get("case_no"' in src)
 
 
+def t32_ledger_convergence() -> None:
+    """원장이 인벤토리에 반영돼 선정 술어가 수렴한다(gap-detector GAP-2).
+
+    막는 실패: **적재해도 select_targets()가 같은 대상을 계속 반환하는 상태.**
+    `archive_precedents.load_ledger`가 letec 원장만 읽던 때, 크롤 적재분이
+    `vec_chunks`에 반영되지 않아 재실행이 전량을 재임베딩했다(2026-09-14 실측
+    318건). 벡터는 덮어쓰기라 무해하지만 임베딩 비용을 다시 문다.
+
+    **V0~V8이 잡지 못한 실패다** — V4는 letec 스코프이고, V8(멱등)은 재빌드해도
+    같은 0이 나오므로 통과하는 것이 정상이다. 통과가 무결성의 증거가 아니었다.
+    """
+    import json
+    import inspect
+    import archive_precedents as A
+    import pinecone_upload_crawl_precedents as C
+    import pinecone_upload_court_precedents as P
+
+    src = inspect.getsource(A.load_ledger)
+    check("T32-a load_ledger가 letec·crawl 원장을 모두 읽음",
+          "letec_dir" in src and "crawl_dir" in src, src[:80])
+
+    # 키 형식이 코퍼스 간에 같아야 병합이 성립한다 — reverse_case_key가 ASCII를
+    # 전제하므로 한글 키는 조용히 인벤토리에서 빠진다.
+    for path, label in (("output_판례_보강/_uploaded_ids.json", "letec"),
+                        ("output_법원 노동판례/_uploaded_ids.json", "crawl")):
+        if not os.path.exists(path):
+            continue          # 원본 없는 환경(CI)에서는 건너뛴다
+        with open(path, encoding="utf-8") as f:
+            keys = list(json.load(f))
+        bad = [k for k in keys if not k.isascii()]
+        check(f"T32-b {label} 원장 키가 ASCII", not bad, bad[:3])
+        rev = [k for k in keys[:50] if A.reverse_case_key(k) is None]
+        check(f"T32-c {label} 키가 reverse_case_key로 해석됨", not rev, rev[:3])
+
+    # 업로더가 그 규약을 쓰는지 — 여기서 어긋나면 다음 적재가 다시 한글 키를 쓴다
+    usrc = inspect.getsource(C)
+    check("T32-d 크롤 업로더가 ASCII 그룹 키 사용",
+          "groups[case_no_to_ascii(" in usrc)
+    check("T32-e 그룹 정규식이 letec과 동일 계열(ASCII)",
+          C._LEDGER._group_re.pattern == P._LEDGER._group_re.pattern,
+          C._LEDGER._group_re.pattern)
+
+
 def _raises(fn, exc) -> bool:
     try:
         fn()
@@ -2319,7 +2365,8 @@ def main() -> int:
                t24_legal_diversity_promotion, t25_court_ledger,
                t26_public_quota, t27_precedent_archive,
                t28_corpus_path_normalization, t29_heading_levels,
-               t30_crawl_precedent_upload, t31_citation_whitelist_meta):
+               t30_crawl_precedent_upload, t31_citation_whitelist_meta,
+               t32_ledger_convergence):
         print(f"\n[{fn.__name__}]")
         fn()
 

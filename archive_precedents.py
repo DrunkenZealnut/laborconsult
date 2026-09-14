@@ -541,10 +541,29 @@ def _read_json(path: str):
 
 
 def load_ledger(paths: Paths) -> dict[str, list[str]]:
-    """원장 — 로컬 원본 우선, 없으면(CI) 스냅샷. 읽기 전용."""
-    origin = os.path.join(paths.letec_dir, "_uploaded_ids.json")
-    snap = os.path.join(paths.records_dir, "ledger_uploaded_ids.json")
-    return _read_json(origin) or _read_json(snap) or {}
+    """원장 — 로컬 원본 우선, 없으면(CI) 스냅샷. 읽기 전용.
+
+    **코퍼스별 원장을 전부 병합한다.** letec 하나만 읽던 때 크롤 적재분이
+    인벤토리에 반영되지 않아 `vec_chunks`가 0으로 남았고, 그 열을 선정 술어로
+    쓰는 `pinecone_upload_crawl_precedents.select_targets()`가 적재 후에도 같은
+    318건을 계속 반환했다 — **재실행이 전량을 재임베딩하는 상태**였다(2026-09-14
+    실측). 벡터는 덮어쓰기라 무해하지만 임베딩 비용을 다시 문다.
+
+    V0~V8은 이것을 못 잡는다 — V4는 letec 스코프이고, V8(멱등)은 재빌드해도
+    같은 0이 나오므로 통과하는 것이 정상이다. 즉 **통과가 무결성의 증거가 아닌**
+    구간이었다.
+
+    키는 원장 간 형식이 같아야 병합이 성립한다(둘 다 ASCII 사건번호 —
+    `reverse_case_key`가 그것을 전제한다). 새 코퍼스를 추가할 때 그 규약을
+    어기면 그 코퍼스만 조용히 인벤토리에서 빠진다.
+    """
+    merged: dict[str, list[str]] = {}
+    for d in (paths.letec_dir, paths.crawl_dir):
+        merged.update(_read_json(os.path.join(d, "_uploaded_ids.json")) or {})
+    if merged:
+        return merged
+    return _read_json(os.path.join(paths.records_dir,
+                                  "ledger_uploaded_ids.json")) or {}
 
 
 # ── 결정적 직렬화 (설계 §4.4) ────────────────────────────────────────────────
