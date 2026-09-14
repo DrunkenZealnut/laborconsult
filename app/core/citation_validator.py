@@ -77,10 +77,18 @@ def extract_precedents_from_hits(hits: list[dict]) -> dict[str, dict]:
     for i, hit in enumerate(hits):
         title = hit.get("title", "")
         chunk = hit.get("chunk_text", "")
+        # 메타의 사건번호를 **본문·제목과 동등한 원천으로** 본다.
+        # 판시사항·판결요지는 자기 사건번호를 적지 않는 것이 보통이라, 본문
+        # 파싱만으로는 검색된 판례의 94%가 인용 목록에 오르지 못했다(실측
+        # letec 6,440청크 중 6,060). 그러면 LLM이 그 판례를 근거로 써도
+        # 환각으로 판정돼 replace로 지워진다 — 검색은 됐는데 인용은 못 하는 상태.
+        # 이 값은 법제처 API·아카이브가 확인한 번호라 본문 정규식보다 신뢰도가 높다.
+        case_no = hit.get("case_no", "")
 
         for text_field, context_source in [
             (title, "title"),
             (chunk, "chunk"),
+            (case_no, "meta"),
         ]:
             for match in _PREC_PATTERN.finditer(text_field):
                 year = int(match.group(1))

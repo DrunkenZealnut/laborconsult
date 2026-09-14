@@ -2156,6 +2156,143 @@ def t29_heading_levels() -> None:
           not re.compile(r"^(#{1,3.5})\s+(.+)$", re.M).search("## 제1장 총칙\n"))
 
 
+def t30_crawl_precedent_upload() -> None:
+    """크롤 판례 적재(crawl-precedent-production-ns) 계약.
+
+    이 코퍼스는 letec과 문서 구조가 달라(판결문 전문 `【주 문】`·`【이 유】`)
+    별도 경로를 쓴다. 막는 실패는 전부 **조용하다** — 예외도 로그도 없이
+    0건이 적재되거나 보일러플레이트가 검색 노이즈로 들어간다.
+    """
+    import inspect
+    import pinecone_upload_crawl_precedents as C
+    import pinecone_upload_court_precedents as P
+
+    MD = ("# 어느 판례\n\n| 항목 | 내용 |\n| 분류 | 근로기준 |\n"
+          "| 작성일 | 2020.01.16 |\n| 사건번호 | 2014다41520 |\n\n---\n\n"
+          "대법 2020.1.16. 선고 2014다41520\n\n"
+          "【원 고, 상고인】  원고 1외 15인\n\n"
+          "【피 고, 피상고인】  동건운수 주식회사\n\n"
+          "【주 문】\n\n상고를 모두 기각한다.\n\n"
+          "【이 유】\n\n휴일근로수당 가산 여부를 판단한다.\n")
+
+    body = C.extract_reasoning(MD)
+    # (a) 자간 공백 — 원문은 `【이 유】`다. `【이유】`만 찾으면 318건 전부
+    #     0건 매칭되고 그 실패는 조용하다.
+    check("T30-a 자간 공백 【이 유】 매칭", body is not None and "휴일근로수당" in body,
+          repr(body)[:60])
+    # (b)(e) 보일러플레이트 제외
+    for blk in ("원 고, 상고인", "피 고, 피상고인", "상고를 모두 기각"):
+        check(f"T30-b 보일러플레이트 제외: {blk[:12]}", blk not in (body or ""))
+
+    # (b) 후속 【】 블록 직전 절단 — 실측 3건에서만 차이가 나지만 그 3건이 규칙의 근거
+    tail = MD + "\n【원심판결】\n\n대전지방법원 2014.6.3. 선고\n"
+    body2 = C.extract_reasoning(tail)
+    check("T30-b2 【이 유】 뒤 블록 직전에서 절단",
+          "대전지방법원" not in (body2 or ""), repr(body2)[-60:])
+
+    # (c) 【이 유】 부재 → None (호출부가 집계 보고)
+    check("T30-c 【이 유】 부재 시 None",
+          C.extract_reasoning("# x\n\n---\n\n【주 문】\n\n기각\n") is None)
+
+    # (d)(e) 대상 선정이 아카이브 게이트를 읽는가 — 재구현하면 승인 절차를 우회한다
+    src = inspect.getsource(C)
+    check("T30-d 대상 선정이 documents.csv의 gate 열을 읽음",
+          'd["gate"] != "verbatim"' in src or "gate\"] != \"verbatim\"" in src)
+    check("T30-e 게이트 판정 재구현 없음(classify_gate_bucket 미사용)",
+          "classify_gate_bucket" not in src)
+
+    # (f) vector_id 접두사 분리 — 같으면 letec 원장·prune 범위와 섞인다
+    vid = f"crawlprec_{P.case_no_to_ascii('2014다41520')}_0"
+    check("T30-f vector_id 접두사가 letec과 분리",
+          vid.startswith("crawlprec_") and not vid.startswith("precedent_"), vid)
+    check("T30-f2 원장 ID 정규식이 그 접두사를 요구",
+          bool(C._LEDGER._id_re_for("2014다41520").match(vid)))
+
+    # (g) 사본 금지 — 원장을 만든 바로 그 함수여야 한다
+    check("T30-g case_no_to_ascii를 import(동일성)",
+          C.case_no_to_ascii is P.case_no_to_ascii)
+    check("T30-g2 split_by_size를 import(청킹 규약 공유)",
+          C.split_by_size is P.split_by_size)
+
+    # (h) 사장 NS 재발 방지
+    check("T30-h NAMESPACE == laborlaw-v2", C.NAMESPACE == "laborlaw-v2", C.NAMESPACE)
+    check("T30-h2 source_type이 기존 라벨 맵 값", C.SOURCE_TYPE == "precedent")
+
+    # (i)(j) 메타데이터 이중 필드 + chunk_index 연속
+    check("T30-i 메타에 text·chunk_text 양쪽 기록",
+          '"text": c["chunk_text"]' in src and '"chunk_text": c["chunk_text"]' in src)
+    doc = {"case_no": "2014다41520", "title": "t", "category": "근로기준",
+           "path": None}
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                     delete=False) as f:
+        f.write("# x\n\n---\n\n【이 유】\n\n" + ("가나다라마바사아자차. " * 400))
+        doc["path"] = f.name
+    try:
+        cs = C.chunk_doc(doc)
+        check("T30-j chunk_index가 0부터 연속",
+              [c["chunk_index"] for c in cs] == list(range(len(cs))) and len(cs) > 1,
+              [c["chunk_index"] for c in cs])
+        # 인용 화이트리스트가 읽는 것은 chunk_text다 — 전 청크에 번호가 있어야
+        # 2번째 이후 청크가 근거로 쓰일 때도 인용이 살아남는다.
+        check("T30-j2 chunk_text 전 청크에 사건번호 접두(인용 화이트리스트)",
+              all(c["chunk_text"].startswith("[2014다41520] ") for c in cs),
+              cs[-1]["chunk_text"][:30])
+        check("T30-j3 embed_text에도 사건번호 접두",
+              all(c["embed_text"].startswith("2014다41520") for c in cs))
+    finally:
+        os.unlink(doc["path"])
+
+
+def t31_citation_whitelist_meta() -> None:
+    """검색된 판례가 인용 가능 목록에 오르는 경로(citation-whitelist-meta).
+
+    막는 실패: **검색은 되는데 인용은 못 하는 상태.** 판시사항·판결요지는 자기
+    사건번호를 적지 않는 것이 보통이라, 본문 정규식만으로는 letec 6,440청크 중
+    6,060(94%)이 목록에 오르지 못했다(2026-09-14 실측). 그러면 LLM이 그 판례를
+    근거로 써도 환각으로 판정돼 `replace`가 지운다.
+    """
+    from app.core.citation_validator import (
+        extract_precedents_from_hits, validate_response_citations,
+        build_available_citations_text,
+    )
+
+    # 본문·제목에 번호가 없고 메타에만 있는 판례(letec의 전형)
+    hit = {"title": "임금", "chunk_text": "통상임금에 산입될 수 있는지 여부",
+           "case_no": "2000다15869"}
+    precs = extract_precedents_from_hits([hit])
+    check("T31-a 메타 case_no만 있어도 인용 목록 등재",
+          "2000다15869" in precs, list(precs))
+    check("T31-b 출처가 meta로 기록", precs.get("2000다15869", {}).get("source") == "meta")
+
+    # 회귀의 핵심 — 이 판례를 인용한 답변이 환각으로 지워지지 않아야 한다
+    res = validate_response_citations("대법원 2000다15869 판결에 따르면…", precs)
+    check("T31-c 메타 기반 인용이 환각으로 판정되지 않음",
+          res["hallucinated"] == [] and "2000다15869" in res["valid"], res)
+
+    # LLM에 주는 목록에도 실려야 실제로 인용된다
+    txt = build_available_citations_text([hit])
+    check("T31-d 인용 가능 목록 텍스트에 포함", "2000다15869" in txt)
+
+    # 기존 경로(본문·제목 파싱)는 그대로 살아 있어야 한다
+    old = extract_precedents_from_hits(
+        [{"title": "대법원 2014다41520 판결", "chunk_text": ""}])
+    check("T31-e 제목 파싱 경로 유지", "2014다41520" in old)
+
+    # case_no가 없는 hit(ctx 구크롤)에서 예외가 나지 않아야 한다
+    safe = extract_precedents_from_hits([{"title": "x", "chunk_text": "y"}])
+    check("T31-f case_no 부재 hit 안전", safe == {})
+
+    # rag.py가 case_no를 실제로 실어 보내는가 — 여기서 끊기면 위가 다 무의미하다
+    import inspect
+    import app.core.rag as R
+    src = inspect.getsource(R)
+    check("T31-g _query_namespaces가 hit에 case_no 적재",
+          '"case_no": meta.get("case_no"' in src)
+    check("T31-h format_pinecone_hits가 meta_list에 case_no 전달",
+          '"case_no": h.get("case_no"' in src)
+
+
 def _raises(fn, exc) -> bool:
     try:
         fn()
@@ -2181,7 +2318,8 @@ def main() -> int:
                t22_textbook_followup, t23_textbook_diversity_promotion,
                t24_legal_diversity_promotion, t25_court_ledger,
                t26_public_quota, t27_precedent_archive,
-               t28_corpus_path_normalization, t29_heading_levels):
+               t28_corpus_path_normalization, t29_heading_levels,
+               t30_crawl_precedent_upload, t31_citation_whitelist_meta):
         print(f"\n[{fn.__name__}]")
         fn()
 

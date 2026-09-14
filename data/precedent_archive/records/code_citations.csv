@@ -1,5 +1,5 @@
 ﻿case_no,file,line,context
-2006다49372,app/core/citation_validator.py,184,docstring
+2006다49372,app/core/citation_validator.py,192,docstring
 2006다49653,wage_calculator/calculators/insurance.py,58,comment
 2008다57852,wage_calculator/calculators/comprehensive.py,1,docstring
 2008다57852,wage_calculator/calculators/comprehensive.py,60,data
@@ -55,7 +55,7 @@
 2023다302579,wage_calculator_cli.py,248,cli_case
 2023다302838,app/core/citation_validator.py,53,comment
 2023다302838,app/core/citation_validator.py,69,docstring
-2023다302838,app/core/citation_validator.py,184,docstring
+2023다302838,app/core/citation_validator.py,192,docstring
 2023다302838,app/core/legal_api.py,592,docstring
 2023다302838,app/templates/prompts.py,412,data
 2023다302838,build_graph.py,156,data
