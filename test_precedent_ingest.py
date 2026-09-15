@@ -2318,9 +2318,25 @@ def t30_crawl_precedent_upload() -> None:
     check("T30-b2 【이 유】 뒤 블록 직전에서 절단",
           "대전지방법원" not in (body2 or ""), repr(body2)[-60:])
 
-    # (c) 【이 유】 부재 → None (호출부가 집계 보고)
+    # (c) 【이 유】 부재 → None + build_batch()의 스킵 집계(GAP-6, 2026-09-15).
+    # 집계는 main() 안에 있었으나 네트워크·API 키 없이 직접 부를 수 있도록
+    # build_batch()로 분리했다 — 그래서 "None"과 "집계" 둘 다 행위로 검증한다.
     check("T30-c 【이 유】 부재 시 None",
           C.extract_reasoning("# x\n\n---\n\n【주 문】\n\n기각\n") is None)
+
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                     delete=False) as f:
+        f.write("# x\n\n---\n\n【주 문】\n\n기각\n")
+        no_reason_path = f.name
+    try:
+        doc_bad = {"case_no": "9999다99999", "title": "t", "category": "근로기준",
+                   "path": no_reason_path}
+        built_b, skipped_b = C.build_batch([doc_bad])
+        check("T30-c2 build_batch()가 스킵을 집계(main() 없이 검증 가능)",
+              built_b == [] and skipped_b == ["9999다99999"], (built_b, skipped_b))
+    finally:
+        os.unlink(no_reason_path)
 
     # (d)(e) 저작권 경계 — **select_targets()를 실제로 호출해** 확인한다.
     #
@@ -2401,12 +2417,24 @@ def t30_crawl_precedent_upload() -> None:
     check("T30-h2 source_type이 기존 라벨 맵 값", C.SOURCE_TYPE == "precedent")
 
     # (i)(j) 메타데이터 이중 필드 + chunk_index 연속
-    # ⚠️ T30-i는 여전히 소스 대조다 — upsert 페이로드가 main() 안에서 인라인
-    #    조립돼 네트워크 없이 호출할 수 없기 때문이다. 저작권 경계(d·e)와 달리
-    #    이 실패의 대가는 검색 누락이지 저작물 노출이 아니라 수용한다.
-    src = inspect.getsource(C)
-    check("T30-i 메타에 text·chunk_text 양쪽 기록",
-          '"text": c["chunk_text"]' in src and '"chunk_text": c["chunk_text"]' in src)
+    # T30-i는 build_vector()를 직접 호출해 검증한다(GAP-7, 2026-09-15).
+    # upsert 페이로드 조립을 main()에서 분리해 네트워크 없이 부를 수 있게
+    # 했다 — 그전엔 소스 문자열 대조였고, 그 수용 사유가 코드 주석에만 있고
+    # Design 문서에는 없어 기록되지 않은 이탈이었다.
+    fake_doc = {"case_no": "2014다41520", "title": "t" * 250,
+                "category": "근로기준" * 10, "path": None}
+    fake_chunk = {"vector_id": "crawlprec_2014da41520_0", "chunk_index": 0,
+                  "chunk_text": "가" * 950, "embed_text": "x"}
+    vec = C.build_vector(fake_doc, fake_chunk, "2020.01.16" * 3, [0.0, 0.1])
+    check("T30-i 메타에 text·chunk_text 양쪽 기록(동일 값)",
+          vec["metadata"]["text"] == vec["metadata"]["chunk_text"]
+          == fake_chunk["chunk_text"][:900])
+    check("T30-i2 title·category·date 900/200/30/20자 절단 보존",
+          len(vec["metadata"]["title"]) == 200
+          and len(vec["metadata"]["category"]) == 30
+          and len(vec["metadata"]["date"]) == 20
+          and vec["id"] == fake_chunk["vector_id"])
+
     doc = {"case_no": "2014다41520", "title": "t", "category": "근로기준",
            "path": None}
     import tempfile
@@ -2538,10 +2566,14 @@ def t32_ledger_convergence() -> None:
         rev = [k for k in keys[:50] if A.reverse_case_key(k) is None]
         check(f"T32-c {label} 키가 reverse_case_key로 해석됨", not rev, rev[:3])
 
-    # 업로더가 그 규약을 쓰는지 — 여기서 어긋나면 다음 적재가 다시 한글 키를 쓴다
+    # 업로더가 그 규약을 쓰는지 — 여기서 어긋나면 다음 적재가 다시 한글 키를 쓴다.
+    # `groups[...] =` 리터럴로 고정하면 GAP-6이 그 할당문을 딕셔너리 컴프리헨션
+    # 으로 바꾸는 순간(2026-09-15) 동작은 그대로인데 문자열만 사라져 깨진다 —
+    # `case_no_to_ascii(doc["case_no"])` 호출 자체는 할당문·컴프리헨션 양쪽에
+    # 공통이므로 그 부분만 검사한다.
     usrc = inspect.getsource(C)
     check("T32-d 크롤 업로더가 ASCII 그룹 키 사용",
-          "groups[case_no_to_ascii(" in usrc)
+          'case_no_to_ascii(doc["case_no"])' in usrc)
     check("T32-e 그룹 정규식이 letec과 동일 계열(ASCII)",
           C._LEDGER._group_re.pattern == P._LEDGER._group_re.pattern,
           C._LEDGER._group_re.pattern)

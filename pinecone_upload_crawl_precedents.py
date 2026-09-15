@@ -193,6 +193,61 @@ def parse_date(md: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def build_batch(
+    targets: list[dict],
+) -> tuple[list[tuple[dict, list[dict], str]], list[str]]:
+    """대상 문서 전체를 청킹한다. → (성공 배치, 【이 유】 부재로 스킵된 사건번호)
+
+    `main()`에서 분리한 이유는 순수 함수라 네트워크·API 키 없이 직접 테스트할
+    수 있기 때문이다(T30-c) — 스킵 집계는 조용히 넘기면 안 된다. 크롤 형식이
+    바뀌면 0건 적재가 되는데, 그 실패는 예외 없이 성공 메시지와 구분되지
+    않는다.
+    """
+    built: list[tuple[dict, list[dict], str]] = []
+    skipped: list[str] = []
+    for doc in targets:
+        chunks = chunk_doc(doc)
+        if not chunks:
+            skipped.append(doc["case_no"])
+            continue
+        with open(doc["path"], encoding="utf-8") as f:
+            date = parse_date(f.read())
+        built.append((doc, chunks, date))
+    return built, skipped
+
+
+def build_vector(doc: dict, chunk: dict, date: str, embedding: list[float]) -> dict:
+    """청크 1건 + 임베딩 → Pinecone upsert 벡터 딕셔너리.
+
+    `main()`에서 분리한 이유는 네트워크 없이 메타데이터 구성을 직접 테스트할
+    수 있기 때문이다(T30-i) — `embedding`은 실제 임베딩값일 필요가 없다.
+    """
+    return {
+        "id": chunk["vector_id"],
+        "values": embedding,
+        "metadata": {
+            "source_type": SOURCE_TYPE,
+            "title": doc["title"][:200],
+            "section": "이유",
+            "case_no": doc["case_no"],
+            # doctype 전량 prec(법원 vs 헌재 구분)이라는 사실만으로는 심급이
+            # 정해지지 않는다 — 대법원 하드코딩의 근거는 적재 318건 실측이다:
+            # 사건부호 전량이 대법원형(다·두·도·재두)이고 본문 서두 법원명도
+            # 318/318이 '대법(원)'이다(2026-09-14). 향후 대상이 하급심을
+            # 포함하도록 확장되면 이 값을 `court_of(doc["case_no"])`로 바꿀 것.
+            "court": "대법원",
+            "date": date[:20],
+            "category": doc["category"][:30],
+            "chunk_index": chunk["chunk_index"],
+            # 양쪽을 채운다 — rag.py::_query_namespaces가 text/chunk_text
+            # 이중 폴백인 것은 NS에 두 스키마가 섞여 있기 때문이고,
+            # 한쪽만 채우면 content가 빈 채 흘러가 조용히 버려진다.
+            "chunk_text": chunk["chunk_text"][:900],
+            "text": chunk["chunk_text"][:900],
+        },
+    }
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -219,25 +274,15 @@ def main() -> None:
     print(f"대상: {len(targets)}건 (게이트 verbatim · 검색 불가)")
     print(f"{'=' * 62}\n")
 
-    groups: dict[str, list[str]] = {}
-    built: list[tuple[dict, list[dict], str]] = []
-    skipped: list[str] = []
-
-    for doc in targets:
-        chunks = chunk_doc(doc)
-        if not chunks:
-            skipped.append(doc["case_no"])
-            continue
-        with open(doc["path"], encoding="utf-8") as f:
-            date = parse_date(f.read())
-        groups[case_no_to_ascii(doc["case_no"])] = [c["vector_id"] for c in chunks]
-        built.append((doc, chunks, date))
+    built, skipped = build_batch(targets)
+    groups: dict[str, list[str]] = {
+        case_no_to_ascii(doc["case_no"]): [c["vector_id"] for c in chunks]
+        for doc, chunks, _ in built
+    }
 
     total = sum(len(c) for _, c, _ in built)
     print(f"문서 {len(built)}건 → 청크 {total}개")
     if skipped:
-        # 조용히 넘기지 않는다 — 크롤 형식이 바뀌면 0건 적재가 되고, 그 실패는
-        # 성공 메시지와 구분되지 않는다.
         print(f"⚠️  【이 유】 부재로 스킵: {len(skipped)}건 {skipped[:5]}")
 
     ids = [c["vector_id"] for _, cs, _ in built for c in cs]
@@ -271,25 +316,7 @@ def main() -> None:
             sys.exit(f"[오류] 임베딩 수 불일치: {len(embeddings)} != {len(cs)} "
                      f"({doc['case_no']}) — 중단, 재실행으로 재개")
         for c, emb in zip(cs, embeddings):
-            pending.append({
-                "id": c["vector_id"],
-                "values": emb,
-                "metadata": {
-                    "source_type": SOURCE_TYPE,
-                    "title": doc["title"][:200],
-                    "section": "이유",
-                    "case_no": doc["case_no"],
-                    "court": "대법원",
-                    "date": date[:20],
-                    "category": doc["category"][:30],
-                    "chunk_index": c["chunk_index"],
-                    # 양쪽을 채운다 — rag.py::_query_namespaces가 text/chunk_text
-                    # 이중 폴백인 것은 NS에 두 스키마가 섞여 있기 때문이고,
-                    # 한쪽만 채우면 content가 빈 채 흘러가 조용히 버려진다.
-                    "chunk_text": c["chunk_text"][:900],
-                    "text": c["chunk_text"][:900],
-                },
-            })
+            pending.append(build_vector(doc, c, date, emb))
         while len(pending) >= UPSERT_BATCH:
             index.upsert(vectors=pending[:UPSERT_BATCH], namespace=NAMESPACE)
             del pending[:UPSERT_BATCH]

@@ -47,6 +47,11 @@ inventory[case_no]: doc_crawl>0 AND vec_chunks==0 AND vec_ctx==0
 | letec 전문만 | 12 | `EMBED_SECTIONS` 규약의 의도된 결과 |
 | 이미 검색되는 crawl | 475 | 대상 아님 |
 
+[GAP-4, 2026-09-15] 네 수치는 **서로 다른 모집단** 기준이다 — `documents.csv` 전량(crawl 836건)과 직접 대조하면 editorial은 **363**, post는 **13**으로 더 크게 보이는데, 오독이 아니라 분모가 다르기 때문이다:
+- editorial 22 / post 0 — **미검색 crawl 340건**(2026-09-14 적재 전, §1.1 `unsearched` 집합) 기준. `documents.csv` 전량의 editorial 363·post 13 중 대부분은 이미 letec 등으로 검색 가능해 애초에 이 사이클의 후보군에 없었다.
+- 이미 검색되는 crawl 475 — `documents.csv`의 crawl 전량(815, 후속 재크롤로 지금은 836) 중 검색 가능(`vec_chunks>0` 또는 `vec_ctx>0`) 건수.
+- letec 전문만 12 — inventory의 `doc_letec>0 AND vec_chunks==0 AND vec_ctx==0` 기준(crawl과 무관한 별도 모집단).
+
 ---
 
 ## 2. 본문 추출 규칙
@@ -136,8 +141,14 @@ crawlprec_{case_key}_{chunk_idx}
   "title":       doc["title"][:200],
   "section":     "이유",            # 고정 — 이 코퍼스는 단일 섹션
   "case_no":     doc["case_no"],
-  "court":       "대법원",          # doctype 전량 prec
+  # [GAP-5, 2026-09-15] "doctype 전량 prec"은 법원/헌재 구분이지 대법원/하급심
+  # 구분이 아니라 이 하드코딩의 근거가 될 수 없다 — 실제 근거는 적재 318건
+  # 실측이다: 사건부호 전량이 대법원형(다163·두84·도70·재두1)이고 본문 서두
+  # 법원명도 318/318이 '대법(원)'이다. 향후 대상이 하급심을 포함하도록
+  # 확장되면 이 값을 실제 법원명 추출로 바꿀 것.
+  "court":       "대법원",
   "date":        메타표 '작성일',
+  "category":    doc["category"][:30],  # [GAP-9] 분류(근로기준/노동조합/산재/비정규직) 보존. §8과 정합
   "chunk_index": int,
   "chunk_text":  f"[{case_no}] {text}"[:900],
   "text":        동일,               # 이중 필드 — rag.py의 폴백 규약
