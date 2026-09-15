@@ -287,13 +287,58 @@ def test_conflict_resolver() -> None:
     print("  ✅ conflict_resolver: 동일 조항 겹침 시에만 우선순위 주석")
 
 
-def test_nlrc_bundle() -> None:
-    from app.core.nlrc_cases import _load_bundle
+def test_legal_api_nlrc() -> None:
+    """NLRC XML 파싱 — 2026-09-15 실제 프로브로 받은 XML 그대로(추측 데이터 아님)."""
+    import xml.etree.ElementTree as ET
+    from app.core import legal_api as L
 
-    cases = _load_bundle()
-    assert len(cases) >= 300, f"번들 로드 실패 또는 데이터 축소: {len(cases)}건"
-    assert "제목" in cases[0], cases[0].keys()
-    print(f"  ✅ NLRC 번들 로더: {len(cases)}건 (네트워크 0회)")
+    search_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><Nlrc>'
+        '<nlrc id="1"><결정문일련번호>15255</결정문일련번호>'
+        '<제목><![CDATA[○ ○ ○ 부당해고 구제신청]]></제목>'
+        '<사건번호>2016부해OOO</사건번호><등록일>2016.05.09</등록일></nlrc></Nlrc>'
+    )
+    detail_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><NlrcService>'
+        '<결정문일련번호>15255</결정문일련번호><기관명>노동위원회</기관명>'
+        '<사건번호>2016부해OOO</사건번호><자료구분>부당해고</자료구분>'
+        '<담당부서>충남지방노동위원회</담당부서><등록일>2016.5.9.</등록일>'
+        '<제목><![CDATA[○ ○ ○ 부당해고 구제신청]]></제목><내용></내용>'
+        '<판정사항><![CDATA[법인등기부등본 상 분사무소...]]></판정사항>'
+        '<판정요지><![CDATA[○ ○ ○는 법인등기부등본이나...]]></판정요지>'
+        '<판정결과><![CDATA[각하]]></판정결과></NlrcService>'
+    )
+    root = ET.fromstring(search_xml)
+    el = next(root.iter("nlrc"))
+    assert L._el_text(el, "결정문일련번호") == "15255"
+    assert L._el_text(el, "사건번호") == "2016부해OOO"  # 마스킹 — 표시 금지 확인용
+
+    droot = ET.fromstring(detail_xml)
+    assert (droot.findtext("판정사항") or "").strip().startswith("법인등기부등본")
+    assert (droot.findtext("판정결과") or "").strip() == "각하"
+    print("  ✅ NLRC XML 파싱: 검색·상세 필드 추출 확인")
+
+
+def test_legal_api_nlrc_cache_key() -> None:
+    import inspect
+    from app.core import legal_api as L
+
+    src = inspect.getsource(L.fetch_nlrc_detail)
+    assert 'f"nlrc_{decision_id}"' in src, "캐시 키가 결정문일련번호 기반이 아님"
+    assert '["사건번호"]' not in src and "case_no" not in src.split("def ")[1], (
+        "fetch_nlrc_detail이 마스킹된 사건번호를 반환값에 담고 있음")
+    print("  ✅ NLRC 캐시 키: 마스킹 안 된 결정문일련번호 기반")
+
+
+def test_pipeline_nlrc_gate() -> None:
+    """odcloud_api_key가 아니라 law_api_key로 게이트하는지."""
+    import inspect
+    from app.core import pipeline as P
+
+    src = inspect.getsource(P)
+    assert "config.odcloud_api_key" not in src, "구 odcloud 게이트가 남아있음"
+    assert "fetch_relevant_nlrc" in src, "신규 함수가 배선되지 않음"
+    print("  ✅ 파이프라인: NLRC 게이트가 law_api_key로 교체됨")
 
 
 def test_pipeline_helpers() -> None:
@@ -1144,7 +1189,9 @@ def main() -> None:
     test_colloquial_fallback_only_wiring()
     test_merge_search_queries()
     test_conflict_resolver()
-    test_nlrc_bundle()
+    test_legal_api_nlrc()
+    test_legal_api_nlrc_cache_key()
+    test_pipeline_nlrc_gate()
     test_pipeline_helpers()
     test_session_cache_scope()
     test_analysis_schema()

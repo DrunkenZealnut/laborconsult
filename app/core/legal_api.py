@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -1033,3 +1034,142 @@ def fetch_relevant_precedents(
 
     formatted = "\n\n---\n\n".join(texts[k] for k in sorted(texts))
     return formatted, meta_list
+
+
+# ── NLRC 판정문 검색·조회 ─────────────────────────────────────────────────────
+# search_precedent/fetch_precedent/fetch_relevant_precedents(위)를 target="nlrc"로
+# 그대로 미러링한다(nlrc-decisions-corpus 설계 §2). 사건번호가 부분 마스킹돼
+# 있어(예: "2016부해OOO") 인용·캐시 키로 쓸 수 없다 — 캐시 키는 대신 고유한
+# 결정문일련번호를 쓰고, 포맷 함수는 사건번호 필드를 아예 노출하지 않는다.
+
+def search_nlrc(query: str, api_key: str, max_results: int = 3) -> list[dict]:
+    """NLRC 판정문 검색 → [{id, title, case_no, date}]. 캐시 없음, 매번 라이브."""
+    if _circuit_check():
+        return []
+    try:
+        resp = _http.get(LAW_SEARCH_URL, params={
+            "OC": api_key, "target": "nlrc", "type": "XML",
+            "query": query, "display": str(max_results),
+        }, timeout=LAW_SEARCH_TIMEOUT)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        results = []
+        for el in root.iter("nlrc"):
+            decision_id = _el_text(el, "결정문일련번호")
+            if not decision_id:
+                continue
+            results.append({
+                "id": int(decision_id),
+                "title": _el_text(el, "제목") or "",
+                "case_no": _el_text(el, "사건번호") or "",  # 마스킹됨 — 표시 금지
+                "date": _el_text(el, "등록일") or "",
+            })
+        _circuit_record_success()
+        return results
+    except Exception as e:
+        logger.warning("NLRC 검색 실패 (%s): %s", query, e)
+        _circuit_record_failure()
+        return []
+
+
+def fetch_nlrc_detail(decision_id: int, api_key: str) -> dict | None:
+    """결정문 1건 상세 → {category, dept, date, gist, result}. 3단 캐시.
+
+    캐시 키는 결정문일련번호(마스킹되지 않은 고유 숫자) 기반이다 — 사건번호는
+    마스킹돼 있어 키로 쓸 수 없다. L1/L2는 str 계약이라 다중 필드를 JSON으로
+    직렬화해 저장한다(L2 law_article_cache.content는 TEXT — 스키마 확인됨).
+    """
+    cache_key = f"nlrc_{decision_id}"
+
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return json.loads(cached)
+
+    l2_cached = _l2_cache_get(cache_key)
+    if l2_cached is not None:
+        _cache_set(cache_key, l2_cached)
+        return json.loads(l2_cached)
+
+    if _circuit_check():
+        return None
+
+    try:
+        resp = _http.get(LAW_SERVICE_URL, params={
+            "OC": api_key, "target": "nlrc", "ID": str(decision_id), "type": "XML",
+        }, timeout=LAW_SERVICE_TIMEOUT)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+
+        gist = "\n".join(
+            t for t in (
+                (root.findtext("판정사항") or "").strip(),
+                (root.findtext("판정요지") or "").strip(),
+            ) if t
+        )
+        result = (root.findtext("판정결과") or "").strip()
+        if not gist and not result:
+            _circuit_record_success()
+            return None
+
+        record = {
+            "category": (root.findtext("자료구분") or "").strip(),
+            "dept": (root.findtext("담당부서") or "").strip(),
+            "date": (root.findtext("등록일") or "").strip(),
+            "gist": gist,
+            "result": result,
+        }
+        serialized = json.dumps(record, ensure_ascii=False)
+        _cache_set(cache_key, serialized)
+        _l2_cache_set(cache_key, "", None, serialized, "nlrc")
+        _circuit_record_success()
+        return record
+    except Exception as e:
+        logger.warning("NLRC 상세 조회 실패 (ID=%s): %s", decision_id, e)
+        _circuit_record_failure()
+        return None
+
+
+def fetch_relevant_nlrc(query: str, api_key: str | None,
+                        max_results: int = 3) -> str | None:
+    """키워드로 NLRC 판정문을 검색+조회해 포맷된 텍스트로 반환.
+
+    fetch_relevant_precedents()와 같은 오케스트레이션이나 meta_list는 반환하지
+    않는다 — pipeline.py의 소비처(_build_sources_payload/_citation_source_hits)가
+    nlrc_text를 불투명 텍스트 블록으로만 다뤄 개별 판정 메타가 불필요하다.
+    사건번호는 마스킹돼 있어 헤더에 담당부서·자료구분·날짜만 쓴다.
+    """
+    if not api_key or not query:
+        return None
+    t0 = time.time()
+
+    results = search_nlrc(query, api_key, max_results=max_results)
+    if not results:
+        return None
+
+    parts: dict[int, str] = {}
+
+    def _fetch_one(idx: int, r: dict) -> tuple[int, str | None]:
+        detail = fetch_nlrc_detail(r["id"], api_key)
+        if not detail:
+            return idx, None
+        header = (f"[중앙노동위원회 판정] {detail['category']} | "
+                  f"{detail['dept']} | {detail['date']}")
+        body = detail["gist"]
+        if detail["result"]:
+            body += f"\n판정결과: {detail['result']}"
+        return idx, f"{header}\n{body}"
+
+    with ThreadPoolExecutor(max_workers=min(len(results), 5)) as pool:
+        futures = {pool.submit(_fetch_one, i, r): i for i, r in enumerate(results)}
+        for fut in as_completed(futures):
+            idx, text = fut.result()
+            if text:
+                parts[idx] = text
+
+    elapsed = time.time() - t0
+    logger.info("NLRC 라이브 검색 완료: query=%r, %d/%d건 / %.2fs",
+                query[:30], len(parts), len(results), elapsed)
+
+    if not parts:
+        return None
+    return "\n\n---\n\n".join(parts[k] for k in sorted(parts))

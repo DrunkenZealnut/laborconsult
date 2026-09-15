@@ -32,13 +32,12 @@ from app.core.employment_centers import find_center, format_center, format_cente
 from app.core.comwel_offices import find_office, format_office, format_office_guide
 from app.core.legal_api import (
     fetch_relevant_articles, fetch_relevant_precedents,
-    search_precedent_multi, fetch_precedent_details,
+    search_precedent_multi, fetch_precedent_details, fetch_relevant_nlrc,
 )
 from app.core.precedent_query import build_precedent_queries
 from app.core.query_decomposer import (
     decompose_query, classify_complexity, COMPLEXITY_PARAMS, QUERY_MERGE_HEADROOM,
 )
-from app.core.nlrc_cases import search_nlrc_with_details
 from app.core.rag import search_pinecone_multi, search_hybrid, format_pinecone_hits, rerank_results
 from app.core.legal_consultation import process_consultation
 from app.core.citation_validator import (
@@ -1811,9 +1810,9 @@ def process_question(query: str, session: Session, config: AppConfig,
         except Exception as e:
             logger.warning("판례 검색 실패 (무시하고 진행): %s", e)
 
-    # 2-1c. 중앙노동위원회 주요판정사례 검색 (odcloud API + 법제처 보강)
+    # 2-1c. 중앙노동위원회 주요판정사례 검색 (법제처 nlrc 라이브 조회)
     nlrc_text = None
-    if analysis and config.odcloud_api_key:
+    if analysis and config.law_api_key:
         try:
             nlrc_keywords = getattr(analysis, "precedent_keywords", None) or []
             # consultation_topic에서 추가 키워드 추출
@@ -1821,11 +1820,12 @@ def process_question(query: str, session: Session, config: AppConfig,
             if topic:
                 nlrc_keywords = list(nlrc_keywords) + [topic.replace("·", " ")]
             if nlrc_keywords:
-                nlrc_text = search_nlrc_with_details(
-                    nlrc_keywords,
-                    odcloud_api_key=config.odcloud_api_key,
-                    law_api_key=config.law_api_key,
-                    max_results=3,
+                # search_nlrc()는 단일 질의 문자열 계약(court precedent와 동일).
+                # 과다 키워드는 fuzzy 검색을 흐린다 — build_precedent_queries()와
+                # 같은 절제로 상위 3개만 결합한다.
+                nlrc_query = " ".join(nlrc_keywords[:3])
+                nlrc_text = fetch_relevant_nlrc(
+                    nlrc_query, config.law_api_key, max_results=3,
                 )
                 if nlrc_text:
                     logger.info("NLRC 판정사례 검색 완료")
