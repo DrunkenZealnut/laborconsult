@@ -2429,6 +2429,31 @@ def t30_crawl_precedent_upload() -> None:
     finally:
         os.unlink(doc["path"])
 
+    # (k) 대량 삭제 가드 탈출구(GAP-3, 2026-09-15). "최초 적재라 이전 집합이
+    # 없다"는 근거가 만료됐다 — 원장에 318그룹·2,403 ID가 실재한다. 청킹
+    # 규격을 의도적으로 바꿔 재실행하면 탈출구가 없으면 sys.exit로 막힌다.
+    #
+    # **--limit과 동시 사용을 막지 않는다** — court_precedents.py를 그대로
+    # 미러링한다. textbook의 --book/--all과 다른 클래스다: 원장 그룹 키가
+    # 사건번호라(vector_ledger.py) previous가 이번 실행이 다룬 그룹에만
+    # 스코프되고, --limit은 스코프를 좁힐 뿐이라 그 바깥 그룹은 원리적으로
+    # 삭제 후보가 될 수 없다(textbook의 --all은 반대로 스코프를 넓힌다).
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    def _run(*argv):
+        return subprocess.run(
+            [sys.executable, "pinecone_upload_crawl_precedents.py", *argv],
+            capture_output=True, text=True, cwd=here)
+
+    r = _run("--limit", "5", "--allow-large-prune", "--dry-run")
+    check("T30-k --limit과 --allow-large-prune 동시 사용이 거부되지 않음",
+          r.returncode == 0, r.stderr[-200:])
+
+    src = inspect.getsource(C)
+    check("T30-k2 allow_large가 실제로 prune()에 전달됨(플래그만 있고 무배선 방지)",
+          "allow_large=args.allow_large_prune" in src)
+
 
 def t31_citation_whitelist_meta() -> None:
     """검색된 판례가 인용 가능 목록에 오르는 경로(citation-whitelist-meta).

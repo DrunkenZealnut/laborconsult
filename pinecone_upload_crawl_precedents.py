@@ -26,6 +26,7 @@ documents.csv를 읽는다. 재구현하면 2026-09-01 승인 절차 밖에서 e
   python3 pinecone_upload_crawl_precedents.py --dry-run   # 청킹 검증
   python3 pinecone_upload_crawl_precedents.py             # 적재
   python3 pinecone_upload_crawl_precedents.py --limit 20  # 부분 실행(재개)
+  python3 pinecone_upload_crawl_precedents.py --allow-large-prune  # ID 규격을 의도적으로 바꿨을 때만
 """
 
 from __future__ import annotations
@@ -198,8 +199,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="크롤 판례 → laborlaw-v2 적재")
     ap.add_argument("--dry-run", action="store_true", help="청킹만 수행")
     ap.add_argument("--limit", type=int, help="처리할 최대 문서 수(재개 지원)")
-    # --allow-large-prune 없음: 최초 적재라 이전 집합이 없고, 규격 변경 시에만
-    # 필요한 플래그를 미리 만들면 오용 경로만 생긴다.
+    ap.add_argument("--allow-large-prune", action="store_true",
+                    help="고아 벡터가 현재 청크의 50%%를 넘어도 삭제 진행 "
+                         "(ID 규격을 의도적으로 바꿨을 때만)")
+    # --limit과 동시 사용을 막지 않는다 — court_precedents.py와 같은 이유다.
+    # 원장 그룹 키가 사건번호라(vector_ledger.py 모듈 docstring) previous는
+    # `{g: ... for g in groups}`로 **이번 실행이 실제로 다룬 그룹에만** 스코프된다.
+    # --limit은 스코프를 좁힐 뿐이므로 그 바깥 그룹은 원리적으로 삭제 후보가 될
+    # 수 없다 — textbook의 --book/--all(스코프를 넓히는 조합)과는 다른 클래스다.
     args = ap.parse_args()
 
     targets = select_targets()
@@ -294,7 +301,8 @@ def main() -> None:
 
     # 전량 성공 후에만 정리 — upsert는 덮어쓸 뿐 지우지 않는다.
     _LEDGER.prune(groups, previous, index, NAMESPACE,
-                  batch_size=UPSERT_BATCH, label="crawl precedent")
+                  batch_size=UPSERT_BATCH, label="crawl precedent",
+                  allow_large=args.allow_large_prune)
     _LEDGER.finalize(groups)
 
     print(f"\n{'=' * 62}")
