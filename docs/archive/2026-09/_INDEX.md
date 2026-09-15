@@ -5,6 +5,7 @@
 | precedent-archive | 97% | 2026-09-02 | [Plan](precedent-archive/precedent-archive.plan.md), [Design](precedent-archive/precedent-archive.design.md), [Analysis](precedent-archive/precedent-archive.analysis.md), [Report](precedent-archive/precedent-archive.report.md) |
 | yeoncha-corpus-cycle | 90% | 2026-09-06 | [Report](yeoncha-corpus-cycle/yeoncha-corpus-cycle.report.md) ※ |
 | deferred-items-batch | 미측정 ※※ | 2026-09-07 | [Report](deferred-items-batch/deferred-items-batch.report.md) ※ |
+| crawl-precedent-production-ns | 94.8% | 2026-09-15 | [Plan](crawl-precedent-production-ns/crawl-precedent-production-ns.plan.md), [Design](crawl-precedent-production-ns/crawl-precedent-production-ns.design.md), [Analysis](crawl-precedent-production-ns/crawl-precedent-production-ns.analysis.md), [Report](crawl-precedent-production-ns/crawl-precedent-production-ns.report.md) |
 
 ※ **두 사이클 모두 Report만 있다.** 신규 Plan/Design 없이 기존 설계(또는 직전
 사이클의 이월 표)를 입력으로 삼은 증분 사이클이라 그 문서들이 애초에 생성되지
