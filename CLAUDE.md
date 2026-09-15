@@ -35,7 +35,8 @@ python3 pinecone_upload_contextual.py --source 노무사   # '노무사 상담' 
 #   **통째로** 삭제해 공유 인덱스의 타 프로젝트 데이터(139,776벡터)까지 파괴했고,
 #   무지정 upsert가 반도체 프로젝트의 기본 네임스페이스에 썼다. 사유는 각 파일 docstring.
 # pinecone_upload_legal.py / _contextual의 판례·행정해석·훈령 소스 — 사장 NS에 적재된다
-#   (실행 시 경고 배너 출력). 판례는 pinecone_upload_court_precedents.py를 쓸 것.
+#   (실행 시 경고 배너 출력). letec(판시사항/판결요지) 판례는 pinecone_upload_court_precedents.py,
+#   크롤 전문(【주 문】·【이 유】) 판례는 pinecone_upload_crawl_precedents.py를 쓸 것.
 python3 upload_new_precedents.py  # 신규 판례 증분 업로드
 
 # 법제처 API 판례 보강 (사건번호 목록 → 원문 수집 → 쟁점 태깅 → 업로드)
@@ -47,6 +48,11 @@ python3 enrich_court_precedents.py             # 교재 목차에서 '관련 쟁
 python3 pinecone_upload_court_precedents.py --dry-run  # 청킹 검증
 python3 pinecone_upload_court_precedents.py    # laborlaw-v2 업로드 (고아 벡터 자동 정리)
 python3 pinecone_upload_court_precedents.py --allow-large-prune  # ID 규격을 의도적으로 바꿨을 때만
+# 크롤 판례(전문 형식 — letec과 문서구조가 달라 EMBED_SECTIONS가 0건 매칭하는 대상 전용)
+python3 pinecone_upload_crawl_precedents.py --dry-run   # 청킹 검증
+python3 pinecone_upload_crawl_precedents.py             # laborlaw-v2 업로드(고아 벡터 자동 정리)
+python3 pinecone_upload_crawl_precedents.py --limit 20  # 부분 실행(재개 지원)
+python3 pinecone_upload_crawl_precedents.py --allow-large-prune  # ID 규격을 의도적으로 바꿨을 때만(--limit과 동시 사용 가능 — 원장이 사건번호 그룹 스코프라 court_precedents.py와 동일)
 python3 sync_overlap_precedents.py --emit-targets      # 교재∩기존코퍼스 겹침 대상 CSV 생성 (교재 원본 필요, 로컬 전용)
 python3 sync_overlap_precedents.py --delete-ctx --dry-run  # 대체 성공분의 ctx 구벡터 삭제 (실행 전 반드시 dry-run)
 python3 test_precedent_ingest.py               # 오프라인 회귀 테스트 (API 키 불요)
@@ -289,7 +295,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - `crawl_bestqna.py` → `output/` (BEST Q&A, ~274 posts)
 - `crawl_qna.py` → `output_qna/` (general Q&A, ~10K posts, resumable via saved file detection)
 - `crawl_2025.py`, `crawl_imgum.py`, `crawl_boards.py` — variant crawlers for other board sections (2025 Q&A, 임금/근로감독 자료, 자료실)
-- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`, `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`, `output_판례_보강/`, `output_노동법교재/`(해설서 원본 + 수집 대상 CSV + `_uploaded_ids.json`)
+- Additional corpus dirs (untracked, fed by their own crawl/metadata/upload scripts): `output_법원 노동판례/`(크롤 판례 전문 + `pinecone_upload_crawl_precedents.py`의 `_uploaded_ids.json`), `output_노동부 행정해석/`, `output_훈령예규고시지침/`, `output_자료실/`, `nodong_counsel/`, `output_legal_cases/`, `output_판례_보강/`, `output_노동법교재/`(해설서 원본 + 수집 대상 CSV + `_uploaded_ids.json`)
 - 코퍼스 소스는 세 계열로 나뉜다 — **게시판 크롤 계열**(`output/`·`output_2025/`·`output_imgum/`)은 `crawl_*` → `generate_metadata_*` → `pinecone_upload_*` 3종 세트를 유지하고, **문서·API 계열**(판례·행정해석·훈령예규·counsel·`output_판례_보강/`)은 metadata.json 단계 없이 수집 스크립트 + `pinecone_upload_*` 2종이 관례다(upload가 `.md`를 직접 파싱). **해설서 계열**(`output_노동법교재/`)은 marker로 변환한 `.md`를 `pinecone_upload_textbook.py`의 `BOOKS` 레지스트리에 등록하는 것으로 끝난다 — 수집 스크립트조차 없다. 원본 스캔이 여러 파일로 쪼개진 서적은 `Book.extra_parts`로 조각을 이어붙이며(조각마다 속표지 위치가 달라 `body_start`를 따로 갖는다), **조각은 뒤에만 추가할 것** — 중간에 끼우면 `section_idx`가 통째로 밀려 기존 `chunk_id`가 전부 바뀌고 이전 벡터가 고아로 남는다. 분할 서적에서 조심할 것 셋(전부 조용히 실패한다):
   - **폐기율 게이트는 조각별로 걸어야 한다**(`check_part_drop_rates`). 병합 합계는 한 조각의 손상을 조각 수만큼 희석한다 — 실측(gaebyeol) 조각별 2.05/2.06/5.30%가 합계 2.96%로 뭉쳤고, 3조각이면 한 조각이 30% 망가져도 10% 상한을 통과한다. 조각 길이를 함께 출력하는 이유는 마커가 **엉뚱한 위치에서 맞는** 경우(페이지 오프셋 착오) 폐기율이 오히려 좋아져 어떤 비율 게이트로도 못 잡기 때문이다.
   - **`body_start`를 빈 문자열로 두지 말 것.** `str.find("")`는 `-1`이 아니라 `0`을 반환해 `marker_pos == -1` 가드를 그냥 통과하고, 표지·목차가 절단 없이 본문에 들어간다. 그 잡음은 헤딩이 아니라 표 텍스트라 폐기율에도 안 걸린다. `BookPart.__post_init__`이 생성 시점에 막는다.
@@ -325,7 +331,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - 롤백은 `output_노동법교재/_uploaded_ids.json`의 ID 목록으로만 가능하다(Pinecone Serverless는 메타데이터 필터 삭제 미지원). 이 파일을 지우면 되돌릴 방법이 사실상 없다. 기록은 **upsert보다 먼저** 쓰고 기존 기록과 합집합을 취한다 — 중간에 죽으면 적재분이 추적에서 빠지고, 존재하지 않는 ID의 delete는 무해하므로 상위집합이 안전한 방향이다. **원장 구현은 `vector_ledger.py`가 단일 출처**이고 판례 코퍼스도 같은 것을 쓴다(아래).
 - **고아 벡터 정리(원장)는 `laborlaw-v2`에 쓰는 모든 스크립트에 필요하다** — 판례 쪽에는 없었다(외부감사 2026-08-23 H3). `upsert`는 덮어쓸 뿐 지우지 않으므로, 한 문서의 청크 수가 **줄면**(재수집·`enrich_court_precedents.py` 재태깅·`EMBED_SECTIONS` 조정) 이전 벡터가 프로덕션 검색 대상 NS에 남아 결과에 계속 섞인다 — 어떤 게이트에도 안 걸리는 조용한 오염이다. 구현 시 주의 셋:
   - **그룹 키는 "한 번의 실행이 항상 통째로 다루는 단위"여야 한다.** prune은 차집합을 지우므로 그룹을 넓게 잡으면 **부분 실행이 나머지를 고아로 오판한다** — court는 `--limit`이 있어 코퍼스 전체를 한 그룹으로 두면 `--limit 20`이 나머지 수천 건을 삭제 대상으로 계산한다. textbook은 `book_id`, court는 **사건번호**가 그 단위다. 회귀는 T25-c.
-  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 둘 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다.
+  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json` / `output_법원 노동판례/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 셋 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다.
   - **대량 삭제 가드는 합계로 판정한다.** 그룹별로 걸면 청크 1개짜리 판례에서 1건만 줄어도 50%를 넘어 상시 발동하고, 경고가 일상이 되면 아무도 읽지 않는다.
   - ⚠️ **`pinecone_upload_contextual.py`에는 아직 원장이 없다**(알려진 갭). 소스별로 ID 생성 경로가 갈려(`process_source`는 `extract_post_id` 기반, `process_counsel_source`는 `ctx_counsel_{fk_hash}_{seq}` 기반) 그룹 키를 하나로 정의할 수 없기 때문이다. **청킹 규칙이나 `extract_post_id`를 바꾼 뒤 `qa`·`counsel`에 재업로드할 때는 구 ID를 사전에 명시 삭제할 것** — `--reset`은 NS 전체(49,842벡터)를 지우므로 부분 정리 수단이 아니다. 절차는 그 파일 상단 주석에 있다.
 - **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.

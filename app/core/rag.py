@@ -80,6 +80,11 @@ def _query_namespaces(
                     "content": meta.get("text") or meta.get("chunk_text", ""),
                     "source_type": meta.get("source_type", ""),
                     "book_id": meta.get("book_id", ""),   # 해설서 인용 가드(G4) 키
+                    # 인용 화이트리스트 키 — 판례 본문·제목에 자기 사건번호가
+                    # 없는 경우가 많아(실측 letec 6,440청크 중 94%) 번호를
+                    # 정규식으로만 뽑으면 **검색된 판례를 인용할 수 없다.**
+                    # 메타에는 법제처·아카이브가 확인한 번호가 이미 있다.
+                    "case_no": meta.get("case_no", ""),
                     "id": m.id,
                 })
         except Exception as e:
@@ -970,6 +975,10 @@ def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
                 "source_type": h["source_type"],
                 "score": h["score"],
                 "chunk_text": content,   # 인용 목록/검증이 본문에서 판례번호를 파싱하도록 동봉(R-1b)
+                # 본문 파싱만으로는 부족하다 — 판시사항·판결요지는 자기 사건번호를
+                # 적지 않는 것이 보통이라 letec 6,440청크 중 94%가 인용 목록에
+                # 오르지 못했다(2026-09-14 실측). 메타의 확인된 번호를 함께 넘긴다.
+                "case_no": h.get("case_no", ""),
             })
 
     if dropped_budget:

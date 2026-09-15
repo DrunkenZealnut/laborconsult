@@ -2156,6 +2156,429 @@ def t29_heading_levels() -> None:
           not re.compile(r"^(#{1,3.5})\s+(.+)$", re.M).search("## 제1장 총칙\n"))
 
 
+# ── T30 게이트 경계 픽스처 ───────────────────────────────────────────────────
+
+# 아카이브 산출물의 **실제 열 이름·순서**. 실물과 어긋나면 select_targets()가
+# KeyError로 죽으므로, 픽스처만 통과하고 운영에서 실패하는 상태가 되지 않는다.
+_T30_DOC_COLS = ["doc_id", "source", "case_no", "case_src", "doctype", "category",
+                 "category_src", "post_id", "title", "gate", "bundled"]
+_T30_INV_COLS = ["case_no", "case_alias", "case_key", "court", "decided", "title",
+                 "doc_letec", "doc_crawl", "vec_chunks", "vec_ctx", "vec_dead",
+                 "cited_code", "cited_textbook", "not_found", "overlap", "note"]
+
+# 게이트 경계 픽스처. `body`는 **내용만 보고 판정했을 때**의 분류이고 `gate`는
+# documents.csv가 승인한 분류다 — 둘을 일부러 어긋나게 둔 행이 2010다99279(전문
+# 형식인데 editorial)와 2018다88888(발췌 형식인데 verbatim)이다. select_targets()가
+# 내용을 읽는 순간 이 두 행에서 결과가 갈리므로, 게이트 판정을 어떤 이름으로
+# 재구현하든(=식별자 grep으로는 못 잡는 우회) 이 픽스처가 잡는다.
+_T30_GATE_ROWS = [
+    {"case_no": "2014다41520", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": True,
+     "why": "기준선 — verbatim · 문서 보유 · 검색 불가"},
+    {"case_no": "2010다99279", "source": "crawl", "gate": "editorial",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "저작권 경계 — 본문이 전문 형식이어도 CSV가 editorial이면 제외"},
+    {"case_no": "2011다11111", "source": "crawl", "gate": "post",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "editorial", "nfd": False, "expect": False,
+     "why": "post는 판결문이 아니라 게시물"},
+    {"case_no": "2012다22222", "source": "letec", "gate": "exempt",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "letec/exempt — 실데이터 분포(gate·source 양쪽으로 제외)"},
+    # source 조건 단독 고정. 실데이터에 letec/verbatim은 없지만(전량 exempt),
+    # 게이트 규칙이 바뀌면 생길 수 있고 그때 이 스크립트가 집어가면 같은 판례가
+    # `precedent_`(letec)와 `crawlprec_` 두 접두사로 **이중 적재**된다. 다른
+    # 조건이 전부 통과하도록(doc_crawl=1·미검색) 만들어 source만이 제외 사유다.
+    {"case_no": "2019다99999", "source": "letec", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "letec은 verbatim이어도 별도 스크립트 소관 — source 조건 단독"},
+    {"case_no": "2013다33333", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "5", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "이미 laborlaw-v2에 적재됨(선정 술어 수렴, T32와 짝)"},
+    {"case_no": "2015다55555", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "3", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "ctx NS로 이미 검색 도달"},
+    {"case_no": "2016다66666", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "0", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "크롤 문서 미보유(doc_crawl=0)"},
+    {"case_no": "2017다77777", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": False,
+     "body": "verbatim", "nfd": False, "expect": False,
+     "why": "인벤토리에 행이 없음"},
+    {"case_no": "2018다88888", "source": "crawl", "gate": "verbatim",
+     "doc_crawl": "1", "vec_chunks": "0", "vec_ctx": "0", "inv": True,
+     "body": "editorial", "nfd": True, "expect": True,
+     "why": "본문이 발췌 형식이어도 CSV가 verbatim이면 포함 + NFD 파일명 해석"},
+]
+
+
+def _t30_body(case_no: str, kind: str) -> str:
+    """`kind`가 내용 기반 분류(archive_precedents.classify_gate_bucket 기준)다.
+
+    verbatim: 【주 문】·【이 유】 + `선고 {사건번호}` → 자동 분류도 verbatim
+    editorial: 마커 없음 + ※ 편집 고지 → 자동 분류도 editorial
+    """
+    head = (f"# 테스트 판례 {case_no}\n\n| 항목 | 내용 |\n| 분류 | 근로기준 |\n"
+            f"| 작성일 | 2020.01.16 |\n| 사건번호 | {case_no} |\n\n---\n\n")
+    if kind == "verbatim":
+        return (head + f"대법원 2020. 1. 16. 선고 {case_no} 판결\n\n"
+                "【원 고, 상고인】  원고 1\n\n【피 고, 피상고인】  피고 주식회사\n\n"
+                "【주 문】\n\n상고를 기각한다.\n\n"
+                "【이 유】\n\n상고이유를 판단한다.\n")
+    return (head + "[판시사항]\n\n징계처분이 재량권을 남용한 경우의 판단 기준.\n\n"
+            "※ 이 자료는 편집·정리한 것입니다.\n")
+
+
+def _t30_gate_fixture(tmp: str) -> set[str]:
+    """게이트 경계 픽스처(아카이브 산출물 + 실문서)를 `tmp`에 만든다. → 기대 집합
+
+    **제외 대상에도 실파일을 만든다.** 게이트 필터가 회귀해 editorial이 통과하면
+    `_resolve()`가 파일 부재로 `sys.exit`하고, 그러면 테스트가 단언 실패가 아니라
+    프로세스 종료로 끝나 "무엇이 왜 틀렸는지"가 보고되지 않는다.
+    """
+    arch = os.path.join(tmp, "archive")
+    base = os.path.join(tmp, "base")
+    os.makedirs(arch, exist_ok=True)
+
+    docs, invs = [], []
+    for r in _T30_GATE_ROWS:
+        # doc_id는 실물과 같은 한글 상대경로. 파일명만 NFD로 쓰는 행을 섞어
+        # `_resolve`의 NFC/NFD 순회를 함께 고정한다(Linux는 두 형태가 별개 파일).
+        rel = f"output_법원 노동판례/근로기준/{r['case_no']}_판결.md"
+        path = os.path.join(base, unicodedata.normalize(
+            "NFD" if r["nfd"] else "NFC", rel))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(_t30_body(r["case_no"], r["body"]))
+
+        docs.append({"doc_id": rel, "source": r["source"], "case_no": r["case_no"],
+                     "case_src": "meta", "doctype": "prec", "category": "근로기준",
+                     "category_src": "folder", "post_id": "",
+                     "title": f"테스트 판례 {r['case_no']}", "gate": r["gate"],
+                     "bundled": "1" if r["gate"] == "verbatim" else "0"})
+        if r["inv"]:
+            invs.append({"case_no": r["case_no"], "case_alias": "", "case_key":
+                         upload.case_no_to_ascii(r["case_no"]), "court": "대법원",
+                         "decided": "2020-01-16", "title": "", "doc_letec": "0",
+                         "doc_crawl": r["doc_crawl"], "vec_chunks": r["vec_chunks"],
+                         "vec_ctx": r["vec_ctx"], "vec_dead": "0", "cited_code": "0",
+                         "cited_textbook": "0", "not_found": "0", "overlap": "0",
+                         "note": ""})
+
+    # 실물과 같이 BOM 포함(utf-8-sig) — _read_csv가 utf-8-sig로 읽는 이유다.
+    for name, cols, rows in (("documents.csv", _T30_DOC_COLS, docs),
+                             ("inventory.csv", _T30_INV_COLS, invs)):
+        with open(os.path.join(arch, name), "w", encoding="utf-8-sig",
+                  newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(rows)
+
+    return {r["case_no"] for r in _T30_GATE_ROWS if r["expect"]}
+
+
+def t30_crawl_precedent_upload() -> None:
+    """크롤 판례 적재(crawl-precedent-production-ns) 계약.
+
+    이 코퍼스는 letec과 문서 구조가 달라(판결문 전문 `【주 문】`·`【이 유】`)
+    별도 경로를 쓴다. 막는 실패는 전부 **조용하다** — 예외도 로그도 없이
+    0건이 적재되거나 보일러플레이트가 검색 노이즈로 들어간다.
+    """
+    import inspect
+    import pinecone_upload_crawl_precedents as C
+    import pinecone_upload_court_precedents as P
+
+    MD = ("# 어느 판례\n\n| 항목 | 내용 |\n| 분류 | 근로기준 |\n"
+          "| 작성일 | 2020.01.16 |\n| 사건번호 | 2014다41520 |\n\n---\n\n"
+          "대법 2020.1.16. 선고 2014다41520\n\n"
+          "【원 고, 상고인】  원고 1외 15인\n\n"
+          "【피 고, 피상고인】  동건운수 주식회사\n\n"
+          "【주 문】\n\n상고를 모두 기각한다.\n\n"
+          "【이 유】\n\n휴일근로수당 가산 여부를 판단한다.\n")
+
+    body = C.extract_reasoning(MD)
+    # (a) 자간 공백 — 원문은 `【이 유】`다. `【이유】`만 찾으면 318건 전부
+    #     0건 매칭되고 그 실패는 조용하다.
+    check("T30-a 자간 공백 【이 유】 매칭", body is not None and "휴일근로수당" in body,
+          repr(body)[:60])
+    # (b)(e) 보일러플레이트 제외
+    for blk in ("원 고, 상고인", "피 고, 피상고인", "상고를 모두 기각"):
+        check(f"T30-b 보일러플레이트 제외: {blk[:12]}", blk not in (body or ""))
+
+    # (b) 후속 【】 블록 직전 절단 — 실측 3건에서만 차이가 나지만 그 3건이 규칙의 근거
+    tail = MD + "\n【원심판결】\n\n대전지방법원 2014.6.3. 선고\n"
+    body2 = C.extract_reasoning(tail)
+    check("T30-b2 【이 유】 뒤 블록 직전에서 절단",
+          "대전지방법원" not in (body2 or ""), repr(body2)[-60:])
+
+    # (c) 【이 유】 부재 → None + build_batch()의 스킵 집계(GAP-6, 2026-09-15).
+    # 집계는 main() 안에 있었으나 네트워크·API 키 없이 직접 부를 수 있도록
+    # build_batch()로 분리했다 — 그래서 "None"과 "집계" 둘 다 행위로 검증한다.
+    check("T30-c 【이 유】 부재 시 None",
+          C.extract_reasoning("# x\n\n---\n\n【주 문】\n\n기각\n") is None)
+
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                     delete=False) as f:
+        f.write("# x\n\n---\n\n【주 문】\n\n기각\n")
+        no_reason_path = f.name
+    try:
+        doc_bad = {"case_no": "9999다99999", "title": "t", "category": "근로기준",
+                   "path": no_reason_path}
+        built_b, skipped_b = C.build_batch([doc_bad])
+        check("T30-c2 build_batch()가 스킵을 집계(main() 없이 검증 가능)",
+              built_b == [] and skipped_b == ["9999다99999"], (built_b, skipped_b))
+    finally:
+        os.unlink(no_reason_path)
+
+    # (d)(e) 저작권 경계 — **select_targets()를 실제로 호출해** 확인한다.
+    #
+    # 소스 문자열 grep으로는 두 방향 모두 샌다: 필터를 리팩터링하면(`d.get("gate")`,
+    # 변수 추출) 멀쩡한 코드가 깨져 테스트를 느슨하게 고치는 압력이 생기고,
+    # 반대로 그 문자열이 주석·데드코드에 남아 있거나 뒤 분기가 제외분을 되돌리면
+    # **통과한 채** editorial이 프로덕션 NS로 나간다. 크기가 작지 않다 —
+    # documents.csv 실측(2026-09-14) crawl 823건 = verbatim 460 · editorial 363 ·
+    # post 13이고, editorial은 nodong.kr 편집 발췌(제3자 저작물)다.
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="t30_gate_")
+    saved = (C.ARCHIVE_DIR, C.BASE_DIR)
+    got: set[str] = set()          # 픽스처 단계에서 죽어도 e1·e2가 실패로 보고되게
+    try:
+        expect = _t30_gate_fixture(tmp)
+        # 두 상수 모두 호출 시점에 읽힌다(_read_csv→ARCHIVE_DIR, _resolve→BASE_DIR).
+        C.ARCHIVE_DIR = os.path.join(tmp, "archive")
+        C.BASE_DIR = os.path.join(tmp, "base")
+        try:
+            targets = C.select_targets()
+        except SystemExit as e:          # _resolve 실패는 단언으로 환원해 보고한다
+            targets = None
+            check("T30-d select_targets() 정상 실행", False, f"SystemExit: {e}")
+        if targets is not None:
+            got = {d["case_no"] for d in targets}
+            check("T30-d 선정 결과가 게이트·수렴 계약과 정확히 일치", got == expect,
+                  f"기대 {sorted(expect)} / 실제 {sorted(got)}")
+            for r in _T30_GATE_ROWS:
+                want = r["expect"]
+                check(f"T30-d· {r['case_no']} {'포함' if want else '제외'}"
+                      f"({r['gate']}) — {r['why']}", (r["case_no"] in got) == want)
+            check("T30-d2 반환 path가 실제 파일(NFD 포함)",
+                  all(os.path.exists(d["path"]) for d in targets),
+                  [d["path"] for d in targets if not os.path.exists(d["path"])])
+            check("T30-d3 case_no 오름차순", [d["case_no"] for d in targets]
+                  == sorted(got), [d["case_no"] for d in targets])
+            check("T30-d4 반환 키 집합 고정", all(
+                set(d) == {"case_no", "title", "category", "path"} for d in targets))
+
+        # (e) 게이트 판정을 이 스크립트가 다시 하지 않는다 — 승인(crawl_gate.json,
+        #     GATE_RULE_VERSION) 밖의 독자 판정을 막는 것이 목적이다. 위 픽스처의
+        #     두 어긋난 행이 그것을 **동작으로** 고정한다: 내용 기반으로 다시
+        #     판정하면 2010다99279(전문 형식·editorial)가 포함되고
+        #     2018다88888(발췌 형식·verbatim)이 빠진다.
+        check("T30-e1 CSV가 권위 — 내용이 전문 형식이어도 editorial이면 제외",
+              "2010다99279" not in got)
+        check("T30-e2 CSV가 권위 — 내용이 발췌 형식이어도 verbatim이면 포함",
+              "2018다88888" in got)
+    finally:
+        C.ARCHIVE_DIR, C.BASE_DIR = saved
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # e1·e2가 동작을 고정하고, 아래는 분류기를 끌어다 쓰는 가장 흔한 경로를
+    # 구조로 막는 값싼 백스톱이다(문자열 대조가 아니라 모듈 속성 검사).
+    check("T30-e3 게이트 분류기를 모듈에 들이지 않음",
+          not hasattr(C, "classify_gate_bucket")
+          and not hasattr(C, "archive_precedents"))
+
+    # (f) vector_id 접두사 분리 — 같으면 letec 원장·prune 범위와 섞인다
+    vid = f"crawlprec_{P.case_no_to_ascii('2014다41520')}_0"
+    check("T30-f vector_id 접두사가 letec과 분리",
+          vid.startswith("crawlprec_") and not vid.startswith("precedent_"), vid)
+    # 원장 그룹 키는 **ASCII**다(letec과 같은 규약) — id_re_for도 ASCII를 받는다.
+    # 한글 키를 쓰면 archive의 reverse_case_key가 해석하지 못해 인벤토리에서
+    # 조용히 빠지고 선정 술어가 수렴하지 않는다(T32 참조).
+    check("T30-f2 원장 ID 정규식이 ASCII 키로 그 접두사를 요구",
+          bool(C._LEDGER._id_re_for(P.case_no_to_ascii("2014다41520")).match(vid)))
+
+    # (g) 사본 금지 — 원장을 만든 바로 그 함수여야 한다
+    check("T30-g case_no_to_ascii를 import(동일성)",
+          C.case_no_to_ascii is P.case_no_to_ascii)
+    check("T30-g2 split_by_size를 import(청킹 규약 공유)",
+          C.split_by_size is P.split_by_size)
+
+    # (h) 사장 NS 재발 방지
+    check("T30-h NAMESPACE == laborlaw-v2", C.NAMESPACE == "laborlaw-v2", C.NAMESPACE)
+    check("T30-h2 source_type이 기존 라벨 맵 값", C.SOURCE_TYPE == "precedent")
+
+    # (i)(j) 메타데이터 이중 필드 + chunk_index 연속
+    # T30-i는 build_vector()를 직접 호출해 검증한다(GAP-7, 2026-09-15).
+    # upsert 페이로드 조립을 main()에서 분리해 네트워크 없이 부를 수 있게
+    # 했다 — 그전엔 소스 문자열 대조였고, 그 수용 사유가 코드 주석에만 있고
+    # Design 문서에는 없어 기록되지 않은 이탈이었다.
+    fake_doc = {"case_no": "2014다41520", "title": "t" * 250,
+                "category": "근로기준" * 10, "path": None}
+    fake_chunk = {"vector_id": "crawlprec_2014da41520_0", "chunk_index": 0,
+                  "chunk_text": "가" * 950, "embed_text": "x"}
+    vec = C.build_vector(fake_doc, fake_chunk, "2020.01.16" * 3, [0.0, 0.1])
+    check("T30-i 메타에 text·chunk_text 양쪽 기록(동일 값)",
+          vec["metadata"]["text"] == vec["metadata"]["chunk_text"]
+          == fake_chunk["chunk_text"][:900])
+    check("T30-i2 title·category·date 900/200/30/20자 절단 보존",
+          len(vec["metadata"]["title"]) == 200
+          and len(vec["metadata"]["category"]) == 30
+          and len(vec["metadata"]["date"]) == 20
+          and vec["id"] == fake_chunk["vector_id"])
+
+    doc = {"case_no": "2014다41520", "title": "t", "category": "근로기준",
+           "path": None}
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                     delete=False) as f:
+        f.write("# x\n\n---\n\n【이 유】\n\n" + ("가나다라마바사아자차. " * 400))
+        doc["path"] = f.name
+    try:
+        cs = C.chunk_doc(doc)
+        check("T30-j chunk_index가 0부터 연속",
+              [c["chunk_index"] for c in cs] == list(range(len(cs))) and len(cs) > 1,
+              [c["chunk_index"] for c in cs])
+        # 인용 화이트리스트가 읽는 것은 chunk_text다 — 전 청크에 번호가 있어야
+        # 2번째 이후 청크가 근거로 쓰일 때도 인용이 살아남는다.
+        check("T30-j2 chunk_text 전 청크에 사건번호 접두(인용 화이트리스트)",
+              all(c["chunk_text"].startswith("[2014다41520] ") for c in cs),
+              cs[-1]["chunk_text"][:30])
+        check("T30-j3 embed_text에도 사건번호 접두",
+              all(c["embed_text"].startswith("2014다41520") for c in cs))
+    finally:
+        os.unlink(doc["path"])
+
+    # (k) 대량 삭제 가드 탈출구(GAP-3, 2026-09-15). "최초 적재라 이전 집합이
+    # 없다"는 근거가 만료됐다 — 원장에 318그룹·2,403 ID가 실재한다. 청킹
+    # 규격을 의도적으로 바꿔 재실행하면 탈출구가 없으면 sys.exit로 막힌다.
+    #
+    # **--limit과 동시 사용을 막지 않는다** — court_precedents.py를 그대로
+    # 미러링한다. textbook의 --book/--all과 다른 클래스다: 원장 그룹 키가
+    # 사건번호라(vector_ledger.py) previous가 이번 실행이 다룬 그룹에만
+    # 스코프되고, --limit은 스코프를 좁힐 뿐이라 그 바깥 그룹은 원리적으로
+    # 삭제 후보가 될 수 없다(textbook의 --all은 반대로 스코프를 넓힌다).
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    def _run(*argv):
+        return subprocess.run(
+            [sys.executable, "pinecone_upload_crawl_precedents.py", *argv],
+            capture_output=True, text=True, cwd=here)
+
+    r = _run("--limit", "5", "--allow-large-prune", "--dry-run")
+    check("T30-k --limit과 --allow-large-prune 동시 사용이 거부되지 않음",
+          r.returncode == 0, r.stderr[-200:])
+
+    src = inspect.getsource(C)
+    check("T30-k2 allow_large가 실제로 prune()에 전달됨(플래그만 있고 무배선 방지)",
+          "allow_large=args.allow_large_prune" in src)
+
+
+def t31_citation_whitelist_meta() -> None:
+    """검색된 판례가 인용 가능 목록에 오르는 경로(citation-whitelist-meta).
+
+    막는 실패: **검색은 되는데 인용은 못 하는 상태.** 판시사항·판결요지는 자기
+    사건번호를 적지 않는 것이 보통이라, 본문 정규식만으로는 letec 6,440청크 중
+    6,060(94%)이 목록에 오르지 못했다(2026-09-14 실측). 그러면 LLM이 그 판례를
+    근거로 써도 환각으로 판정돼 `replace`가 지운다.
+    """
+    from app.core.citation_validator import (
+        extract_precedents_from_hits, validate_response_citations,
+        build_available_citations_text,
+    )
+
+    # 본문·제목에 번호가 없고 메타에만 있는 판례(letec의 전형)
+    hit = {"title": "임금", "chunk_text": "통상임금에 산입될 수 있는지 여부",
+           "case_no": "2000다15869"}
+    precs = extract_precedents_from_hits([hit])
+    check("T31-a 메타 case_no만 있어도 인용 목록 등재",
+          "2000다15869" in precs, list(precs))
+    check("T31-b 출처가 meta로 기록", precs.get("2000다15869", {}).get("source") == "meta")
+
+    # 회귀의 핵심 — 이 판례를 인용한 답변이 환각으로 지워지지 않아야 한다
+    res = validate_response_citations("대법원 2000다15869 판결에 따르면…", precs)
+    check("T31-c 메타 기반 인용이 환각으로 판정되지 않음",
+          res["hallucinated"] == [] and "2000다15869" in res["valid"], res)
+
+    # LLM에 주는 목록에도 실려야 실제로 인용된다
+    txt = build_available_citations_text([hit])
+    check("T31-d 인용 가능 목록 텍스트에 포함", "2000다15869" in txt)
+
+    # 기존 경로(본문·제목 파싱)는 그대로 살아 있어야 한다
+    old = extract_precedents_from_hits(
+        [{"title": "대법원 2014다41520 판결", "chunk_text": ""}])
+    check("T31-e 제목 파싱 경로 유지", "2014다41520" in old)
+
+    # case_no가 없는 hit(ctx 구크롤)에서 예외가 나지 않아야 한다
+    safe = extract_precedents_from_hits([{"title": "x", "chunk_text": "y"}])
+    check("T31-f case_no 부재 hit 안전", safe == {})
+
+    # rag.py가 case_no를 실제로 실어 보내는가 — 여기서 끊기면 위가 다 무의미하다
+    import inspect
+    import app.core.rag as R
+    src = inspect.getsource(R)
+    check("T31-g _query_namespaces가 hit에 case_no 적재",
+          '"case_no": meta.get("case_no"' in src)
+    check("T31-h format_pinecone_hits가 meta_list에 case_no 전달",
+          '"case_no": h.get("case_no"' in src)
+
+
+def t32_ledger_convergence() -> None:
+    """원장이 인벤토리에 반영돼 선정 술어가 수렴한다(gap-detector GAP-2).
+
+    막는 실패: **적재해도 select_targets()가 같은 대상을 계속 반환하는 상태.**
+    `archive_precedents.load_ledger`가 letec 원장만 읽던 때, 크롤 적재분이
+    `vec_chunks`에 반영되지 않아 재실행이 전량을 재임베딩했다(2026-09-14 실측
+    318건). 벡터는 덮어쓰기라 무해하지만 임베딩 비용을 다시 문다.
+
+    **V0~V8이 잡지 못한 실패다** — V4는 letec 스코프이고, V8(멱등)은 재빌드해도
+    같은 0이 나오므로 통과하는 것이 정상이다. 통과가 무결성의 증거가 아니었다.
+    """
+    import json
+    import inspect
+    import archive_precedents as A
+    import pinecone_upload_crawl_precedents as C
+    import pinecone_upload_court_precedents as P
+
+    src = inspect.getsource(A.load_ledger)
+    check("T32-a load_ledger가 letec·crawl 원장을 모두 읽음",
+          "letec_dir" in src and "crawl_dir" in src, src[:80])
+
+    # 키 형식이 코퍼스 간에 같아야 병합이 성립한다 — reverse_case_key가 ASCII를
+    # 전제하므로 한글 키는 조용히 인벤토리에서 빠진다.
+    for path, label in (("output_판례_보강/_uploaded_ids.json", "letec"),
+                        ("output_법원 노동판례/_uploaded_ids.json", "crawl")):
+        if not os.path.exists(path):
+            continue          # 원본 없는 환경(CI)에서는 건너뛴다
+        with open(path, encoding="utf-8") as f:
+            keys = list(json.load(f))
+        bad = [k for k in keys if not k.isascii()]
+        check(f"T32-b {label} 원장 키가 ASCII", not bad, bad[:3])
+        rev = [k for k in keys[:50] if A.reverse_case_key(k) is None]
+        check(f"T32-c {label} 키가 reverse_case_key로 해석됨", not rev, rev[:3])
+
+    # 업로더가 그 규약을 쓰는지 — 여기서 어긋나면 다음 적재가 다시 한글 키를 쓴다.
+    # `groups[...] =` 리터럴로 고정하면 GAP-6이 그 할당문을 딕셔너리 컴프리헨션
+    # 으로 바꾸는 순간(2026-09-15) 동작은 그대로인데 문자열만 사라져 깨진다 —
+    # `case_no_to_ascii(doc["case_no"])` 호출 자체는 할당문·컴프리헨션 양쪽에
+    # 공통이므로 그 부분만 검사한다.
+    usrc = inspect.getsource(C)
+    check("T32-d 크롤 업로더가 ASCII 그룹 키 사용",
+          'case_no_to_ascii(doc["case_no"])' in usrc)
+    check("T32-e 그룹 정규식이 letec과 동일 계열(ASCII)",
+          C._LEDGER._group_re.pattern == P._LEDGER._group_re.pattern,
+          C._LEDGER._group_re.pattern)
+
+
 def _raises(fn, exc) -> bool:
     try:
         fn()
@@ -2181,7 +2604,9 @@ def main() -> int:
                t22_textbook_followup, t23_textbook_diversity_promotion,
                t24_legal_diversity_promotion, t25_court_ledger,
                t26_public_quota, t27_precedent_archive,
-               t28_corpus_path_normalization, t29_heading_levels):
+               t28_corpus_path_normalization, t29_heading_levels,
+               t30_crawl_precedent_upload, t31_citation_whitelist_meta,
+               t32_ledger_convergence):
         print(f"\n[{fn.__name__}]")
         fn()
 
