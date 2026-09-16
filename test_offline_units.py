@@ -288,19 +288,30 @@ def test_conflict_resolver() -> None:
 
 
 def test_legal_api_nlrc() -> None:
-    """NLRC XML 파싱 — 2026-09-15 실제 프로브로 받은 XML 그대로(추측 데이터 아님)."""
-    import xml.etree.ElementTree as ET
+    """NLRC 검색·상세 — 2026-09-15 실제 프로브로 받은 XML 그대로(추측 데이터 아님).
+
+    _http.get을 대체해 search_nlrc()/fetch_nlrc_detail()을 실제로 호출한다.
+    픽스처 XML을 직접 ET로만 파싱하면 필드명이 함수 **밖**에서만 검증되고
+    코드의 추출 로직 자체는 무방비가 된다(T30-d/e에서 겪은 것과 같은 함정
+    — 소스 grep·픽스처 독립검증은 실제 호출을 대체하지 못한다).
+
+    결정문일련번호는 실제 값(15255)이 아니라 합성 ID를 쓴다 — 이 세션에서
+    이미 15255를 라이브로 조회해 L2(Supabase) 캐시에 24시간 TTL로 써둔
+    상태라, 실제 값을 쓰면 이 테스트가 L2 캐시 히트로 페이크 HTTP를 건너뛰고
+    조용히 통과해버린다(로컬 재실행에서만 재현되는 거짓 양성).
+    """
     from app.core import legal_api as L
 
+    fake_id = "90000001"
     search_xml = (
         '<?xml version="1.0" encoding="UTF-8"?><Nlrc>'
-        '<nlrc id="1"><결정문일련번호>15255</결정문일련번호>'
+        f'<nlrc id="1"><결정문일련번호>{fake_id}</결정문일련번호>'
         '<제목><![CDATA[○ ○ ○ 부당해고 구제신청]]></제목>'
         '<사건번호>2016부해OOO</사건번호><등록일>2016.05.09</등록일></nlrc></Nlrc>'
     )
     detail_xml = (
         '<?xml version="1.0" encoding="UTF-8"?><NlrcService>'
-        '<결정문일련번호>15255</결정문일련번호><기관명>노동위원회</기관명>'
+        f'<결정문일련번호>{fake_id}</결정문일련번호><기관명>노동위원회</기관명>'
         '<사건번호>2016부해OOO</사건번호><자료구분>부당해고</자료구분>'
         '<담당부서>충남지방노동위원회</담당부서><등록일>2016.5.9.</등록일>'
         '<제목><![CDATA[○ ○ ○ 부당해고 구제신청]]></제목><내용></내용>'
@@ -308,15 +319,43 @@ def test_legal_api_nlrc() -> None:
         '<판정요지><![CDATA[○ ○ ○는 법인등기부등본이나...]]></판정요지>'
         '<판정결과><![CDATA[각하]]></판정결과></NlrcService>'
     )
-    root = ET.fromstring(search_xml)
-    el = next(root.iter("nlrc"))
-    assert L._el_text(el, "결정문일련번호") == "15255"
-    assert L._el_text(el, "사건번호") == "2016부해OOO"  # 마스킹 — 표시 금지 확인용
 
-    droot = ET.fromstring(detail_xml)
-    assert (droot.findtext("판정사항") or "").strip().startswith("법인등기부등본")
-    assert (droot.findtext("판정결과") or "").strip() == "각하"
-    print("  ✅ NLRC XML 파싱: 검색·상세 필드 추출 확인")
+    class _FakeResp:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            pass
+
+    def _fake_get(url, params=None, timeout=None):
+        xml = detail_xml if (params or {}).get("ID") else search_xml
+        return _FakeResp(xml.encode("utf-8"))
+
+    original_get = L._http.get
+    original_init_sb = L._init_supabase
+    # L2(Supabase)를 "미설정"으로 가장한다 — 그래야 이 테스트가 로컬(자격증명
+    # 있음)·CI(없음) 어디서든 동일하게 순수 오프라인이고, 합성 ID라도 실제
+    # law_article_cache 테이블에 쓰지 않는다.
+    L._http.get = _fake_get
+    L._init_supabase = lambda: None
+    try:
+        results = L.search_nlrc("부당해고", "fake-key", max_results=1)
+        assert results == [{
+            "id": int(fake_id), "title": "○ ○ ○ 부당해고 구제신청",
+            "case_no": "2016부해OOO", "date": "2016.05.09",
+        }], results  # 마스킹된 사건번호는 담기되(로깅용), 아래 상세 반환값엔 없어야 함
+
+        detail = L.fetch_nlrc_detail(int(fake_id), "fake-key")
+        assert detail is not None
+        assert detail["category"] == "부당해고"
+        assert detail["dept"] == "충남지방노동위원회"
+        assert detail["gist"].startswith("법인등기부등본"), detail["gist"]
+        assert detail["result"] == "각하"
+        assert "case_no" not in detail, "fetch_nlrc_detail이 마스킹된 사건번호를 반환값에 담음"
+    finally:
+        L._http.get = original_get
+        L._init_supabase = original_init_sb
+    print("  ✅ NLRC 검색·상세: 실제 함수 호출로 필드 추출 확인(페이크 HTTP, L2 미접촉)")
 
 
 def test_legal_api_nlrc_cache_key() -> None:

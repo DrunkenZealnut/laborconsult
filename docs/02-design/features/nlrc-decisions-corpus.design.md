@@ -1,8 +1,8 @@
 # nlrc-decisions-corpus Design
 
 > **Plan**: `docs/01-plan/features/nlrc-decisions-corpus.plan.md`
-> **Period**: 2026-09-15
-> **Status**: Do 완료(§9 1~7 완료, CI 전량 통과 + 실 API 라이브 스모크 확인). 8(커밋+PR)만 남음
+> **Period**: 2026-09-15 (Design·Do) · 2026-09-16 (Check·Act)
+> **Status**: Check 완료 — Match Rate 96%(gap-detector), Gap 4건 전량 Act로 해소(§11). 커밋 대기
 
 ---
 
@@ -206,7 +206,10 @@ def fetch_relevant_nlrc(query: str, api_key: str | None,
         detail = fetch_nlrc_detail(r["id"], api_key)
         if not detail:
             return idx, None
-        header = (f"[중앙노동위원회 판정] {detail['category']} | "
+        # [Check, 2026-09-16] "중앙"으로 고정하면 dept가 지방노동위일 때
+        # (실측 다수) 헤더와 바로 다음 dept 표기가 상충한다 — Plan §1.2가
+        # "지방노동위까지 포함"이라고 이미 밝혔던 것을 Design 작성 시 놓쳤다.
+        header = (f"[노동위원회 판정] {detail['category']} | "
                   f"{detail['dept']} | {detail['date']}")
         body = detail["gist"]
         if detail["result"]:
@@ -293,7 +296,23 @@ if analysis and config.law_api_key:                        # ← odcloud_api_key
 `nlrc_text: str | None`을 **불투명 텍스트 블록**으로만 다룬다(`("nlrc", "nlrc_case",
 "중앙노동위원회 판정사례", nlrc_text)`) — 개별 판정 단위 구조를 보지 않는다.
 프런트 `public/index.html:1385`의 `nlrc_case: '판정사례'` 라벨도 이 블록 단위
-그대로다. **셋 다 수정 불요** — 변수명·타입이 그대로라 자동으로 맞물린다.
+그대로다. **이 셋은 수정 불요** — 변수명·타입이 그대로라 자동으로 맞물린다.
+
+⚠️ **[Check, 2026-09-16] "셋 다 수정 불요"는 소비처를 다 세지 못한 과단정이었다.**
+실제 소비처는 다섯이다 — 아래 둘을 빠뜨렸다:
+
+- **`pipeline.py:1925`(LLM 시스템 프롬프트 조립)** — `nlrc_text`를 `parts.append(...)`
+  로 프롬프트에 싣는 지점. 라벨 문자열(`"중앙노동위원회 주요판정사례 (공공데이터포털
+  조회)"`)이 **데이터 출처가 바뀐 뒤에도 구 출처를 그대로 주장**하고 있었다 —
+  §3의 교체가 "게이트와 호출부만"이라던 것과 달리 실제로는 이 지점도 갱신이
+  필요했다. LLM에게 잘못된 출처를 알려주는 것이라 Check에서 High로 잡혔다.
+  `(법제처 국가법령정보센터 조회)`로 수정.
+- **`conflict_resolver.annotate_source_priority(nlrc_text=...)`** — 무해(출처
+  충돌 주석용 텍스트 존재 여부만 봄), 수정 불요이나 §3.2가 "셋"이라 단정한
+  것 자체가 틀렸으므로 기록해 둔다.
+
+**교훈**: "하류 소비처 불변"을 주장하려면 `grep -n "nlrc_text"` 전수 결과를
+직접 세어야 한다 — 이번엔 알고 있던 소비처만 나열하고 셌다고 착각했다.
 
 ---
 
@@ -335,7 +354,7 @@ app/core/pipeline.py    → §3의 교체로 소비 종료
 LLM 컨텍스트에 들어가는 헤더는 `사건번호`를 쓰지 않는다:
 
 ```
-[중앙노동위원회 판정] 부당해고 | 충남지방노동위원회 | 2016.5.9.
+[노동위원회 판정] 부당해고 | 충남지방노동위원회 | 2016.5.9.
 법인등기부등본 상 분사무소이자...(판정사항)
 ...(판정요지)
 판정결과: 각하
@@ -352,6 +371,14 @@ LLM 컨텍스트에 들어가는 헤더는 `사건번호`를 쓰지 않는다:
 경로 자체가 없고, 정규식 기반 인용 추출도 `OOO`엔 매치되지 않는다(수비적으로도
 안전).
 
+**[Check, 2026-09-16] 유보 결정 종결 — 프롬프트 지시 불요로 확정한다.** Do
+단계에서 실답변 샘플 대신 구조 분석으로 대체했다(실답변 확보 자체는 이 사이클
+범위 밖) — 위 두 문단의 근거(원문에 마스킹 안 된 번호가 없어 지어낼 재료가
+없음 + `citation_validator` 정규식이 `OOO`에 매치 안 됨)가 이미 프롬프트
+지시와 **같은 효과**를 구조적으로 보장한다. 실답변에서 문제가 관측되면(예:
+LLM이 담당부서명에서 번호를 유추해 표기) 그때 프롬프트 지시를 추가하는 쪽이
+낫다 — 지금 추가하면 발생하지 않은 문제에 대한 지시가 된다.
+
 ---
 
 ## 6. 회귀 테스트
@@ -362,6 +389,17 @@ LLM 컨텍스트에 들어가는 헤더는 `사건번호`를 쓰지 않는다:
 소급 보강은 이 사이클 범위 밖이다.
 
 픽스처는 **2026-09-15 실제 프로브로 받은 XML 그대로** 쓴다(추측 데이터 아님):
+
+**[Check, 2026-09-16]** 아래 `test_legal_api_nlrc` 원안은 픽스처 XML을 `ET`로
+직접 파싱만 해 필드명을 검증했다 — `search_nlrc`/`fetch_nlrc_detail` 자체는
+**한 번도 호출하지 않아**, 코드의 추출 로직이 아니라 픽스처 자체의 필드명만
+고정하는 상태였다(T30-d/e에서 겪은 것과 같은 함정 — 소스 grep·독립 파싱은
+실제 호출의 대체가 되지 못한다). Do 단계에서 `L._http.get`을 페이크로 바꿔
+두 함수를 실제로 호출하도록 승격했다. 결정문일련번호도 실제 값(15255, 이미
+이 세션에서 라이브 조회해 L2 캐시에 남아 있음) 대신 합성 ID를 써 캐시 히트로
+페이크가 조용히 우회되는 것을 막았고, `_init_supabase`도 함께 페이크해 로컬
+환경(Supabase 자격증명 보유)에서도 완전 오프라인이 되게 했다. 실제 구현은
+`test_offline_units.py:290-` 참고 — 이 코드블록은 최초 설계 의도 기록으로 남긴다.
 
 ```python
 def test_legal_api_nlrc() -> None:
@@ -435,11 +473,12 @@ def test_pipeline_nlrc_gate() -> None:
 
 ## 8. 리스크
 
-| 리스크 | 대응 |
-|---|---|
-| `_cache_get`/`_l2_cache_get`가 `str` 아닌 값을 만난 적 없음 — JSON 직렬화가 기존 캐시 계약을 깨는지 | Do 단계에서 L2 Supabase 캐시 테이블 컬럼 타입 확인 필수(§2.3) |
-| `search_nlrc()`가 court precedent와 달리 `display` 파라미터의 최대값·페이지네이션 한계를 안 검증함 | `max_results=3`(기존 `search_nlrc_with_details` 기본값과 동일) 유지, 확장은 별도 판단 |
-| 삭제 대상(`nlrc_cases.py` 등)이 §4.1 전수 확인 이후 새로 생긴 소비자가 있을 수 있음 | Do 착수 직전 재확인(`grep` 1회, 비용 거의 0) |
+| 리스크 | 대응 | 상태 |
+|---|---|---|
+| `_cache_get`/`_l2_cache_get`가 `str` 아닌 값을 만난 적 없음 — JSON 직렬화가 기존 캐시 계약을 깨는지 | Do 단계에서 L2 Supabase 캐시 테이블 컬럼 타입 확인 필수(§2.3) | **해소** — `supabase_schema.sql:90` `content TEXT` 확인, 근거를 `fetch_nlrc_detail` docstring에 기록 |
+| `search_nlrc()`가 court precedent와 달리 `display` 파라미터의 최대값·페이지네이션 한계를 안 검증함 | `max_results=3`(기존 `search_nlrc_with_details` 기본값과 동일) 유지, 확장은 별도 판단 | 유지(미확장) |
+| 삭제 대상(`nlrc_cases.py` 등)이 §4.1 전수 확인 이후 새로 생긴 소비자가 있을 수 있음 | Do 착수 직전 재확인(`grep` 1회, 비용 거의 0) | 해소 — 재확인 완료, 소비자 0건 |
+| **[Check, 2026-09-16 추가]** L1/L2 캐시 값이 비-JSON이면 `json.loads`가 `try` 블록 밖에서 예외를 던져 `fetch_relevant_nlrc` 전체가 죽음(pipeline.py 최외곽 try/except가 최종 흡수해 NLRC 블록만 손실 — fail-open이긴 하나 원인 진단이 흐려짐) | `json.loads`를 좁은 `try`로 감싸 디코드 실패를 캐시 미스로 강등, L3 폴백으로 자연 복구 | **해소** |
 
 ---
 
@@ -469,3 +508,30 @@ def test_pipeline_nlrc_gate() -> None:
 | 반환 타입 | 언급 없음 | `str \| None`(meta_list 없음) | §0 — 소비처가 텍스트 블록만 원함 |
 | L1/L2 캐시 값 타입 | 언급 없음 | JSON 직렬화 필요(다중 필드) — L2 스키마 확인이 리스크로 승격 | §2.3, §8 |
 | `archive_precedents.py` 영향 | 언급 없음 | **무영향 확인**, 단 주석 자기완결화 | §4.2 |
+
+---
+
+## 11. Check 결과 (2026-09-16, gap-detector)
+
+**Match Rate 96%**(82항목 중 78 MATCH·2 PARTIAL·2 FAIL). 설계에 있는데 구현에
+없는 항목은 0건 — §1.1 산출물 8건·§1.2 비범위 4건·§9 실행순서 1~7 전부 코드로
+확인됨. 아래 Gap 4건은 전부 **Act로 해소**했다(이 문서의 §2.4·§3.2·§5·§8에
+`[Check, 2026-09-16]` 표식으로 각각 반영):
+
+| ID | 심각도 | 현상 | 해소 |
+|---|---|---|---|
+| GAP-1 | **High** | `pipeline.py:1925` LLM 프롬프트 라벨이 구 출처("공공데이터포털 조회")를 그대로 주장 — §3.2가 "셋 다 수정 불요"라 단정하며 놓친 네 번째 소비처 | `(법제처 국가법령정보센터 조회)`로 교체, §3.2에 누락 소비처 기록 |
+| GAP-2 | Low | `data/precedent_archive/MANIFEST.json`의 NLRC 제외 주석이 삭제된 `data/nlrc_cases.json`과 존재하지 않는 "설계 §5.3"을 계속 가리킴 — 생성 소스(`archive_precedents.py`)는 이미 고쳐져 있었으나 산출물이 재생성 전이었음 | `archive_precedents.py build` 재실행 + `verify` 전체 통과 |
+| GAP-3 | Low | GAP-1과 같은 근본원인의 문서 버전 — `wage_calculator/pipeline-visualization.html:912`(두 번째 노드, §4.2가 갱신 대상에서 놓침)이 "공공데이터포털" 유지 | 동일 라벨로 교체 |
+| GAP-4 | Low | §5가 "실답변 샘플로 판단"하겠다고 유보한 프롬프트 지시 결정이 명시적으로 닫히지 않음 | §5에 "불요로 확정" 결정과 근거 기록 |
+
+**Match Rate가 못 잡은 것(설계·구현 일치이나 개선한 것) 2건도 함께 반영**:
+헤더 `[중앙노동위원회 판정]`이 지방노동위 사건에도 붙던 문제(Plan §1.2 "지방노동위
+까지 포함"과 상충 — §2.4·§5 수정), `fetch_nlrc_detail`의 L1/L2 캐시 읽기가
+`json.loads`를 `try` 밖에서 호출해 비-JSON 값이 섞이면 NLRC 블록 전체가
+조용히 사라지는 경로(§8에 리스크 추가 후 해소). 그리고 `test_legal_api_nlrc`가
+실제 함수를 호출하지 않고 픽스처 XML만 독립 파싱하던 것을 페이크 HTTP로
+실호출 검증으로 승격했다(§6).
+
+전부 코드 레벨에서 재검증 완료 — CI 6종 재통과, `archive_precedents.py verify`
+통과, 신규 테스트(페이크 HTTP 버전) 단독 재실행 통과.

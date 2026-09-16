@@ -1922,7 +1922,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
     if nlrc_text:
-        parts.append(f"중앙노동위원회 주요판정사례 (공공데이터포털 조회):\n\n{_cap(nlrc_text, 4000)}")
+        parts.append(f"중앙노동위원회 주요판정사례 (법제처 국가법령정보센터 조회):\n\n{_cap(nlrc_text, 4000)}")
     if legal_articles_text:
         parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{_cap(legal_articles_text, 5000)}")
     # 이미지 첨부는 Vision 블록으로 전달되므로 텍스트 프롬프트에서 제외 — 이중 주입 방지 (DB-5)

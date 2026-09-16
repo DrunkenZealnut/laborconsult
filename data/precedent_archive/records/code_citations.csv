@@ -20,7 +20,7 @@
 2016다243078,wage_calculator/legal_hints.py,198,data
 2016다243078,wage_calculator/legal_hints.py,219,data
 2017다261387,build_graph.py,198,data
-2017헌바127,app/core/legal_api.py,592,docstring
+2017헌바127,app/core/legal_api.py,593,docstring
 2018다200709,build_graph.py,180,data
 2018다238518,wage_calculator/legal_hints.py,394,data
 2019다293449,build_graph.py,192,data
@@ -32,7 +32,7 @@
 2021다201143,wage_calculator/legal_hints.py,215,data
 2021다201143,wage_calculator/legal_hints.py,219,data
 2021헌마1234,app/core/citation_validator.py,53,comment
-2021헌마1234,app/core/legal_api.py,592,docstring
+2021헌마1234,app/core/legal_api.py,593,docstring
 2022다291153,wage_calculator/calculators/ordinary_wage.py,175,docstring
 2022다291153,wage_calculator/calculators/weekly_holiday.py,1,docstring
 2022다291153,wage_calculator/calculators/weekly_holiday.py,83,comment
@@ -56,7 +56,7 @@
 2023다302838,app/core/citation_validator.py,53,comment
 2023다302838,app/core/citation_validator.py,69,docstring
 2023다302838,app/core/citation_validator.py,192,docstring
-2023다302838,app/core/legal_api.py,592,docstring
+2023다302838,app/core/legal_api.py,593,docstring
 2023다302838,app/templates/prompts.py,412,data
 2023다302838,build_graph.py,156,data
 2023다302838,wage_calculator/calculators/ordinary_wage.py,1,docstring

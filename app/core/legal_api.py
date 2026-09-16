@@ -1081,14 +1081,26 @@ def fetch_nlrc_detail(decision_id: int, api_key: str) -> dict | None:
     """
     cache_key = f"nlrc_{decision_id}"
 
+    # json.loads 실패(캐시에 비-JSON 값이 섞이는 이론상 경로)를 캐시 미스로
+    # 강등한다 — 여기서 예외가 새면 ThreadPoolExecutor 워커를 거쳐
+    # fetch_relevant_nlrc 전체가 죽고, 결국 pipeline.py의 최외곽 try/except가
+    # NLRC 블록 전체를 삼킨다. L3 폴백이 있는데 그렇게까지 잃을 이유가 없다.
     cached = _cache_get(cache_key)
     if cached is not None:
-        return json.loads(cached)
+        try:
+            return json.loads(cached)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("NLRC L1 캐시 값이 JSON이 아님 (key=%s) — 미스로 처리", cache_key)
 
     l2_cached = _l2_cache_get(cache_key)
     if l2_cached is not None:
-        _cache_set(cache_key, l2_cached)
-        return json.loads(l2_cached)
+        try:
+            record = json.loads(l2_cached)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("NLRC L2 캐시 값이 JSON이 아님 (key=%s) — 미스로 처리", cache_key)
+        else:
+            _cache_set(cache_key, l2_cached)
+            return record
 
     if _circuit_check():
         return None
@@ -1152,7 +1164,9 @@ def fetch_relevant_nlrc(query: str, api_key: str | None,
         detail = fetch_nlrc_detail(r["id"], api_key)
         if not detail:
             return idx, None
-        header = (f"[중앙노동위원회 판정] {detail['category']} | "
+        # "중앙"으로 고정하지 않는다 — dept에 지방노동위(예: 충남지방노동위원회)가
+        # 흔히 온다(Plan §1.2 실측). 고정하면 헤더와 바로 뒤 dept 표기가 상충한다.
+        header = (f"[노동위원회 판정] {detail['category']} | "
                   f"{detail['dept']} | {detail['date']}")
         body = detail["gist"]
         if detail["result"]:
