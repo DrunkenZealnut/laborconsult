@@ -1457,6 +1457,63 @@ async def send_email(req: EmailRequest, request: Request):
         raise HTTPException(status_code=500, detail="이메일 전송에 실패했습니다.") from e
 
 
+# ── 정적 자산 폴백 (로컬 개발 전용) ──────────────────────────────────────────
+#
+# 프로덕션은 vercel.json 의 {"src": "/(.*\\..*)", "dest": "/public/$1"} 가
+# 파이썬에 닿기 **전에** 처리하므로 이 라우트는 로컬 `uvicorn api.index:app`
+# 에서만 실제로 쓰인다(/board 핸들러와 같은 목적 — 프로덕션과 같은 URL로 열기).
+# 없으면 /tokens.css·/pwa.js·/finalize.js·아이콘·manifest 가 전부 404라
+# **스타일이 하나도 없는 화면**이 떠서 UI 검증이 불가능하다.
+#
+# ⚠️ 반드시 파일 맨 끝(모든 라우트 뒤)에 둘 것 — Starlette 는 등록 순서대로
+#    첫 매치를 쓰므로, 위로 올리면 이 catch-all 이 /api/* 를 가로챈다.
+_PUBLIC_MEDIA_TYPES = {
+    ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript",
+    ".json": "application/json", ".webmanifest": "application/manifest+json",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml",
+    ".ico": "image/x-icon", ".txt": "text/plain", ".xml": "application/xml",
+    ".woff": "font/woff", ".woff2": "font/woff2", ".html": "text/html",
+}
+
+# /admin.html 은 계속 404로 둔다 — 관리자 진입점은 /admin 하나라는 기존 계약을
+# 이 폴백이 조용히 바꾸지 않도록 명시 제외한다(CLAUDE.md 정적 페이지 절).
+_PUBLIC_ASSET_DENY = {"admin.html"}
+
+
+@app.get("/{asset_path:path}")
+def serve_public_asset(asset_path: str):
+    """public/ 아래 정적 파일 서빙. 확장자 allowlist + commonpath 순회 방지."""
+    normalized = asset_path.lstrip("/")
+    if normalized in _PUBLIC_ASSET_DENY:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    media_type = _PUBLIC_MEDIA_TYPES.get(os.path.splitext(normalized)[1].lower())
+    if media_type is None:               # 확장자 없는 경로는 위 라우트들의 몫
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    base_dir = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "public")
+    )
+    file_path = os.path.abspath(os.path.join(base_dir, normalized))
+    if os.path.commonpath([base_dir, file_path]) != base_dir:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    # sw.js 는 vercel.json 과 같은 헤더를 줘야 로컬에서도 낡은 서비스워커가
+    # 캐시되지 않는다(배포마다 VERSION 을 올리는 규약의 로컬 대응).
+    headers = None
+    if normalized == "sw.js":
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Service-Worker-Allowed": "/",
+        }
+    elif normalized == "notice.json":
+        headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+    return FileResponse(file_path, media_type=media_type, headers=headers)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.index:app", host="0.0.0.0", port=5555, reload=True)
