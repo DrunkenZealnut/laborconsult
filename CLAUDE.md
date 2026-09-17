@@ -124,9 +124,6 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 # gz라 커밋 diff로 내용을 볼 수 없어(크기 변화만 보임) 이 자동 검사가 유일한 방어다.
 python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.jsonl.gz
 
-# NLRC 판정사례 번들 갱신 (odcloud API 키 필요, 주기 실행 후 커밋)
-python3 refresh_nlrc_cases.py     # odcloud → data/nlrc_cases.json
-
 # 보유기간 경과 첨부파일 파기 (개인정보처리방침 제5항 — 주기 실행 필요)
 # Supabase가 storage.objects 직접 DELETE를 차단하므로 2단계 구조다:
 #   ① pg_cron이 purge_expired_data()로 DB 행 삭제 + 파일 경로를 storage_purge_queue에 적재
@@ -152,8 +149,7 @@ Defined in `.env` (see `.env.example`):
 - `GEMINI_API_KEY` — tertiary LLM fallback (모델은 `GEMINI_MODEL`, 기본 `gemini-pro-latest`)
 - `SUPABASE_URL` / `SUPABASE_KEY` — session persistence + conversation storage. **`NEXT_PUBLIC_*` 이름은 읽지 않는다**(Next.js 관례) — 대시보드 스니펫을 그대로 붙이면 Supabase 기능 전체가 조용히 꺼진다
 - `SUPABASE_SCHEMA` — 접속 스키마, 미설정 시 `laborconsult` (`app/core/storage.py`)
-- `LAW_API_KEY` — 법제처 법령 API
-- `ODCLOUD_API_KEY` — 공공데이터포털 API (중앙노동위원회 판정사례)
+- `LAW_API_KEY` — 법제처 법령 API (법조문·판례·NLRC 판정문 공용, `legal_api.py`)
 - `COHERE_API_KEY` — search result reranking
 - `ADMIN_PASSWORD` — admin dashboard login (also default for `ADMIN_JWT_SECRET` + CAPTCHA HMAC signing)
 - `ADMIN_JWT_SECRET` — JWT signing (defaults to ADMIN_PASSWORD)
@@ -279,7 +275,7 @@ SECURITY DEFINER RPC 4개). **fail-open은 조용하므로 배포 후 쿼터 양
    - **Harassment assessment**: `harassment_assessor.assess_harassment()` → element scoring
    - **Legal consultation**: `legal_consultation.py` (topic→law mapping) + RAG + legal API
 3. **RAG search** → Adaptive complexity classification (`classify_complexity()` → SIMPLE/MODERATE/COMPLEX) → `query_decomposer.py` (LLM multi-query) → `rag.py::search_hybrid()` (BM25+Dense RRF fusion → Pinecone 2-group parallel) → `rerank_results()` (Cohere) → Self-RAG relevance filter (COMPLEX only, `self_rag.py`) + `graph.py` (GraphRAG multi-hop)
-4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) + `nlrc_cases.py` (판정사례 360건 — `data/nlrc_cases.json` 번들 우선 로드, 부재 시에만 odcloud API 폴백; 갱신은 `refresh_nlrc_cases.py`). `precedent_query.py::build_precedent_queries()` expands precedent search terms.
+4. **Legal API** → `legal_api.py` (법제처, circuit breaker + L1/L2/L3 cache) — 법조문·판례에 더해 `target=nlrc`로 중앙노동위원회 판정문(44,430건)도 라이브 조회한다(`search_nlrc`/`fetch_nlrc_detail`/`fetch_relevant_nlrc`, nlrc-decisions-corpus). 사건번호가 부분 마스킹(`2016부해OOO`)돼 있어 캐시 키는 `결정문일련번호`를 쓰고 인용에는 노출하지 않는다 — 구 `nlrc_cases.py`(360건 제목 번들 + odcloud API)는 이 경로로 대체되며 폐기됐다. `precedent_query.py::build_precedent_queries()` expands precedent search terms.
 5. **Source conflict resolution** → `conflict_resolver.py::annotate_source_priority()` tags hits by source-type priority before they reach the LLM.
 6. **Agency contacts** → `labor_offices.py` / `employment_centers.py` / `comwel_offices.py` match the user's region to 노동위원회(14)/고용센터(133)/근로복지공단(63) and emit a `contacts` event.
 7. **LLM streaming** → Claude → OpenAI → Gemini fallback chain (`_stream_answer()` in `pipeline.py`)

@@ -108,7 +108,6 @@ class AppConfig:
     gemini_api_key: str | None = None
     supabase: SupabaseClient | None = None
     law_api_key: str | None = None
-    odcloud_api_key: str | None = None
     cohere_api_key: str | None = None
     analyzer_model: str = EXTRACT_MODEL
     embed_model: str = EMBED_MODEL
@@ -152,7 +151,6 @@ class AppConfig:
         from app.core.storage import make_supabase_client
         supabase = make_supabase_client()
         law_api_key = os.getenv("LAW_API_KEY")
-        odcloud_api_key = os.getenv("ODCLOUD_API_KEY")
         cohere_api_key = os.getenv("COHERE_API_KEY")
         return cls(
             openai_client=openai_client,
@@ -161,6 +159,5 @@ class AppConfig:
             gemini_api_key=gemini_api_key,
             supabase=supabase,
             law_api_key=law_api_key,
-            odcloud_api_key=odcloud_api_key,
             cohere_api_key=cohere_api_key,
         )

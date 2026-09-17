@@ -229,11 +229,15 @@
     color: var(--color-text); border-color: var(--color-text); font-weight: var(--weight-bold);
   }
 
-  /* Collapsed input — prominent search bar style */
+  /* Collapsed input — prominent search bar style.
+     배경·모서리는 #search-box가 갖는다(위 Google 검색창 구조 참고) — textarea에
+     다시 주면 박스 안에 박스가 겹쳐 보인다. 랜딩에서는 그림자로 띄운다. */
   .chat-card:not(.active) #input-wrapper { border-top: none; }
+  .chat-card:not(.active) #search-box {
+    padding: var(--space-2) 18px var(--space-1); box-shadow: var(--shadow-card);
+  }
   .chat-card:not(.active) #input-area textarea {
-    font-size: var(--text-body); padding: 14px 20px; min-height: 52px;
-    background: var(--color-surface); border-radius: var(--radius);
+    font-size: var(--text-body); min-height: 88px;
   }
   .chat-card:not(.active) #input-area { padding: var(--space-2) 20px; }
 
@@ -356,26 +360,38 @@
   .file-chip img { width: 20px; height: 20px; object-fit: cover; border-radius: 3px; }
   .file-chip .remove { cursor: pointer; color: var(--color-text-muted); font-weight: bold; margin-left: 2px; }
   .file-chip .remove:hover { color: var(--color-text); }
-  #input-area { padding: 14px 20px; display: flex; gap: var(--space-1); align-items: center; }
+  /* Google 검색창 구조 — 테두리는 #search-box 하나가 갖고, 그 **안**에
+     textarea(위) + 액션 행(아래: 왼쪽 첨부 '+', 오른쪽 끝 입력 버튼)이 들어간다.
+     textarea 자신은 테두리·배경이 없다 — 있으면 박스 안에 박스가 겹쳐 보인다. */
+  #input-area { padding: 14px 20px; }
+  #search-box {
+    border: 1px solid var(--color-border); border-radius: var(--radius);
+    background: var(--color-bg); padding: var(--space-1) 14px var(--space-1);
+    display: flex; flex-direction: column; gap: var(--space-half);
+    transition: border-color var(--dur-fast) var(--ease-out);
+  }
+  /* 포커스 링은 박스가 받는다 — textarea에 걸면 테두리 없는 요소라 표시되지 않는다 */
+  #search-box:focus-within { border-color: var(--accent); }
+  #input-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); }
   #attach-btn {
-    background: none; border: 1px solid var(--color-border); border-radius: var(--radius);
-    padding: 9px; cursor: pointer; color: var(--color-text-muted);
-    display: flex; align-items: center; flex-shrink: 0; transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+    background: none; border: 1px solid var(--color-border); border-radius: var(--radius-pill);
+    padding: 7px; cursor: pointer; color: var(--color-text-muted);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
   }
   #attach-btn:hover { border-color: var(--accent); color: var(--color-text); }
   #input-area textarea {
-    flex: 1; border: 1px solid var(--color-border); border-radius: var(--radius);
-    padding: 10px var(--space-2); font-size: var(--text-sm); outline: none; resize: none;
-    min-height: 42px; max-height: 120px; line-height: var(--leading-base); font-family: var(--font-body);
-    overflow-y: auto; background: var(--color-surface);
+    width: 100%; border: none; background: none; border-radius: 0;
+    padding: var(--space-half) 0; font-size: var(--text-sm); outline: none; resize: none;
+    min-height: 56px; max-height: 200px; line-height: var(--leading-base); font-family: var(--font-body);
+    overflow-y: auto; color: var(--color-text);
   }
   .input-hint {
     text-align: center; font-size: var(--text-label); color: var(--color-text-muted); padding: var(--space-half) 0 0;
   }
-  #input-area textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px transparent; }
   #send-btn {
-    background: var(--color-text); color: var(--color-bg); border: none; border-radius: var(--radius);
-    padding: 10px 22px; font-size: var(--text-sm); font-weight: var(--weight-semibold); cursor: pointer;
+    background: var(--color-text); color: var(--color-bg); border: none; border-radius: var(--radius-pill);
+    padding: 9px 20px; font-size: var(--text-sm); font-weight: var(--weight-semibold); cursor: pointer;
     font-family: var(--font-body); transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); white-space: nowrap;
   }
   #send-btn:hover { background: var(--color-text-muted); }
@@ -638,14 +654,18 @@
         <div id="input-wrapper">
           <div id="file-preview"></div>
           <div id="input-area">
-            <button id="attach-btn" title="파일 첨부 (이미지/PDF/TXT, 최대 3개 · 합계 3MB)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-              </svg>
-            </button>
-            <input type="file" id="file-input" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.txt,.md" hidden>
-            <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." aria-label="노동법 관련 질문 입력" rows="1" autocomplete="off"></textarea>
-            <button id="send-btn">전송</button>
+            <div id="search-box">
+              <textarea id="msg-input" placeholder="노동법 관련 질문을 입력하세요..." aria-label="노동법 관련 질문 입력" rows="1" autocomplete="off"></textarea>
+              <div id="input-actions">
+                <button id="attach-btn" aria-label="파일 첨부" title="파일 첨부 (이미지/PDF/TXT, 최대 3개 · 합계 3MB)">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                </button>
+                <input type="file" id="file-input" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.txt,.md" hidden>
+                <button id="send-btn">입력</button>
+              </div>
+            </div>
           </div>
           <p class="input-hint">Shift + Enter로 줄바꿈</p>
         </div>
@@ -842,7 +862,7 @@ msgInput.addEventListener('keydown', e => {
 });
 msgInput.addEventListener('input', () => {
   msgInput.style.height = 'auto';
-  msgInput.style.height = Math.min(msgInput.scrollHeight, 150) + 'px';
+  msgInput.style.height = Math.min(msgInput.scrollHeight, 200) + 'px';
 });
 btn.addEventListener('click', send);
 

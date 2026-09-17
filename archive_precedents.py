@@ -919,7 +919,8 @@ def run_build(paths: Paths, pinecone: bool = False, quiet: bool = False) -> dict
                          for k, v in paths.snapshot_origins().items()},
         "snapshot_origin_digests": origin_digests,
         "scope_notes": [
-            "NLRC 제외 — data/nlrc_cases.json에 사건번호·본문 필드 없음(설계 §5.3)",
+            "NLRC 제외 — 법제처 target=nlrc 라이브 조회(legal_api.py, nlrc-decisions-corpus)"
+            "라 Pinecone에 적재하지 않음, 아카이브 대상 아님",
             "사장 NS는 vec_dead 존재 표시만 — NFD 손상 이력으로 역매핑은 가능분만(설계 D-11)",
         ],
         "gate_rule_version": GATE_RULE_VERSION,

@@ -287,13 +287,97 @@ def test_conflict_resolver() -> None:
     print("  ✅ conflict_resolver: 동일 조항 겹침 시에만 우선순위 주석")
 
 
-def test_nlrc_bundle() -> None:
-    from app.core.nlrc_cases import _load_bundle
+def test_legal_api_nlrc() -> None:
+    """NLRC 검색·상세 — 2026-09-15 실제 프로브로 받은 XML 그대로(추측 데이터 아님).
 
-    cases = _load_bundle()
-    assert len(cases) >= 300, f"번들 로드 실패 또는 데이터 축소: {len(cases)}건"
-    assert "제목" in cases[0], cases[0].keys()
-    print(f"  ✅ NLRC 번들 로더: {len(cases)}건 (네트워크 0회)")
+    _http.get을 대체해 search_nlrc()/fetch_nlrc_detail()을 실제로 호출한다.
+    픽스처 XML을 직접 ET로만 파싱하면 필드명이 함수 **밖**에서만 검증되고
+    코드의 추출 로직 자체는 무방비가 된다(T30-d/e에서 겪은 것과 같은 함정
+    — 소스 grep·픽스처 독립검증은 실제 호출을 대체하지 못한다).
+
+    결정문일련번호는 실제 값(15255)이 아니라 합성 ID를 쓴다 — 이 세션에서
+    이미 15255를 라이브로 조회해 L2(Supabase) 캐시에 24시간 TTL로 써둔
+    상태라, 실제 값을 쓰면 이 테스트가 L2 캐시 히트로 페이크 HTTP를 건너뛰고
+    조용히 통과해버린다(로컬 재실행에서만 재현되는 거짓 양성).
+    """
+    from app.core import legal_api as L
+
+    fake_id = "90000001"
+    search_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><Nlrc>'
+        f'<nlrc id="1"><결정문일련번호>{fake_id}</결정문일련번호>'
+        '<제목><![CDATA[○ ○ ○ 부당해고 구제신청]]></제목>'
+        '<사건번호>2016부해OOO</사건번호><등록일>2016.05.09</등록일></nlrc></Nlrc>'
+    )
+    detail_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><NlrcService>'
+        f'<결정문일련번호>{fake_id}</결정문일련번호><기관명>노동위원회</기관명>'
+        '<사건번호>2016부해OOO</사건번호><자료구분>부당해고</자료구분>'
+        '<담당부서>충남지방노동위원회</담당부서><등록일>2016.5.9.</등록일>'
+        '<제목><![CDATA[○ ○ ○ 부당해고 구제신청]]></제목><내용></내용>'
+        '<판정사항><![CDATA[법인등기부등본 상 분사무소...]]></판정사항>'
+        '<판정요지><![CDATA[○ ○ ○는 법인등기부등본이나...]]></판정요지>'
+        '<판정결과><![CDATA[각하]]></판정결과></NlrcService>'
+    )
+
+    class _FakeResp:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            pass
+
+    def _fake_get(url, params=None, timeout=None):
+        xml = detail_xml if (params or {}).get("ID") else search_xml
+        return _FakeResp(xml.encode("utf-8"))
+
+    original_get = L._http.get
+    original_init_sb = L._init_supabase
+    # L2(Supabase)를 "미설정"으로 가장한다 — 그래야 이 테스트가 로컬(자격증명
+    # 있음)·CI(없음) 어디서든 동일하게 순수 오프라인이고, 합성 ID라도 실제
+    # law_article_cache 테이블에 쓰지 않는다.
+    L._http.get = _fake_get
+    L._init_supabase = lambda: None
+    try:
+        results = L.search_nlrc("부당해고", "fake-key", max_results=1)
+        assert results == [{
+            "id": int(fake_id), "title": "○ ○ ○ 부당해고 구제신청",
+            "case_no": "2016부해OOO", "date": "2016.05.09",
+        }], results  # 마스킹된 사건번호는 담기되(로깅용), 아래 상세 반환값엔 없어야 함
+
+        detail = L.fetch_nlrc_detail(int(fake_id), "fake-key")
+        assert detail is not None
+        assert detail["category"] == "부당해고"
+        assert detail["dept"] == "충남지방노동위원회"
+        assert detail["gist"].startswith("법인등기부등본"), detail["gist"]
+        assert detail["result"] == "각하"
+        assert "case_no" not in detail, "fetch_nlrc_detail이 마스킹된 사건번호를 반환값에 담음"
+    finally:
+        L._http.get = original_get
+        L._init_supabase = original_init_sb
+    print("  ✅ NLRC 검색·상세: 실제 함수 호출로 필드 추출 확인(페이크 HTTP, L2 미접촉)")
+
+
+def test_legal_api_nlrc_cache_key() -> None:
+    import inspect
+    from app.core import legal_api as L
+
+    src = inspect.getsource(L.fetch_nlrc_detail)
+    assert 'f"nlrc_{decision_id}"' in src, "캐시 키가 결정문일련번호 기반이 아님"
+    assert '["사건번호"]' not in src and "case_no" not in src.split("def ")[1], (
+        "fetch_nlrc_detail이 마스킹된 사건번호를 반환값에 담고 있음")
+    print("  ✅ NLRC 캐시 키: 마스킹 안 된 결정문일련번호 기반")
+
+
+def test_pipeline_nlrc_gate() -> None:
+    """odcloud_api_key가 아니라 law_api_key로 게이트하는지."""
+    import inspect
+    from app.core import pipeline as P
+
+    src = inspect.getsource(P)
+    assert "config.odcloud_api_key" not in src, "구 odcloud 게이트가 남아있음"
+    assert "fetch_relevant_nlrc" in src, "신규 함수가 배선되지 않음"
+    print("  ✅ 파이프라인: NLRC 게이트가 law_api_key로 교체됨")
 
 
 def test_pipeline_helpers() -> None:
@@ -1144,7 +1228,9 @@ def main() -> None:
     test_colloquial_fallback_only_wiring()
     test_merge_search_queries()
     test_conflict_resolver()
-    test_nlrc_bundle()
+    test_legal_api_nlrc()
+    test_legal_api_nlrc_cache_key()
+    test_pipeline_nlrc_gate()
     test_pipeline_helpers()
     test_session_cache_scope()
     test_analysis_schema()
