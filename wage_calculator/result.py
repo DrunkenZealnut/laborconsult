@@ -21,7 +21,7 @@ class WageResult:
     ordinary_hourly: float = 0.0          # 통상시급 (원)
     monthly_total: float = 0.0            # 월 총 예상 수령액 (세전, 원)
     monthly_net: float = 0.0             # 월 실수령액 (세후, 원) — insurance 계산 시 채워짐
-    minimum_wage_ok: bool | None = True   # None: 계산 보류
+    minimum_wage_ok: bool | None = None   # None: 미실행 또는 계산 보류
     # legacy(내장표) / managed_parameters(승인 기준 소비함) /
     # managed_no_parameters(관리 모드지만 이 계산엔 해당 기준 없음) / blocked(보류)
     legal_rule_status: str = "legacy"

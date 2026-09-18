@@ -143,7 +143,8 @@ def fetch_article_xml(api_key: str, law_name: str, article_no: int, sub: int | N
         key = (jo.findtext("조문번호") or "").zfill(4) + (jo.findtext("조문가지번호") or "0").zfill(2)
         if key != want:
             continue
-        parts = [(el.text or "").strip() for el in jo.iter() if el.tag in wanted_tags]
+        parts = [("".join(el.itertext())).strip()
+                 for el in jo.iter() if el.tag in wanted_tags]
         # 수집일을 문서 날짜로 쓰면 동일 조문도 다음 날 새 근거가 된다. 법제처가
         # 제공하는 시행일을 내용 버전 날짜로 저장하고, 조회 시각은 별도 provenance가 맡는다.
         official_date = (root.findtext(".//시행일자") or

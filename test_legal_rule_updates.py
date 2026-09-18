@@ -170,6 +170,17 @@ class LegalUpdatesTest(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertNotIn("secret", str(result))
 
+    def test_scan_keeps_valid_hits_when_one_evidence_document_is_malformed(self):
+        """한 검색 결과의 스키마 오류가 같은 응답의 정상 근거까지 버리면 안 된다."""
+        valid = self.evidence.fetch("fixture-law")
+        malformed = dict(valid, id="broken", text="", chunk_text="")
+        with patch.object(self.evidence, "search", return_value=[valid, malformed]):
+            result = self.service.scan("minimum_wage", "worker")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["hit_count"], 1)
+        self.assertEqual(result["new_count"], 1)
+        self.assertEqual(len(self.store.document["records"]), 1)
+
     def test_request_scope_resets_on_exception_and_has_provenance(self):
         record = self.add()
         self.approve(record)
@@ -318,6 +329,29 @@ class LegalUpdatesTest(unittest.TestCase):
         self.assertIn("판정 보류", format_result(result))
         self.assertNotIn("최저임금 충족: ✅", format_result(result))
 
+    def test_unperformed_minimum_wage_check_has_no_success_default(self):
+        """최저임금 검사를 실행하지 않은 결과를 충족으로 표시하지 않는다."""
+        from wage_calculator.result import WageResult, format_result
+        result = WageResult(ordinary_hourly=15000)
+        self.assertIsNone(result.minimum_wage_ok)
+        self.assertIn("최저임금 충족: ⏸ 판정 보류", format_result(result))
+        self.assertNotIn("최저임금 충족: ✅", format_result(result))
+
+    def test_maternity_conflicting_approved_floor_and_cap_blocks_section(self):
+        """승인 하한이 승인 상한보다 높으면 어느 금액도 법정값으로 선택하지 않는다."""
+        from wage_calculator import WageCalculator, WageInput, WageType
+        self.approve(self.add(value=20000))
+        self.approve(self.add(
+            topic="maternity_leave", key="maternity.monthly_upper", value=2_000_000,
+        ))
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=3_000_000,
+                        reference_year=2031, reference_date="2031-06-01")
+        result = WageCalculator(rule_store=self.store).calculate(inp, ["maternity_leave"])
+        self.assertEqual(result.legal_rule_status, "blocked")
+        self.assertEqual(result.monthly_total, 0)
+        self.assertIn("상한", result.warnings[0])
+        self.assertIn("하한", result.warnings[0])
+
     def test_status_says_managed_only_when_an_approved_value_was_actually_used(self):
         """R4: provenance가 비면 managed로 부르지 않는다 — 내장표 수치가 법적 검증으로 오독된다."""
         from wage_calculator import WageCalculator, WageInput, WageType
@@ -396,7 +430,7 @@ class LegalUpdatesTest(unittest.TestCase):
         xml = """<법령><기본정보><법령명_한글>최저임금법</법령명_한글>
         <시행일자>20260101</시행일자></기본정보><조문단위><조문여부>조문</조문여부>
         <조문번호>5</조문번호><조문가지번호>0</조문가지번호>
-        <조문내용>제5조 최저임금액</조문내용></조문단위></법령>"""
+        <조문내용>제5조<br /> 최저임금액</조문내용></조문단위></법령>"""
         response = SimpleNamespace(text=xml, raise_for_status=lambda: None)
         with patch.object(fetcher.requests, "get", return_value=response):
             article = fetcher.fetch_article_xml("fixture-key", "최저임금법", 5, None)
@@ -416,6 +450,8 @@ class LegalUpdatesTest(unittest.TestCase):
             "official_url 없음": "- doc_id: x\n- source_type: law\n- title: T\n",
             "본문 없음": "- doc_id: x\n- source_type: law\n- title: T\n"
                        "- official_url: https://www.law.go.kr/a\n",
+            "잘못된 문서 ID": "- doc_id: Bad-ID\n- source_type: law\n- title: T\n"
+                            "- official_url: https://www.law.go.kr/a\n",
         }
         with tempfile.TemporaryDirectory() as tmp:
             for label, head in cases.items():
@@ -482,6 +518,14 @@ class LegalUpdatesTest(unittest.TestCase):
             self.assertIn("12,345", result)
             params.pop("reference_date")
             self.assertIn("계산 보류", pipeline._run_calculator(params))
+
+    def test_pipeline_labels_dated_hold_as_non_numeric_guidance(self):
+        """기준일이 삽입된 보류 문구도 사용 가능한 계산 결과로 오인하지 않는다."""
+        import app.core.pipeline as pipeline
+        heading = pipeline._calculation_context_heading(
+            "계산 보류 (기준일 2031-06-01): 승인 기준이 없습니다")
+        self.assertIn("금액 추정 금지", heading)
+        self.assertNotIn("이 수치를 사용하세요", heading)
 
     def test_admin_listing_omits_source_text_and_detail_returns_it(self):
         """R7: 후보마다 최대 5만자 원문을 목록에 실으면 응답 한도를 넘겨 화면이 멈춘다."""

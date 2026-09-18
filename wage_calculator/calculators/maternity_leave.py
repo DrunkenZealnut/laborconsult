@@ -21,7 +21,7 @@ from ..base import BaseCalculatorResult
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from ..constants import MINIMUM_HOURLY_WAGE
-from ..legal_rules import parameter
+from ..legal_rules import parameter, RuleUnavailable
 
 # ── 연도별 출산전후휴가급여 상한액 (월 기준) ─────────────────────────────────
 # 고용노동부 고시. 근로기준법 제74조, 고용보험법 제75조
@@ -125,6 +125,11 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     if not is_pw:
         min_hourly = parameter("minimum_hourly_wage", MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[2025]))
         min_monthly = min_hourly * 209
+        if min_monthly > upper:
+            raise RuleUnavailable(
+                f"출산전후휴가급여 승인 하한({min_monthly:,.0f}원)이 "
+                f"승인 상한({upper:,.0f}원)보다 높습니다. 관리자 확인이 필요합니다"
+            )
         if monthly_benefit < min_monthly:
             monthly_benefit = min_monthly
             warnings.append(

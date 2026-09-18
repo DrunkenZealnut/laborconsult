@@ -1512,6 +1512,13 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
 """
 
 
+def _calculation_context_heading(calc_result: str) -> str:
+    """보류 결과에는 수치 사용 지시 대신 추정 금지 지시를 붙인다."""
+    if calc_result.startswith("계산 보류"):
+        return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
+    return "임금계산기 결과 — 이 수치를 사용하세요"
+
+
 def process_question(query: str, session: Session, config: AppConfig,
                      attachments: list[ParsedAttachment] | None = None,
                      guard_ctx: GuardContext | None = None):
@@ -1958,8 +1965,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     if precedent_text:
         parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{_cap(precedent_text, PRECEDENT_TEXT_BUDGET)}")
     if calc_result:
-        heading = ("계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
-                   if calc_result.startswith("계산 보류:") else "임금계산기 결과 — 이 수치를 사용하세요")
+        heading = _calculation_context_heading(calc_result)
         parts.append(f"{heading}:\n\n{calc_result}")
     # Managed facts use one snapshot; a calculation already supplies its own snapshot.
     # Do not inject a second, potentially newer or hardcoded numeric version into that answer.

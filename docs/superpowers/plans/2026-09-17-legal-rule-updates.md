@@ -18,7 +18,7 @@
 
 - [x] 1. `test_legal_rule_updates.py`: 수동 등록/수정/승인/반려/취소, 출처 및 재검증, 날짜 경계·중복·충돌 테스트를 먼저 추가한다. `python -m unittest test_legal_rule_updates -v` 실패 확인 후 도메인을 구현한다.
   - `wage_calculator/legal_rules.py`: `RuleSnapshot(records, reference_date)`, `parameter(key, legacy)`; 읽기 전용 요청 스냅샷.
-  - `app/core/legal_updates.py`: `LegalUpdateService(store, evidence)`; store `load()/save(revision, document, actor, action)`; evidence `fetch(id)/search(query)`.
+  - `app/core/legal_updates.py`: `LegalUpdateService(store, evidence)`; store `load()/save(revision, document, actor, action, payload)`; evidence `fetch(id)/search(query)`.
   - 등록은 pending, 승인은 원문 재조회/기간 검증 후 approved, 취소는 revoked. 같은 revision만 저장된다.
 - [x] 2. `supabase_legal_rules.sql`과 어댑터: registry CAS RPC와 append-only 이벤트, service-role 전용 권한. 서버 어댑터가 SQL revision 충돌을 409로 변환하도록 테스트한다.
 - [x] 3. 계산기: facade에서 스냅샷 scope를 열고 최소임금/보험/출산급여 허용 키를 조회한다. 원금/금액보다 먼저 관리기준 검증. `reference_date` 배선 및 결과 provenance 추가. 승인 후 실제 계산 금액이 바뀌며 다른 요청에는 누수하지 않는 테스트.

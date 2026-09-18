@@ -3,10 +3,14 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 from urllib.parse import urlparse
 from uuid import uuid4
 
 from wage_calculator.legal_rules import PARAMETERS, iso_date, validate_value
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuleError(ValueError):
@@ -206,8 +210,15 @@ class LegalUpdateService:
         # Search happens once, before the short CAS retry loop; no duplicate network cost.
         try:
             search_result = self.evidence.search(query)
-            hits = [evidence_snapshot(hit) for hit in search_result]
-            status = ("partial" if getattr(search_result, "partial", False)
+            hits = []
+            invalid_hit = False
+            for hit in search_result:
+                try:
+                    hits.append(evidence_snapshot(hit))
+                except (EvidenceError, AttributeError, TypeError):
+                    invalid_hit = True
+                    logger.warning("법률 기준 검색 결과의 잘못된 근거 문서를 제외했습니다")
+            status = ("partial" if invalid_hit or getattr(search_result, "partial", False)
                       else "completed" if hits else "empty")
         except Exception:
             hits, status = [], "failed"

@@ -61,6 +61,8 @@ def parse_doc(path: str) -> dict | None:
     required = ("doc_id", "source_type", "title", "official_url")
     if any(not meta.get(k) for k in required):
         return None
+    if not re.fullmatch(r"[a-z0-9_]+", meta["doc_id"]):
+        return None
     if not meta["official_url"].startswith("https://"):
         # https 가 아니면 승인 게이트를 통과하지 못한다 — 올려도 쓸모가 없다.
         return None

@@ -14,6 +14,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 // HTML 은 이름을 고정한다(아래 개별 테스트가 INDEX/BOARD 를 지목한다).
 // 분리된 정적 JS 는 **디렉터리에서 발견**한다 — 손으로 나열하면 파일이 늘 때
@@ -21,9 +22,19 @@ const path = require('node:path');
 // (admin_legal_rules.js 가 그렇게 빠져 있었다).
 // sw.js 는 제외: 서비스워커의 fetch 는 네트워크 요청 대행이라 응답 상태를 그대로
 // 통과시키는 것이 정상이고, 캐시 폴백은 이 검사의 윈도우 밖에 있다.
-const SCRIPTS = fs.readdirSync(path.join(__dirname, 'public'))
-  .filter(function (name) { return name.endsWith('.js') && name !== 'sw.js'; })
-  .sort();
+function discoverScripts(root, relative = '') {
+  const scripts = [];
+  for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+    const name = path.join(relative, entry.name);
+    if (entry.isDirectory()) scripts.push(...discoverScripts(root, name));
+    if (entry.isFile() && entry.name.endsWith('.js') && entry.name !== 'sw.js') {
+      scripts.push(name.split(path.sep).join('/'));
+    }
+  }
+  return scripts.sort();
+}
+
+const SCRIPTS = discoverScripts(path.join(__dirname, 'public'));
 
 const PAGES = ['index.html', 'board.html', 'admin.html'].concat(SCRIPTS).map(function (name) {
   return [name, fs.readFileSync(path.join(__dirname, 'public', name), 'utf8')];
@@ -126,6 +137,16 @@ test('분리된 정적 스크립트가 fetch 스캔 대상에 들어 있다', ()
   assert.ok(SCRIPTS.includes('finalize.js'), '답변 조망 스크립트 누락');
   const names = PAGES.map(function (p) { return p[0]; });
   for (const name of SCRIPTS) assert.ok(names.includes(name), name + ' 이 PAGES 에 없다');
+});
+
+test('하위 디렉터리의 정적 스크립트도 fetch 스캔 대상으로 발견한다', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'public-fetch-'));
+  t.after(function () { fs.rmSync(root, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(root, 'assets'));
+  fs.writeFileSync(path.join(root, 'top.js'), '');
+  fs.writeFileSync(path.join(root, 'assets', 'nested.js'), '');
+  fs.writeFileSync(path.join(root, 'assets', 'sw.js'), '');
+  assert.deepEqual(discoverScripts(root), ['assets/nested.js', 'top.js']);
 });
 
 test('admin_legal_rules.js의 단일 HTTP 경로가 응답 상태를 검사한다', () => {
