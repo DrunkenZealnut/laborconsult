@@ -247,7 +247,8 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         ))
 
     # 하한액: 최저임금 × 80% × 8h
-    min_wage = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[max(MINIMUM_HOURLY_WAGE)])
+    from ..constants import get_minimum_hourly_wage
+    min_wage = get_minimum_hourly_wage(year)
     lower    = min_wage * LOWER_LIMIT_RATE * LOWER_LIMIT_HOURS
 
     # 2026년 이후 하한 > 상한이 될 수 있음 → 경고

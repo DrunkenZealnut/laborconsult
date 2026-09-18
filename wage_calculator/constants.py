@@ -1,6 +1,7 @@
 """
 상수 정의: 연도별 최저임금, 법적 가산율, 기준 근로시간
 """
+from .legal_rules import parameter
 
 # ── 통상임금 관련 대법원 판결 ─────────────────────────────────────────────
 # 대법원 2023다302838 (2024.12.19) — 통상임금 고정성 요건 폐기
@@ -19,6 +20,11 @@ MINIMUM_HOURLY_WAGE: dict[int, int] = {
     2025: 10030,
     2026: 10320,
 }
+
+
+def get_minimum_hourly_wage(year: int) -> float:
+    return parameter("minimum_hourly_wage", MINIMUM_HOURLY_WAGE.get(
+        year, MINIMUM_HOURLY_WAGE[max(MINIMUM_HOURLY_WAGE)]))
 
 # ── 구직급여 상한액 (원/일, 고용보험법 시행령 제68조) ──────────────────────
 UNEMPLOYMENT_BENEFIT_UPPER: dict[int, int] = {
@@ -237,10 +243,12 @@ INSURANCE_RATES: dict[int, dict] = {
 
 # 연도별 요율 조회 헬퍼 (해당 연도 없으면 가장 최근 연도 반환)
 def get_insurance_rates(year: int) -> dict:
-    if year in INSURANCE_RATES:
-        return INSURANCE_RATES[year]
-    latest = max(INSURANCE_RATES.keys())
-    return INSURANCE_RATES[latest]
+    legacy = INSURANCE_RATES.get(year, INSURANCE_RATES[max(INSURANCE_RATES)])
+    rates = {key: parameter("insurance." + key, value) for key, value in legacy.items()}
+    if rates["pension_income_min"] > rates["pension_income_max"] or rates["health_premium_min"] > rates["health_premium_max"]:
+        from .legal_rules import RuleUnavailable
+        raise RuleUnavailable("보험료 기준 하한이 상한보다 큽니다. 승인된 기준을 확인하세요")
+    return rates
 
 # 하위 호환 상수 (2025년 기준 — 내부 참조용)
 NATIONAL_PENSION_RATE       = INSURANCE_RATES[2025]["national_pension"]

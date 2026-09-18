@@ -263,7 +263,8 @@ def _calc_sick_leave(
     min_comp = MIN_COMPENSATION_DAILY.get(year, MIN_COMPENSATION_DAILY[max(MIN_COMPENSATION_DAILY.keys())])
     min_comp_80 = min_comp * MIN_COMP_THRESHOLD
 
-    min_wage_daily = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[max(MINIMUM_HOURLY_WAGE.keys())]) * 8
+    from ..constants import get_minimum_hourly_wage
+    min_wage_daily = get_minimum_hourly_wage(year) * 8
 
     daily = base
     formulas.append(f"기본 휴업급여: {avg_daily:,.0f}원 × 70% = {base:,.0f}원")

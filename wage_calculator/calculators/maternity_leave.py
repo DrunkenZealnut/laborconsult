@@ -21,6 +21,7 @@ from ..base import BaseCalculatorResult
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from ..constants import MINIMUM_HOURLY_WAGE
+from ..legal_rules import parameter
 
 # ── 연도별 출산전후휴가급여 상한액 (월 기준) ─────────────────────────────────
 # 고용노동부 고시. 근로기준법 제74조, 고용보험법 제75조
@@ -89,7 +90,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     is_pw = getattr(inp, "is_platform_worker", False)
     if is_pw:
         from ..constants import PLATFORM_MATERNITY_UPPER, PLATFORM_INSURED_REQ_MONTHS
-        upper = PLATFORM_MATERNITY_UPPER
+        upper = parameter("maternity.platform_upper", PLATFORM_MATERNITY_UPPER)
         legal.append("고용보험법 제77조의3 (노무제공자 출산전후휴가급여)")
         # 노무제공자 수급요건: 피보험 3개월 이상
         pw_months = getattr(inp, "platform_insured_months", 0)
@@ -100,7 +101,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
                 "출산일 전 피보험 단위기간 3개월 이상 필요합니다."
             )
     else:
-        upper = MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[2025])
+        upper = parameter("maternity.monthly_upper", MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[2025]))
 
     # ── 월 급여 계산 ─────────────────────────────────────────────────────
     if is_pw:
@@ -122,7 +123,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
 
     # 최저임금 하한 체크 (노무제공자는 고용보험 상한만 적용, 근기법 최저임금 보장 대상 아님)
     if not is_pw:
-        min_hourly = MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[2025])
+        min_hourly = parameter("minimum_hourly_wage", MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[2025]))
         min_monthly = min_hourly * 209
         if monthly_benefit < min_monthly:
             monthly_benefit = min_monthly

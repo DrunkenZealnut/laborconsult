@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import re
+import secrets
 import sys
 import time
 import traceback
@@ -539,11 +540,24 @@ def admin_login(body: AdminLoginRequest, request: Request):
     if not _hmac.compare_digest(body.password, ADMIN_PASSWORD):  # 상수시간 비교
         raise HTTPException(401, "비밀번호가 올바르지 않습니다")
     token = jwt.encode(
-        {"exp": int(time.time()) + JWT_EXPIRY, "role": "admin"},
+        {"exp": int(time.time()) + JWT_EXPIRY, "role": "admin",
+         "jti": secrets.token_urlsafe(16)},
         JWT_SECRET,
         algorithm="HS256",
     )
     return {"token": token, "expires_in": JWT_EXPIRY}
+
+
+def _legal_update_service():
+    from app.core.legal_updates import LegalUpdateService
+    from app.core.legal_rule_store import configured_store, PineconeEvidence
+    config = get_config()
+    return LegalUpdateService(configured_store(),
+                              PineconeEvidence(config.pinecone_index, config.openai_client, config.embed_model))
+
+
+from api.legal_updates import build_legal_router
+app.include_router(build_legal_router(require_admin, _legal_update_service))
 
 
 @app.get("/api/admin/stats")

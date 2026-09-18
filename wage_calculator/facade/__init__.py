@@ -41,7 +41,59 @@ def _clamp_negative_inputs(inp: WageInput) -> None:
 class WageCalculator:
     """임금계산기 통합 퍼사드"""
 
+    def __init__(self, rule_store=None):
+        self.rule_store = rule_store
+
     def calculate(
+        self, inp: WageInput, targets: list[str] | None = None,
+    ) -> WageResult:
+        from copy import deepcopy
+        from ..legal_rules import (
+            RuleSnapshot, RuleUnavailable, resolve_reference_date, rule_scope,
+        )
+        from app.core.legal_rule_store import rules_enabled, configured_store
+
+        # A snapshot belongs to one call, not a process-global mutable constants table.
+        if self.rule_store is None and not rules_enabled():
+            with rule_scope(None):
+                return self._calculate(inp, targets)
+        reference_date = None
+        try:
+            # Resolve (and validate) before the store round trip: an unusable date
+            # must not cost a query.
+            reference_date = resolve_reference_date(inp.reference_date, inp.reference_year)
+            store = self.rule_store if self.rule_store is not None else configured_store()
+            _, document = store.load()
+            snapshot = RuleSnapshot(document["records"], reference_date)
+            managed_input = deepcopy(inp)
+            managed_input.reference_year = snapshot.day.year
+            if managed_input.use_minimum_wage:
+                managed_input.wage_type = WageType.HOURLY
+                managed_input.hourly_wage = snapshot.get("minimum_hourly_wage")
+            with rule_scope(snapshot):
+                result = self._calculate(managed_input, targets)
+            # 시도한 계산이 **전부** 보류면 부분 결과가 아니라 보류다. 통상임금만 남은
+            # 껍데기를 정상 결과로 내보내면 '계산 보류' 신호가 사라진다.
+            if result.legal_rule_attempted and len(result.legal_rule_blocked) == result.legal_rule_attempted:
+                raise RuleUnavailable(" / ".join(
+                    item["reason"] for item in result.legal_rule_blocked))
+            # 승인 기준이 한 건도 소비되지 않았으면 'managed'로 부르지 않는다 — 빈
+            # provenance에 적용일만 붙으면 내장표 수치가 법적 검증을 받은 것처럼 읽힌다.
+            result.legal_rule_versions = snapshot.provenance()
+            result.legal_rule_status = ("managed_parameters" if result.legal_rule_versions
+                                        else "managed_no_parameters")
+            result.legal_reference_date = reference_date
+            return result
+        except RuleUnavailable as exc:
+            reason = str(exc)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("관리 기준 계산 실패")
+            reason = "법률 기준 저장소 또는 계산 검증에 실패했습니다. 관리자 확인이 필요합니다"
+        return WageResult(minimum_wage_ok=None, legal_rule_status="blocked",
+                          legal_reference_date=reference_date, warnings=[reason])
+
+    def _calculate(
         self,
         inp: WageInput,
         targets: list[str] | None = None,
@@ -77,6 +129,22 @@ class WageCalculator:
         monthly_total = ow.monthly_ordinary_wage
         all_w, all_l = [], ["근로기준법 (통상임금)"]
 
+        # 승인 기준 누락은 **그 섹션만** 제외한다. 기반 단계(통상임금·사업장 규모)는
+        # 뒤따르는 모든 계산의 입력이라 여기서 감싸지 않는다 — 그쪽 실패는 요청 전체 보류다.
+        from ..legal_rules import RuleUnavailable, used_scope
+        blocked: list = []
+        blocked_targets: set = set()
+
+        def guarded(target, section, run):
+            result.legal_rule_attempted += 1
+            try:
+                with used_scope():        # 보류된 섹션이 읽은 기준은 provenance에서 제외
+                    return run()
+            except RuleUnavailable as exc:
+                blocked.append({"target": target, "section": section, "reason": str(exc)})
+                blocked_targets.add(target)
+                return None
+
         # ── 상시근로자 수 판정 (다른 계산기보다 먼저 실행) ────────────────────
         if "business_size" in targets and inp.business_size_input is not None:
             bs = calc_business_size(inp.business_size_input)
@@ -93,7 +161,9 @@ class WageCalculator:
                 continue
             if precondition and not precondition(inp):
                 continue
-            r = func(inp, ow)
+            r = guarded(key, section, lambda: func(inp, ow))
+            if r is None:
+                continue
             if key == "severance":
                 _severance_cache = r
             monthly_total += populate(r, result)
@@ -101,43 +171,62 @@ class WageCalculator:
 
         # ── 특수 계산기: 임금체불 (독립 함수, WageInput 미사용) ───────────────
         if "wage_arrears" in targets and inp.arrear_amount > 0 and inp.arrear_due_date:
-            wa = calc_wage_arrears(
+            wa = guarded("wage_arrears", "임금체불 지연이자", lambda: calc_wage_arrears(
                 arrear_amount=inp.arrear_amount,
                 arrear_due_date=inp.arrear_due_date,
                 is_post_retirement_arrear=inp.is_post_retirement_arrear,
                 arrear_calc_date=inp.arrear_calc_date or None,
-            )
-            result.summary["임금체불 지연이자"] = f"{wa.interest_amount:,.0f}원"
-            result.summary["총 청구액"] = f"{wa.total_claim:,.0f}원"
-            result.summary["지연일수"] = f"{wa.delay_days}일"
-            _merge(result, "임금체불 지연이자", wa, all_w, all_l)
+            ))
+            if wa is not None:
+                result.summary["임금체불 지연이자"] = f"{wa.interest_amount:,.0f}원"
+                result.summary["총 청구액"] = f"{wa.total_claim:,.0f}원"
+                result.summary["지연일수"] = f"{wa.delay_days}일"
+                _merge(result, "임금체불 지연이자", wa, all_w, all_l)
 
         # ── 특수 계산기: 주 52시간 체크 (ow 미사용) ──────────────────────────
         if "weekly_hours_check" in targets:
-            wc = check_weekly_hours_compliance(inp)
-            result.summary["주 총 근로시간"] = f"{wc.total_weekly_hours:.1f}h"
-            result.summary["주 52시간 준수"] = "✅ 준수" if wc.is_compliant else f"❌ {wc.excess_hours:.1f}h 초과"
-            _merge(result, "주 52시간 준수 체크", wc, all_w, all_l)
+            wc = guarded("weekly_hours_check", "주 52시간 준수 체크",
+                         lambda: check_weekly_hours_compliance(inp))
+            if wc is not None:
+                result.summary["주 총 근로시간"] = f"{wc.total_weekly_hours:.1f}h"
+                result.summary["주 52시간 준수"] = ("✅ 준수" if wc.is_compliant
+                                                else f"❌ {wc.excess_hours:.1f}h 초과")
+                _merge(result, "주 52시간 준수 체크", wc, all_w, all_l)
 
-        # ── 특수 계산기: 퇴직소득세 (퇴직금 결과 참조) ─────────────────────
-        if "retirement_tax" in targets:
-            rt = calc_retirement_tax(inp, ow, _severance_cache)
-            _pop_retirement_tax(rt, result)
-            _merge(result, "퇴직소득세", rt, all_w, all_l)
-
-        # ── 특수 계산기: 퇴직연금 (퇴직금 결과 참조) ─────────────────────
-        if "retirement_pension" in targets:
-            rp = calc_retirement_pension(inp, ow, _severance_cache)
-            _pop_retirement_pension(rp, result)
-            _merge(result, "퇴직연금(DB/DC)", rp, all_w, all_l)
+        # ── 특수 계산기: 퇴직소득세·퇴직연금 (퇴직금 결과 참조) ─────────────
+        # 퇴직금이 보류면 이 둘도 보류한다 — 자체 추정으로 채우면 없는 퇴직금에 대한
+        # 세액·적립금이 산출돼 서로 어긋난 숫자가 한 답변에 실린다.
+        for key, section, func, populate in (
+            ("retirement_tax", "퇴직소득세", calc_retirement_tax, _pop_retirement_tax),
+            ("retirement_pension", "퇴직연금(DB/DC)", calc_retirement_pension, _pop_retirement_pension),
+        ):
+            if key not in targets:
+                continue
+            if "severance" in blocked_targets:
+                result.legal_rule_attempted += 1
+                blocked.append({"target": key, "section": section,
+                                "reason": "퇴직금 계산이 보류되어 함께 보류합니다"})
+                blocked_targets.add(key)
+                continue
+            r = guarded(key, section, lambda f=func: f(inp, ow, _severance_cache))
+            if r is None:
+                continue
+            populate(r, result)
+            _merge(result, section, r, all_w, all_l)
 
         # ── 법률 힌트: 다른 계산 결과 참조 후 마지막에 실행 ──────────────────
         has_conditions = any(
             (a.get("condition") if isinstance(a, dict) else getattr(a, "condition", "없음")) != "없음"
             for a in inp.fixed_allowances
         )
+        if {"minimum_wage", "comprehensive"} & blocked_targets:
+            # 기본값 True 를 그대로 두면 '최저임금 충족 ✅'라는 없는 판정이 나간다.
+            result.minimum_wage_ok = None
         if "legal_hints" in targets or has_conditions:
-            hints = generate_legal_hints(inp, ow, result.minimum_wage_ok)
+            # 판정 보류(None)를 falsy 로 넘기면 '미달' 힌트가 생긴다 — 모르는 것을
+            # 위반으로 단정하게 되므로 보류일 때는 위반 힌트를 만들지 않는다.
+            mw_ok = True if result.minimum_wage_ok is None else result.minimum_wage_ok
+            hints = generate_legal_hints(inp, ow, mw_ok)
             if hints:
                 result.breakdown["법률 검토 포인트"] = {
                     f"[{h.category}] #{i}": h.hint
@@ -150,6 +239,7 @@ class WageCalculator:
         result.monthly_total = round(monthly_total, 0)
         result.warnings = list(dict.fromkeys(all_w))
         result.legal_basis = list(dict.fromkeys(all_l))
+        result.legal_rule_blocked = blocked
 
         return result
 

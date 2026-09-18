@@ -30,6 +30,19 @@ jobs:
       - name: 계산 엔진 골든 테스트
         run: python3 test_wage_golden.py
 
+      - name: 법률 기준 갱신·관리자 API
+        run: python3 -m unittest test_legal_rule_updates test_legal_rule_api -v
+
+      - name: 법률 기준 관리 화면
+        run: node --test test_admin_legal_rules.js test_admin_quality.js
+
+      - name: 법률 기준 PostgreSQL 트랜잭션·권한 검증
+        env:
+          LEGAL_RULE_SQL_TEST: 'true'
+        run: |
+          docker pull postgres:17
+          python3 -m unittest test_legal_rule_sql -v
+
       - name: 파이프라인 배선 테스트
         run: python3 test_pipeline_wiring.py
 

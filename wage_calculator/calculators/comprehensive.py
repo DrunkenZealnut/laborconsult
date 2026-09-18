@@ -28,7 +28,8 @@ from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType, WorkType
 from .ordinary_wage import OrdinaryWageResult
 from .shared import MultiplierContext
-from ..constants import MINIMUM_HOURLY_WAGE
+from ..constants import MINIMUM_HOURLY_WAGE, get_minimum_hourly_wage
+from ..legal_rules import managed
 from ..utils import WEEKS_PER_MONTH  # 주→월 환산 계수 (중복 정의 제거, 단일 소스)
 
 
@@ -63,10 +64,12 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
     ]
 
     # ── 최저임금 기준 ──────────────────────────────────────────────────────────
+    # minimum_wage 계산기와 **같은 출처**를 써야 한다 — 다르면 한 응답 안에서
+    # 두 계산기가 상반된 최저임금 판정을 낼 수 있다.
     year = inp.reference_year
-    if year not in MINIMUM_HOURLY_WAGE:
+    if not managed() and year not in MINIMUM_HOURLY_WAGE:
         year = max(MINIMUM_HOURLY_WAGE.keys())
-    legal_minimum = MINIMUM_HOURLY_WAGE[year]
+    legal_minimum = float(get_minimum_hourly_wage(year))
 
     # ── 1. 유효성 판단 ─────────────────────────────────────────────────────────
     is_valid, validity_issues = _check_validity(inp)
@@ -187,7 +190,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
     if not is_ok:
         warnings.append(
             f"포괄임금 역산 시급 {effective_hourly:,.0f}원 < "
-            f"최저임금 {legal_minimum:,}원 — 최저임금법 위반 "
+            f"최저임금 {legal_minimum:,.0f}원 — 최저임금법 위반 "
             f"(대법원 2020다300299)"
         )
 
@@ -203,7 +206,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
     breakdown = {
         "역산 통상시급": f"{effective_hourly:,.0f}원",
         "총계수시간(월)": f"{total_coeff:.1f}h",
-        f"{year}년 최저임금": f"{legal_minimum:,}원",
+        f"{year}년 최저임금": f"{legal_minimum:,.0f}원",
         "최저임금 충족": "✅" if is_ok else "❌",
         "월 부족분": f"{shortage:,.0f}원" if shortage > 0 else "-",
     }
