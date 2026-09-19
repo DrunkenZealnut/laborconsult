@@ -113,6 +113,10 @@ ANALYZE_TOOL = {
                 "type": "boolean",
                 "description": "사용자가 '최저시급', '최저임금', '최저임금 기준' 등으로 임금을 지정할 때 true. wage_amount 대신 해당 연도 법정 최저시급이 자동 적용됩니다.",
             },
+            "reference_date": {
+                "type": "string",
+                "description": "사용자가 명시한 계산 기준일 YYYY-MM-DD. 연도만 있으면 날짜를 추정하지 말고 생략하세요.",
+            },
             "reference_year": {
                 "type": "integer",
                 "description": "계산 기준 연도 (예: 2026). 사용자가 명시한 경우만 설정하세요. 설정하지 않으면 시스템이 현재 연도를 자동 적용합니다.",

@@ -14,8 +14,29 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
-const PAGES = ['index.html', 'board.html', 'admin.html'].map(function (name) {
+// HTML 은 이름을 고정한다(아래 개별 테스트가 INDEX/BOARD 를 지목한다).
+// 분리된 정적 JS 는 **디렉터리에서 발견**한다 — 손으로 나열하면 파일이 늘 때
+// 한쪽만 갱신돼 신규 스크립트의 fetch 가 조용히 검사 밖에 남는다
+// (admin_legal_rules.js 가 그렇게 빠져 있었다).
+// sw.js 는 제외: 서비스워커의 fetch 는 네트워크 요청 대행이라 응답 상태를 그대로
+// 통과시키는 것이 정상이고, 캐시 폴백은 이 검사의 윈도우 밖에 있다.
+function discoverScripts(root, relative = '') {
+  const scripts = [];
+  for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+    const name = path.join(relative, entry.name);
+    if (entry.isDirectory()) scripts.push(...discoverScripts(root, name));
+    if (entry.isFile() && entry.name.endsWith('.js') && entry.name !== 'sw.js') {
+      scripts.push(name.split(path.sep).join('/'));
+    }
+  }
+  return scripts.sort();
+}
+
+const SCRIPTS = discoverScripts(path.join(__dirname, 'public'));
+
+const PAGES = ['index.html', 'board.html', 'admin.html'].concat(SCRIPTS).map(function (name) {
   return [name, fs.readFileSync(path.join(__dirname, 'public', name), 'utf8')];
 });
 
@@ -108,6 +129,35 @@ test('board: 429 잠금이 버튼 게이팅과 충돌하지 않는다', () => {
 });
 
 // ── 2. 공개 페이지 전반 ──────────────────────────────────────────────────────
+
+test('분리된 정적 스크립트가 fetch 스캔 대상에 들어 있다', () => {
+  // 발견 방식이 조용히 0건이 되면(경로 오타·확장자 변경) 위 스윕이 통과하는데
+  // 아무것도 안 보는 상태가 된다. 알려진 파일의 존재로 그것을 고정한다.
+  assert.ok(SCRIPTS.includes('admin_legal_rules.js'), '관리자 법률 기준 스크립트 누락');
+  assert.ok(SCRIPTS.includes('finalize.js'), '답변 조망 스크립트 누락');
+  const names = PAGES.map(function (p) { return p[0]; });
+  for (const name of SCRIPTS) assert.ok(names.includes(name), name + ' 이 PAGES 에 없다');
+});
+
+test('하위 디렉터리의 정적 스크립트도 fetch 스캔 대상으로 발견한다', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'public-fetch-'));
+  t.after(function () { fs.rmSync(root, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(root, 'assets'));
+  fs.writeFileSync(path.join(root, 'top.js'), '');
+  fs.writeFileSync(path.join(root, 'assets', 'nested.js'), '');
+  fs.writeFileSync(path.join(root, 'assets', 'sw.js'), '');
+  assert.deepEqual(discoverScripts(root), ['assets/nested.js', 'top.js']);
+});
+
+test('admin_legal_rules.js의 단일 HTTP 경로가 응답 상태를 검사한다', () => {
+  // 이 파일은 주입된 fetcher 를 쓰므로 위 스윕의 `fetch(` 정규식에 잡히지 않는다.
+  // 모든 요청이 createClient 한 곳을 지나므로 그 안의 상태 검사를 직접 고정한다.
+  const src = PAGES.find(function (p) { return p[0] === 'admin_legal_rules.js'; })[1];
+  const client = slice(src, /function createClient\(base, token, fetcher, unauthorized\) \{/, '  }');
+  assert.match(client, /if \(!response\.ok\)/, 'createClient 가 응답 상태를 검사하지 않는다');
+  assert.match(client, /throw new Error/, '오류 응답이 정상 데이터로 흘러간다');
+  assert.doesNotMatch(src, /\broot\.fetch\([^)]/, '주입 경로를 우회한 직접 fetch 호출');
+});
 
 test('공개 페이지의 모든 fetch가 응답 상태 또는 예외를 처리한다', () => {
   // ⚠️ 이 검사의 한계를 알고 쓸 것.

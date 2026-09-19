@@ -1,0 +1,32 @@
+name: Legal rule candidate scan
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Monday 09:00 Asia/Seoul
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: legal-rule-candidate-scan
+  cancel-in-progress: false
+jobs:
+  scan:
+    if: vars.LEGAL_RULE_SCAN_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Search Pinecone and save pending candidates
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'semiconductor-lithography' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python sync_legal_rules.py --persist

@@ -688,6 +688,10 @@ WAGE_CALC_TOOL = {
                 "type": "number",
                 "description": "계산 기준 연도 (예: 2026). 미지정 시 현재 연도 적용.",
             },
+            "reference_date": {
+                "type": "string",
+                "description": "사용자가 명시한 계산 기준일 YYYY-MM-DD. 연도만 있으면 추정하지 말고 생략.",
+            },
         },
         "required": ["needs_calculation"],
     },
@@ -856,6 +860,32 @@ def _normalize_wage_units(params: dict) -> bool:
 _MINWAGE_SIGNALS = ("최저임금", "최저시급", "최저 임금", "최저 시급")
 
 
+def _build_approved_facts(analysis, keys) -> str:
+    from app.core.legal_rule_store import configured_store
+    from wage_calculator.legal_rules import (
+        PARAMETERS, RuleSnapshot, RuleUnavailable, resolve_reference_date,
+    )
+    info = getattr(analysis, "extracted_info", {}) or {}
+    try:
+        # 계산기와 같은 해석 규칙을 쓴다 — 무지정은 오늘, 다른 연도 지정은 기준일 요구.
+        reference_date = resolve_reference_date(info.get("reference_date"), info.get("reference_year"))
+        _, document = configured_store().load()
+        snapshot = RuleSnapshot(document["records"], reference_date)
+        lines = [f"[관리자 승인 수치 기준: {snapshot.day}]"]
+        for key in keys:
+            value = snapshot.get(key)
+            spec = PARAMETERS[key]
+            lines.append(f"- {spec['label']}: {value:,} {spec['unit']}")
+        for version in snapshot.provenance():
+            lines.append(f"근거: {version['citation']} / 버전 {version['id']} / Pinecone {version['evidence_id']}")
+        return "\n".join(lines)
+    except RuleUnavailable as exc:
+        return f"[법률 기준 확인 필요] {exc}. 확인 전 금액·요율을 추정하지 마세요."
+    except Exception:
+        logger.exception("승인 기준 사실 조회 실패")
+        return "[법률 기준 확인 필요] 승인 저장소 조회 실패. 금액·요율을 추정하지 마세요."
+
+
 def _build_minwage_facts(query: str, analysis) -> str | None:
     """최저임금 관련 질문 감지 시 법정 최저임금 사실 블록 생성.
 
@@ -869,6 +899,9 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
     )
     if not (topic_hit or any(s in query for s in _MINWAGE_SIGNALS)):
         return None
+    from app.core.legal_rule_store import rules_enabled
+    if rules_enabled():
+        return _build_approved_facts(analysis, ["minimum_hourly_wage"])
 
     from datetime import date as _date
     from wage_calculator.constants import MINIMUM_HOURLY_WAGE, MONTHLY_STANDARD_HOURS
@@ -906,6 +939,10 @@ def _build_insurance_facts(query: str, analysis) -> str | None:
     """
     if not any(s in query for s in _INSURANCE_SIGNALS):
         return None
+    from app.core.legal_rule_store import rules_enabled
+    if rules_enabled():
+        from wage_calculator.legal_rules import PARAMETERS
+        return _build_approved_facts(analysis, [k for k in PARAMETERS if k.startswith("insurance.")])
 
     from datetime import date as _date
     from wage_calculator.constants import INSURANCE_RATES
@@ -981,6 +1018,8 @@ def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[
 def _run_calculator(params: dict, query: str = "") -> str | None:
     if not params or not params.get("needs_calculation"):
         return None
+    from app.core.legal_rule_store import rules_enabled
+    managed_rules = rules_enabled()
 
     wage_type_map = {
         "시급": WageType.HOURLY,
@@ -992,7 +1031,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     wt = wage_type_map.get(params.get("wage_type", ""), WageType.MONTHLY)
 
     # use_minimum_wage 최우선: LLM이 wage_amount를 환각해도 법정 최저임금 강제 적용
-    if params.get("use_minimum_wage"):
+    if params.get("use_minimum_wage") and managed_rules:
+        amount = 1  # Marks wage as requested; facade resolves the approved value before any calculation.
+        wt = WageType.HOURLY
+    elif params.get("use_minimum_wage"):
         from datetime import date as _date
         from wage_calculator.constants import MINIMUM_HOURLY_WAGE
         ref_year = int(params.get("reference_year") or _date.today().year)
@@ -1006,7 +1048,7 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         # 계산기(소정근로시간·주52시간 체크)만 부분 실행하는 경로로 이어간다.
         # 가드: LLM이 과거 연도 최저임금 값을 환각한 경우 보정
         # 예: 2026년인데 wage_amount=10030 (2025년 최저임금) → 10320으로 보정
-        if amount and wt == WageType.HOURLY:
+        if amount and wt == WageType.HOURLY and not managed_rules:
             from datetime import date as _date
             from wage_calculator.constants import MINIMUM_HOURLY_WAGE
             ref_year = int(params.get("reference_year") or _date.today().year)
@@ -1048,6 +1090,8 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     biz_size = size_map.get(params.get("business_size", ""), BusinessSize.OVER_5)
 
     inp = WageInput(wage_type=wt, business_size=biz_size, schedule=schedule)
+    inp.reference_date = params.get("reference_date")
+    inp.use_minimum_wage = bool(params.get("use_minimum_wage")) and managed_rules
 
     # 기준 연도 설정
     if params.get("reference_year"):
@@ -1346,6 +1390,7 @@ def _analysis_to_extract_params(analysis) -> dict:
         "end_date": info.get("end_date"),
         "use_minimum_wage": info.get("use_minimum_wage"),
         "reference_year": info.get("reference_year"),
+        "reference_date": info.get("reference_date"),
         "is_platform_worker": info.get("is_platform_worker"),
         "is_probation": info.get("is_probation"),
         "contract_months": info.get("contract_months"),
@@ -1395,6 +1440,9 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
 
 답변 원칙:
 1. **임금계산기 결과가 포함된 경우** (가장 중요):
+   - '계산 보류'이면 금액을 추정하지 말고 안내된 기준일 또는 승인 정보 확인을 요청하세요.
+   - '보류된 계산' 목록이 있으면 그 항목의 금액·요율을 직접 계산하거나 추정하지 말고,
+     보류 사실과 사유만 전하세요. 나머지 계산 결과는 정상이므로 그대로 사용합니다.
    - 계산기 결과의 수치를 그대로 사용하세요. 절대로 직접 계산하거나 다른 수치를 제시하지 마세요.
    - 계산기의 계산 과정(formulas)과 법적 근거를 자연스럽게 풀어서 설명하세요.
    - 계산기의 주의사항(warnings)이 있으면 반드시 포함하세요.
@@ -1462,6 +1510,13 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
    - 법조문 출처를 "(법제처 국가법령정보센터 조회)"로 명시하세요.
 16. **면책 고지 재확인**: 답변의 마지막 줄에 "⚠️ 본 답변은 참고용 정보 제공이며 법적 효력이 없습니다. 구체적인 사안은 관할 고용노동부(☎ 1350) 또는 공인노무사에게 상담하시기 바랍니다."가 반드시 있어야 합니다. 없으면 추가하세요.
 """
+
+
+def _calculation_context_heading(calc_result: str) -> str:
+    """보류 결과에는 수치 사용 지시 대신 추정 금지 지시를 붙인다."""
+    if calc_result.startswith("계산 보류"):
+        return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
+    return "임금계산기 결과 — 이 수치를 사용하세요"
 
 
 def process_question(query: str, session: Session, config: AppConfig,
@@ -1910,9 +1965,22 @@ def process_question(query: str, session: Session, config: AppConfig,
     if precedent_text:
         parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{_cap(precedent_text, PRECEDENT_TEXT_BUDGET)}")
     if calc_result:
-        parts.append(f"임금계산기 결과 (정확한 계산 — 이 수치를 사용하세요):\n\n{calc_result}")
-    # 지식 모듈: 트리거되는 모듈의 검증된 사실 블록을 순서대로 주입
-    for _km_name, _km_builder in _KNOWLEDGE_MODULES:
+        heading = _calculation_context_heading(calc_result)
+        parts.append(f"{heading}:\n\n{calc_result}")
+    # Managed facts use one snapshot; a calculation already supplies its own snapshot.
+    # Do not inject a second, potentially newer or hardcoded numeric version into that answer.
+    from app.core.legal_rule_store import rules_enabled
+    if rules_enabled() and not calc_result:
+        from wage_calculator.legal_rules import PARAMETERS
+        managed_keys = []
+        if any(s in query for s in _MINWAGE_SIGNALS):
+            managed_keys.append("minimum_hourly_wage")
+        if any(s in query for s in _INSURANCE_SIGNALS):
+            managed_keys.extend(k for k in PARAMETERS if k.startswith("insurance."))
+        if managed_keys:
+            parts.append(_build_approved_facts(analysis, managed_keys))
+    # 지식 모듈: 레거시 모드에서만 기존 내장 상수 블록 사용
+    for _km_name, _km_builder in ([] if rules_enabled() else _KNOWLEDGE_MODULES):
         try:
             _km_block = _km_builder(query, analysis)
             if _km_block:

@@ -142,9 +142,27 @@
     <button id="nav-dashboard" class="active" onclick="showView('dashboard')">대시보드</button>
     <button id="nav-conversations" onclick="showView('conversations')">대화목록</button>
     <button id="nav-quality" onclick="showView('quality')">답변 품질</button>
+    <button id="nav-legal" onclick="showView('legal')">법률 기준</button>
     <button class="logout" onclick="logout()">로그아웃</button>
   </div>
 </header>
+
+<style>
+  .legal-toolbar { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0; align-items:center; }
+  .legal-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+  .legal-form-grid label, #legal-view label { display:flex; flex-direction:column; gap:4px; }
+  .legal-wide { grid-column:1/-1; }
+  #legal-view input, #legal-view select, #legal-view textarea, #legal-view button { font:inherit; padding:8px; }
+  #legal-view textarea { min-height:70px; width:100%; box-sizing:border-box; }
+  .legal-evidence, #legal-view pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:360px; overflow:auto; }
+  .legal-table { overflow-x:auto; margin:16px 0; }
+  .legal-table table { border-collapse:collapse; width:100%; }
+  .legal-table th, .legal-table td { text-align:left; padding:10px; border-bottom:1px solid var(--color-border); }
+  #legal-view fieldset { border:1px solid var(--color-border); padding:16px; }
+  #legal-view section { margin:24px 0; }
+</style>
+<div id="legal-view" class="container hidden"></div>
+<script src="/admin_legal_rules.js"></script>
 
 <!-- Login View -->
 <div id="login-view">
@@ -231,6 +249,7 @@ let categories = [];
 let evaluationListRequest = 0;
 let evaluationDetailRequest = 0;
 let evaluationViewGeneration = 0;
+let legalRulesController = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -305,10 +324,18 @@ function showView(view) {
   document.getElementById('nav-dashboard').classList.toggle('active', view === 'dashboard');
   document.getElementById('nav-conversations').classList.toggle('active', view === 'conversations');
   document.getElementById('nav-quality').classList.toggle('active', view === 'quality');
+  document.getElementById('legal-view').classList.toggle('hidden', view !== 'legal');
+  document.getElementById('nav-legal').classList.toggle('active', view === 'legal');
 
   if (view === 'dashboard') loadStats();
   if (view === 'conversations') loadConversations(1);
   if (view === 'quality') loadEvaluationRuns();
+  if (view === 'legal') {
+    if (!legalRulesController) legalRulesController = LegalRules.mount(document.getElementById('legal-view'), {
+      base: API + '/legal-rules', token: () => token, unauthorized: logout,
+    });
+    else legalRulesController.reload();
+  }
 }
 
 // ── Consultation quality ─────────────────────────────────────────────────────

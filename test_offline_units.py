@@ -622,6 +622,7 @@ _DDL_FILES = (
     # Keep the evaluation DDL in this inventory so the code↔DDL check cannot
     # drift silently from the application's laborconsult schema.
     "supabase_consultation_eval.sql",
+    "supabase_legal_rules.sql",
 )
 
 
@@ -692,7 +693,10 @@ def test_ddl_search_path() -> None:
         # 실행문만 검사해야 한다.
         for m in re.finditer(r"SET\s+search_path\s*=\s*([^\n;]+)",
                              _strip_sql_comments(raw), re.I):
-            entries = [e.strip().strip("'\"") for e in m.group(1).split(",")]
+            # 한 줄에 `... SET search_path = a, b AS $$` 로 이어 쓰는 파일이 있어
+            # 마지막 항목에 뒤따르는 SQL 키워드가 붙는다. 첫 토큰만 스키마 이름이다.
+            entries = [e.strip().strip("'\"").split()[0]
+                       for e in m.group(1).split(",") if e.strip()]
             found += 1
             assert "public" not in entries, (
                 f"{name}: search_path 에 public 이 있다 ({m.group(1).strip()}) — "
@@ -701,8 +705,15 @@ def test_ddl_search_path() -> None:
             assert "laborconsult" in entries, (
                 f"{name}: search_path 에 laborconsult 가 없다 ({m.group(1).strip()})"
             )
+            # pg_temp 가 목록에 없으면 PostgreSQL 이 관계 이름을 찾을 때 그것을 **가장
+            # 먼저** 뒤진다 — CREATE TEMP 권한이 있는 사용자가 동명 임시 테이블로
+            # 정의자 권한 함수를 속일 수 있다. 명시하되 반드시 마지막에 둔다.
+            assert entries[-1] == "pg_temp", (
+                f"{name}: search_path 의 마지막이 pg_temp 가 아니다 ({m.group(1).strip()}) — "
+                "생략하면 임시 스키마가 암묵적 최우선으로 검색된다"
+            )
     assert found >= 7, f"search_path 지정 함수가 너무 적다: {found}개"
-    print(f"  ✅ SECURITY DEFINER search_path {found}건: public 부재·laborconsult 포함")
+    print(f"  ✅ SECURITY DEFINER search_path {found}건: public 부재·laborconsult 포함·pg_temp 최후미")
 
 
 def test_ddl_no_quoted_identifiers() -> None:

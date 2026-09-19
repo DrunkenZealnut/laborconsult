@@ -114,8 +114,24 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 # Live 결과 JSON을 검토한 뒤 --publish-admin으로 1회 게시한다.
 #   supabase_schema.sql → supabase_abuse_guard.sql →
 #   supabase_board_posts.sql → supabase_retention_purge.sql →
-#   supabase_consultation_eval.sql
+#   supabase_consultation_eval.sql → supabase_legal_rules.sql
 # Admin은 이미 게시된 결과만 읽으며, 브라우저에서 Live 평가를 시작하지 않는다.
+
+# 법률 기준 승인 관리 (수치 기준의 시행일별 버전 — 아래 Legal Rule Registry 참조)
+# 검색은 후보만 만들고 자동 승인하지 않는다. 승인은 /admin → 법률 기준에서 사람이 한다.
+# 공식 원문 수집·적재 — **승인의 선행조건**. 법제처(law.go.kr)에서 official_url 과 함께 받아
+# laborlaw-v2 에 올린다. 이것 없이는 승인 화면에서 무엇을 눌러도 거절된다(아래 참조).
+python3 fetch_official_rules.py                    # 조문 9 + 고시 4 → output_공식법령/
+python3 fetch_official_rules.py --dry-run          # 조회만, 저장 없음
+python3 pinecone_upload_official_rules.py --dry-run   # 청킹·메타데이터 검증
+python3 pinecone_upload_official_rules.py             # laborlaw-v2 적재 + 고아 정리
+# 적재 후 build_bm25_corpus.py 재실행 필요(BM25 코퍼스는 별도 파일)
+
+python3 sync_legal_rules.py --topic minimum_wage   # 읽기 전용 점검(저장 없음)
+python3 sync_legal_rules.py --persist              # 검토 대기 후보 저장(운영 준비 후)
+python3 -m unittest test_legal_rule_updates test_legal_rule_api  # 도메인·배선·HTTP
+node --test test_admin_legal_rules.js              # 관리 화면 렌더/요청 계약
+LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql  # 실 PostgreSQL 17 (docker 필요)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
 # 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.jsonl.gz 커밋 필수
@@ -149,6 +165,9 @@ Defined in `.env` (see `.env.example`):
 - `GEMINI_API_KEY` — tertiary LLM fallback (모델은 `GEMINI_MODEL`, 기본 `gemini-pro-latest`)
 - `SUPABASE_URL` / `SUPABASE_KEY` — session persistence + conversation storage. **`NEXT_PUBLIC_*` 이름은 읽지 않는다**(Next.js 관례) — 대시보드 스니펫을 그대로 붙이면 Supabase 기능 전체가 조용히 꺼진다
 - `SUPABASE_SCHEMA` — 접속 스키마, 미설정 시 `laborconsult` (`app/core/storage.py`)
+- `SUPABASE_SERVICE_ROLE_KEY` — 서버 전용 쓰기 키. 법률 기준 저장소(`legal_rule_*`)와 보유기간 파기 스크립트가 쓴다. **브라우저로 전달 금지**
+- `LEGAL_RULES_ENABLED` — 기본 `false`. `true`면 `WageCalculator.calculate()`가 승인 저장소 경로로 전환된다(아래 Legal Rule Registry). 켜기 전에 오늘 구간 기준이 승인돼 있어야 한다
+- `LEGAL_RULE_SCAN_ENABLED` — GitHub Actions repository variable. `true`일 때만 주간 검색 배치가 실행된다
 - `LAW_API_KEY` — 법제처 법령 API (법조문·판례·NLRC 판정문 공용, `legal_api.py`)
 - `COHERE_API_KEY` — search result reranking
 - `ADMIN_PASSWORD` — admin dashboard login (also default for `ADMIN_JWT_SECRET` + CAPTCHA HMAC signing)
@@ -185,6 +204,13 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `POST /api/admin/abuse/unblock` — 수동 차단 해제 (`abuse_unblock` RPC)
 - `GET /api/admin/evaluation-runs` — 게시된 상담 답변 품질 평가 실행 목록
 - `GET /api/admin/evaluation-runs/{run_id}` — 게시된 평가 실행 상세
+- `GET /api/admin/legal-rules` — 후보 목록(근거 원문 제외)·검색이력·허용 키·계산 유형 (`api/legal_updates.py`)
+- `GET /api/admin/legal-rules/events` — revision 이력(최근 100)
+- `GET /api/admin/legal-rules/evidence?id=` — Pinecone 근거 원문 재조회
+- `POST /api/admin/legal-rules/scan` — 한 주제 즉시 검색 (후보만 생성)
+- `POST /api/admin/legal-rules/candidates` — 수동 후보 등록
+- `PUT /api/admin/legal-rules/candidates/{id}` — 검토 대기 후보 수정
+- `POST /api/admin/legal-rules/candidates/{id}/{action}` — approve/reject/reviewed/revoke
 
 상담 답변 품질 평가 운영 순서:
 
@@ -386,6 +412,7 @@ Facade pattern with `WageCalculator` as the single entry point.
 wage_calculator/
 ├── models.py                # WageInput dataclass (~50 fields), enums
 ├── constants.py             # Minimum wages by year, insurance rates, tax brackets
+├── legal_rules.py           # PARAMETERS 허용 키·RuleSnapshot·ContextVar(app 의존 없음)
 ├── result.py                # WageResult dataclass, format_result()
 ├── legal_hints.py           # Legal review point generation
 ├── facade/
@@ -400,7 +427,7 @@ wage_calculator/
 ```
 
 **Key design decisions:**
-- `WageCalculator.calculate(inp, targets)` — pass `WageInput` + list of target calculator names. If `targets=None`, auto-detected from input fields.
+- `WageCalculator.calculate(inp, targets)` — pass `WageInput` + list of target calculator names. If `targets=None`, auto-detected from input fields. 생성자는 `WageCalculator(rule_store=None)` — `rule_store`를 넘기거나 `LEGAL_RULES_ENABLED=true`면 승인 저장소 경로(아래 Legal Rule Registry)로, 아니면 `constants.py` 내장표로 계산한다. **기본값은 내장표**라 기존 호출부는 무변경이다.
 - 웹 파이프라인의 유일한 변환 경로는 `pipeline.py::_run_calculator()` — 한국어 라벨은 `resolve_calc_type_strict()`(exact match → slash/comma split → keyword fallback, 미매칭 시 None)로 targets 변환. 구 `from_analysis()`/`_provided_info_to_input()`은 호출처가 없어 제거됨(calc-db-integration-review D1).
 - `calc_ordinary_wage()` runs first as the foundation — all other calculators depend on its result.
 - `_STANDARD_CALCS` in `registry.py` is the dispatcher: list of `(key, func, section_name, populate_fn, precondition)` tuples.
@@ -410,8 +437,111 @@ wage_calculator/
 - `constants.py` holds yearly minimum wages, insurance rates, tax brackets — update these when laws change.
 - `shared.py` extracts common patterns: `DateRange` (tenure calc, 8 modules), `AllowanceClassifier` (minimum wage inclusion, 3 modules), `MultiplierContext` (sub-5-employee rates, 5 modules).
 
-### Calculator Targets (25 types)
-`overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `parental_leave`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
+### Calculator Targets (28 types)
+`ordinary_wage`, `working_hours`, `overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `parental_leave`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
+(단일 출처는 `wage_calculator/facade/registry.py::CALC_TYPES` — 세어서 확인할 것)
+
+### Legal Rule Registry (`wage_calculator/legal_rules.py` + `app/core/legal_updates.py`)
+
+법정 수치 기준을 **관리자 승인 + 시행일별 버전**으로 관리하는 경로. 근거·설계·감사 의견은
+`docs/calculator-audit/2026-09-17-comprehensive-audit.md`. **기본은 꺼져 있고**
+(`LEGAL_RULES_ENABLED=false`) 그때는 `constants.py` 내장표가 그대로 쓰인다.
+
+- **연결된 키는 11개뿐이다**(`PARAMETERS`): `minimum_hourly_wage`, `maternity.monthly_upper`,
+  `maternity.platform_upper`, `insurance.*` 8종. 육아휴직 급여표·EITC·퇴직소득세·실업급여 상한·
+  산재 급여표·가산율은 **미연결**이라 관리 모드에서도 내장표를 쓴다 — "관리 모드 = 전부 최신"이 아니다.
+- **`PARAMETERS`의 `insurance.*`와 `constants.INSURANCE_RATES`의 키 집합은 정확히 일치해야 한다.**
+  `get_insurance_rates()`가 legacy dict의 **모든** 키를 `parameter("insurance." + key, …)`로 조회하므로,
+  미등록 키를 하나 추가하면 관리 모드에서 보험 계산이 **영구 보류**된다(조용한 실패). 요율 항목을
+  늘릴 때 `PARAMETERS`도 함께 늘릴 것. 예외도 로그도 없으므로 회귀
+  `test_legal_rule_updates.py::test_insurance_parameter_keys_match_the_rate_table_exactly`가 유일한 탐지 수단이다.
+- **수치를 읽는 곳은 반드시 어댑터를 거친다** — 최저시급은 `constants.get_minimum_hourly_wage(year)`,
+  나머지는 `legal_rules.parameter(key, legacy)`. `MINIMUM_HOURLY_WAGE[year]`를 직접 읽으면 관리 모드에서
+  **그 계산기만 옛 값을 쓴다.** 실제로 `comprehensive`가 그랬고, 같은 응답에서 `minimum_wage`는 "미달",
+  `comprehensive`는 "충족"을 반환했다(2026-09-17 수정, 회귀
+  `test_legal_rule_updates.py::test_comprehensive_and_minimum_wage_share_one_approved_minimum`).
+  `legal_hints.py`는 아직 미연결로 남아 있다.
+- **기준일 해석은 `resolve_reference_date()` 하나다** — 계산기(facade)와 상담 사실 블록
+  (`pipeline.py::_build_approved_facts`)이 공유한다. 명시 `reference_date` 우선 → 없으면 **오늘(KST)** →
+  단 **오늘이 속하지 않는 연도**를 지목했는데 날짜가 없으면 보류. 국민연금 기준소득월액처럼 연중
+  바뀌는 기준이 있어 "2025년"만으로는 구간을 정할 수 없기 때문이고, 아무 날짜도 없는 질문은 현재
+  시점으로 읽는다. **무지정을 보류로 되돌리지 말 것** — 프롬프트가 LLM에 "연도만 있으면 날짜를
+  추정하지 말라"고 지시하므로 무지정이 정상 경로이고, 보류로 두면 최저임금·4대보험 질문 대다수가
+  금액 없이 끝난다. 서버 로컬시간(UTC)은 00~09시에 전날이라 KST를 쓰며, UTC 전년을 허용값으로
+  섞지 않는다. 그러면 사용자가 명시한 전년이 KST 새해 오늘로 바뀐다.
+- **보류 범위는 "기반이면 요청 전체, 출력 섹션이면 그 섹션만"이다.** 기준일 해석·저장소 조회·
+  `use_minimum_wage` 해결·통상임금·사업장 규모는 **뒤따르는 모든 계산의 입력**이라 실패 시 요청 전체가
+  `blocked`다. 개별 계산기(`_STANDARD_CALCS` 및 특수 계산기)의 `RuleUnavailable`은 `guarded()`가 잡아
+  그 섹션만 빼고 `legal_rule_blocked`에 `{target, section, reason}`으로 기록한다.
+  지킬 것 넷 — 전부 빠뜨리면 조용히 틀린 답이 나간다:
+  - **시도한 섹션이 전부 보류면 요청 단위 `blocked`로 승격한다**(`legal_rule_attempted`와 비교).
+    통상임금만 남은 껍데기를 정상 결과로 내보내면 프런트·프롬프트가 의존하는 "계산 보류" 신호가 사라진다.
+  - **보류된 섹션이 읽은 기준은 provenance에서 되돌린다**(`legal_rules.used_scope()`). `get()`은 읽는 즉시
+    `used`에 기록하므로, 보험 8개 중 7개를 읽고 8번째에서 실패하면 **버려진 결과의 기준 7건이
+    '적용된 버전'으로 보고된다**(실측).
+  - **`minimum_wage`가 보류되면 `minimum_wage_ok=None`으로 내린다.** 기본값이 `True`라 그대로 두면
+    "최저임금 충족 ✅"라는 **없는 판정**이 나간다. 표시도 `None`을 falsy로 취급하면 이번엔 "❌ 미달"이라는
+    반대 방향 허위가 되므로 `format_result()`는 3분기(`⏸ 판정 보류`)다.
+    `generate_legal_hints`에는 `True`로 넘긴다 — 그 함수는 위반일 때만 힌트를 만들므로,
+    보류를 falsy로 넘기면 없는 위반을 단정하게 된다.
+  - **의존 섹션은 함께 보류한다.** `severance`가 보류면 `retirement_tax`·`retirement_pension`도 보류다.
+    자체 추정으로 채우면 존재하지 않는 퇴직금에 대한 세액·적립금이 산출돼 한 답변에 어긋난 숫자가 실린다.
+- **`legal_rule_status`는 provenance로 갈린다.** `legacy`(관리 모드 아님) /
+  `managed_parameters`(승인 기준을 **실제로 소비**함, `legal_rule_versions` 비지 않음) /
+  `managed_no_parameters`(관리 모드지만 이 계산에는 해당 기준이 없어 내장표로 산출) / `blocked`(보류).
+  관리 키를 하나도 읽지 않는 계산(연장수당 단독 등)이 흔하므로 **관리 모드 = 승인값 사용으로 읽으면 안 된다.**
+  `format_result()`도 상태별로 다른 줄을 낸다 — `managed_parameters`는 적용일 + 기준 버전,
+  `managed_no_parameters`는 "승인 수치 기준 없음 — 내장 기준표·산식" 고지.
+  **상태를 provenance와 분리해 고정값으로 되돌리지 말 것** — 빈 versions에 적용일만 붙으면
+  내장표 수치가 법적 검증을 받은 것으로 오독된다. 회귀는
+  `test_legal_rule_updates.py::test_status_says_managed_only_when_an_approved_value_was_actually_used`.
+- **승인 게이트는 코퍼스가 받쳐주지 않으면 만족 불가능하다.** `official_evidence()`는 Pinecone
+  **메타데이터**의 `official_url` 이 공식 호스트 9곳의 https 주소일 것을 요구한다 — 본문에 주소가
+  적혀 있어도 거절이다. 2026-09-18 실측에서 기존 코퍼스 표본 439건 중 공식 호스트 벡터가 **0건**
+  이었다(훈령·예규·행정해석은 전부 nodong.kr 재수록, 판례는 url 자체가 없음). 그래서
+  `fetch_official_rules.py` + `pinecone_upload_official_rules.py` 가 생겼다. 지킬 것 넷:
+  - **조문만으로는 부족하다.** 최저시급·출산급여 상한·연금 기준소득 상하한·건강보험료 상하한은
+    조문이 "고용노동부장관이 고시하는 금액"으로 **위임**만 한다. 고시(`target=admrul`)를 함께
+    받아야 금액이 들어오고, 금액이 없으면 인용구절 검사를 통과할 수 없어 그 키는 영영 승인 불가다.
+  - **법제처 XML 파싱 함정 둘**(둘 다 조용하다): ① 편·장·절 제목도 `조문단위`이고 뒤따르는 조문과
+    **같은 조문번호**를 가진다(`조문여부="전문"`) — 안 거르면 제32조 조회가 "제6장 보험료" 7자를
+    반환한다. ② 실제 수치가 **목(目)** 에 있는 조문이 많다 — 항·호만 모으면 금액이 통째로 빠진다.
+  - **고시 본문이 XML 에 없고 첨부 PDF 에만 있는 경우가 있다**(실측: 최저임금 고시). `조문내용` 이
+    비면 첨부 PDF 를 받아 추출한다. **추출 텍스트를 다듬지 말 것** — PDF 텍스트 레이어는 한국어
+    낱말 사이 공백이 빠져 나오지만(`고용노동부고시제2025–47호`), 저장된 본문이 인용구절 대조의
+    기준이라 손대면 코퍼스에 원문과 다른 문자열이 남는다.
+  - **`official: True` 표식을 지우지 말 것.** Pinecone 메타데이터 필터에는 "필드 존재" 검사가 없어
+    (`$exists` 미지원) `official_url` 유무로는 거를 수 없다. `PineconeEvidence.search()` 가 이
+    불리언으로 **공식 전용 2차 조회**를 돌려 앞에 붙인다. 없애면 신규 공식 문서 17벡터가 기존
+    수만 벡터에 묻혀 top_k 8 에 못 들고, 자동 검색이 승인 가능한 후보를 한 건도 못 만든다(실측).
+  - 미래 시행 고시는 발령돼도 law.go.kr 정식 페이지가 **시행 전까지 오류페이지**라 official_url 을
+    확인할 수 없다(실측: 2027년 최저임금 고시). 저장소는 미래 시행일을 지원하지만 근거를 올릴 수
+    없으므로, 시행이 가까워진 뒤 수집한다.
+- **승인 게이트 4종**(`transition(action="approve")`): 등록 이후 근거 변경 시 거부(sha256 재대조) ·
+  공식 HTTPS 출처(`OFFICIAL_HOSTS` 9곳)만 허용 · 같은 키의 승인 구간 겹침 거부 · `kind="parameter"`만
+  승인 가능(산식·자격 변경은 `reviewed` 기록뿐). 구간은 **시행일 포함, 종료일 제외**.
+- **검색은 후보만 만든다.** `sync_legal_rules.py` / 주간 Actions가 Pinecone `laborlaw-v2`를 조회해
+  `status="pending"`로 적재할 뿐 수치를 추출하거나 자동 승인하지 않는다. 상위 8건이라 **무누락 감시가 아니다.**
+- **저장은 `legal_rules_save` RPC 단일 경로**(CAS + 행 잠금 + 이력 INSERT 한 트랜잭션). 테이블은
+  anon/authenticated 접근 불가이고 service_role도 직접 UPDATE/DELETE 대신 이 RPC를 쓴다. 스키마 대조는
+  `check_schema.py`가 LOCKED_TABLES(anon 차단 확인) + service-role 읽기 + RPC 존재로 3중 확인한다 —
+  RPC probe는 `new_document=NULL`이 함수 첫 문장에서 거절되는 성질을 쓰므로 쓰기 부작용이 없다.
+- **이력(`legal_rule_events.payload`)에는 바뀐 레코드만, 근거 원문 없이 담는다**(`event_record()`).
+  초판은 변경마다 registry 전량을 복사해 이력 크기가 `revision 수 × 문서 크기`로 늘었다 —
+  registry의 8MB 문제를 이력에서 되풀이하는 구조였다. 원문은 `evidence_id + sha256`으로 고정되므로
+  복제하지 않는다(승인 게이트도 그 해시로 변경을 판정한다). **RPC 인자를 늘릴 때는
+  `DROP FUNCTION IF EXISTS`로 옛 시그니처를 먼저 지울 것** — `CREATE OR REPLACE`는 인자가 다르면
+  덮어쓰지 않고 **오버로드를 만들어**, 옛 함수를 부르는 경로가 조용히 살아남는다.
+  회귀는 `test_legal_rule_sql.py::test_v1_history_column_and_function_overload_are_migrated_not_duplicated`.
+- **관리자 목록(`GET /api/admin/legal-rules`)은 근거 원문을 싣지 않는다**(`api/legal_updates.py::listing`).
+  후보마다 최대 50,000자이고 registry 상한이 8MB라, 그대로 내보내면 후보가 쌓일수록 서버리스 응답
+  한도를 넘어 **관리 화면이 통째로 멈춘다.** 원문은 후보 선택 시
+  `GET /api/admin/legal-rules/candidates/{id}`로 한 건씩 가져온다 — 이때 돌려주는 것은 Pinecone 현재본이
+  아니라 **승인 근거로 저장된 스냅샷**이다(`/evidence?id=`는 현재본이라 서로 다른 것을 본다).
+- **registry 조회 결과를 캐시하지 말 것.** 한 상담 턴은 이미 1회만 읽는다 — 계산기 경로(facade)와
+  사실 블록(`pipeline._build_approved_facts`)은 `calc_result` 유무로 갈리는 **배타 분기**다.
+  캐시를 얹으면 절감은 없고 관리자 쓰기 직전 읽기가 낡을 위험만 생긴다.
+  반면 **Supabase 클라이언트는 `configured_store()`가 캐시한다**(자격증명이 바뀌면 통째로 교체).
 
 ### Harassment Assessor (`harassment_assessor/`)
 
@@ -484,7 +614,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
     - **테이블** — RLS 정책만 만들고 `GRANT SELECT, INSERT …`를 빠뜨려 `qa_*`·`law_article_cache`가 전부 `permission denied`. **RLS 정책(어느 **행**)과 GRANT(**접근 자체**)는 다른 계층이라 둘 다 있어야 한다.**
     - **함수** — `REVOKE ALL ON FUNCTION … FROM PUBLIC`이 **service_role의 유일한 경로까지 지웠다.** 함수는 생성 시 PUBLIC에 EXECUTE가 기본 부여되고 `public` 스키마에선 default privileges가 service_role에도 따로 주는데, 커스텀 스키마엔 그게 없다. `service_role`은 BYPASSRLS일 뿐 **superuser가 아니다** — 같은 이유로 자기가 소유하지 않은 함수에 GRANT를 줄 수도 없다(회수하면 SQL Editor로만 복구 가능). `purge_storage_orphans.py`가 `42501 permission denied for function storage_purge_claim`으로 죽었다.
     - 반대로 **`purge_expired_data`는 일부러 service_role에 주지 않는다** — pg_cron이 `postgres`(superuser)로 실행하므로 불필요하고, 영구 삭제 함수라 호출 경로를 좁게 둔다.
-  - **DDL은 최종 상태 5파일이고 적용 순서가 있다**: `supabase_schema.sql`(스키마 생성) → `supabase_abuse_guard.sql` → `supabase_board_posts.sql` → `supabase_retention_purge.sql` → `supabase_consultation_eval.sql`. **패치 파일을 따로 두지 말 것** — 이전 프로젝트 전환에서 base만 적용하고 후속 패치를 놓쳐 `qa_sessions.session_data`·`law_article_cache`가 빠진 채 프로덕션이 돌았다(매 채팅 PGRST204 → 후속 질문 맥락 유실, 법령 L2 캐시 404). `supabase_fix_*.sql` 3종은 본문에 흡수됐고 이력으로만 남아 있다.
+  - **DDL은 최종 상태 6파일이고 적용 순서가 있다**: `supabase_schema.sql`(스키마 생성) → `supabase_abuse_guard.sql` → `supabase_board_posts.sql` → `supabase_retention_purge.sql` → `supabase_consultation_eval.sql` → `supabase_legal_rules.sql`. 파일이 늘면 `test_offline_units.py::_DDL_FILES`와 `check_schema.py`(테이블·RPC 대조) 양쪽에 함께 등록할 것 — 전자는 파일↔코드, 후자는 코드↔실제 DB라 **한쪽만 넣으면 적용 누락이 안 잡힌다**. **패치 파일을 따로 두지 말 것** — 이전 프로젝트 전환에서 base만 적용하고 후속 패치를 놓쳐 `qa_sessions.session_data`·`law_article_cache`가 빠진 채 프로덕션이 돌았다(매 채팅 PGRST204 → 후속 질문 맥락 유실, 법령 L2 캐시 404). `supabase_fix_*.sql` 3종은 본문에 흡수됐고 이력으로만 남아 있다.
   - **완료 조건은 "실행했다"가 아니라 `python3 check_schema.py` 전수 통과다.** SQL Editor는 구문 오류 하나로 전량 롤백하고, 선택 영역만 실행되기도 한다(둘 다 실제로 겪음). CI는 DB 자격증명이 없어 **파일↔코드만** 대조한다(D5~D9) — 실제 DB 대조는 이 스크립트가 유일하다.
   - **SQL Editor에 붙여넣을 DDL에는 큰따옴표 식별자를 쓰지 말 것.** 복사 과정에서 스마트 따옴표(U+201C)로 바뀌면 `syntax error at or near …`로 죽는다(실제 발생). 인용부호 없는 이름은 그 실패 모드 자체가 없다. 회귀는 D8.
 - **스키마 파일 없는 테이블을 만들지 말 것.** `board_posts`가 `supabase_schema.sql`에 없이 SQL Editor 수동 실행으로 생겼고, 그 DDL이 **부분만 적용된 채** 사이클이 종료됐다 — 2026-08-13 실측에서 8컬럼 중 5개(`nickname`·`password_hash`·`question_text`·`status`·`ip_hash`)가 없었고, **게시판 글쓰기·삭제는 배포된 채로 한 번도 작동한 적이 없었다**(INSERT에 `try/except`가 없어 HTTP 500). `board_posts` 0행은 "아무도 안 썼다"가 아니라 "쓸 수 없었다"였다. 저장소에 단일 출처가 없으면 **어긋났다는 사실 자체를 아무도 모른다.**
@@ -525,6 +655,8 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 계산기 흐름도 25종(`public/calculator_flow/*.html`)은 **아직 미전환**이다. 6색 의미 체계(`c-blue`/`c-teal`/`c-amber`/`c-coral`/`c-purple`/`c-gray`)를 데이터시각화 예외로 유지하기로 확정했고 매핑표는 설계 문서 §8.1에 있다. 그 결과 `calculators.html`(무채색)과 iframe 안 흐름도(기존 색) 사이에 시각적 이음매가 있다 — 후속 사이클에서 해소.
 - `public/index.html`의 콜아웃 판정(`CALLOUT_MAP`)·핵심답변 판정·면책 고지 판정과 `public/finalize.js`의 `isTerminator`는 **정규식에 이모지(📘⚠️🚨💡⚖️📋)를 포함한다.** LLM 출력의 이모지 접두사를 벗겨 내는 용도이므로 "UI 이모지 제거" 작업 시에도 **지우면 안 된다** — 지우면 콜아웃이 평문이 되고 면책 고지가 접힌 채 숨는다. 표시용 아이콘만 인라인 SVG(`.icon`)로 교체한다.
 - `public/sw.js`의 `ASSET_PATTERN`은 css·js를 포함하므로 **배포마다 `VERSION`을 올릴 것.** 안 올리면 낡은 스타일·스크립트가 cache-first로 남아 새 디자인이 적용되지 않는다(실패가 조용하다). `SHELL_URLS`에 `/tokens.css`가 있어야 오프라인 화면이 무스타일로 뜨지 않는다.
+- **`public/`의 분리된 정적 JS는 `test_public_fetch.js`가 디렉터리에서 발견해 검사한다**(`sw.js` 제외). 손으로 나열하지 말 것 — `admin_legal_rules.js`가 그렇게 빠져 있었다. 주입된 fetcher를 쓰는 모듈은 `fetch(` 정규식에 안 걸리므로 **단일 HTTP 경로의 상태 검사를 따로 고정**한다(`createClient`의 `!response.ok`).
+- **`public/admin_legal_rules.js`가 서비스워커 캐시에 안 걸리는 것은 우연이다** — `sw.js`의 제외 조건이 `pathname.startsWith('/admin')`이라 파일명이 그 접두사를 만족했을 뿐이다. 관리자용 정적 자산을 **다른 이름으로** 추가하면 cache-first에 걸려 배포 후에도 낡은 스크립트가 남는다. 그때는 `sw.js`의 `VERSION` 상향 또는 제외 규칙 보강이 필요하다.
 - **프론트 `fetch`는 반드시 `resp.ok`를 검사할 것.** `fetch`는 네트워크 실패에만 reject하고 4xx·5xx는 정상 이행하므로, `.then(r => r.json())`으로 바로 넘기면 **오류 본문이 정상 데이터로 흘러가 화면에 `undefined`가 찍힌다**(2026-08-07 실장애: `CAPTCHA_SECRET` 미설정 → `/api/captcha` 503 → "보안문자: undefined" → 이메일 발송·게시판 등록 불가). 200이어도 필수 필드 존재를 함께 확인한다. 사용자 안내에는 서버 `detail`(예: "서버 설정 오류")을 노출하지 말고 고정 문구를 쓴다. 회귀는 `test_public_fetch.js`가 공개 페이지 전 `fetch`를 훑어 고정한다.
 - CAPTCHA로 게이팅되는 제출 버튼(`index.html` 이메일 모달, `board.html` 글쓰기)은 **토큰 확보 전까지 비활성**을 유지해야 한다. `board.html`은 버튼 상태를 만지는 지점이 셋(`loadCaptcha` 성공, `submitPost`의 429 타이머, `finally`)이라 **단일 불변식으로 통일**돼 있다 — "토큰이 있고 rate limit이 풀렸을 때만 열린다"(`!captchaToken || Date.now() < rateLimitedUntil`). 한 지점만 무조건 `false`로 바꾸면 나머지 둘의 게이팅이 무력화된다. 403 재로딩은 `await loadCaptcha()`로 순서를 확정할 것 — `await` 없이 호출하면 `finally`가 먼저 실행돼 잠금을 덮는다.
 - **답변 조망 레이어**(`public/finalize.js`, answer-at-a-glance): 완성된 답변 DOM에만 적용하는 순수 후처리(목차·`<details>` 접기·핵심 복귀 버튼). `index.html`(`readSSE` 말미, 스트리밍 완료 후 1회)과 `board.html`(`renderDetail` 렌더 직후)이 공유하며, `pwa.js`와 같은 정적 파일 분리 방식이다. 주의점:

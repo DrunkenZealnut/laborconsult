@@ -28,6 +28,8 @@ from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType
 from .ordinary_wage import OrdinaryWageResult
 from .shared import normalize_allowances, AllowanceClassifier
+from ..legal_rules import managed
+from ..constants import get_minimum_hourly_wage
 from ..constants import (
     MINIMUM_HOURLY_WAGE,
     MONTHLY_STANDARD_HOURS,
@@ -63,10 +65,10 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     legal:    list = ["최저임금법 제6조 (최저임금의 효력)"]
 
     # ── 기준 연도 최저임금 ────────────────────────────────────────────────────
-    if year not in MINIMUM_HOURLY_WAGE:
+    if not managed() and year not in MINIMUM_HOURLY_WAGE:
         year = max(MINIMUM_HOURLY_WAGE.keys())
         warnings.append(f"{inp.reference_year}년 최저임금 미확정 — {year}년 기준 적용")
-    legal_minimum = float(MINIMUM_HOURLY_WAGE[year])
+    legal_minimum = float(get_minimum_hourly_wage(year))
 
     # ── 수습기간 특례 (최저임금법 제5조 제2항) ─────────────────────────────────
     # 조건: ① 1년 이상 근로계약 ② 수습 3개월 이내 ③ 단순노무종사자 아닐 것

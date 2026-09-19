@@ -136,7 +136,7 @@ _INFO_KEYS = {
     "notice_days_given", "parental_leave_months",
     "arrear_amount", "arrear_due_date",
     "shutdown_days", "public_holiday_days",
-    "use_minimum_wage", "reference_year",
+    "use_minimum_wage", "reference_year", "reference_date",
     "is_probation", "contract_months", "occupation_code",
     "is_platform_worker",
 }

@@ -50,7 +50,8 @@ OPEN_TABLES: dict[str, tuple[str, ...]] = {
 
 # RLS ON + 정책 무부여 + GRANT 회수 → anon 직접 접근이 **막혀야** 정상인 테이블.
 # 읽히면 이중 방어가 뚫린 것이다.
-LOCKED_TABLES = ("chat_quota", "block_list", "abuse_events", "storage_purge_queue")
+LOCKED_TABLES = ("chat_quota", "block_list", "abuse_events", "storage_purge_queue",
+                 "legal_rule_registry", "legal_rule_events")
 
 # 부작용 없이 호출할 수 있는 RPC 만 존재 확인한다.
 # chat_guard_check·record_abuse_event 는 쓰기 부작용이 있어 여기서 부르지 않는다
@@ -144,6 +145,80 @@ def check_rpcs(sb, verbose: bool) -> list[str]:
     return problems
 
 
+def check_legal_rules(verbose: bool) -> list[str]:
+    """법률 기준 저장소는 anon 이 아니라 **서버 service-role** 로만 닿는다.
+
+    anon 차단은 위 LOCKED_TABLES 가 본다. 여기서는 프로덕션이 실제로 쓰는 경로
+    (`configured_store()` → `SupabaseRuleStore`)를 그대로 태워 읽기까지 확인한다.
+    조회 전용이며 어떤 행도 만들거나 바꾸지 않는다.
+    """
+    print("\n[법률 기준 저장소] service-role 읽기 + 저장 RPC 존재")
+    from app.core.legal_rule_store import configured_store
+    from app.core.legal_updates import RuleError
+
+    try:
+        store = configured_store()
+    except RuleError as e:
+        # 키가 없으면 '미확인'이지 '불일치'가 아니다. 다만 LEGAL_RULES_ENABLED=true
+        # 로 배포하면 같은 자리에서 관리 대상 계산이 전부 보류된다.
+        enabled = os.environ.get("LEGAL_RULES_ENABLED", "").strip().lower() == "true"
+        mark = "✗" if enabled else "–"
+        print(f"  {mark} SUPABASE_SERVICE_ROLE_KEY 미설정 — 저장소 확인 건너뜀 ({e})")
+        if enabled:
+            print("     LEGAL_RULES_ENABLED=true 인데 키가 없으면 관리 계산이 전부 보류된다")
+            return ["legal_rule_store(키없음)"]
+        return []
+    except Exception as e:
+        print(f"  ✗ 저장소 클라이언트 생성 실패 — {_classify(e)}")
+        if verbose:
+            print(f"     {str(e)[:150]}")
+        return ["legal_rule_store"]
+
+    problems = []
+    try:
+        revision, document = store.load()
+        print(f"  ✓ legal_rule_registry   revision={revision} "
+              f"후보 {len(document.get('records', []))}건 / 검색 {len(document.get('scans', []))}건")
+    except Exception as e:
+        problems.append("legal_rule_registry")
+        kind = _classify(e)
+        hint = {"테이블없음": "DDL 미적용", "권한없음": "service_role GRANT SELECT 누락"}.get(kind, kind)
+        print(f"  ✗ legal_rule_registry   {hint}")
+        if verbose:
+            print(f"     {str(e)[:150]}")
+
+    try:
+        store.events(limit=1)
+        print("  ✓ legal_rule_events")
+    except Exception as e:
+        problems.append("legal_rule_events")
+        print(f"  ✗ legal_rule_events     {_classify(e)}")
+        if verbose:
+            print(f"     {str(e)[:150]}")
+
+    # 저장 RPC 존재 확인: new_document=NULL 은 함수 **첫 문장**에서 22023 으로 거절되므로
+    # 행 잠금·UPDATE·이력 INSERT 어디에도 도달하지 않는다. 부작용 없는 유일한 probe 다.
+    try:
+        store.db.rpc("legal_rules_save", {
+            "expected_revision": 0, "new_document": None,
+            "event_actor": "", "event_action": None,
+        }).execute()
+        problems.append("legal_rules_save")
+        print("  ✗ legal_rules_save      NULL 문서를 거절하지 않음 — 검증 블록 확인")
+    except Exception as e:
+        if "INVALID_LEGAL_RULE_DOCUMENT" in str(e) or "22023" in str(e):
+            print("  ✓ legal_rules_save      (NULL 문서 거절 — 쓰기 없음)")
+        else:
+            problems.append("legal_rules_save")
+            kind = _classify(e)
+            hint = {"함수없음": "DDL 미적용",
+                    "권한없음": "service_role GRANT EXECUTE 누락"}.get(kind, kind)
+            print(f"  ✗ legal_rules_save      {hint}")
+            if verbose:
+                print(f"     {str(e)[:150]}")
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Supabase 스키마 대조 (수동 실행 전용)")
     ap.add_argument("--verbose", action="store_true", help="실패 항목의 오류 원문 출력")
@@ -168,7 +243,8 @@ def main() -> int:
 
     problems = (check_open(sb, args.verbose)
                 + check_locked(sb, args.verbose)
-                + check_rpcs(sb, args.verbose))
+                + check_rpcs(sb, args.verbose)
+                + check_legal_rules(args.verbose))
 
     print("\n" + "─" * 62)
     if not problems:
@@ -180,8 +256,9 @@ def main() -> int:
 
     print(f"❌ 스키마 불일치 — {len(problems)}건: {', '.join(problems)}")
     print("\n조치: Supabase SQL Editor 에서 아래를 순서대로 실행 (멱등, 재실행 안전)")
-    print("  1) supabase_schema.sql   2) supabase_abuse_guard.sql")
+    print("  1) supabase_schema.sql        2) supabase_abuse_guard.sql")
     print("  3) supabase_board_posts.sql   4) supabase_retention_purge.sql")
+    print("  5) supabase_consultation_eval.sql   6) supabase_legal_rules.sql")
     return 1
 
 

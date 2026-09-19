@@ -3,7 +3,7 @@
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from enum import Enum
 
@@ -201,7 +201,10 @@ class WageInput:
     # ── 사업장/근무 정보 ─────────────────────────────────────────────────────
     business_size: BusinessSize = BusinessSize.OVER_5
     work_type: WorkType = WorkType.REGULAR
-    reference_year: int = field(default_factory=lambda: date.today().year)  # 기준 연도 (최저임금 등)
+    reference_year: int = field(default_factory=lambda: datetime.now(
+        timezone(timedelta(hours=9))).year)  # 기준 연도 (법률 적용 기준인 KST)
+    reference_date: Optional[str] = None  # 관리 기준 적용일 YYYY-MM-DD (연중 변경 지원)
+    use_minimum_wage: bool = False       # 승인된 기준으로 임금 설정(관리 모드)
 
     # ── 근무 스케줄 ──────────────────────────────────────────────────────────
     schedule: WorkSchedule = field(default_factory=WorkSchedule)
