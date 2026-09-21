@@ -34,7 +34,7 @@ jobs:
         run: python3 -m unittest test_legal_rule_updates test_legal_rule_api -v
 
       - name: 법률 기준 관리 화면
-        run: node --test test_admin_legal_rules.js test_admin_quality.js
+        run: node --test test_admin_legal_rules.js test_admin_quality.js test_kin_format.js
 
       - name: 법률 기준 PostgreSQL 트랜잭션·권한 검증
         env:
