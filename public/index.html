@@ -1456,6 +1456,7 @@ function showAnswerActions(el) {
   bar.className = 'answer-actions';
   bar.innerHTML =
     '<button onclick="actionCopy(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 복사하기</button>' +
+    '<button onclick="actionCopyKin(this)" title="네이버 지식iN 답변창에 붙여넣어도 표·굵게·목록이 유지되는 형식으로 복사합니다. 붙여넣을 때 Ctrl+V (Ctrl+Shift+V는 서식이 사라집니다)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><path d="M13 14h6M13 18h4"/></svg> 지식iN용 복사</button>' +
     '<button onclick="actionPDF()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> PDF 저장</button>' +
     '<button onclick="actionMarkdown()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Markdown 저장</button>' +
     '<button onclick="openEmailModal(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg> 이메일 전송</button>';
@@ -1501,6 +1502,28 @@ function actionCopy(btn) {
       btn.classList.remove('done');
       btn.innerHTML = btn.innerHTML.replace('복사됨', '복사하기');
     }, 2000);
+  });
+}
+
+function actionCopyKin(btn) {
+  // 지식iN 답글에는 질문이 실리면 안 되므로 getQAPair()(질문 포함)를 쓰지 않고
+  // 답변만 모은다. 변환은 원문 마크다운에서 — 렌더된 DOM 은 class 기반이라
+  // 지식iN 에디터가 서식을 전부 버린다.
+  const answers = [];
+  chat.querySelectorAll('.msg.assistant:not(.status)').forEach(function(a) {
+    const src = a.dataset.md || a.textContent.trim();
+    if (src) answers.push(src);
+  });
+  if (!answers.length || !window.KinFormat) return;
+  const html = window.KinFormat.toHtml(answers.join('\n\n---\n\n'));
+  const label = '지식iN용 복사';
+  window.KinFormat.copyRich(html).then(function(ok) {
+    btn.classList.toggle('done', ok);
+    btn.innerHTML = btn.innerHTML.replace(label, ok ? '복사됨 · Ctrl+V로 붙여넣기' : '복사 실패');
+    setTimeout(function() {
+      btn.classList.remove('done');
+      btn.innerHTML = btn.innerHTML.replace(/복사됨 · Ctrl\+V로 붙여넣기|복사 실패/, label);
+    }, 2500);
   });
 }
 
@@ -2031,5 +2054,6 @@ initFAQ();
 </script>
 <script src="/pwa.js"></script>
 <script src="/finalize.js"></script>
+<script src="/kin_format.js"></script>
 </body>
 </html>

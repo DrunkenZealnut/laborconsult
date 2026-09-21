@@ -149,5 +149,12 @@
     "archivedAt": "2026-08-28",
     "archivedTo": "docs/archive/2026-08/tokenizer-quality/",
     "pr": 60
+  },
+  "naver-kin-answer-simplification": {
+    "phase": "do",
+    "startedAt": "2026-09-21T15:02:30Z",
+    "planDoc": "docs/01-plan/features/naver-kin-answer-simplification.plan.md",
+    "designDoc": "docs/02-design/features/naver-kin-answer-simplification.design.md",
+    "updatedAt": "2026-09-21T20:46:28Z"
   }
 }
