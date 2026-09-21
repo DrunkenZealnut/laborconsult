@@ -54,9 +54,11 @@
     for (var r = 0; r < rows.length; r++) {
       html += '<tr>';
       for (var c = 0; c < rows[r].length; c++) {
-        // 머리행은 th 가 아니라 td+b — th 는 미실측이다. 셀의 자체 ** 는 벗겨 중첩을 막는다.
+        // 머리행은 th 가 아니라 td+b — th 는 미실측이다. 셀의 자체 **x** 는 벗겨 <b> 중첩을
+        // 막되, **짝이 맞는 것만** 벗긴다 — 전부 지우면 절단된 답변의 닫히지 않은 ** 가
+        // 사라져 운영자가 절단을 못 알아챈다(다른 곳과 같은 원칙).
         var cell = r === 0
-          ? '<b>' + inline(rows[r][c].replace(/\*\*/g, '')) + '</b>'
+          ? '<b>' + inline(rows[r][c].replace(/\*\*([^*\n]+?)\*\*/g, '$1')) + '</b>'
           : inline(rows[r][c]);
         html += '<td style="' + CELL + '">' + cell + '</td>';
       }
