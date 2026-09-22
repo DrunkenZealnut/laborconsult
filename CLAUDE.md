@@ -450,6 +450,16 @@ wage_calculator/
 - **연결된 키는 11개뿐이다**(`PARAMETERS`): `minimum_hourly_wage`, `maternity.monthly_upper`,
   `maternity.platform_upper`, `insurance.*` 8종. 육아휴직 급여표·EITC·퇴직소득세·실업급여 상한·
   산재 급여표·가산율은 **미연결**이라 관리 모드에서도 내장표를 쓴다 — "관리 모드 = 전부 최신"이 아니다.
+- **`INSURANCE_RATES[연도]`를 직접 읽지 말 것 — 연 단위 표가 표현하지 못하는 값이 있다.**
+  국민연금 기준소득월액 상·하한은 **적용기간이 7월~다음 해 6월**이라(국민연금법 시행령 제5조④)
+  연 단위 표에는 "그 해 1월 1일에 유효한 값"만 들어간다. 그래서 7월 고시 이후 하반기 내내 직전
+  구간 값을 조용히 냈다(실측 2026-09-23: 상한 6,370,000 vs 고시 6,590,000 — 월 800만원 소득자의
+  연금 보험료가 10,450원 어긋났다). 단일 출처는 `constants.PENSION_INCOME_PERIODS`이고 조회는
+  **기준일을 받는** `get_insurance_rates(year, reference_date)` / `builtin_parameter(key, year, date)`
+  하나뿐이다. 표를 직접 읽는 경로를 새로 만들면 **같은 답변 안에서 사실 블록과 계산 결과가 갈린다** —
+  `pipeline._build_insurance_facts`가 실제로 그랬고 회귀는 `test_pipeline_wiring.py` W11이 고정한다.
+  건강보험료 상·하한은 고시의 **직장가입자 보수월액보험료 ÷ 2**(근로자 부담분)다 — 계산기가 상한을
+  거는 대상이 근로자분이기 때문이고, 고시 전체값을 그대로 넣으면 상한이 2배가 되어 사실상 무력화된다.
 - **`PARAMETERS`의 `insurance.*`와 `constants.INSURANCE_RATES`의 키 집합은 정확히 일치해야 한다.**
   `get_insurance_rates()`가 legacy dict의 **모든** 키를 `parameter("insurance." + key, …)`로 조회하므로,
   미등록 키를 하나 추가하면 관리 모드에서 보험 계산이 **영구 보류**된다(조용한 실패). 요율 항목을

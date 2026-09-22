@@ -121,6 +121,21 @@ def main() -> None:
     assert "고시되지 않은" not in block, f"W10 실패(미고시 단정 문구 잔존):\n{block}"
     print(f"  ✅ W10 최저임금 사실 블록 → 표 최신 연도({latest}) 포함, 미고시 단정 없음")
 
+    # ── W11. 4대보험 사실 블록이 계산기와 같은 수치를 말한다 ──
+    # 기준소득월액은 연중 7월에 바뀌는데(시행령 제5조④) 사실 블록이 연 단위 표를 직접
+    # 읽고 있어, 하반기에는 같은 답변 안에서 블록과 계산 결과가 갈렸다(실측 2026-09-23).
+    from wage_calculator.constants import get_insurance_rates
+    from wage_calculator.legal_rules import kst_today
+    block = pl._build_insurance_facts("4대보험 얼마나 떼나요?", None)
+    assert block, "W11 실패: 4대보험 신호에 사실 블록 미생성"
+    today = kst_today()
+    rates = get_insurance_rates(int(today[:4]), today)
+    for label, key in (("기준소득 상한", "pension_income_max"), ("기준소득 하한", "pension_income_min"),
+                       ("건보료 상한", "health_premium_max"), ("건보료 하한", "health_premium_min")):
+        assert f"{rates[key]:,}원" in block, f"W11 실패({label} 불일치 {rates[key]:,}):\n{block}"
+    assert "7월부터 다음 해 6월" in block, f"W11 실패(적용기간 고지 누락):\n{block}"
+    print(f"  ✅ W11 4대보험 사실 블록 → 계산기와 동일 수치(기준일 {today})")
+
     # ── 파라미터 변환 계층 자체 검증 ──
     p = _analysis_to_extract_params(stub(
         ["severance", "annual_leave"],

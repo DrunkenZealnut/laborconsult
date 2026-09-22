@@ -101,7 +101,11 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
                 "출산일 전 피보험 단위기간 3개월 이상 필요합니다."
             )
     else:
-        upper = parameter("maternity.monthly_upper", MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[2025]))
+        # 폴백은 **최신 연도**다(get_minimum_hourly_wage·get_insurance_rates와 같은 규약).
+        # 2025 고정이면 표에 없는 미래 연도가 2025년 상한으로 떨어지고, 관리 화면의
+        # '현재 적용값'과도 갈린다 — 실측 2027년: 미리보기 2,156,880 vs 계산 2,096,270.
+        upper = parameter("maternity.monthly_upper", MATERNITY_LEAVE_UPPER.get(
+            year, MATERNITY_LEAVE_UPPER[max(MATERNITY_LEAVE_UPPER)]))
 
     # ── 월 급여 계산 ─────────────────────────────────────────────────────
     if is_pw:

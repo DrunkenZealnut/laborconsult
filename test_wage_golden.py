@@ -47,11 +47,29 @@ def main() -> int:
         check(f"{_today.year + 1} 최저임금이 표에 있음 (8/5 고시 이후 갱신 필수)",
               _today.year + 1 in MINIMUM_HOURLY_WAGE,
               f"표 최신 연도 {max(MINIMUM_HOURLY_WAGE)}")
+    # 기준소득월액 적용기간은 **7월~익년 6월**이다(국민연금법 시행령 제5조제4항).
+    # 연 단위 표로는 표현할 수 없어 2026년 하반기 내내 직전 구간 값을 냈다(실측 2026-09-23).
+    r26_h1 = get_insurance_rates(2026, "2026-03-01")
+    check("2026 상반기 연금 기준소득 상한 = 6,370,000 (2025.7~2026.6 고시)",
+          r26_h1["pension_income_max"] == 6_370_000, f"{r26_h1['pension_income_max']:,}")
+    check("2026 상반기 연금 기준소득 하한 = 400,000 (2025.7~2026.6 고시)",
+          r26_h1["pension_income_min"] == 400_000, f"{r26_h1['pension_income_min']:,}")
+    r26_h2 = get_insurance_rates(2026, "2026-07-01")
+    check("2026 하반기 연금 기준소득 상한 = 6,590,000 (2026.7~2027.6 고시)",
+          r26_h2["pension_income_max"] == 6_590_000, f"{r26_h2['pension_income_max']:,}")
+    check("2026 하반기 연금 기준소득 하한 = 410,000 (2026.7~2027.6 고시)",
+          r26_h2["pension_income_min"] == 410_000, f"{r26_h2['pension_income_min']:,}")
+    # 경계일(6/30 → 7/1)에서 갈려야 한다. 한 칸이라도 밀리면 한 달치가 조용히 틀린다.
+    check("연금 기준소득 구간 경계 = 7월 1일",
+          get_insurance_rates(2026, "2026-06-30")["pension_income_max"] == 6_370_000,
+          f"{get_insurance_rates(2026, '2026-06-30')['pension_income_max']:,}")
+    # 건강보험료 상·하한은 고시(개정 2025.12.24)의 **직장가입자 보수월액보험료**이고
+    # 계산기는 근로자 부담분(요율 ÷ 2)에 상한을 걸므로 고시값의 절반이 들어가야 한다.
     r26 = get_insurance_rates(2026)
-    check("2026 국민연금 기준소득월액 상한 = 6,370,000 (C-1)",
-          r26["pension_income_max"] == 6_370_000, f"{r26['pension_income_max']:,}")
-    check("2026 국민연금 기준소득월액 하한 = 400,000 (C-1)",
-          r26["pension_income_min"] == 400_000, f"{r26['pension_income_min']:,}")
+    check("2026 건강보험료 월 상한(근로자) = 4,591,740 = 9,183,480 ÷ 2",
+          r26["health_premium_max"] == 9_183_480 // 2, f"{r26['health_premium_max']:,}")
+    check("2026 건강보험료 월 하한(근로자) = 10,080 = 20,160 ÷ 2",
+          r26["health_premium_min"] == 20_160 // 2, f"{r26['health_premium_min']:,}")
 
     print("── 통상임금(시급/일급은 clean value) ──")
     r_h = calc(WageInput(wage_type=WageType.HOURLY, hourly_wage=10_000, reference_year=2026,

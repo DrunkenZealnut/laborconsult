@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from app.core.legal_updates import LegalUpdateService, Conflict, EvidenceError, RuleError
-from wage_calculator.legal_rules import RuleSnapshot, rule_scope, parameter, RuleUnavailable
+from wage_calculator.legal_rules import (PARAMETERS, RuleSnapshot, rule_scope, parameter,
+                                         RuleUnavailable)
 
 
 class MemoryStore:
@@ -602,6 +603,43 @@ class LegalUpdatesTest(unittest.TestCase):
             self.approve(record)
         self.approve(self.add())
         self.assertEqual(self.snapshot().get("minimum_hourly_wage"), 12345)
+
+    def test_builtin_parameter_covers_every_connected_key(self):
+        """어느 키 하나라도 None 이면 그 입력란만 현재값 없이 남아, 오입력 경고가 조용히 꺼진다."""
+        from wage_calculator.constants import builtin_parameter
+        for key in PARAMETERS:
+            self.assertIsInstance(builtin_parameter(key, 2026), (int, float), key)
+        self.assertIsNone(builtin_parameter("not.a.key", 2026))
+
+    def test_admin_preview_and_calculator_read_the_same_builtin_value(self):
+        """관리 화면의 '현재 적용값'이 계산기와 갈리면 대조 장치가 거짓말을 한다.
+
+        연금 기준소득월액은 **연중 7월**에 바뀌므로 연도만으로 읽으면 하반기 내내
+        어긋난다(2026-07-01 기준 6,370,000 vs 6,590,000).
+        """
+        from wage_calculator.calculators.maternity_leave import MATERNITY_LEAVE_UPPER
+        from wage_calculator.constants import (MINIMUM_HOURLY_WAGE, PLATFORM_MATERNITY_UPPER,
+                                               builtin_parameter, get_insurance_rates,
+                                               get_minimum_hourly_wage)
+        # 계산기가 실제로 읽는 값. 11개 키 **전부**를 본다 — insurance.* 만 검사하면
+        # 미래 연도에서 갈리는 maternity 폴백을 놓친다(실측 2027년 불일치).
+        def calculator_value(key, year):
+            if key == "minimum_hourly_wage":
+                return get_minimum_hourly_wage(year)
+            if key == "maternity.platform_upper":
+                return PLATFORM_MATERNITY_UPPER
+            if key == "maternity.monthly_upper":
+                return MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[max(MATERNITY_LEAVE_UPPER)])
+            return None
+
+        for year, day in ((2026, "2026-03-01"), (2026, "2026-07-01"), (2026, "2026-12-31"),
+                          (2027, "2027-05-01"), (2031, "2031-01-01")):
+            rates = get_insurance_rates(year, day)      # rule_scope 없음 → 내장표 경로
+            for key in PARAMETERS:
+                expected = (rates[key[10:]] if key.startswith("insurance.")
+                            else calculator_value(key, year))
+                with self.subTest(day=day, key=key):
+                    self.assertEqual(builtin_parameter(key, year, day), expected)
 
 
 if __name__ == "__main__":
