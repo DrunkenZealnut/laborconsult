@@ -45,6 +45,9 @@ class Evidence:
     def search(self, query):
         return [self.fetch("fixture-law")]
 
+    def catalog(self, cap=495):     # 실제 시그니처와 같아야 스텁이 계약을 지킨다
+        return [dict(self.fetch("fixture-law"), rule_keys=["minimum_hourly_wage"])]
+
 
 def proposal(**changes):
     return dict({
@@ -603,6 +606,43 @@ class LegalUpdatesTest(unittest.TestCase):
             self.approve(record)
         self.approve(self.add())
         self.assertEqual(self.snapshot().get("minimum_hourly_wage"), 12345)
+
+    def test_current_parameters_pairs_every_key_with_its_builtin_and_approved_value(self):
+        """관리 화면의 '현재 적용값' 미리보기. 승인 게이트가 검증하지 않는 **값 자체**를
+        사람이 대조하게 하는 유일한 장치이고, 일치 규칙은 계산기와 같아야 한다."""
+        from app.core.legal_updates import current_parameters
+        from wage_calculator.constants import INSURANCE_RATES, MINIMUM_HOURLY_WAGE
+        empty = current_parameters({"records": []}, "2026-06-01")
+        self.assertEqual(set(empty["values"]), set(PARAMETERS))
+        self.assertEqual(empty["approved_count"], 0)
+        self.assertEqual(empty["total"], len(PARAMETERS))
+        # 내장표를 그대로 읽는다 — 어댑터를 거치면 관리 모드에서 승인값이 '내장표'로 표시된다.
+        self.assertEqual(empty["values"]["minimum_hourly_wage"]["builtin"], MINIMUM_HOURLY_WAGE[2026])
+        self.assertEqual(empty["values"]["insurance.health_insurance"]["builtin"],
+                         INSURANCE_RATES[2026]["health_insurance"])
+        self.assertIsNone(empty["values"]["minimum_hourly_wage"]["approved"])
+
+        self.approve(self.add())        # 2031-01-01 ~ 2032-01-01, 12345
+        filled = current_parameters(self.store.document, "2031-06-01")
+        entry = filled["values"]["minimum_hourly_wage"]
+        self.assertEqual(entry["approved"], 12345)
+        self.assertEqual(entry["effective_from"], "2031-01-01")
+        self.assertEqual(entry["citation"], "테스트 전용 고시")
+        self.assertEqual(filled["approved_count"], 1)
+        # 구간 밖은 승인값이 없다 — RuleSnapshot 과 같은 판정이어야 한다.
+        self.assertIsNone(current_parameters(self.store.document, "2032-01-01")
+                          ["values"]["minimum_hourly_wage"]["approved"])
+
+    def test_current_parameters_does_not_copy_evidence_text(self):
+        """근거 원문은 후보마다 최대 50,000자다. 키 11개 미리보기가 registry 전량을
+        복제하면 목록 응답에서 원문을 뺀 이유(8MB 상한)를 여기서 되풀이한다."""
+        from app.core.legal_updates import SNAPSHOT_FIELDS, current_parameters
+        self.assertNotIn("evidence", SNAPSHOT_FIELDS)
+        with patch("app.core.legal_updates.RuleSnapshot", wraps=RuleSnapshot) as spy:
+            current_parameters({"records": [{"status": "pending", "evidence": {"text": "x" * 100}}]},
+                               "2026-06-01")
+        passed = spy.call_args.args[0]
+        self.assertNotIn("evidence", passed[0])
 
     def test_builtin_parameter_covers_every_connected_key(self):
         """어느 키 하나라도 None 이면 그 입력란만 현재값 없이 남아, 오입력 경고가 조용히 꺼진다."""

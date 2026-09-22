@@ -7,7 +7,9 @@ import logging
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from wage_calculator.legal_rules import PARAMETERS, iso_date, validate_value
+from wage_calculator.constants import builtin_parameter
+from wage_calculator.legal_rules import (PARAMETERS, RuleSnapshot, iso_date, kst_today,
+                                         validate_value)
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,45 @@ def now():
 def topics():
     from wage_calculator.facade.registry import CALC_TYPES
     return dict(CALC_TYPES)
+
+
+# RuleSnapshot 판정에 필요한 필드만. 근거 원문(최대 50,000자)까지 복사하면 키 11개
+# 미리보기가 registry 전체를 통째로 복제한다.
+SNAPSHOT_FIELDS = ("id", "status", "kind", "key", "value", "effective_from", "effective_to",
+                   "citation")
+
+
+def current_parameters(document, day=None):
+    """키별로 **내장표 값**과 **오늘자 승인값**을 나란히 돌려준다.
+
+    승인 게이트는 출처(해시·공식 호스트·구간중복·kind)만 검증하고 값 자체는 아무도 보지
+    않는다 — 실측으로 건강보험 **전체** 요율 0.0719(근로자분은 0.03595)와 국민연금 조문
+    본문의 2033년 최종값 0.065(2026년은 부칙의 0.0475)가 정식 인용까지 붙은 채 승인을
+    통과했다. 조문을 정확히 인용할수록 틀린 값이 들어가는 구조라, 입력란 옆의 현재값이
+    자릿수·절반 여부를 사람이 알아채는 유일한 장치다.
+
+    일치 규칙은 `RuleSnapshot`을 그대로 쓴다 — 미리보기를 별도 규칙으로 구현하면 화면이
+    보여준 값과 실제 적용값이 조용히 갈린다.
+    """
+    day = day or kst_today()
+    year = int(day[:4])
+    snapshot = RuleSnapshot([{k: r.get(k) for k in SNAPSHOT_FIELDS}
+                             for r in document.get("records", [])], day)
+    values = {}
+    for key in PARAMETERS:
+        try:
+            snapshot.get(key)
+        except ValueError:      # RuleUnavailable(미승인·중복) + 범위 위반
+            pass
+        approved = snapshot.used.get(key) or {}
+        values[key] = {"builtin": builtin_parameter(key, year, day),
+                       "approved": approved.get("value"),
+                       "effective_from": approved.get("effective_from"),
+                       "effective_to": approved.get("effective_to"),
+                       "citation": approved.get("citation") or ""}
+    return {"as_of": day, "total": len(PARAMETERS),
+            "approved_count": sum(1 for v in values.values() if v["approved"] is not None),
+            "values": values}
 
 
 def fingerprint(value):
