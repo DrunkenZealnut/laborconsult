@@ -36,6 +36,17 @@ def calc(inp, targets):
 def main() -> int:
     print("── 상수 골든 ──")
     check("2026 최저임금 시급 = 10,320", MINIMUM_HOURLY_WAGE[2026] == 10320)
+    check("2027 최저임금 시급 = 10,700 (고용노동부 고시 2026-08-05)",
+          MINIMUM_HOURLY_WAGE.get(2027) == 10700, f"{MINIMUM_HOURLY_WAGE.get(2027)}")
+    # 최저임금법 제10조: 고용노동부장관은 매년 8월 5일까지 다음 연도 최저임금을 고시한다.
+    # 표가 그 뒤에도 다음 연도를 갖지 않으면 사실 블록이 "미고시"로 답하고 계산기는
+    # 올해 값으로 조용히 폴백한다(2027년 고시 누락 실측 2026-09-22). 그 시점부터 실패시킨다.
+    from datetime import date as _date
+    _today = _date.today()
+    if _today >= _date(_today.year, 8, 5):
+        check(f"{_today.year + 1} 최저임금이 표에 있음 (8/5 고시 이후 갱신 필수)",
+              _today.year + 1 in MINIMUM_HOURLY_WAGE,
+              f"표 최신 연도 {max(MINIMUM_HOURLY_WAGE)}")
     r26 = get_insurance_rates(2026)
     check("2026 국민연금 기준소득월액 상한 = 6,370,000 (C-1)",
           r26["pension_income_max"] == 6_370_000, f"{r26['pension_income_max']:,}")

@@ -109,6 +109,18 @@ def main() -> None:
     assert r and "최저임금" in r, f"W9 실패:\n{r}"
     print("  ✅ W9 기존 단일 유형 경로 회귀 없음")
 
+    # ── W10. 최저임금 사실 블록: 표의 최신 연도가 실리고, 표에 없는 연도를 "미고시"로 단정하지 않음 ──
+    # 2027년 고시(2026-08-05)가 표에 없어 챗봇이 "아직 고시되지 않았다"고 답한 실장애(2026-09-22).
+    # 표 누락은 데이터 갱신 문제이지만, 그것을 사용자에게 "고시 안 됨"이라는 거짓 사실로 바꾸는
+    # 문구가 두 번째 원인이었다 — 시스템은 미등록만 알 수 있고 미고시는 알 수 없다.
+    from wage_calculator.constants import MINIMUM_HOURLY_WAGE
+    block = pl._build_minwage_facts("2027년 최저임금 얼마인가요?", None)
+    assert block, "W10 실패: 최저임금 신호에 사실 블록 미생성"
+    latest = max(MINIMUM_HOURLY_WAGE)
+    assert f"{latest}년: 시급 {MINIMUM_HOURLY_WAGE[latest]:,}원" in block, f"W10 실패(최신 연도 누락):\n{block}"
+    assert "고시되지 않은" not in block, f"W10 실패(미고시 단정 문구 잔존):\n{block}"
+    print(f"  ✅ W10 최저임금 사실 블록 → 표 최신 연도({latest}) 포함, 미고시 단정 없음")
+
     # ── 파라미터 변환 계층 자체 검증 ──
     p = _analysis_to_extract_params(stub(
         ["severance", "annual_leave"],
