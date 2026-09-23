@@ -142,10 +142,10 @@ def main() -> int:
     # 모자랐다. 이 검사가 고시값과의 일치를 고정한다.
     from wage_calculator.calculators.maternity_leave import calc_maternity_leave
 
-    def _maternity(year, monthly, multiple=False, date=None):
+    def _maternity(year, monthly, multiple=False, date=None, priority=True):
         # facade 는 summary 문자열만 노출하므로 계산기를 직접 부른다(통상임금 계산기와 같은 방식).
         _inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=monthly, reference_year=year,
-                         is_multiple_birth=multiple,
+                         is_multiple_birth=multiple, is_priority_support_company=priority,
                          schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5))
         _inp.reference_date = date
         return calc_maternity_leave(_inp, calc_ordinary_wage(_inp))
@@ -158,8 +158,23 @@ def main() -> int:
     check("2026 다태아 120일 총액 = 8,800,000 (동 고시)",
           approx(_m26m.total_insurance_benefit, 8_800_000, 0.0001),
           f"{_m26m.total_insurance_benefit:,.0f}")
-    check("2026 배우자 출산휴가 상한 = 1,684,210 (동 고시)",
-          approx(_m26.spouse_leave_pay, 1_684_210, 0.0001), f"{_m26.spouse_leave_pay:,.0f}")
+    # 고시 상한은 **고용보험 급여**의 상한이고 유급 의무는 사업주에게 남는다 — 상한을
+    # 유급액에 걸면 대규모기업 근로자의 법정 유급액이 줄어든 것처럼 보인다(CodeRabbit PR #78).
+    check("2026 배우자 고용보험 급여 상한 = 1,684,210 (동 고시)",
+          approx(_m26.spouse_insurance_benefit, 1_684_210, 0.0001),
+          f"{_m26.spouse_insurance_benefit:,.0f}")
+    check("배우자 유급액은 상한에 깎이지 않는다 (사업주가 차액 부담)",
+          _m26.spouse_leave_pay > _m26.spouse_insurance_benefit,
+          f"유급 {_m26.spouse_leave_pay:,.0f} / 보험 {_m26.spouse_insurance_benefit:,.0f}")
+    _big = _maternity(2026, 5_000_000, priority=False)
+    check("대규모기업은 배우자 고용보험 지원 0원 (유급액은 유지)",
+          _big.spouse_insurance_benefit == 0 and _big.spouse_leave_pay > 0,
+          f"보험 {_big.spouse_insurance_benefit:,.0f} / 유급 {_big.spouse_leave_pay:,.0f}")
+    check("2025-01-10 고용보험 지원은 5일분 (개정 시행 전)",
+          _maternity(2025, 5_000_000, date="2025-01-10").spouse_insurance_days == 5)
+    check("2025-06-01 고용보험 지원은 20일분·상한 1,607,650",
+          approx(_maternity(2025, 5_000_000, date="2025-06-01").spouse_insurance_benefit,
+                 1_607_650, 0.0001))
     # 남녀고용평등법 제18조의2 개정(2025-02-23): 10일 → 20일. 연중 시행이라 날짜로 갈린다.
     check("배우자 출산휴가 일수: 2025-01-10 → 10일",
           _maternity(2025, 3_000_000, date="2025-01-10").spouse_leave_days == 10)

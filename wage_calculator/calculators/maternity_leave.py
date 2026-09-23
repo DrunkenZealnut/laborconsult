@@ -8,11 +8,13 @@
     - 대규모 기업: 최초 60일은 사업주 부담, 61일~90일만 고용보험
   급여액:
     - 통상임금 100% (최초 60일, 우선지원은 90일 전체)
-    - 상한: 약 2,094,000원/월 (2025년 기준, 매년 고시)
+    - 상한: 고용노동부 고시(2026년 월 220만원 = 90일 660만원). 기간 총액은 월 상한 ÷ 30 × 일수
     - 하한: 최저임금액 이상 (근로기준법 보장)
 
-  배우자 출산휴가: 10일 유급 = 통상임금 × 10일분
-    (고용보험법 제75조의2, 우선지원대상기업은 5일분 고용보험 지원)
+  배우자 출산휴가(남녀고용평등법 제18조의2): 2025-02-23부터 20일 유급(종전 10일).
+    **유급 의무는 사업주**에게 있고, 우선지원대상기업이면 그중 일부를 고용보험이 급여로
+    지원한다(종전 5일분 → 현재 전 기간, 고시 상한 적용, 차액은 사업주 부담).
+    고시 상한은 **보험 급여**의 상한이지 유급액의 상한이 아니다.
 """
 
 from dataclasses import dataclass
@@ -42,27 +44,36 @@ MATERNITY_LEAVE_UPPER: dict[int, float] = {
 # 그렇게 하면 90일 총액이 638만원이 되어 고시 660만원에 217,999원 못 미친다(실측).
 MATERNITY_DAYS_PER_MONTH = 30
 
-# ── 배우자 출산휴가 (남녀고용평등법 제18조의2) ───────────────────────────────
-# 2025-02-23 개정 시행으로 10일 → **20일**, 고용보험 지원도 5일분 → 20일분 전부로 확대됐다
-# (고용노동부 work24 제도안내). 연중 바뀌므로 시행일 구간으로 둔다.
-SPOUSE_LEAVE_DAYS_PERIODS: dict[str, int] = {
-    "2019-10-01": 10,
-    "2025-02-23": 20,
+# ── 배우자 출산휴가 (남녀고용평등법 제18조의2, 고용보험법 제75조의2) ─────────
+# **유급 일수와 고용보험 지원 일수는 다른 값이고 함께 바뀐다.** 2025-02-23 개정 시행으로
+# 유급 10일 → 20일, 지원 5일분 → 전 기간으로 확대됐다(고용노동부 work24 제도안내).
+# 연중 시행이라 시행일 구간으로 둔다 — (유급 일수, 고용보험 지원 일수).
+SPOUSE_LEAVE_PERIODS: dict[str, tuple[int, int]] = {
+    "2019-10-01": (10, 5),
+    "2025-02-23": (20, 20),
 }
 
-# 배우자 출산휴가 급여 상한(전체 기간분). 출산전후휴가와 **일당 기준이 다르다** —
-# 2026년 고시 기준 배우자는 1일 84,210원(1,684,210 ÷ 20)이고 출산전후휴가는 73,333원이다.
-SPOUSE_LEAVE_UPPER: dict[int, float] = {
-    2026: 1_684_210,   # 20일분 — 고용노동부고시 제2025-124호
+# 배우자 출산휴가 **급여**(고용보험 지원분) 상한. 유급액 전체의 상한이 아니다 —
+# 통상임금이 상한을 넘으면 **차액은 사업주가 부담**한다(work24 제도안내). 또 출산전후휴가와
+# 일당 기준이 다르다: 2026년 기준 배우자 1일 84,210원 vs 출산전후휴가 73,333원.
+# 2025-02-23 이전(5일분 체제)의 상한은 확인하지 못해 등록하지 않았다.
+SPOUSE_LEAVE_UPPER_PERIODS: dict[str, float] = {
+    "2025-02-23": 1_607_650,   # 20일분 — 2025년 고시
+    "2026-01-01": 1_684_210,   # 20일분 — 고용노동부고시 제2025-124호
 }
 
 
-def spouse_leave_days(reference_date: str | None, year: int) -> int:
-    """그 시점의 배우자 출산휴가 일수. 날짜가 없으면 그 해 1월 1일 기준으로 읽는다."""
+def _effective(periods: dict, reference_date: str | None, year: int):
+    """시행일 구간표에서 그 시점의 값. 날짜가 없으면 그 해 1월 1일 기준. 이전이면 None."""
     day = reference_date or f"{int(year):04d}-01-01"
-    started = [start for start in SPOUSE_LEAVE_DAYS_PERIODS if start <= day]
-    return SPOUSE_LEAVE_DAYS_PERIODS[max(started)] if started else min(
-        SPOUSE_LEAVE_DAYS_PERIODS.values())
+    started = [start for start in periods if start <= day]
+    return periods[max(started)] if started else None
+
+
+def spouse_leave_days(reference_date: str | None, year: int) -> tuple[int, int]:
+    """그 시점의 (배우자 출산휴가 유급 일수, 고용보험 지원 일수)."""
+    return _effective(SPOUSE_LEAVE_PERIODS, reference_date, year) or SPOUSE_LEAVE_PERIODS[
+        min(SPOUSE_LEAVE_PERIODS)]
 
 
 @dataclass
@@ -83,7 +94,9 @@ class MaternityLeaveResult(BaseCalculatorResult):
 
     # 배우자 출산휴가
     spouse_leave_days: int = 0                 # 배우자 출산휴가 일수 (10일)
-    spouse_leave_pay: float = 0.0              # 배우자 출산휴가 급여
+    spouse_leave_pay: float = 0.0              # 배우자 출산휴가 유급액(사업주 지급 의무 총액)
+    spouse_insurance_benefit: float = 0.0      # 그중 고용보험이 지원하는 급여(상한 적용)
+    spouse_insurance_days: int = 0             # 고용보험 지원 일수
 
     upper_limit_applied: bool = False
 
@@ -226,36 +239,48 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         )
 
     # ── 배우자 출산휴가 ───────────────────────────────────────────────────
-    spouse_days = spouse_leave_days(getattr(inp, "reference_date", None), year)
+    # **유급액과 보험 급여를 분리한다.** 고시 상한은 고용보험이 지급하는 급여의 상한이고
+    # (우선지원대상기업 근로자만 대상), 유급 의무 자체는 사업주에게 남아 차액을 부담한다.
+    # 상한을 유급액에 그대로 걸면 대규모기업 근로자의 법정 유급액이 줄어든 것처럼 보인다.
+    reference_date = getattr(inp, "reference_date", None)
+    spouse_days, spouse_insurance_days = spouse_leave_days(reference_date, year)
     daily_ordinary = ow.hourly_ordinary_wage * inp.schedule.daily_work_hours
     spouse_pay = daily_ordinary * spouse_days
-    spouse_upper = SPOUSE_LEAVE_UPPER.get(year)
-    if spouse_upper is not None and spouse_pay > spouse_upper:
-        formulas.append(
-            f"배우자 출산휴가({spouse_days}일): {daily_ordinary:,.0f}원/일 × {spouse_days}일 "
-            f"→ 상한 {spouse_upper:,.0f}원 적용"
-        )
-        spouse_pay = spouse_upper
-    else:
-        formulas.append(
-            f"배우자 출산휴가({spouse_days}일): {daily_ordinary:,.0f}원/일 × {spouse_days}일 = {spouse_pay:,.0f}원"
-        )
-        if spouse_upper is None:
-            warnings.append(
-                f"{year}년 배우자 출산휴가 급여 상한액 고시가 등록되지 않아 상한을 적용하지 않았습니다"
-                f"(등록된 최신 연도 {max(SPOUSE_LEAVE_UPPER)}년). 실제 지급액은 상한에 걸릴 수 있습니다"
-            )
+    formulas.append(
+        f"배우자 출산휴가({spouse_days}일, 유급): "
+        f"{daily_ordinary:,.0f}원/일 × {spouse_days}일 = {spouse_pay:,.0f}원"
+    )
     legal.append("남녀고용평등법 제18조의2 (배우자 출산휴가)")
 
+    spouse_insurance = 0.0
     if is_priority:
-        # 2025-02-23 개정으로 고용보험 지원이 5일분 → 휴가 전 기간으로 확대됐다.
+        spouse_upper = _effective(SPOUSE_LEAVE_UPPER_PERIODS, reference_date, year)
+        spouse_insurance = daily_ordinary * spouse_insurance_days
+        if spouse_upper is not None and spouse_insurance > spouse_upper:
+            formulas.append(
+                f"배우자 출산휴가급여(고용보험, {spouse_insurance_days}일분): "
+                f"{spouse_insurance:,.0f}원 → 상한 {spouse_upper:,.0f}원 적용"
+            )
+            spouse_insurance = spouse_upper
+        else:
+            formulas.append(
+                f"배우자 출산휴가급여(고용보험, {spouse_insurance_days}일분): {spouse_insurance:,.0f}원"
+            )
+            if spouse_upper is None:
+                warnings.append(
+                    "해당 시점의 배우자 출산휴가 급여 상한액 고시가 등록되지 않아 상한을 적용하지 "
+                    "않았습니다. 실제 지급액은 상한에 걸릴 수 있습니다"
+                )
+        legal.append("고용보험법 제75조의2 (배우자 출산휴가 급여)")
         warnings.append(
-            f"우선지원대상기업: 배우자 출산휴가 {spouse_days}일분 "
-            f"({spouse_pay:,.0f}원) 고용보험 지원 대상 (사업주가 이미 지급했으면 차액만 지급)"
+            f"우선지원대상기업: 배우자 출산휴가 {spouse_insurance_days}일분"
+            f"({spouse_insurance:,.0f}원)이 고용보험 지원 대상입니다. "
+            f"유급액 {spouse_pay:,.0f}원과의 차액 {spouse_pay - spouse_insurance:,.0f}원은 사업주가 부담합니다"
         )
     else:
         warnings.append(
-            f"우선지원대상기업이 아니면 배우자 출산휴가 {spouse_days}일은 사업주가 전액 유급으로 부담합니다"
+            f"우선지원대상기업이 아니면 배우자 출산휴가 {spouse_days}일 유급액 "
+            f"{spouse_pay:,.0f}원 전액을 사업주가 부담합니다(고용보험 지원 없음)"
         )
 
     warnings.append("수급 요건: 출산 전 피보험기간 180일 이상 (고용보험법 제75조)")
@@ -270,7 +295,9 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         "사업주 부담 일수": f"{employer_days}일",
         "고용보험 지급 총액": f"{total_insurance_benefit:,.0f}원",
         "사업주 부담 총액": f"{total_employer_benefit:,.0f}원",
-        f"배우자 출산휴가({spouse_days}일)": f"{spouse_pay:,.0f}원",
+        f"배우자 출산휴가({spouse_days}일 유급)": f"{spouse_pay:,.0f}원",
+        "└ 고용보험 지원분": (f"{spouse_insurance:,.0f}원 ({spouse_insurance_days}일분)"
+                              if is_priority else "없음 (우선지원대상기업 아님)"),
         "상한액": f"{upper:,.0f}원/월 ({year}년 기준)",
         "상한 적용": "✅" if upper_applied else "미적용",
     }
@@ -286,6 +313,8 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         total_employer_benefit=round(total_employer_benefit),
         spouse_leave_days=spouse_days,
         spouse_leave_pay=round(spouse_pay),
+        spouse_insurance_benefit=round(spouse_insurance),
+        spouse_insurance_days=spouse_insurance_days if is_priority else 0,
         upper_limit_applied=upper_applied,
         breakdown=breakdown,
         formulas=formulas,
