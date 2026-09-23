@@ -437,7 +437,7 @@ def stored_notice(doc_id: str) -> dict | None:
     return meta
 
 
-def check_updates() -> int:
+def check_updates(only: str | None = None) -> int:
     """소관부처 게시판에 **저장본보다 새 고시**가 올라왔는지만 본다(수집·저장 없음).
 
     이 점검이 따로 필요한 이유: 고시는 예고 없이 개정되고 법제처 반영은 늦다. 실제로
@@ -452,7 +452,9 @@ def check_updates() -> int:
     낫다 — 번호만 헤더에 넣고 본문은 법제처에서 받는 것이 맞다(법제처 API 는 등록 IP 필요).
     """
     stale, unknown, failed, checked = [], [], [], 0
-    for doc_id, _query, exact, dept, _keys in ADMRULS:
+    for doc_id, _query, exact, dept, keys in ADMRULS:
+        if only and only not in keys:
+            continue
         if dept not in BOARDS:
             print(f"  · {exact}: {dept} — 게시판 파서 없음, 수동 확인 필요")
             continue
@@ -502,7 +504,7 @@ def check_updates() -> int:
     return 1 if (stale or failed) else 0
 
 
-def record_notice_numbers() -> int:
+def record_notice_numbers(dry_run: bool = False, only: str | None = None) -> int:
     """본문은 건드리지 않고 저장본 헤더의 `notice_no` 만 게시판에서 채운다.
 
     법제처 XML 본문에는 발령번호가 없어 그 경로로 수집한 문서는 갱신 판정이 영영
@@ -510,9 +512,17 @@ def record_notice_numbers() -> int:
     형식이라 금액이 빠진다(그래서 `BOARDS[...]["body"] = False` 다). 번호만 따로 채우는
     경로가 필요한 이유다 — **본문·official_url·sha256 은 그대로**라 이미 승인된 근거를
     무효로 만들지 않는다. 법제처 API 자격(등록 IP)이 없어도 돌아간다.
+
+    **번호를 찍기 전에 판본을 대조한다.** `board_find()` 는 같은 제목의 **가장 최근**
+    글을 돌려주므로, 저장본이 그 사이 개정된 옛 판본이면 새 번호가 옛 본문에 찍히고
+    `check_updates()` 가 그것을 '최신'으로 보고한다 — 확인 불가보다 나쁜 상태다.
+    고시의 시행일은 발령일 이후이므로 **게시글 발령일이 저장본 시행일보다 나중이면**
+    그 번호는 저장본의 것이 아니다. 근거(발령일·시행일)가 없으면 기록하지 않는다.
     """
     filled, skipped = 0, 0
-    for doc_id, _query, exact, dept, _keys in ADMRULS:
+    for doc_id, _query, exact, dept, keys in ADMRULS:
+        if only and only not in keys:
+            continue
         stored = stored_notice(doc_id)
         if stored is None:
             print(f"  · {exact}: 아직 수집하지 않았습니다")
@@ -528,6 +538,21 @@ def record_notice_numbers() -> int:
         if not board or not board["notice_no"]:
             print(f"  ✗ {exact}: 게시판에서 발령번호를 얻지 못했습니다")
             skipped += 1
+            continue
+        posted = re.sub(r"\D", "", board.get("posted") or "")
+        effective = re.sub(r"\D", "", stored.get("date") or "")
+        if len(posted) != 8 or len(effective) != 8:
+            print(f"  ✗ {exact}: 판본 근거 없음 (게시 발령일 {posted or '?'} · "
+                  f"저장본 시행일 {effective or '?'}) — 기록하지 않습니다")
+            skipped += 1
+            continue
+        if posted > effective:
+            print(f"  ⚠️ {exact}: 게시판 제{board['notice_no']}호가 {posted} 발령인데 "
+                  f"저장본 시행일은 {effective} — 더 새 고시입니다. 재수집하세요")
+            skipped += 1
+            continue
+        if dry_run:
+            print(f"  (dry-run) {exact}: 제{board['notice_no']}호 기록 예정")
             continue
         path = os.path.join(OUT_DIR, f"{doc_id}.md")
         with open(path, encoding="utf-8") as f:
@@ -564,9 +589,9 @@ def main(argv=None) -> int:
     load_dotenv(override=True)
     api_key = os.getenv("LAW_API_KEY")
     if args.check_updates:
-        return check_updates()
+        return check_updates(only=args.only)
     if args.record_notice_no:
-        return record_notice_numbers()
+        return record_notice_numbers(dry_run=args.dry_run, only=args.only)
     if not api_key:
         print("[오류] LAW_API_KEY 가 없습니다 — 법제처 조회 불가", file=sys.stderr)
         return 1

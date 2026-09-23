@@ -196,18 +196,41 @@ def main() -> int:
     check("미숙아 + 다태아면 긴 쪽(120일)",
           _maternity(2026, 5_000_000, premature=True, multiple=True).leave_days == 120)
     # 난임치료휴가·배우자 유산·사산휴가 — 같은 고시(제2026-67호)가 상한을 정한다.
-    # 1일 통상임금 120,000원이 1일 상한 84,210원을 넘으므로 상한이 걸린 값이 나와야 한다.
-    def _daily_leaves(date):
+    # 1일 통상임금 120,000원이 1일 상한 84,210원을 넘으므로 고용보험 급여에 상한이 걸린다.
+    def _daily_leaves(date, priority=True):
         _inp = WageInput(wage_type=WageType.HOURLY, hourly_wage=15_000, reference_year=int(date[:4]),
-                         schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5))
+                         schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5),
+                         is_priority_support_company=priority)
         _inp.reference_date = date
         return calc_maternity_leave(_inp, calc_ordinary_wage(_inp))
 
     _now = _daily_leaves("2026-09-18")
-    check("난임치료휴가 유급 2일분 = 168,420 (고시 제2026-67호)",
-          _now.infertility_pay == 168_420, f"{_now.infertility_pay:,.0f}")
-    check("배우자 유산·사산휴가 유급 3일분 = 252,630 (동 고시)",
-          _now.spouse_miscarriage_pay == 252_630, f"{_now.spouse_miscarriage_pay:,.0f}")
+    check("난임치료휴가 급여 2일분 = 168,420 (고시 제2026-67호)",
+          _now.infertility_insurance_benefit == 168_420,
+          f"{_now.infertility_insurance_benefit:,.0f}")
+    check("배우자 유산·사산휴가 급여 3일분 = 252,630 (동 고시)",
+          _now.spouse_miscarriage_insurance_benefit == 252_630,
+          f"{_now.spouse_miscarriage_insurance_benefit:,.0f}")
+    # **상한은 고용보험 급여의 상한이지 유급액의 상한이 아니다**(CodeRabbit PR #81).
+    # 유급 의무는 사업주에게 남으므로 유급액은 1일 통상임금 × 유급일수 그대로여야 하고,
+    # 우선지원대상기업이 아니면 고용보험 지원이 0이어도 유급액은 줄지 않는다.
+    check("난임치료휴가 유급액은 상한과 무관 = 120,000 × 2",
+          _now.infertility_pay == 240_000, f"{_now.infertility_pay:,.0f}")
+    check("배우자 유산·사산휴가 유급액은 상한과 무관 = 120,000 × 3",
+          _now.spouse_miscarriage_pay == 360_000, f"{_now.spouse_miscarriage_pay:,.0f}")
+    _big = _daily_leaves("2026-09-18", priority=False)
+    check("대규모기업: 유급액 유지 + 고용보험 지원 0",
+          _big.spouse_miscarriage_pay == 360_000
+          and _big.spouse_miscarriage_insurance_benefit == 0
+          and _big.infertility_pay == 240_000
+          and _big.infertility_insurance_benefit == 0,
+          f"{_big.spouse_miscarriage_pay:,.0f} / {_big.spouse_miscarriage_insurance_benefit:,.0f}")
+    # 2025년 상한(고시 제2025-14호)은 hwp 첨부에만 있어 미등록이다. 조용히 상한 없이
+    # 계산하지 말 것 — 배우자 출산휴가와 같이 경고를 남긴다.
+    _y25 = _daily_leaves("2025-06-01")
+    check("2025 난임치료휴가: 상한 미등록이면 경고",
+          _y25.infertility_paid_days == 2
+          and any("상한액 고시가 등록되지 않아" in w and "난임" in w for w in _y25.warnings))
     check("배우자 유산·사산휴가는 2026-09-18 시행 — 하루 전은 0",
           _daily_leaves("2026-09-17").spouse_miscarriage_paid_days == 0)
     check("난임치료휴가 유급은 2026-11-27부터 4일",

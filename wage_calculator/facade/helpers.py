@@ -169,11 +169,17 @@ def _pop_maternity_leave(r, result):
         f"{r.spouse_insurance_benefit:,.0f}원 ({r.spouse_insurance_days}일분)"
         if r.spouse_insurance_days else "없음 (우선지원대상기업만 지원)")
     # 같은 고시가 정하는 휴가들 — 시행 전이면 표시하지 않는다(없는 제도를 안내하지 않기 위해).
-    if r.infertility_paid_days:
-        result.summary[f"난임치료휴가 급여(유급 {r.infertility_paid_days}일)"] = f"{r.infertility_pay:,.0f}원"
-    if r.spouse_miscarriage_paid_days:
-        result.summary[f"배우자 유산·사산휴가 급여(유급 {r.spouse_miscarriage_paid_days}일)"] = \
-            f"{r.spouse_miscarriage_pay:,.0f}원"
+    # 배우자 출산휴가와 같은 이유로 유급액·고용보험 지원분을 따로 보여 준다.
+    for label, days, pay, benefit in (
+            ("난임치료휴가", r.infertility_paid_days,
+             r.infertility_pay, r.infertility_insurance_benefit),
+            ("배우자 유산·사산휴가", r.spouse_miscarriage_paid_days,
+             r.spouse_miscarriage_pay, r.spouse_miscarriage_insurance_benefit)):
+        if not days:
+            continue
+        result.summary[f"{label} 유급액(유급 {days}일)"] = f"{pay:,.0f}원"
+        result.summary[f"{label} 급여(고용보험)"] = (
+            f"{benefit:,.0f}원" if r.is_priority_support else "없음 (우선지원대상기업만 지원)")
     return 0
 
 
