@@ -162,7 +162,12 @@ def _pop_maternity_leave(r, result):
     """result.summary에 출산전후휴가 급여·보험지급액·배우자휴가 추가. 반환: 0."""
     result.summary["출산전후휴가 월 급여"] = f"{r.monthly_benefit:,.0f}원"
     result.summary["고용보험 지급 총액"] = f"{r.total_insurance_benefit:,.0f}원"
-    result.summary["배우자 출산휴가 급여"] = f"{r.spouse_leave_pay:,.0f}원"
+    # 유급액(사업주 의무)과 고용보험 지원분은 다른 금액이다 — 하나로 뭉치면 대규모기업
+    # 근로자에게 받지도 못할 보험 급여를 유급액으로 보여 주게 된다.
+    result.summary[f"배우자 출산휴가 유급액({r.spouse_leave_days}일)"] = f"{r.spouse_leave_pay:,.0f}원"
+    result.summary["배우자 출산휴가급여(고용보험)"] = (
+        f"{r.spouse_insurance_benefit:,.0f}원 ({r.spouse_insurance_days}일분)"
+        if r.spouse_insurance_days else "없음 (우선지원대상기업만 지원)")
     return 0
 
 
