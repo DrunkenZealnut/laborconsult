@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from app.core.legal_updates import LegalUpdateService, Conflict, EvidenceError, RuleError
-from wage_calculator.legal_rules import RuleSnapshot, rule_scope, parameter, RuleUnavailable
+from wage_calculator.legal_rules import (PARAMETERS, RuleSnapshot, rule_scope, parameter,
+                                         RuleUnavailable)
 
 
 class MemoryStore:
@@ -43,6 +44,9 @@ class Evidence:
 
     def search(self, query):
         return [self.fetch("fixture-law")]
+
+    def catalog(self, cap=495):     # 실제 시그니처와 같아야 스텁이 계약을 지킨다
+        return [dict(self.fetch("fixture-law"), rule_keys=["minimum_hourly_wage"])]
 
 
 def proposal(**changes):
@@ -602,6 +606,80 @@ class LegalUpdatesTest(unittest.TestCase):
             self.approve(record)
         self.approve(self.add())
         self.assertEqual(self.snapshot().get("minimum_hourly_wage"), 12345)
+
+    def test_current_parameters_pairs_every_key_with_its_builtin_and_approved_value(self):
+        """관리 화면의 '현재 적용값' 미리보기. 승인 게이트가 검증하지 않는 **값 자체**를
+        사람이 대조하게 하는 유일한 장치이고, 일치 규칙은 계산기와 같아야 한다."""
+        from app.core.legal_updates import current_parameters
+        from wage_calculator.constants import INSURANCE_RATES, MINIMUM_HOURLY_WAGE
+        empty = current_parameters({"records": []}, "2026-06-01")
+        self.assertEqual(set(empty["values"]), set(PARAMETERS))
+        self.assertEqual(empty["approved_count"], 0)
+        self.assertEqual(empty["total"], len(PARAMETERS))
+        # 내장표를 그대로 읽는다 — 어댑터를 거치면 관리 모드에서 승인값이 '내장표'로 표시된다.
+        self.assertEqual(empty["values"]["minimum_hourly_wage"]["builtin"], MINIMUM_HOURLY_WAGE[2026])
+        self.assertEqual(empty["values"]["insurance.health_insurance"]["builtin"],
+                         INSURANCE_RATES[2026]["health_insurance"])
+        self.assertIsNone(empty["values"]["minimum_hourly_wage"]["approved"])
+
+        self.approve(self.add())        # 2031-01-01 ~ 2032-01-01, 12345
+        filled = current_parameters(self.store.document, "2031-06-01")
+        entry = filled["values"]["minimum_hourly_wage"]
+        self.assertEqual(entry["approved"], 12345)
+        self.assertEqual(entry["effective_from"], "2031-01-01")
+        self.assertEqual(entry["citation"], "테스트 전용 고시")
+        self.assertEqual(filled["approved_count"], 1)
+        # 구간 밖은 승인값이 없다 — RuleSnapshot 과 같은 판정이어야 한다.
+        self.assertIsNone(current_parameters(self.store.document, "2032-01-01")
+                          ["values"]["minimum_hourly_wage"]["approved"])
+
+    def test_current_parameters_does_not_copy_evidence_text(self):
+        """근거 원문은 후보마다 최대 50,000자다. 키 11개 미리보기가 registry 전량을
+        복제하면 목록 응답에서 원문을 뺀 이유(8MB 상한)를 여기서 되풀이한다."""
+        from app.core.legal_updates import SNAPSHOT_FIELDS, current_parameters
+        self.assertNotIn("evidence", SNAPSHOT_FIELDS)
+        with patch("app.core.legal_updates.RuleSnapshot", wraps=RuleSnapshot) as spy:
+            current_parameters({"records": [{"status": "pending", "evidence": {"text": "x" * 100}}]},
+                               "2026-06-01")
+        passed = spy.call_args.args[0]
+        self.assertNotIn("evidence", passed[0])
+
+    def test_builtin_parameter_covers_every_connected_key(self):
+        """어느 키 하나라도 None 이면 그 입력란만 현재값 없이 남아, 오입력 경고가 조용히 꺼진다."""
+        from wage_calculator.constants import builtin_parameter
+        for key in PARAMETERS:
+            self.assertIsInstance(builtin_parameter(key, 2026), (int, float), key)
+        self.assertIsNone(builtin_parameter("not.a.key", 2026))
+
+    def test_admin_preview_and_calculator_read_the_same_builtin_value(self):
+        """관리 화면의 '현재 적용값'이 계산기와 갈리면 대조 장치가 거짓말을 한다.
+
+        연금 기준소득월액은 **연중 7월**에 바뀌므로 연도만으로 읽으면 하반기 내내
+        어긋난다(2026-07-01 기준 6,370,000 vs 6,590,000).
+        """
+        from wage_calculator.calculators.maternity_leave import MATERNITY_LEAVE_UPPER
+        from wage_calculator.constants import (MINIMUM_HOURLY_WAGE, PLATFORM_MATERNITY_UPPER,
+                                               builtin_parameter, get_insurance_rates,
+                                               get_minimum_hourly_wage)
+        # 계산기가 실제로 읽는 값. 11개 키 **전부**를 본다 — insurance.* 만 검사하면
+        # 미래 연도에서 갈리는 maternity 폴백을 놓친다(실측 2027년 불일치).
+        def calculator_value(key, year):
+            if key == "minimum_hourly_wage":
+                return get_minimum_hourly_wage(year)
+            if key == "maternity.platform_upper":
+                return PLATFORM_MATERNITY_UPPER
+            if key == "maternity.monthly_upper":
+                return MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[max(MATERNITY_LEAVE_UPPER)])
+            return None
+
+        for year, day in ((2026, "2026-03-01"), (2026, "2026-07-01"), (2026, "2026-12-31"),
+                          (2027, "2027-05-01"), (2031, "2031-01-01")):
+            rates = get_insurance_rates(year, day)      # rule_scope 없음 → 내장표 경로
+            for key in PARAMETERS:
+                expected = (rates[key[10:]] if key.startswith("insurance.")
+                            else calculator_value(key, year))
+                with self.subTest(day=day, key=key):
+                    self.assertEqual(builtin_parameter(key, year, day), expected)
 
 
 if __name__ == "__main__":

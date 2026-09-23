@@ -31,6 +31,7 @@ class ApiTest(unittest.TestCase):
     def test_all_endpoints_require_auth_before_store_or_evidence_access(self):
         for method, path, body in (
             ("GET", "", None), ("GET", "/events", None), ("GET", "/evidence?id=fixture-law", None),
+            ("GET", "/documents", None),
             ("POST", "/scan", {"topic": "minimum_wage"}),
             ("POST", "/candidates", {"revision": 0, "payload": proposal()}),
             ("PUT", "/candidates/unknown", {"revision": 0, "payload": proposal()}),
@@ -55,6 +56,27 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(result["records"][0]["status"], "approved")
         self.assertTrue(result["parameters"])
         self.assertEqual(len(result["topics"]), 28)
+        # 입력란 옆 '현재 적용값'의 출처. 승인 직후 그 키만 승인값으로 바뀌어야 한다.
+        current = result["current"]["values"]["minimum_hourly_wage"]
+        self.assertEqual(current["approved"], None, "오늘은 2031년 구간 밖이다")
+        self.assertIsNotNone(current["builtin"])
+        self.assertEqual(result["current"]["total"], len(result["parameters"]))
+
+    def test_official_document_catalog_replaces_hand_typed_vector_ids(self):
+        response = self.client.get("/api/admin/legal-rules/documents", headers=self.headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        documents = response.json()["documents"]
+        self.assertEqual(documents[0]["id"], "fixture-law")
+        self.assertEqual(documents[0]["rule_keys"], ["minimum_hourly_wage"])
+
+    def test_document_catalog_failure_degrades_to_manual_entry_instead_of_breaking(self):
+        """목록을 못 받아도 문서 ID 직접 입력으로 계속 쓸 수 있어야 한다 —
+        여기서 422를 올리면 개선하려던 화면이 오히려 멈춘다."""
+        self.evidence.catalog = Mock(side_effect=EvidenceError("Pinecone 연결 실패"))
+        response = self.client.get("/api/admin/legal-rules/documents", headers=self.headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["documents"], [])
+        self.assertIn("직접 입력", response.json()["detail"])
 
     def test_invalid_body_and_private_failure_are_not_exposed(self):
         for body in ({"revision": True, "payload": proposal()},
@@ -136,6 +158,45 @@ class AdapterTest(unittest.TestCase):
         ]
         docs = PineconeEvidence(index, openai).search("최저임금")
         self.assertEqual([d["id"] for d in docs], ["off", "gen"])
+
+    def test_catalog_prefix_matches_the_uploader_id_scheme(self):
+        """접두사가 어긋나면 목록이 **빈 채로** 돌아온다 — 예외도 로그도 없는 실패다.
+        업로더는 `official`, 조회는 `official_`(구분자 포함)이라 동등 비교가 아니다."""
+        import re
+        with open("pinecone_upload_official_rules.py", encoding="utf-8") as f:
+            uploader = re.search(r'ID_PREFIX = "([^"]+)"', f.read()).group(1)
+        self.assertEqual(PineconeEvidence._OFFICIAL_PREFIX, uploader + "_")
+
+    def test_catalog_pages_the_listing_chunks_the_fetch_and_reports_truncation(self):
+        index = Mock()
+        index.list_paginated.side_effect = [
+            SimpleNamespace(vectors=[SimpleNamespace(id="official_a_0")],
+                            pagination=SimpleNamespace(next="t1")),
+            SimpleNamespace(vectors=[{"id": "official_b_0"}], pagination={"next": "t2"}),
+            SimpleNamespace(vectors=[], pagination=SimpleNamespace(next="t3")),  # 빈 페이지 → 종료
+        ]
+        index.fetch.return_value = SimpleNamespace(vectors={
+            "official_a_0": SimpleNamespace(metadata={
+                "source_type": "regulation", "title": "고시", "official_url": "https://www.law.go.kr/a",
+                "text": "본문", "rule_keys": ["minimum_hourly_wage"]}),
+            "official_b_0": SimpleNamespace(metadata={
+                "source_type": "law", "title": "조문", "official_url": "https://www.law.go.kr/b",
+                "chunk_text": "본문2"}),
+        })
+        docs = PineconeEvidence(index, Mock()).catalog()
+        self.assertEqual([d["id"] for d in docs], ["official_a_0", "official_b_0"])
+        self.assertEqual(docs[0]["rule_keys"], ["minimum_hourly_wage"])
+        self.assertEqual(docs[1]["rule_keys"], [])          # 힌트 없는 문서도 남는다
+        self.assertEqual(docs[1]["text"], "본문2")           # text/chunk_text 이중 폴백
+        self.assertFalse(docs.truncated)
+        # 나열 호출에 타임아웃이 없으면 서버리스 실행시간 한도까지 매달린다.
+        self.assertEqual(index.list_paginated.call_args.kwargs["timeout"], 15)
+        # 상한에 걸려 잘린 사실은 호출부가 알아야 한다(빈 목록과 구분 불가능하면 안 된다).
+        index.list_paginated.side_effect = [
+            SimpleNamespace(vectors=[SimpleNamespace(id="official_a_0")],
+                            pagination=SimpleNamespace(next="t1")),
+        ]
+        self.assertTrue(PineconeEvidence(index, Mock()).catalog(cap=1).truncated)
 
     def test_supabase_cas_arguments_and_conflict_conversion(self):
         client = Mock()

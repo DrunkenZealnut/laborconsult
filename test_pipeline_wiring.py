@@ -109,6 +109,47 @@ def main() -> None:
     assert r and "최저임금" in r, f"W9 실패:\n{r}"
     print("  ✅ W9 기존 단일 유형 경로 회귀 없음")
 
+    # ── W10. 최저임금 사실 블록: 표의 최신 연도가 실리고, 표에 없는 연도를 "미고시"로 단정하지 않음 ──
+    # 2027년 고시(2026-08-05)가 표에 없어 챗봇이 "아직 고시되지 않았다"고 답한 실장애(2026-09-22).
+    # 표 누락은 데이터 갱신 문제이지만, 그것을 사용자에게 "고시 안 됨"이라는 거짓 사실로 바꾸는
+    # 문구가 두 번째 원인이었다 — 시스템은 미등록만 알 수 있고 미고시는 알 수 없다.
+    from wage_calculator.constants import MINIMUM_HOURLY_WAGE
+    block = pl._build_minwage_facts("2027년 최저임금 얼마인가요?", None)
+    assert block, "W10 실패: 최저임금 신호에 사실 블록 미생성"
+    latest = max(MINIMUM_HOURLY_WAGE)
+    assert f"{latest}년: 시급 {MINIMUM_HOURLY_WAGE[latest]:,}원" in block, f"W10 실패(최신 연도 누락):\n{block}"
+    assert "고시되지 않은" not in block, f"W10 실패(미고시 단정 문구 잔존):\n{block}"
+    print(f"  ✅ W10 최저임금 사실 블록 → 표 최신 연도({latest}) 포함, 미고시 단정 없음")
+
+    # ── W11. 4대보험 사실 블록이 계산기와 같은 수치를 말한다 ──
+    # 기준소득월액은 연중 7월에 바뀌는데(시행령 제5조④) 사실 블록이 연 단위 표를 직접
+    # 읽고 있어, 하반기에는 같은 답변 안에서 블록과 계산 결과가 갈렸다(실측 2026-09-23).
+    from wage_calculator.constants import get_insurance_rates
+    from wage_calculator.legal_rules import kst_today
+    block = pl._build_insurance_facts("4대보험 얼마나 떼나요?", None)
+    assert block, "W11 실패: 4대보험 신호에 사실 블록 미생성"
+    today = kst_today()
+    rates = get_insurance_rates(int(today[:4]), today)
+    for label, key in (("기준소득 상한", "pension_income_max"), ("기준소득 하한", "pension_income_min"),
+                       ("건보료 상한", "health_premium_max"), ("건보료 하한", "health_premium_min")):
+        assert f"{rates[key]:,}원" in block, f"W11 실패({label} 불일치 {rates[key]:,}):\n{block}"
+    assert "7월부터 다음 해 6월" in block, f"W11 실패(적용기간 고지 누락):\n{block}"
+    print(f"  ✅ W11 4대보험 사실 블록 → 계산기와 동일 수치(기준일 {today})")
+
+    # ── W12. 요율 표가 낡아도 사실 블록과 계산기가 같은 구간을 읽는다 ──
+    # 표에 올해가 없으면 표시용 연도가 뒤로 밀리는데, 그 연도를 조회에까지 쓰면 기준일이
+    # 연도 불일치로 버려져 계산기와 다른 기준소득월액이 나온다(CodeRabbit PR #77).
+    from unittest.mock import patch as _patch
+    from wage_calculator.constants import INSURANCE_RATES
+    _future = f"{max(INSURANCE_RATES) + 1}-03-01"
+    with _patch("wage_calculator.legal_rules.kst_today", return_value=_future):
+        block = pl._build_insurance_facts("4대보험 얼마나 떼나요?", None)
+        rates = get_insurance_rates(int(_future[:4]), _future)
+        for key in ("pension_income_max", "pension_income_min"):
+            assert f"{rates[key]:,}원" in block, (
+                f"W12 실패({key} 불일치 {rates[key]:,} — 표 최신연도 {max(INSURANCE_RATES)}):\n{block}")
+    print(f"  ✅ W12 요율표 미갱신({_future[:4]}년) 상태에서도 사실 블록 = 계산기")
+
     # ── 파라미터 변환 계층 자체 검증 ──
     p = _analysis_to_extract_params(stub(
         ["severance", "annual_leave"],

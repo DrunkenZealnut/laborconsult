@@ -12,6 +12,13 @@ class EvidenceSearchResult(list):
         self.partial = partial
 
 
+class EvidenceCatalog(list):
+    """공식 원문 목록. 상한에 걸려 잘렸는지를 함께 전달한다."""
+    def __init__(self, values=(), *, truncated=False):
+        super().__init__(values)
+        self.truncated = truncated
+
+
 class SupabaseRuleStore:
     def __init__(self, client):
         if client is None:
@@ -80,6 +87,70 @@ class PineconeEvidence:
             raise
         except Exception as exc:
             raise EvidenceError("Pinecone 근거 재조회에 실패했습니다") from exc
+
+    # 공식 원문 벡터의 ID 접두사. `pinecone_upload_official_rules.py::ID_PREFIX` 와 같은
+    # 값이어야 한다 — 어긋나면 목록이 빈 채로 돌아오는 **조용한 실패**다.
+    _OFFICIAL_PREFIX = "official_"
+
+    # Pinecone 의 나열 한 쪽은 **100 미만**이어야 한다(실측: limit=200 → HTTP 400
+    # "Limit must be greater than 0 and less than 100"). fetch 도 같은 크기로 나눠 보낸다.
+    _PAGE = 99
+
+    def catalog(self, cap=495):
+        """승인 근거로 쓸 수 있는 공식 원문 목록(ID·제목·연결 키·본문).
+
+        관리 화면이 `official_mw_notice_0` 같은 벡터 ID를 손으로 받던 것을 없애기 위한
+        조회다. 그 ID는 화면 어디에도 없어서 관리자가 저장소 파일(`output_공식법령/
+        _uploaded_ids.json`, 로컬 전용)을 열어봐야 알 수 있었다.
+
+        메타데이터 필터로는 못 뽑는다 — Pinecone 은 벡터 없는 조회를 지원하지 않고,
+        임베딩 검색은 관련성 순이라 목록이 되지 못한다. 접두사 나열이 유일하게 **전량**을
+        돌려주는 경로다(실측 17벡터).
+        """
+        if self.index is None:
+            raise EvidenceError("Pinecone 연결이 필요합니다")
+        try:
+            ids, token, truncated = [], None, False
+            while True:
+                listing = self.index.list_paginated(
+                    prefix=self._OFFICIAL_PREFIX, namespace="laborlaw-v2",
+                    limit=min(self._PAGE, cap - len(ids)), timeout=15,
+                    **({"pagination_token": token} if token else {}))
+                page = [v.id if hasattr(v, "id") else v["id"] for v in (listing.vectors or [])]
+                ids += page
+                pagination = getattr(listing, "pagination", None)
+                if isinstance(pagination, dict):        # SDK 판에 따라 dict/객체가 섞인다
+                    token = pagination.get("next")
+                else:
+                    token = getattr(pagination, "next", None)
+                # 빈 페이지에 토큰만 오면(또는 토큰이 반복되면) 여기서 멈춘다 — 종료 조건이
+                # 토큰 하나뿐이면 무한루프가 된다.
+                if not token or not page:
+                    break
+                if len(ids) >= cap:
+                    truncated = True
+                    break
+            vectors = {}
+            for start in range(0, len(ids), self._PAGE):
+                response = self.index.fetch(ids=ids[start:start + self._PAGE],
+                                            namespace="laborlaw-v2", timeout=15)
+                vectors.update(response.vectors if hasattr(response, "vectors") else response["vectors"])
+        except Exception as exc:
+            raise EvidenceError("공식 원문 목록을 불러오지 못했습니다") from exc
+        documents = []
+        for vector_id in ids:
+            vector = vectors.get(vector_id)
+            if vector is None:
+                continue
+            meta = vector.metadata if hasattr(vector, "metadata") else vector.get("metadata", {})
+            document = self._document(vector_id, meta)
+            # rule_keys 는 "이 문서가 어느 기준의 근거가 될 수 있는가"라는 **힌트**다
+            # (fetch_official_rules.py 가 붙인다). 확정은 관리자가 원문을 보고 한다.
+            document["rule_keys"] = [str(k) for k in (meta.get("rule_keys") or [])]
+            documents.append(document)
+        # 잘렸다는 사실을 호출부가 알아야 한다 — 목록이 조용히 짧아지면 관리자는 "그 문서가
+        # 적재되지 않았다"로 오해하고 승인 불가능한 근거를 찾아 헤맨다.
+        return EvidenceCatalog(sorted(documents, key=lambda d: d["id"]), truncated=truncated)
 
     _TYPES = ["law", "statute", "regulation", "interpretation", "precedent"]
 

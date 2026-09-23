@@ -1,7 +1,11 @@
 """
 상수 정의: 연도별 최저임금, 법적 가산율, 기준 근로시간
 """
+import logging
+
 from .legal_rules import parameter
+
+logger = logging.getLogger(__name__)
 
 # ── 통상임금 관련 대법원 판결 ─────────────────────────────────────────────
 # 대법원 2023다302838 (2024.12.19) — 통상임금 고정성 요건 폐기
@@ -11,6 +15,8 @@ ORDINARY_WAGE_2024_RULING      = "대법원 2023다302838 (2024.12.19)"
 ORDINARY_WAGE_2024_RULING_DATE = "2024-12-19"
 
 # ── 연도별 최저임금 (시급, 원) ──────────────────────────────────────────────
+# 매년 8월 5일 고시(최저임금법 제10조) 직후 다음 연도를 추가할 것. 빠지면 상담 사실 블록이
+# "미고시"로 답하고 계산기는 최신 연도 값으로 조용히 폴백한다(test_wage_golden.py가 8/5 이후 실패).
 MINIMUM_HOURLY_WAGE: dict[int, int] = {
     2020: 8590,
     2021: 8720,
@@ -19,6 +25,7 @@ MINIMUM_HOURLY_WAGE: dict[int, int] = {
     2024: 9860,
     2025: 10030,
     2026: 10320,
+    2027: 10700,   # 고용노동부 고시 2026-08-05, 월 환산 2,236,300원(209h)
 }
 
 
@@ -211,11 +218,65 @@ PART_TIME_MIN_WEEKLY_HOURS = 15.0      # 주 15시간 미만 → 연차 미발�
 FULL_TIME_WEEKLY_HOURS     = 40.0      # 통상근로자 기준 주 소정근로시간
 FULL_TIME_DAILY_HOURS      = 8.0       # 통상근로자 기준 1일 소정근로시간
 
+# ── 국민연금 기준소득월액 상·하한 (보건복지부 고시) ─────────────────────────
+# 적용기간이 **해당 연도 7월부터 다음 연도 6월까지**다(국민연금법 시행령 제5조제4항).
+# 연 단위 표(INSURANCE_RATES)로는 이 구간을 표현할 수 없다 — 연 단위 값은 "그 해 1월 1일에
+# 유효한 값"이라는 관례였고, 그래서 7월 고시 이후 하반기 내내 직전 구간 값을 조용히 냈다
+# (실측 2026-09-23: 상한 6,370,000 vs 고시 6,590,000). 이 표가 **단일 출처**다.
+PENSION_INCOME_PERIODS: dict[str, dict[str, int]] = {
+    # 적용기간 시작일(그 해 7/1) → 상·하한
+    "2024-07-01": {"pension_income_max": 6_170_000, "pension_income_min": 390_000},
+    "2025-07-01": {"pension_income_max": 6_370_000, "pension_income_min": 400_000},
+    "2026-07-01": {"pension_income_max": 6_590_000, "pension_income_min": 410_000},
+}
+
+
+def get_pension_income_limits(reference_date: str | None = None,
+                              year: int | None = None) -> dict[str, int]:
+    """기준소득월액 상·하한. 날짜가 있으면 그 날이 속한 적용기간을 쓴다.
+
+    날짜가 없으면 **오늘(KST)** 로 읽는다 — `legal_rules.resolve_reference_date()`와 같은
+    원칙이다. 다만 오늘이 속하지 않는 연도를 지목했다면 여기서는 보류할 수 없으므로
+    (내장표 경로다) 그 해 1월 1일에 유효했던 구간으로 본다 = 종전 연 단위 표와 같은 답.
+
+    **형식 검증이 여기 있어야 하는 이유**: 비관리 경로의 `reference_date`는 의도분석 LLM
+    출력이 검증 없이 흘러든다(`pipeline.py`가 추출값을 그대로 싣는다). 구간 선택이 문자열
+    비교라 `2026-3-1`·`2026/03/01` 같은 표기가 **예외 없이** 최신 구간으로 빠진다
+    (실측: 2026년 3월 질문에 하반기 상한 6,590,000이 적용). 관리 경로의
+    `resolve_reference_date()`는 관리 모드에서만 돌기 때문에 이 경로를 덮지 못한다.
+    """
+    from .legal_rules import iso_date, kst_today
+    if reference_date is not None:
+        try:
+            iso_date(reference_date)
+        except (TypeError, ValueError):
+            logger.warning("기준일 형식이 올바르지 않아 무시합니다: %r", reference_date)
+            reference_date = None
+    today = kst_today()
+    if reference_date is not None and year is not None and int(reference_date[:4]) != int(year):
+        # 요율은 `year`로, 상·하한은 날짜로 읽으면 한 계산 안에 서로 다른 연도가 섞인다.
+        logger.warning("기준일(%s)과 기준연도(%s)가 달라 기준일을 무시합니다", reference_date, year)
+        reference_date = None
+    if not reference_date:
+        reference_date = (today if year is None or int(year) == int(today[:4])
+                          else f"{int(year):04d}-01-01")
+    started = [start for start in PENSION_INCOME_PERIODS if start <= reference_date]
+    if not started:
+        # 표 이전 시점이면 최초 구간으로 클램프한다(계산을 멈추지는 않는다). 다만 그 답은
+        # 그 시점의 실제 고시값이 아니므로 조용히 넘기지 않는다.
+        logger.warning("기준일 %s 이 기준소득월액 표(%s~) 이전이라 최초 구간으로 대체합니다",
+                       reference_date, min(PENSION_INCOME_PERIODS))
+    return dict(PENSION_INCOME_PERIODS[max(started) if started
+                                       else min(PENSION_INCOME_PERIODS)])
+
+
 # ── 4대보험 요율 (연도별, 근로자 부담분) ────────────────────────────────────
 # 국민연금: 전체 요율의 절반 (근로자 = 사업주 동일)
 # 건강보험: 전체 요율의 절반
 # 장기요양: 건강보험료(근로자 부담분) 대비 비율
 # 고용보험: 실업급여 부분만 (근로자 = 사업주 동일)
+# 건강보험료 상·하한: 고시「월별 건강보험료액의 상한과 하한」의 **직장가입자 보수월액보험료**를
+#   2로 나눈 근로자 부담분. 계산기가 상한을 거는 대상이 근로자분이기 때문이다(insurance.py).
 
 INSURANCE_RATES: dict[int, dict] = {
     2025: {
@@ -223,8 +284,6 @@ INSURANCE_RATES: dict[int, dict] = {
         "health_insurance":    0.03545,   # 7.09% × 1/2
         "long_term_care":      0.1295,    # 건강보험료 × 12.95%
         "employment_insurance": 0.009,    # 1.8% × 1/2
-        "pension_income_max":  6_170_000,
-        "pension_income_min":    390_000,
         "health_premium_max":  4_240_710, # 근로자 건강보험료 월 상한
         "health_premium_min":      9_890, # 근로자 건강보험료 월 하한
     },
@@ -233,17 +292,23 @@ INSURANCE_RATES: dict[int, dict] = {
         "health_insurance":    0.03595,   # 7.19% × 1/2  (+0.05%p)
         "long_term_care":      0.1314,    # 건강보험료 × 13.14%  (+0.19%p)
         "employment_insurance": 0.009,    # 1.8% × 1/2  (동결)
-        # 국민연금 기준소득월액: 매년 7월 변경(적용기간 7월~익년6월). 2025.7 개정 상·하한 반영.
-        "pension_income_max":  6_370_000, # 2025.7 개정 상한(637만)
-        "pension_income_min":    400_000, # 2025.7 개정 하한(40만)
-        "health_premium_max":  4_240_710, # 2026년 확정 시 갱신 — 잠정 동일
-        "health_premium_min":      9_890,
+        "health_premium_max":  4_591_740, # 고시 9,183,480 ÷ 2 (개정 2025.12.24)
+        "health_premium_min":     10_080, # 고시 20,160 ÷ 2
     },
 }
 
+# 기준소득월액 2종은 위 표가 단일 출처이므로 연 단위 표에는 **적지 않고** 여기서 채운다
+# (그 해 1월 1일에 유효한 값). 같은 숫자를 두 곳에 적으면 갱신할 때 한쪽만 고쳐 어긋난다.
+# 플레이스홀더(0)를 두지 않는 이유: 이 루프가 사라지면 키가 없어 import 가 즉시 실패하지만,
+# 0이 남아 있으면 `min > max` 가드(0 > 0)를 통과해 국민연금이 조용히 0원으로 계산된다.
+for _year, _rates in INSURANCE_RATES.items():
+    _rates.update(get_pension_income_limits(f"{_year:04d}-01-01"))
+
 # 연도별 요율 조회 헬퍼 (해당 연도 없으면 가장 최근 연도 반환)
-def get_insurance_rates(year: int) -> dict:
-    legacy = INSURANCE_RATES.get(year, INSURANCE_RATES[max(INSURANCE_RATES)])
+def get_insurance_rates(year: int, reference_date: str | None = None) -> dict:
+    legacy = dict(INSURANCE_RATES.get(year, INSURANCE_RATES[max(INSURANCE_RATES)]))
+    # 연중(7월) 바뀌는 것은 기준소득월액뿐이다 — 연 단위 값을 구간 값으로 덮어쓴다.
+    legacy.update(get_pension_income_limits(reference_date, year))
     rates = {key: parameter("insurance." + key, value) for key, value in legacy.items()}
     if rates["pension_income_min"] > rates["pension_income_max"] or rates["health_premium_min"] > rates["health_premium_max"]:
         from .legal_rules import RuleUnavailable
@@ -608,3 +673,30 @@ NON_TAXABLE_INCOME_LEGAL_BASIS: dict[str, str] = {
     "tuition":         "소득세법 제12조제3호마목 (근로자 학자금)",
     "company_housing": "소득세법 시행령 제38조 (사택 제공 이익)",
 }
+
+
+def builtin_parameter(key: str, year: int, reference_date: str | None = None):
+    """`PARAMETERS` 키 하나의 **내장표 값**. 모르는 키는 None.
+
+    어댑터(`parameter()`)를 일부러 거치지 않는다 — 관리 화면이 '승인값'과 '내장표 값'을
+    나란히 보여주려면 두 값을 **따로** 읽어야 하기 때문이다. 이 함수를 계산 경로에서 쓰면
+    관리 모드를 무시하게 되므로(그 결함이 2026-09-17 comprehensive 에서 실제로 났다)
+    표시 용도 외에는 쓰지 말 것.
+
+    `reference_date` 를 받는 이유는 기준소득월액이 연중 7월에 바뀌기 때문이다 — 날짜를
+    빼면 관리 화면이 하반기 내내 계산기와 **다른 현재값**을 보여준다.
+    """
+    if key == "minimum_hourly_wage":
+        return MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[max(MINIMUM_HOURLY_WAGE)])
+    if key.startswith("insurance."):
+        rates = dict(INSURANCE_RATES.get(year, INSURANCE_RATES[max(INSURANCE_RATES)]))
+        rates.update(get_pension_income_limits(reference_date, year))
+        return rates.get(key[10:])
+    if key.startswith("maternity."):
+        # 상한표는 계산기 모듈이 갖고 있다. 모듈 최상단에서 import 하면 순환이 된다
+        # (calculators/maternity_leave.py 가 이 모듈을 import 한다).
+        from .calculators.maternity_leave import MATERNITY_LEAVE_UPPER
+        if key == "maternity.platform_upper":
+            return PLATFORM_MATERNITY_UPPER
+        return MATERNITY_LEAVE_UPPER.get(year, MATERNITY_LEAVE_UPPER[max(MATERNITY_LEAVE_UPPER)])
+    return None

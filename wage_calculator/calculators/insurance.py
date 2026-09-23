@@ -121,7 +121,9 @@ def _calc_employee(
 ) -> InsuranceResult:
     """근로자 4대보험 + 근로소득세 계산"""
 
-    rates = get_insurance_rates(year)
+    # 기준일을 넘기는 이유는 국민연금 기준소득월액이 **연중 7월**에 바뀌기 때문이다
+    # (국민연금법 시행령 제5조④). 연도만으로는 상·하반기를 가를 수 없다.
+    rates = get_insurance_rates(year, getattr(inp, "reference_date", None))
     pension_rate    = rates["national_pension"]
     health_rate     = rates["health_insurance"]
     ltc_rate        = rates["long_term_care"]
@@ -498,7 +500,7 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     ]
 
     year = inp.reference_year
-    rates = get_insurance_rates(year)
+    rates = get_insurance_rates(year, getattr(inp, "reference_date", None))
     gross = ow.monthly_ordinary_wage
 
     # 사업장 규모 카테고리

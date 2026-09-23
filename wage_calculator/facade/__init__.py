@@ -67,6 +67,9 @@ class WageCalculator:
             snapshot = RuleSnapshot(document["records"], reference_date)
             managed_input = deepcopy(inp)
             managed_input.reference_year = snapshot.day.year
+            # 해결된 기준일을 되돌려 넣는다 — 승인 기준이 없는 키는 내장표로 떨어지는데,
+            # 그 내장표에도 연중 바뀌는 값(연금 기준소득월액)이 있어 날짜가 필요하다.
+            managed_input.reference_date = snapshot.day.isoformat()
             if managed_input.use_minimum_wage:
                 managed_input.wage_type = WageType.HOURLY
                 managed_input.hourly_wage = snapshot.get("minimum_hourly_wage")

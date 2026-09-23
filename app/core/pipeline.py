@@ -6,8 +6,10 @@ import anthropic
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
+from datetime import date as _date
 
 from app.config import (
     AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL,
@@ -903,10 +905,12 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
     if rules_enabled():
         return _build_approved_facts(analysis, ["minimum_hourly_wage"])
 
-    from datetime import date as _date
     from wage_calculator.constants import MINIMUM_HOURLY_WAGE, MONTHLY_STANDARD_HOURS
+    from wage_calculator.legal_rules import kst_today
 
-    cur = _date.today().year
+    # 법률 기준일은 KST다(계산기·4대보험 사실 블록과 같은 규약). UTC 런타임은 00~09시에
+    # 전날/전년을 가리켜 연도 창이 한 칸 밀린다.
+    cur = int(kst_today()[:4])
     years = sorted((y for y in MINIMUM_HOURLY_WAGE if cur - 2 <= y <= cur + 1), reverse=True)
     if not years:
         return None
@@ -922,7 +926,10 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
         "[검증된 법정 최저임금 데이터 — 연도별 최저임금 금액은 반드시 아래 수치만 사용하세요. "
         "학습 지식의 최저임금 금액은 오래된 값일 수 있으므로 사용 금지]\n"
         + "\n".join(lines)
-        + "\n위 목록에 없는 연도의 금액은 아직 고시되지 않은 것이므로 '미확정'으로 안내하세요."
+        # "표에 없음"을 "고시 안 됨"으로 바꿔 말하면 안 된다 — 표 갱신이 늦었을 뿐인데
+        # 사용자에게 거짓 사실을 전한다(2027년 고시 누락 실장애 2026-09-22).
+        + "\n위 목록에 없는 연도의 금액은 이 시스템에 등록되지 않은 것입니다. 고시 여부를 단정하지 말고 "
+          "금액을 추정하지도 말며, 고용노동부 고시·최저임금위원회에서 확인하도록 안내하세요."
         + "\n(출처: 고용노동부 고시, 최저임금위원회)"
     )
 
@@ -944,12 +951,20 @@ def _build_insurance_facts(query: str, analysis) -> str | None:
         from wage_calculator.legal_rules import PARAMETERS
         return _build_approved_facts(analysis, [k for k in PARAMETERS if k.startswith("insurance.")])
 
-    from datetime import date as _date
-    from wage_calculator.constants import INSURANCE_RATES
+    from wage_calculator.constants import INSURANCE_RATES, builtin_parameter
+    from wage_calculator.legal_rules import kst_today
 
-    cur = _date.today().year
+    # 연 단위 표를 직접 읽으면 안 된다 — 국민연금 기준소득월액은 **연중 7월**에 바뀌어
+    # (시행령 제5조④) 표에는 그 해 1월 1일 값만 들어 있다. 계산기는 기준일로 읽으므로
+    # 여기서만 표를 읽으면 같은 답변 안에서 사실 블록과 계산 결과가 갈린다.
+    # 기준일이 KST인 것도 계산기와 같은 이유다(UTC 서버는 00~09시에 전날을 가리킨다).
+    today = kst_today()
+    cur = int(today[:4])
     year = cur if cur in INSURANCE_RATES else max(INSURANCE_RATES.keys())
-    r = INSURANCE_RATES[year]
+    # 조회 연도는 **올해**(cur)다. 표가 낡아 year 가 뒤로 밀린 상태에서 그 year 를 넘기면
+    # 연도·기준일 불일치로 판정돼 기준일이 버려지고, 계산기(올해로 조회)와 다른 구간을
+    # 읽는다 — 이 함수가 막으려는 바로 그 갈림이다. 폴백 연도는 요율 표시에만 쓴다.
+    r = {key: builtin_parameter("insurance." + key, cur, today) for key in INSURANCE_RATES[year]}
 
     def pct(v: float) -> str:
         return f"{v * 100:.4g}%"
@@ -964,8 +979,11 @@ def _build_insurance_facts(query: str, analysis) -> str | None:
         f"고용보험(실업급여) {pct(r['employment_insurance'])}"
         f"(전체 {pct(r['employment_insurance'] * 2)})\n"
         "- 산재보험: 근로자 부담 없음 (전액 사업주 부담)\n"
-        f"- 국민연금 기준소득월액: 상한 {r['pension_income_max']:,}원"
-        f" / 하한 {r['pension_income_min']:,}원\n"
+        f"- 국민연금 기준소득월액({today} 기준): 상한 {r['pension_income_max']:,}원"
+        f" / 하한 {r['pension_income_min']:,}원"
+        " — 적용기간은 매년 7월부터 다음 해 6월까지이므로 연도만으로 답하지 마세요\n"
+        f"- 건강보험료 월 상한 {r['health_premium_max']:,}원"
+        f" / 하한 {r['health_premium_min']:,}원 (근로자 부담분)\n"
         "(출처: 시스템 내장 상수 — 관계 법령·고시 기준)"
     )
 
@@ -1013,6 +1031,35 @@ def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[
 
     logger.info("계산 유형 미확정(labels=%r) — 계산기 미실행, 상담 경로로 진행", calc_types)
     return None
+
+
+_REFERENCE_DATE_RE = re.compile(r"^\s*(\d{4})\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})\D*$")
+
+
+def _normalize_reference_date(value) -> str | None:
+    """의도분석 LLM이 낸 기준일을 `YYYY-MM-DD`로 정규화한다. 못 읽으면 None.
+
+    **경계에서 한 번 막는 것이 핵심이다.** 이 값은 LLM 출력인데 계산기 두 경로가 그대로
+    소비한다 — 관리 경로는 `resolve_reference_date()`가 검증하지만 그건 관리 모드에서만
+    돌고, 내장표 경로는 국민연금 기준소득월액 구간 선택에 이 값을 문자열로 비교한다.
+    `2026-3-1`·`2026/03/01`·`2026년 3월 1일` 같은 표기가 검증 없이 통과하면 예외도 없이
+    최신 구간으로 빠져 3월 질문에 하반기 상한이 적용된다(실측).
+
+    복원 가능한 표기만 되살리고 나머지는 버린다 — 여기서 추측하면 사용자가 말하지 않은
+    날짜를 계산 기준으로 삼게 된다.
+    """
+    if value is None:
+        return None
+    match = _REFERENCE_DATE_RE.match(str(value))
+    if not match:
+        logger.warning("기준일을 읽을 수 없어 무시합니다: %r", value)
+        return None
+    year, month, day = (int(part) for part in match.groups())
+    try:
+        return _date(year, month, day).isoformat()
+    except ValueError:
+        logger.warning("기준일이 존재하지 않는 날짜입니다: %r", value)
+        return None
 
 
 def _run_calculator(params: dict, query: str = "") -> str | None:
@@ -1090,7 +1137,7 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     biz_size = size_map.get(params.get("business_size", ""), BusinessSize.OVER_5)
 
     inp = WageInput(wage_type=wt, business_size=biz_size, schedule=schedule)
-    inp.reference_date = params.get("reference_date")
+    inp.reference_date = _normalize_reference_date(params.get("reference_date"))
     inp.use_minimum_wage = bool(params.get("use_minimum_wage")) and managed_rules
 
     # 기준 연도 설정
