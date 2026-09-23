@@ -961,7 +961,10 @@ def _build_insurance_facts(query: str, analysis) -> str | None:
     today = kst_today()
     cur = int(today[:4])
     year = cur if cur in INSURANCE_RATES else max(INSURANCE_RATES.keys())
-    r = {key: builtin_parameter("insurance." + key, year, today) for key in INSURANCE_RATES[year]}
+    # 조회 연도는 **올해**(cur)다. 표가 낡아 year 가 뒤로 밀린 상태에서 그 year 를 넘기면
+    # 연도·기준일 불일치로 판정돼 기준일이 버려지고, 계산기(올해로 조회)와 다른 구간을
+    # 읽는다 — 이 함수가 막으려는 바로 그 갈림이다. 폴백 연도는 요율 표시에만 쓴다.
+    r = {key: builtin_parameter("insurance." + key, cur, today) for key in INSURANCE_RATES[year]}
 
     def pct(v: float) -> str:
         return f"{v * 100:.4g}%"

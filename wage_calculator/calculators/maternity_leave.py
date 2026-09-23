@@ -21,7 +21,7 @@ from ..base import BaseCalculatorResult
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from ..constants import MINIMUM_HOURLY_WAGE
-from ..legal_rules import parameter, RuleUnavailable
+from ..legal_rules import managed, parameter, RuleUnavailable
 
 # ── 연도별 출산전후휴가급여 상한액 (월 기준) ─────────────────────────────────
 # 고용노동부 고시. 근로기준법 제74조, 고용보험법 제75조
@@ -130,6 +130,17 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         min_hourly = parameter("minimum_hourly_wage", MINIMUM_HOURLY_WAGE.get(year, MINIMUM_HOURLY_WAGE[2025]))
         min_monthly = min_hourly * 209
         if min_monthly > upper:
+            # 내장표 경로에서는 대부분 "그 해 상한 고시가 아직 표에 없다"는 데이터 지연이다.
+            # 최저임금표만 먼저 갱신되면(2027년이 그랬다) 새 하한이 옛 상한을 넘어 이 조건이
+            # 참이 된다. 그때 "승인 상한/하한" 문구를 내면 관리 모드를 쓰지도 않는 운영자에게
+            # 없는 설정 문제를 찾게 만든다 — 실제 원인을 그대로 말한다.
+            # 관리 모드에서는 상한이 **승인값**이므로 그 설명이 성립하지 않는다.
+            if not managed() and year not in MATERNITY_LEAVE_UPPER:
+                raise RuleUnavailable(
+                    f"{year}년 출산전후휴가급여 상한액 고시가 등록되지 않았습니다"
+                    f"(등록된 최신 연도 {max(MATERNITY_LEAVE_UPPER)}년). "
+                    "고용노동부 고시를 확인해 상한액을 갱신해야 계산할 수 있습니다"
+                )
             raise RuleUnavailable(
                 f"출산전후휴가급여 승인 하한({min_monthly:,.0f}원)이 "
                 f"승인 상한({upper:,.0f}원)보다 높습니다. 관리자 확인이 필요합니다"

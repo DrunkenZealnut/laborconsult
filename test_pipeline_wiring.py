@@ -136,6 +136,20 @@ def main() -> None:
     assert "7월부터 다음 해 6월" in block, f"W11 실패(적용기간 고지 누락):\n{block}"
     print(f"  ✅ W11 4대보험 사실 블록 → 계산기와 동일 수치(기준일 {today})")
 
+    # ── W12. 요율 표가 낡아도 사실 블록과 계산기가 같은 구간을 읽는다 ──
+    # 표에 올해가 없으면 표시용 연도가 뒤로 밀리는데, 그 연도를 조회에까지 쓰면 기준일이
+    # 연도 불일치로 버려져 계산기와 다른 기준소득월액이 나온다(CodeRabbit PR #77).
+    from unittest.mock import patch as _patch
+    from wage_calculator.constants import INSURANCE_RATES
+    _future = f"{max(INSURANCE_RATES) + 1}-03-01"
+    with _patch("wage_calculator.legal_rules.kst_today", return_value=_future):
+        block = pl._build_insurance_facts("4대보험 얼마나 떼나요?", None)
+        rates = get_insurance_rates(int(_future[:4]), _future)
+        for key in ("pension_income_max", "pension_income_min"):
+            assert f"{rates[key]:,}원" in block, (
+                f"W12 실패({key} 불일치 {rates[key]:,} — 표 최신연도 {max(INSURANCE_RATES)}):\n{block}")
+    print(f"  ✅ W12 요율표 미갱신({_future[:4]}년) 상태에서도 사실 블록 = 계산기")
+
     # ── 파라미터 변환 계층 자체 검증 ──
     p = _analysis_to_extract_params(stub(
         ["severance", "annual_leave"],

@@ -47,6 +47,14 @@ def main() -> int:
         check(f"{_today.year + 1} 최저임금이 표에 있음 (8/5 고시 이후 갱신 필수)",
               _today.year + 1 in MINIMUM_HOURLY_WAGE,
               f"표 최신 연도 {max(MINIMUM_HOURLY_WAGE)}")
+    # 최저임금표만 앞서 갱신되면 그 해 출산전후휴가 계산이 **통째로 보류**된다 —
+    # 새 최저임금으로 만든 하한이 옛 상한을 넘기 때문이다(실측 2027: 2,236,300 > 2,156,880).
+    # 해가 바뀌는 순간 모든 출산휴가 질문에서 터지므로 그 전에 CI가 잡아야 한다.
+    from wage_calculator.calculators.maternity_leave import MATERNITY_LEAVE_UPPER
+    if _today.year in MINIMUM_HOURLY_WAGE:
+        check(f"{_today.year}년 출산전후휴가급여 상한이 표에 있음 (고용노동부 고시 갱신 필수)",
+              _today.year in MATERNITY_LEAVE_UPPER,
+              f"상한표 최신 연도 {max(MATERNITY_LEAVE_UPPER)} / 최저임금표 {max(MINIMUM_HOURLY_WAGE)}")
     # 기준소득월액 적용기간은 **7월~익년 6월**이다(국민연금법 시행령 제5조제4항).
     # 연 단위 표로는 표현할 수 없어 2026년 하반기 내내 직전 구간 값을 냈다(실측 2026-09-23).
     r26_h1 = get_insurance_rates(2026, "2026-03-01")
