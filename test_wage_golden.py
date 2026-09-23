@@ -195,6 +195,27 @@ def main() -> int:
           _maternity(2025, 5_000_000, premature=True, date="2025-01-10").leave_days == 90)
     check("미숙아 + 다태아면 긴 쪽(120일)",
           _maternity(2026, 5_000_000, premature=True, multiple=True).leave_days == 120)
+    # 난임치료휴가·배우자 유산·사산휴가 — 같은 고시(제2026-67호)가 상한을 정한다.
+    # 1일 통상임금 120,000원이 1일 상한 84,210원을 넘으므로 상한이 걸린 값이 나와야 한다.
+    def _daily_leaves(date):
+        _inp = WageInput(wage_type=WageType.HOURLY, hourly_wage=15_000, reference_year=int(date[:4]),
+                         schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5))
+        _inp.reference_date = date
+        return calc_maternity_leave(_inp, calc_ordinary_wage(_inp))
+
+    _now = _daily_leaves("2026-09-18")
+    check("난임치료휴가 유급 2일분 = 168,420 (고시 제2026-67호)",
+          _now.infertility_pay == 168_420, f"{_now.infertility_pay:,.0f}")
+    check("배우자 유산·사산휴가 유급 3일분 = 252,630 (동 고시)",
+          _now.spouse_miscarriage_pay == 252_630, f"{_now.spouse_miscarriage_pay:,.0f}")
+    check("배우자 유산·사산휴가는 2026-09-18 시행 — 하루 전은 0",
+          _daily_leaves("2026-09-17").spouse_miscarriage_paid_days == 0)
+    check("난임치료휴가 유급은 2026-11-27부터 4일",
+          _daily_leaves("2026-11-27").infertility_paid_days == 4
+          and _daily_leaves("2026-11-26").infertility_paid_days == 2)
+    check("난임치료휴가는 2025-02-23 시행 — 그 전은 0",
+          _daily_leaves("2025-01-10").infertility_paid_days == 0)
+
     # 자동감지에서 빠지면 targets 생략 시 출산휴가 계산이 통째로 누락된다(CodeRabbit PR #80).
     check("미숙아 단태아도 maternity_leave 자동감지",
           "maternity_leave" in WageCalculator()._auto_detect_targets(

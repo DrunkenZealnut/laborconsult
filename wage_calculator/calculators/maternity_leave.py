@@ -69,6 +69,27 @@ SPOUSE_LEAVE_PERIODS: dict[str, tuple[int, int]] = {
 # 금액이 HWP 첨부에만 있고 law.go.kr 의 그 고시 페이지는 폐지돼 열리지 않는다
 # (2026-01 부터 「출산전후휴가 급여등 상한액 고시」로 통합). 원문을 확인하면 추가할 것 —
 # 그때까지는 상한 미적용 + 경고가 추정값을 넣는 것보다 낫다.
+# ── 난임치료휴가 · 배우자 유산·사산휴가 ─────────────────────────────────────
+# 같은 고시(「출산전후휴가 급여등 상한액」)가 함께 정하므로 여기서 같이 계산한다.
+#   난임치료휴가(남녀고용평등법 제18조의3): 연 6일 중 **최초 2일 유급**,
+#     2026-11-27 부터 유급 4일로 확대.
+#   배우자 유산·사산휴가(2026-09-18 시행): 5일 중 **최초 3일 유급**.
+# 둘 다 유급분을 우선지원대상기업 근로자에 한해 고용보험이 지원한다.
+INFERTILITY_LEAVE_PERIODS: dict[str, tuple[int, int]] = {      # (연간 일수, 유급 일수)
+    "2025-02-23": (6, 2),
+    "2026-11-27": (6, 4),
+}
+SPOUSE_MISCARRIAGE_PERIODS: dict[str, tuple[int, int]] = {     # (휴가 일수, 유급 일수)
+    "2026-09-18": (5, 3),
+}
+
+# 두 휴가의 급여 상한은 **1일 단위**로 고시된다(제2026-67호: 난임 1일분 84,210원,
+# 배우자 유산·사산 1일분 84,210원). 배우자 *출산*휴가(20일분 1,684,210원 → 1일 84,210.5)와
+# 값이 미세하게 달라 그쪽 표에서 유도하지 않고 따로 둔다.
+DAILY_LEAVE_UPPER_PERIODS: dict[str, float] = {
+    "2026-01-01": 84_210,
+}
+
 SPOUSE_LEAVE_UPPER_PERIODS: dict[str, float] = {
     "2025-02-23": 1_607_650,   # 20일분 — 2025년 고시
     "2026-01-01": 1_684_210,   # 20일분 — 고용노동부고시 제2025-124호
@@ -116,6 +137,12 @@ class MaternityLeaveResult(BaseCalculatorResult):
     spouse_leave_pay: float = 0.0              # 배우자 출산휴가 유급액(사업주 지급 의무 총액)
     spouse_insurance_benefit: float = 0.0      # 그중 고용보험이 지원하는 급여(상한 적용)
     spouse_insurance_days: int = 0             # 고용보험 지원 일수
+
+    # 난임치료휴가 · 배우자 유산·사산휴가 (같은 고시가 상한을 정한다)
+    infertility_paid_days: int = 0             # 난임치료휴가 유급 일수
+    infertility_pay: float = 0.0               # 그 유급액(상한 적용)
+    spouse_miscarriage_paid_days: int = 0      # 배우자 유산·사산휴가 유급 일수
+    spouse_miscarriage_pay: float = 0.0        # 그 유급액(상한 적용)
 
     upper_limit_applied: bool = False
 
@@ -326,6 +353,38 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
             f"{spouse_pay:,.0f}원 전액을 사업주가 부담합니다(고용보험 지원 없음)"
         )
 
+    # ── 난임치료휴가 · 배우자 유산·사산휴가 ───────────────────────────────
+    daily_upper = _effective(DAILY_LEAVE_UPPER_PERIODS, reference_date, year)
+
+    def _daily_leave(periods, label, law):
+        """유급 일수 × 1일 통상임금, 고시 1일 상한 적용. 시행 전이면 (0, 0)."""
+        found = _effective(periods, reference_date, year)
+        if not found:
+            return 0, 0.0
+        total_days, paid_days = found
+        per_day = min(daily_ordinary, daily_upper) if daily_upper else daily_ordinary
+        pay = per_day * paid_days
+        legal.append(law)
+        formulas.append(
+            f"{label}: 총 {total_days}일 중 유급 {paid_days}일 × "
+            f"{_won(per_day)}원 = {pay:,.0f}원"
+            + ("" if daily_upper and daily_ordinary <= daily_upper else " (1일 상한 적용)"))
+        return paid_days, pay
+
+    infertility_days, infertility_pay = _daily_leave(
+        INFERTILITY_LEAVE_PERIODS, "난임치료휴가", "남녀고용평등법 제18조의3 (난임치료휴가)")
+    miscarriage_days, miscarriage_pay = _daily_leave(
+        SPOUSE_MISCARRIAGE_PERIODS, "배우자 유산·사산휴가",
+        "남녀고용평등법 제18조의4 (배우자 유산·사산휴가)")
+    if infertility_days and is_priority:
+        warnings.append(
+            f"우선지원대상기업: 난임치료휴가 유급 {infertility_days}일분"
+            f"({infertility_pay:,.0f}원)이 고용보험 지원 대상입니다")
+    if miscarriage_days and is_priority:
+        warnings.append(
+            f"우선지원대상기업: 배우자 유산·사산휴가 유급 {miscarriage_days}일분"
+            f"({miscarriage_pay:,.0f}원)이 고용보험 지원 대상입니다")
+
     warnings.append("수급 요건: 출산 전 피보험기간 180일 이상 (고용보험법 제75조)")
     warnings.append(f"신청 기한: 출산전후휴가 종료 후 12개월 이내")
 
@@ -358,6 +417,10 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         spouse_leave_pay=round(spouse_pay),
         spouse_insurance_benefit=round(spouse_insurance),
         spouse_insurance_days=spouse_insurance_days if is_priority else 0,
+        infertility_paid_days=infertility_days,
+        infertility_pay=round(infertility_pay),
+        spouse_miscarriage_paid_days=miscarriage_days,
+        spouse_miscarriage_pay=round(miscarriage_pay),
         upper_limit_applied=upper_applied,
         breakdown=breakdown,
         formulas=formulas,

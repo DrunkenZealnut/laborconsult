@@ -502,6 +502,51 @@ def check_updates() -> int:
     return 1 if (stale or failed) else 0
 
 
+def record_notice_numbers() -> int:
+    """본문은 건드리지 않고 저장본 헤더의 `notice_no` 만 게시판에서 채운다.
+
+    법제처 XML 본문에는 발령번호가 없어 그 경로로 수집한 문서는 갱신 판정이 영영
+    '확인 불가'로 남는다. 그렇다고 게시판 본문으로 바꾸면 보건복지부 고시는 일부개정
+    형식이라 금액이 빠진다(그래서 `BOARDS[...]["body"] = False` 다). 번호만 따로 채우는
+    경로가 필요한 이유다 — **본문·official_url·sha256 은 그대로**라 이미 승인된 근거를
+    무효로 만들지 않는다. 법제처 API 자격(등록 IP)이 없어도 돌아간다.
+    """
+    filled, skipped = 0, 0
+    for doc_id, _query, exact, dept, _keys in ADMRULS:
+        stored = stored_notice(doc_id)
+        if stored is None:
+            print(f"  · {exact}: 아직 수집하지 않았습니다")
+            continue
+        if stored.get("notice_no"):
+            print(f"  ✓ {exact}: 이미 기록됨 (제{stored['notice_no']}호)")
+            continue
+        if dept not in BOARDS:
+            print(f"  · {exact}: {dept} — 게시판 파서 없음")
+            skipped += 1
+            continue
+        board = board_find(dept, exact)
+        if not board or not board["notice_no"]:
+            print(f"  ✗ {exact}: 게시판에서 발령번호를 얻지 못했습니다")
+            skipped += 1
+            continue
+        path = os.path.join(OUT_DIR, f"{doc_id}.md")
+        with open(path, encoding="utf-8") as f:
+            raw = f.read()
+        # 헤더 블록 마지막 필드 뒤에 끼운다. 본문(## 본문 이후)은 한 글자도 건드리지 않는다.
+        head, marker, body = raw.partition("\n## 본문")
+        head = re.sub(r"^- keys:", f"- notice_no: {board['notice_no']}\n- keys:",
+                      head, count=1, flags=re.M)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(head + marker + body)
+        filled += 1
+        print(f"  ✓ {exact}: 제{board['notice_no']}호 기록")
+        time.sleep(0.2)
+    print(f"\n기록 {filled}건 · 미해결 {skipped}건")
+    if filled:
+        print("  본문은 바뀌지 않았으므로 Pinecone 재적재는 필요 없습니다.")
+    return 1 if skipped else 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -511,6 +556,8 @@ def main(argv=None) -> int:
                         help="official_url 확인 생략(오프라인 점검용 — 운영 수집에는 쓰지 말 것)")
     parser.add_argument("--check-updates", action="store_true",
                         help="수집하지 않고, 소관부처 게시판에 저장본보다 새 고시가 올라왔는지만 확인")
+    parser.add_argument("--record-notice-no", action="store_true",
+                        help="본문은 그대로 두고 저장본 헤더의 발령번호만 게시판에서 채운다")
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
@@ -518,6 +565,8 @@ def main(argv=None) -> int:
     api_key = os.getenv("LAW_API_KEY")
     if args.check_updates:
         return check_updates()
+    if args.record_notice_no:
+        return record_notice_numbers()
     if not api_key:
         print("[오류] LAW_API_KEY 가 없습니다 — 법제처 조회 불가", file=sys.stderr)
         return 1
