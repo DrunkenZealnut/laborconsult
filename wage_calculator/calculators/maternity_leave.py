@@ -17,6 +17,8 @@
     고시 상한은 **보험 급여**의 상한이지 유급액의 상한이 아니다.
 """
 
+import math
+
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
@@ -46,8 +48,8 @@ MATERNITY_DAYS_PER_MONTH = 30
 
 # 미숙아 출산전후휴가 100일 시행일(근로기준법 제74조제1항). 배우자 20일과 같은 날 시행됐다.
 # 상한은 따로 두지 않는다 — 고시 총액이 `월 상한 ÷ 30 × 일수`라 일수만 바뀌면 따라온다.
-# 다만 고시는 총액을 10원 미만 절사해 적는다: 2026년 미숙아 상한이 7,333,330원인데
-# 220만 × 100/30 = 7,333,333원이라 3원이 남는다. 90·120일은 나누어떨어져 차이가 없다.
+# 고시는 총액을 10원 미만 절사해 적으므로(미숙아 100일 7,333,330원 = 220만 × 100/30 절사)
+# 상한이 걸릴 때만 총액을 같은 단위로 맞춘다. 90·120일은 나누어떨어져 값이 변하지 않는다.
 PREMATURE_LEAVE_FROM = "2025-02-23"
 
 # ── 배우자 출산휴가 (남녀고용평등법 제18조의2, 고용보험법 제75조의2) ─────────
@@ -258,6 +260,15 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
 
     total_insurance_benefit = daily_benefit * insurance_days
     total_employer_benefit  = daily_benefit * employer_days
+    if upper_applied:
+        # 고시는 기간 총액을 **10원 미만 절사**해 적는다(미숙아 100일 7,333,330원 =
+        # 220만 × 100/30 의 절사값). 월 상한만 곱하면 3원이 남아 고시 상한을 넘는다.
+        # 90·120일은 30으로 나누어떨어져 절사해도 값이 같다.
+        cap_total = math.floor(upper * leave_days / MATERNITY_DAYS_PER_MONTH / 10) * 10
+        overflow = total_insurance_benefit + total_employer_benefit - cap_total
+        if overflow > 0:
+            total_insurance_benefit -= overflow if insurance_days else 0
+            total_employer_benefit -= overflow if not insurance_days else 0
     total_benefit = total_insurance_benefit + total_employer_benefit
 
     formulas.append(

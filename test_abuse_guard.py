@@ -425,7 +425,10 @@ def test_guard_chat_request() -> None:
         msg, sid, ctx = _guard_chat_request(FakeRequest(), "주휴수당 계산해주세요", "sess1234")
         assert msg == "주휴수당 계산해주세요" and sid == "sess1234"
         assert ctx.subject_key.startswith("ip:")
-        assert spy.called, "쿼터 검사가 호출되지 않음 — 순서 배선이 끊겼다"
+        # 호출 여부만 보면 subject_key 전달이 끊겨도 통과한다(고정 반환 mock).
+        assert spy.call_count == 1, f"쿼터 검사 호출 {spy.call_count}회 — 1회여야 한다"
+        assert spy.call_args.args[1] == ctx.subject_key, (
+            f"쿼터 검사에 다른 subject_key 전달: {spy.call_args.args[1]!r} != {ctx.subject_key!r}")
 
         # 길이 위반 → 400. 쿼터보다 **먼저** 걸러야 한다(거절 대상이 RPC 비용을 치르지 않게).
         _chat_rate.clear()

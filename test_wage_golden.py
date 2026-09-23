@@ -184,17 +184,21 @@ def main() -> int:
     check("배우자 출산휴가 일수: 2026 → 20일",
           _maternity(2026, 3_000_000).spouse_leave_days == 20)
     # 미숙아 100일(근기법 제74조①, 2025-02-23 시행). 상한 표는 필요 없다 — 고시 총액이
-    # `월 상한 ÷ 30 × 일수`라 일수만 바뀌면 따라온다. 고시는 총액을 10원 미만 절사해
-    # 7,333,330원으로 적으므로 3원 차이가 남는다(90·120일은 나누어떨어져 차이 없음).
+    # `월 상한 ÷ 30 × 일수`라 일수만 바뀌면 따라온다. 상한이 걸릴 때 고시와 같은 단위
+    # (10원 미만 절사)로 맞추므로 세 유형 모두 고시값과 정확히 일치해야 한다.
     _pre = _maternity(2026, 5_000_000, premature=True)
     check("2026 미숙아 출산전후휴가 = 100일", _pre.leave_days == 100, f"{_pre.leave_days}일")
-    check("2026 미숙아 100일 총액 ≒ 7,333,330 (고시, 10원 절사분 3원 차이)",
-          abs(_pre.total_insurance_benefit - 7_333_330) <= 3,
+    check("2026 미숙아 100일 총액 = 7,333,330 (고시 정확 일치)",
+          abs(_pre.total_insurance_benefit - 7_333_330) < 1,
           f"{_pre.total_insurance_benefit:,.0f}")
     check("미숙아 100일은 2025-02-23 시행 — 그 이전은 90일",
           _maternity(2025, 5_000_000, premature=True, date="2025-01-10").leave_days == 90)
     check("미숙아 + 다태아면 긴 쪽(120일)",
           _maternity(2026, 5_000_000, premature=True, multiple=True).leave_days == 120)
+    # 자동감지에서 빠지면 targets 생략 시 출산휴가 계산이 통째로 누락된다(CodeRabbit PR #80).
+    check("미숙아 단태아도 maternity_leave 자동감지",
+          "maternity_leave" in WageCalculator()._auto_detect_targets(
+              WageInput(wage_type=WageType.MONTHLY, monthly_wage=3_000_000, is_premature_birth=True)))
 
     print("── 자동감지 (C-2a) ──")
     wc = WageCalculator()

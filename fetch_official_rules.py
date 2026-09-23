@@ -210,6 +210,7 @@ BOARDS = {
         "view": "https://www.moel.go.kr/info/lawinfo/instruction/view.do?bbs_seq={id}",
         "id_re": re.compile(r"bbs_seq=(\d+)[^>]*>\s*([^<]{3,90})"),
         "pages": 5,
+        "body": True,          # 고시 전문이 첨부로 올라온다
         "params": lambda page, word: {"pageIndex": page, "pageUnit": 100},
         "file_re": re.compile(r"(/common/downloadFile\.do\?[^\"']+)"),
     },
@@ -218,6 +219,11 @@ BOARDS = {
         "list": "https://www.mohw.go.kr/board.es",
         "view": "https://www.mohw.go.kr/board.es?mid=a10409020000&bid=0026&act=view&list_no={id}",
         "id_re": re.compile(r"list_no=(\d+)[^>]*>\s*([^<]{4,90})"),
+        # 본문은 **받지 않는다.** 게시판 첨부가 "제1호 가목 중 '400천원'을 '410천원'으로"
+        # 같은 **일부개정 형식**이라, 그대로 저장하면 상·하한 전체 금액이 빠진다. 게다가
+        # official_url 은 법제처 통합본을 가리키므로 저장 본문과 인용 대상 문서가 어긋난다.
+        # 발령번호만 게시판에서 받고 본문은 법제처 통합본에서 받는다.
+        "body": False,
         "pages": 1,
         "params": lambda page, word: {"mid": "a10409020000", "bid": "0026", "cg_code": "C03",
                                       "keyField": "TITLE", "keyWord": word, "nPage": page},
@@ -290,15 +296,22 @@ def _attachment_text(raw: bytes, name: str) -> str:
     if raw[:2] == b"PK":            # HWPX = zip 컨테이너, 본문은 Contents/section*.xml
         import io
         import zipfile
-        try:
-            z = zipfile.ZipFile(io.BytesIO(raw))
-        except zipfile.BadZipFile:
-            return ""
+        z = zipfile.ZipFile(io.BytesIO(raw))
+        # **정규식으로 태그를 벗기지 말 것.** `</hp:t>` 를 공백으로 바꾸면 서식이 바뀌는
+        # 자리에서 쪼개진 run 사이에 없던 공백이 생긴다("10,700" + "원" → "10,700 원").
+        # 저장 본문이 인용구절 대조의 기준이라 그 한 칸이 승인을 막는다. XML 파서로
+        # 문단(hp:p) 단위로 묶고 run(hp:t)은 **붙여서** 잇는다. 엔티티도 파서가 푼다.
         out = []
         for entry in sorted(n for n in z.namelist() if "section" in n and n.endswith(".xml")):
-            xml = z.read(entry).decode("utf-8", "ignore")
-            out.append(re.sub(r"<[^>]+>", "", xml.replace("</hp:t>", "</hp:t> ")))
-        return re.sub(r"[ \t]+", " ", "\n".join(out)).strip()
+            root = ET.fromstring(z.read(entry))
+            for node in root.iter():
+                if node.tag.rsplit("}", 1)[-1] != "p":
+                    continue
+                line = "".join(run.text or "" for run in node.iter()
+                               if run.tag.rsplit("}", 1)[-1] == "t")
+                if line.strip():
+                    out.append(line)
+        return "\n".join(out).strip()
     print(f"    \u26a0\ufe0f 지원하지 않는 첨부 형식: {name}")
     return ""
 
@@ -316,9 +329,13 @@ def fetch_board_instruction(dept: str, exact_name: str) -> dict | None:
             # Referer 없이 받으면 게시판이 HTML 안내문을 돌려준다(실측).
             blob = session.get(url, headers={"Referer": hit["url"]}, timeout=40)
             blob.raise_for_status()
-        except requests.RequestException:
+            # 추출 예외도 **첨부 단위로** 가둔다. 손상된 첫 첨부(PDF)가 밖으로 예외를
+            # 던지면 뒤따르는 HWPX 를 시도하지 못한 채 법제처 폴백으로 가는데, 시행 전
+            # 고시는 법제처에 없으므로 그대로 수집 실패가 된다.
+            body = _attachment_text(blob.content, exact_name)
+        except (requests.RequestException, Exception) as exc:
+            print(f"    ⚠️ 첨부 처리 실패({exact_name}): {type(exc).__name__}")
             continue
-        body = _attachment_text(blob.content, exact_name)
         if body:
             break
     if not body:
@@ -422,7 +439,7 @@ def check_updates() -> int:
     '400천원'을 '410천원'으로" 같은 **일부개정 형식**이라 인용 근거로는 법제처 통합본이
     낫다 — 번호만 헤더에 넣고 본문은 법제처에서 받는 것이 맞다(법제처 API 는 등록 IP 필요).
     """
-    stale, unknown, checked = [], [], 0
+    stale, unknown, failed, checked = [], [], [], 0
     for doc_id, _query, exact, dept, _keys in ADMRULS:
         if dept not in BOARDS:
             print(f"  · {exact}: {dept} — 게시판 파서 없음, 수동 확인 필요")
@@ -431,7 +448,10 @@ def check_updates() -> int:
         stored = stored_notice(doc_id)
         board = board_find(dept, exact)          # 첨부는 받지 않는다(발령번호만 본다)
         if not board:
-            print(f"  ✗ {exact}: 게시판에서 찾지 못함")
+            # **조용히 넘기지 말 것.** 세지 않으면 요약이 "갱신 필요 0건"으로 나와
+            # 운영자가 '전부 최신'으로 읽는다 — 조회 실패와 최신은 다른 상태다.
+            failed.append((doc_id, exact))
+            print(f"  ✗ {exact}: 게시판 조회 실패(네트워크 또는 제목 불일치)")
             continue
         board_no = board["notice_no"]
         if stored is None:
@@ -444,21 +464,30 @@ def check_updates() -> int:
             # "확인할 수 없다"가 맞다 — 재수집하면 헤더에 번호가 남아 다음부터 판정된다.
             unknown.append((doc_id, exact, board_no or "?"))
             print(f"  ? {exact}: 저장본에 발령번호 없음 (게시판 제{board_no or '?'}호) — 확인 불가")
-        elif board_no and board_no == mine:
+        elif not board_no:
+            # 게시판 번호를 못 읽은 것도 '낡음'이 아니다(docstring 원칙).
+            unknown.append((doc_id, exact, "게시판 번호 미파싱"))
+            print(f"  ? {exact}: 게시판 발령번호를 읽지 못함 — 확인 불가")
+        elif board_no == mine:
             print(f"  ✓ {exact}: 최신 (제{board_no}호)")
         else:
             stale.append((doc_id, exact, mine, board_no or "?"))
             print(f"  ⚠️ {exact}: 저장본 제{mine}호 → 게시판 제{board_no or '?'}호 — 재수집 필요")
         time.sleep(0.2)
-    print(f"\n점검 {checked}건 · 갱신 필요 {len(stale)}건 · 확인 불가 {len(unknown)}건")
+    print(f"\n점검 {checked}건 · 갱신 필요 {len(stale)}건 · 확인 불가 {len(unknown)}건"
+          f" · 조회 실패 {len(failed)}건")
     for doc_id, exact, old, new in stale:
         print(f"  - {doc_id}: {exact}  제{old}호 → 제{new}호")
     for doc_id, exact, new in unknown:
         print(f"  ? {doc_id}: {exact}  (게시판 제{new}호, 저장본 번호 미기록)")
+    for doc_id, exact in failed:
+        print(f"  ✗ {doc_id}: {exact}  조회 실패")
     if stale or unknown:
         print("\n  재수집: python3 fetch_official_rules.py --only <기준키>")
         print("  이후:   python3 pinecone_upload_official_rules.py")
-    return 0
+    # 부분 실패는 종료코드로 알린다 — 자동화에 넣었을 때 '갱신 필요'와 '조회 실패'를
+    # 구분하지 못하면 점검이 통과한 것처럼 보인다.
+    return 1 if (stale or failed) else 0
 
 
 def main(argv=None) -> int:
@@ -521,7 +550,7 @@ def main(argv=None) -> int:
         # ① 소관부처 게시판 우선. 법제처는 시행일에야 페이지를 열어, 발령만 된 고시를
         #    놓친다(2027년 최저임금 고시 실측). 게시판에는 발령 즉시 올라온다.
         doc, url, issuer = None, None, None
-        if dept in BOARDS:
+        if BOARDS.get(dept, {}).get("body"):
             try:
                 doc = fetch_board_instruction(dept, exact)
             except Exception as exc:
