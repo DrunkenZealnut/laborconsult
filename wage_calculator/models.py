@@ -296,6 +296,7 @@ class WageInput:
     # ── 출산전후휴가급여 계산용 ───────────────────────────────────────────────
     is_priority_support_company: bool = True    # 우선지원대상기업(중소기업) 여부
     is_multiple_birth: bool = False             # 다태아 여부 (True면 120일)
+    is_premature_birth: bool = False            # 미숙아 여부 (2025-02-23~ 100일, 근기법 제74조①)
 
     # ── 근로장려금(EITC) 계산용 ─────────────────────────────────────────────
     household_type: str = ""              # "단독" / "홑벌이" / "맞벌이" (빈 문자열이면 자동 판정)

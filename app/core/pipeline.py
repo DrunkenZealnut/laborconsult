@@ -694,6 +694,14 @@ WAGE_CALC_TOOL = {
                 "type": "string",
                 "description": "사용자가 명시한 계산 기준일 YYYY-MM-DD. 연도만 있으면 추정하지 말고 생략.",
             },
+            "is_multiple_birth": {
+                "type": "boolean",
+                "description": "쌍둥이·세쌍둥이 등 한 번에 둘 이상 임신·출산이면 true (출산전후휴가 120일).",
+            },
+            "is_premature_birth": {
+                "type": "boolean",
+                "description": "미숙아 출산이면 true (출산전후휴가 100일). 미숙아는 임신 37주 미만 또는 출생 시 2.5kg 미만으로 출생 후 24시간 이내 신생아중환자실에 입원한 경우.",
+            },
         },
         "required": ["needs_calculation"],
     },
@@ -1173,6 +1181,12 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     # 수습·계약기간·직종 — 최저임금 수습 감액 판정에 소비 (CALC-1)
     if params.get("is_probation"):
         inp.is_probation = True
+    # 출산 유형은 휴가 일수를 바꾼다(90 / 미숙아 100 / 다태아 120). 배선이 없으면 상담이
+    # 다태아·미숙아 질문에도 90일로 답한다 — 계산기와 흐름도만 지원하던 공백이었다.
+    if params.get("is_multiple_birth"):
+        inp.is_multiple_birth = True
+    if params.get("is_premature_birth"):
+        inp.is_premature_birth = True
     if params.get("contract_months") is not None:
         inp.contract_months = int(params["contract_months"])
     if params.get("occupation_code"):
@@ -1440,6 +1454,8 @@ def _analysis_to_extract_params(analysis) -> dict:
         "reference_date": info.get("reference_date"),
         "is_platform_worker": info.get("is_platform_worker"),
         "is_probation": info.get("is_probation"),
+        "is_multiple_birth": info.get("is_multiple_birth"),
+        "is_premature_birth": info.get("is_premature_birth"),
         "contract_months": info.get("contract_months"),
         # 계산기 소비처가 있는데 배선이 끊겨 있던 필드들 (CALC-1)
         "occupation_code": info.get("occupation_code"),

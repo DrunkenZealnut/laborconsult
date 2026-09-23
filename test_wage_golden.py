@@ -142,10 +142,11 @@ def main() -> int:
     # 모자랐다. 이 검사가 고시값과의 일치를 고정한다.
     from wage_calculator.calculators.maternity_leave import calc_maternity_leave
 
-    def _maternity(year, monthly, multiple=False, date=None, priority=True):
+    def _maternity(year, monthly, multiple=False, date=None, priority=True, premature=False):
         # facade 는 summary 문자열만 노출하므로 계산기를 직접 부른다(통상임금 계산기와 같은 방식).
         _inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=monthly, reference_year=year,
                          is_multiple_birth=multiple, is_priority_support_company=priority,
+                         is_premature_birth=premature,
                          schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5))
         _inp.reference_date = date
         return calc_maternity_leave(_inp, calc_ordinary_wage(_inp))
@@ -182,6 +183,18 @@ def main() -> int:
           _maternity(2025, 3_000_000, date="2025-06-01").spouse_leave_days == 20)
     check("배우자 출산휴가 일수: 2026 → 20일",
           _maternity(2026, 3_000_000).spouse_leave_days == 20)
+    # 미숙아 100일(근기법 제74조①, 2025-02-23 시행). 상한 표는 필요 없다 — 고시 총액이
+    # `월 상한 ÷ 30 × 일수`라 일수만 바뀌면 따라온다. 고시는 총액을 10원 미만 절사해
+    # 7,333,330원으로 적으므로 3원 차이가 남는다(90·120일은 나누어떨어져 차이 없음).
+    _pre = _maternity(2026, 5_000_000, premature=True)
+    check("2026 미숙아 출산전후휴가 = 100일", _pre.leave_days == 100, f"{_pre.leave_days}일")
+    check("2026 미숙아 100일 총액 ≒ 7,333,330 (고시, 10원 절사분 3원 차이)",
+          abs(_pre.total_insurance_benefit - 7_333_330) <= 3,
+          f"{_pre.total_insurance_benefit:,.0f}")
+    check("미숙아 100일은 2025-02-23 시행 — 그 이전은 90일",
+          _maternity(2025, 5_000_000, premature=True, date="2025-01-10").leave_days == 90)
+    check("미숙아 + 다태아면 긴 쪽(120일)",
+          _maternity(2026, 5_000_000, premature=True, multiple=True).leave_days == 120)
 
     print("── 자동감지 (C-2a) ──")
     wc = WageCalculator()
