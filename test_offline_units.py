@@ -1253,15 +1253,32 @@ def test_safe_xml_single_choke_point() -> None:
         pass
     assert safe_xml.fromstring(b"<law><name>x</name></law>").findtext("name") == "x"
 
-    # ② defusedxml 이 없어도 안전해야 한다(선택 의존성 — 조용히 안전하지 않아지면 안 된다)
+    # prolog 를 바이트 상한으로 자르면 긴 주석·처리지시문으로 선언을 뒤로 밀어 우회할 수
+    # 있다(실측: 5KB 주석 뒤 DOCTYPE 이 통과해 엔티티가 확장됐다 — CodeRabbit PR #80).
+    # 그래서 상한이 아니라 **루트 요소 앞까지** 본다. 본문의 CDATA 는 prolog 가 아니므로
+    # 오탐도 없어야 한다.
+    bypass = [
+        ("5KB 주석 뒤 DTD",
+         b'<?xml version="1.0"?><!-- ' + b"x" * 5000 + b' --><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'),
+        ("긴 처리지시문 뒤 DTD",
+         b"<?xml?><?pi " + b"y" * 6000 + b'?><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'),
+    ]
+
+    # ② defusedxml 이 없어도 안전해야 한다(선택 의존성 — 조용히 안전하지 않아지면 안 된다).
+    #    우회 케이스는 **폴백 경로에서** 검사해야 의미가 있다 — defusedxml 이 있으면
+    #    그쪽이 막아 주므로 앞머리 검사의 결함이 드러나지 않는다.
     saved = safe_xml._defused_fromstring
     safe_xml._defused_fromstring = None
     try:
-        try:
-            safe_xml.fromstring(b'<!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>')
-            raise AssertionError("defusedxml 없을 때 DTD 가 통과됨")
-        except ET.ParseError:
-            pass
+        for label, payload in [("짧은 prolog", b'<!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>')] + bypass:
+            try:
+                safe_xml.fromstring(payload)
+                raise AssertionError(f"defusedxml 없을 때 {label} 이 통과됨")
+            except ET.ParseError:
+                pass
+        # 본문에 들어간 문자열은 거부하면 안 된다(정상 문서 손실)
+        cdata = b"<law><t><![CDATA[<!ENTITY fake \"z\">]]></t></law>"
+        assert safe_xml.fromstring(cdata) is not None, "CDATA 안의 문자열을 선언으로 오인"
     finally:
         safe_xml._defused_fromstring = saved
 
@@ -1279,7 +1296,7 @@ def test_safe_xml_single_choke_point() -> None:
             if re.search(r"(?<!safe_xml\.)\bET\.fromstring\(", body):
                 leaked.append(path)
     assert not leaked, f"stdlib ET.fromstring 직접 호출 — safe_xml.fromstring 을 쓸 것: {leaked}"
-    print("  ✅ safe_xml: DTD 거부·ParseError 하위·defusedxml 폴백·단일 창구 유지")
+    print("  ✅ safe_xml: prolog 전체 검사(우회 2종)·ParseError 하위·폴백 안전·CDATA 오탐 없음·단일 창구")
 
 
 def main() -> None:

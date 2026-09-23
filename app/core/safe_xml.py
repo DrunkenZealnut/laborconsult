@@ -20,6 +20,7 @@ HWPX). 그런데 stdlib `xml.etree.ElementTree` 는 내부 엔티티를 확장�
 """
 from __future__ import annotations
 
+import re
 from xml.etree import ElementTree as ET
 
 try:
@@ -27,10 +28,12 @@ try:
 except ImportError:      # 선택 의존성 — 없으면 아래 DTD 거부가 단독으로 막는다
     _defused_fromstring = None
 
-# 선언은 문서 앞머리에 온다. 전량을 훑지 않는 이유는 본문에 우연히 들어간 문자열까지
-# 거부해 정상 문서를 잃지 않기 위해서다(법제처 조문에 "<!ENTITY" 가 나올 일은 없지만
-# 판례 본문은 임의 텍스트다).
-_HEAD_BYTES = 4096
+# 루트 요소가 시작하는 지점. XML 규격상 DTD 는 **반드시 루트 요소 앞(prolog)** 에 온다.
+# 바이트 상한(4KB)으로 자르면 prolog 에 긴 주석·처리지시문을 채워 선언을 뒤로 밀 수 있다
+# (실측: 5KB 주석 뒤의 DOCTYPE 이 검사를 통과해 엔티티가 확장됐다). 그래서 상한이 아니라
+# **prolog 끝**에서 자른다 — 길이에 무관하고, 본문(CDATA·문자데이터)은 애초에 포함되지
+# 않아 "판례 본문에 우연히 들어간 문자열" 오탐도 생기지 않는다.
+_ROOT_START = re.compile(rb"<[A-Za-z_:]")
 
 
 class UnsafeXML(ET.ParseError):
@@ -40,8 +43,9 @@ class UnsafeXML(ET.ParseError):
 def fromstring(data: bytes | str) -> ET.Element:
     """원격 XML 을 파싱한다. DTD·엔티티 선언이 있으면 `UnsafeXML` 을 던진다."""
     raw = data if isinstance(data, bytes) else data.encode("utf-8", "ignore")
-    head = raw[:_HEAD_BYTES].lstrip()
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
+    root_at = _ROOT_START.search(raw)
+    prolog = raw[:root_at.start()] if root_at else raw
+    if b"<!DOCTYPE" in prolog or b"<!ENTITY" in prolog:
         # ParseError 는 SyntaxError 하위라 2번째 인자가 4-튜플이어야 한다. ElementTree
         # 자신도 메시지만 넘기고 position 은 나중에 붙이므로 같은 방식을 쓴다.
         error = UnsafeXML("DTD/엔티티 선언이 있는 XML 은 파싱하지 않습니다")
