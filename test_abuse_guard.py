@@ -401,8 +401,17 @@ def test_chat_rate_limit_bucket() -> None:
 
 
 def test_guard_chat_request() -> None:
-    """엔드포인트 공통 헬퍼: 검증→rate limit→쿼터 순서와 거절 변환."""
+    """엔드포인트 공통 헬퍼: 검증→rate limit→쿼터 순서와 거절 변환.
+
+    **쿼터 검사(check_guard)는 스텁으로 대체한다.** 그대로 두면 이 '오프라인' 스위트가
+    `.env`가 있는 개발기에서 실 Supabase RPC를 호출해 고정 IP의 **라이브 일일 쿼터**를
+    소비한다 — 회귀를 열몇 번 돌리면 쿼터(50회/일)가 말라 테스트가 실패한다(실측
+    2026-09-23). CI는 자격증명이 없어 통과하므로 개발기에서만 터지는 조용한 함정이었다.
+    RPC 자체의 분기는 test_check_guard_branches 가 이미 스텁으로 검증한다.
+    """
+    from unittest.mock import patch
     from api.index import _guard_chat_request, _chat_rate
+    from app.core import abuse_guard as ag
     from app.core.abuse_guard import GuardRejection
 
     class FakeRequest:
@@ -410,32 +419,51 @@ def test_guard_chat_request() -> None:
             self.headers = {"x-forwarded-for": ip}
             self.client = None
 
-    _chat_rate.clear()
-    msg, sid, ctx = _guard_chat_request(FakeRequest(), "주휴수당 계산해주세요", "sess1234")
-    assert msg == "주휴수당 계산해주세요" and sid == "sess1234"
-    assert ctx.subject_key.startswith("ip:")
+    with patch.object(ag, "check_guard", return_value=ag.GuardCheckResult()) as spy, \
+            patch.object(ag, "record_violation"):
+        _chat_rate.clear()
+        msg, sid, ctx = _guard_chat_request(FakeRequest(), "주휴수당 계산해주세요", "sess1234")
+        assert msg == "주휴수당 계산해주세요" and sid == "sess1234"
+        assert ctx.subject_key.startswith("ip:")
+        # 호출 여부만 보면 subject_key 전달이 끊겨도 통과한다(고정 반환 mock).
+        assert spy.call_count == 1, f"쿼터 검사 호출 {spy.call_count}회 — 1회여야 한다"
+        assert spy.call_args.args[1] == ctx.subject_key, (
+            f"쿼터 검사에 다른 subject_key 전달: {spy.call_args.args[1]!r} != {ctx.subject_key!r}")
 
-    # 길이 위반 → 400
-    _chat_rate.clear()
-    try:
-        _guard_chat_request(FakeRequest(), "가" * 5000, None)
-        raise AssertionError("길이 위반이 통과됨")
-    except GuardRejection as e:
-        assert e.status == 400 and "2,000자" in e.detail
+        # 길이 위반 → 400. 쿼터보다 **먼저** 걸러야 한다(거절 대상이 RPC 비용을 치르지 않게).
+        _chat_rate.clear()
+        spy.reset_mock()
+        try:
+            _guard_chat_request(FakeRequest(), "가" * 5000, None)
+            raise AssertionError("길이 위반이 통과됨")
+        except GuardRejection as e:
+            assert e.status == 400 and "2,000자" in e.detail
+        assert not spy.called, "길이 위반인데 쿼터 RPC를 호출했다"
 
-    # rate limit 초과 → 429
-    _chat_rate.clear()
-    ip = "198.51.100.77"
-    for _ in range(5):
-        _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
-    try:
-        _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
-        raise AssertionError("rate limit 초과가 통과됨")
-    except GuardRejection as e:
-        assert e.status == 429
+        # rate limit 초과 → 429
+        _chat_rate.clear()
+        ip = "198.51.100.77"
+        for _ in range(5):
+            _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
+        spy.reset_mock()
+        try:
+            _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
+            raise AssertionError("rate limit 초과가 통과됨")
+        except GuardRejection as e:
+            assert e.status == 429
+        assert not spy.called, "rate limit 초과인데 쿼터 RPC를 호출했다"
+
+        # 쿼터 소진 → 429 + 쿼터 메시지
+        _chat_rate.clear()
+        spy.return_value = ag.GuardCheckResult(allowed=False, reason="quota", count=99)
+        try:
+            _guard_chat_request(FakeRequest("198.51.100.9"), "정상 질문입니다", None)
+            raise AssertionError("쿼터 소진이 통과됨")
+        except GuardRejection as e:
+            assert e.status == 429 and e.detail == ag.MSG_QUOTA_EXCEEDED
 
     _chat_rate.clear()
-    print("  ✅ _guard_chat_request: 통과·400·429 변환")
+    print("  ✅ _guard_chat_request: 통과·400·429 변환 + 쿼터 RPC 호출 순서(라이브 호출 없음)")
 
 
 def test_pipeline_guard_wiring() -> None:

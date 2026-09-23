@@ -305,7 +305,7 @@ class WageCalculator:
 
         # 출산전후휴가: 다태아 등 출산 관련 입력이 명시되면 자동 포함
         # (단태아 일반 케이스는 파이프라인의 '출산휴가' 라벨 명시 라우팅으로 처리)
-        if getattr(inp, "is_multiple_birth", False):
+        if getattr(inp, "is_multiple_birth", False) or getattr(inp, "is_premature_birth", False):
             targets.append("maternity_leave")
 
         if inp.arrear_amount > 0 and inp.arrear_due_date:

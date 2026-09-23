@@ -20,6 +20,8 @@ import re
 import sys
 from xml.etree import ElementTree as ET
 
+from app.core import safe_xml
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -88,7 +90,7 @@ def lm_promulgation(name: str, key: str) -> tuple[str, str] | None:
         "OC": key, "target": "law", "type": "XML", "LM": name,
     }, timeout=20)
     r.raise_for_status()
-    root = ET.fromstring(r.content)
+    root = safe_xml.fromstring(r.content)
     if root.tag != "법령":
         return None
     returned = (root.findtext(".//기본정보/법령명_한글") or "").strip()
@@ -108,7 +110,7 @@ def current_promulgation(name: str, key: str) -> tuple[str, str] | None:
         "OC": key, "target": "law", "type": "XML", "query": name, "display": "5",
     }, timeout=20)
     r.raise_for_status()
-    root = ET.fromstring(r.content)
+    root = safe_xml.fromstring(r.content)
     for el in root.iter("law"):
         nm = (el.findtext("법령명한글") or el.findtext("법령명_한글") or "").strip()
         status = (el.findtext("현행연혁코드") or "").strip()

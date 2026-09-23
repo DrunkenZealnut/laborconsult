@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from app.core import safe_xml
+
 import networkx as nx
 import requests
 
@@ -251,7 +253,7 @@ def _fetch_articles_from_api(law_name: str) -> list[dict]:
             "OC": api_key, "target": "law", "LM": law_name, "type": "XML",
         }, timeout=10)
         resp.raise_for_status()
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         if root.tag != "법령":
             logger.warning("법령 미매칭: %s (root=%s)", law_name, root.tag)
             return []

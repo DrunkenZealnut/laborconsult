@@ -1231,6 +1231,84 @@ def test_tokenizer_contract() -> None:
           "단일 출처·색인 한정·2음절 보존·어미 우선·보호어 40종 자기보존·NFD 정규화")
 
 
+def test_safe_xml_single_choke_point() -> None:
+    """원격 XML 파싱은 `app.core.safe_xml` 한 곳만 거친다.
+
+    이 저장소가 파싱하는 XML 은 전부 원격 HTTP 응답이고(법제처 API·게시판 첨부),
+    stdlib ElementTree 는 내부 엔티티를 확장한다 — 1KB 가 파싱 중 수 GB 로 부푼다.
+    `legal_api.py` 의 호출부는 **상담 요청 경로**에 있어 그 확장이 곧 서비스 정지다.
+    한 곳만 막으면 나머지가 남아 '막았다'는 오해만 만들므로 진입점을 하나로 고정한다.
+    """
+    import os
+    import re
+    from xml.etree import ElementTree as ET
+    from app.core import safe_xml
+
+    # ① 거부가 기존 폴백에 걸리도록 ET.ParseError 하위여야 한다
+    assert issubclass(safe_xml.UnsafeXML, ET.ParseError)
+    try:
+        safe_xml.fromstring(b'<!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>')
+        raise AssertionError("DTD/엔티티 선언이 통과됨")
+    except ET.ParseError:
+        pass
+    assert safe_xml.fromstring(b"<law><name>x</name></law>").findtext("name") == "x"
+
+    # prolog 를 바이트 상한으로 자르면 긴 주석·처리지시문으로 선언을 뒤로 밀어 우회할 수
+    # 있다(실측: 5KB 주석 뒤 DOCTYPE 이 통과해 엔티티가 확장됐다 — CodeRabbit PR #80).
+    # 그래서 상한이 아니라 **루트 요소 앞까지** 본다. 본문의 CDATA 는 prolog 가 아니므로
+    # 오탐도 없어야 한다.
+    bypass = [
+        ("5KB 주석 뒤 DTD",
+         b'<?xml version="1.0"?><!-- ' + b"x" * 5000 + b' --><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'),
+        ("긴 처리지시문 뒤 DTD",
+         b"<?xml?><?pi " + b"y" * 6000 + b'?><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'),
+    ]
+    # UTF-16 은 `<!DOCTYPE` 이 `<\x00!\x00D\x00…` 로 들어가 **바이트 검색이 통째로 빗나간다**
+    # (실측: UTF-16·UTF-16-BE 에서 엔티티가 그대로 확장됐다 — CodeRabbit PR #80).
+    # 파서는 BOM 을 보고 디코드하므로 검사도 같은 눈으로 봐야 한다.
+    _bomb = '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'
+    bypass += [(f"{enc} 인코딩 DTD", _bomb.encode(enc))
+               for enc in ("utf-16", "utf-16-be", "utf-16-le", "utf-32")]
+
+    # ② defusedxml 이 없어도 안전해야 한다(선택 의존성 — 조용히 안전하지 않아지면 안 된다).
+    #    우회 케이스는 **폴백 경로에서** 검사해야 의미가 있다 — defusedxml 이 있으면
+    #    그쪽이 막아 주므로 앞머리 검사의 결함이 드러나지 않는다.
+    saved = safe_xml._defused_fromstring
+    safe_xml._defused_fromstring = None
+    try:
+        for label, payload in [("짧은 prolog", b'<!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>')] + bypass:
+            try:
+                safe_xml.fromstring(payload)
+                raise AssertionError(f"defusedxml 없을 때 {label} 이 통과됨")
+            except ET.ParseError:
+                pass
+        # 본문에 들어간 문자열은 거부하면 안 된다(정상 문서 손실)
+        cdata = b"<law><t><![CDATA[<!ENTITY fake \"z\">]]></t></law>"
+        assert safe_xml.fromstring(cdata) is not None, "CDATA 안의 문자열을 선언으로 오인"
+        # 인코딩 인식이 정상 문서를 잃게 하면 안 된다(한글 본문 포함)
+        for enc in ("utf-8", "utf-16"):
+            ok = safe_xml.fromstring('<?xml version="1.0"?><law><n>최저임금</n></law>'.encode(enc))
+            assert ok.findtext("n") == "최저임금", f"{enc} 정상 문서가 깨짐"
+    finally:
+        safe_xml._defused_fromstring = saved
+
+    # ③ 새 호출부가 stdlib 로 새지 않는지 — 이 단언이 단일 창구를 유지하는 장치다
+    leaked = []
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"}
+                   and not d.startswith("output_")]
+        for name in files:
+            if not name.endswith(".py") or name.startswith("test_") or name == "safe_xml.py":
+                continue
+            path = os.path.join(root, name)
+            with open(path, encoding="utf-8") as f:
+                body = f.read()
+            if re.search(r"(?<!safe_xml\.)\bET\.fromstring\(", body):
+                leaked.append(path)
+    assert not leaked, f"stdlib ET.fromstring 직접 호출 — safe_xml.fromstring 을 쓸 것: {leaked}"
+    print("  ✅ safe_xml: prolog 전체 검사(우회 6종·UTF-16 포함)·폴백 안전·오탐 없음·단일 창구")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -1258,6 +1336,7 @@ def main() -> None:
     test_offline_index_not_on_request_path()
     test_bm25_interning()
     test_tokenizer_contract()
+    test_safe_xml_single_choke_point()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 

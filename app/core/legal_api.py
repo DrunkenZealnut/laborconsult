@@ -21,6 +21,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.etree import ElementTree as ET
 
+from app.core import safe_xml
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -278,7 +280,7 @@ def _resolve_official_name(law_name: str, api_key: str) -> str | None:
         }, timeout=LAW_SEARCH_TIMEOUT)
         resp.raise_for_status()
 
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         for law_el in root.iter("law"):
             name_el = law_el.find("법령명한글")
             if name_el is None:
@@ -373,7 +375,7 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
             "type": "XML",
         }, timeout=LAW_SERVICE_TIMEOUT)
         resp.raise_for_status()
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         if root.tag == "Response":
             detail = (root.findtext(".//result") or root.findtext(".//message")
                       or "").strip()[:80]
@@ -639,7 +641,7 @@ def search_precedent(query: str, api_key: str,
         }, timeout=LAW_SEARCH_TIMEOUT)
         resp.raise_for_status()
 
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         results = []
         for prec in root.iter("prec"):
             prec_id = _el_text(prec, "판례일련번호")
@@ -764,7 +766,7 @@ def search_detc(query: str, api_key: str,
         }, timeout=LAW_SEARCH_TIMEOUT)
         resp.raise_for_status()
 
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         results = []
         for detc in root.iter("Detc"):
             detc_id = _el_text(detc, "헌재결정례일련번호")
@@ -809,7 +811,7 @@ def fetch_detc(detc_id: int, api_key: str) -> str | None:
         }, timeout=LAW_SERVICE_TIMEOUT)
         resp.raise_for_status()
 
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         parts = []
         for field in ["판시사항", "결정요지"]:
             el = root.find(f".//{field}")
@@ -859,7 +861,7 @@ def fetch_precedent(prec_id: int, api_key: str) -> str | None:
         }, timeout=LAW_SERVICE_TIMEOUT)
         resp.raise_for_status()
 
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         parts = []
         for field in ["판시사항", "판결요지"]:
             el = root.find(f".//{field}")
@@ -1052,7 +1054,7 @@ def search_nlrc(query: str, api_key: str, max_results: int = 3) -> list[dict]:
             "query": query, "display": str(max_results),
         }, timeout=LAW_SEARCH_TIMEOUT)
         resp.raise_for_status()
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
         results = []
         for el in root.iter("nlrc"):
             decision_id = _el_text(el, "결정문일련번호")
@@ -1110,7 +1112,7 @@ def fetch_nlrc_detail(decision_id: int, api_key: str) -> dict | None:
             "OC": api_key, "target": "nlrc", "ID": str(decision_id), "type": "XML",
         }, timeout=LAW_SERVICE_TIMEOUT)
         resp.raise_for_status()
-        root = ET.fromstring(resp.content)
+        root = safe_xml.fromstring(resp.content)
 
         gist = "\n".join(
             t for t in (

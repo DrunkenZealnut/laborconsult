@@ -2,7 +2,7 @@
 출산전후휴가급여 계산기 (고용보험법 제75조, 근로기준법 제74조)
 
 핵심 계산식:
-  출산전후휴가: 90일 (다태아 120일)
+  출산전후휴가: 90일 (미숙아 100일 · 다태아 120일, 둘 다면 긴 쪽)
   급여 기간:
     - 우선지원대상기업(중소기업): 90일 전액 고용보험 지원
     - 대규모 기업: 최초 60일은 사업주 부담, 61일~90일만 고용보험
@@ -16,6 +16,8 @@
     지원한다(종전 5일분 → 현재 전 기간, 고시 상한 적용, 차액은 사업주 부담).
     고시 상한은 **보험 급여**의 상한이지 유급액의 상한이 아니다.
 """
+
+import math
 
 from dataclasses import dataclass
 
@@ -44,6 +46,12 @@ MATERNITY_LEAVE_UPPER: dict[int, float] = {
 # 그렇게 하면 90일 총액이 638만원이 되어 고시 660만원에 217,999원 못 미친다(실측).
 MATERNITY_DAYS_PER_MONTH = 30
 
+# 미숙아 출산전후휴가 100일 시행일(근로기준법 제74조제1항). 배우자 20일과 같은 날 시행됐다.
+# 상한은 따로 두지 않는다 — 고시 총액이 `월 상한 ÷ 30 × 일수`라 일수만 바뀌면 따라온다.
+# 고시는 총액을 10원 미만 절사해 적으므로(미숙아 100일 7,333,330원 = 220만 × 100/30 절사)
+# 상한이 걸릴 때만 총액을 같은 단위로 맞춘다. 90·120일은 나누어떨어져 값이 변하지 않는다.
+PREMATURE_LEAVE_FROM = "2025-02-23"
+
 # ── 배우자 출산휴가 (남녀고용평등법 제18조의2, 고용보험법 제75조의2) ─────────
 # **유급 일수와 고용보험 지원 일수는 다른 값이고 함께 바뀐다.** 2025-02-23 개정 시행으로
 # 유급 10일 → 20일, 지원 5일분 → 전 기간으로 확대됐다(고용노동부 work24 제도안내).
@@ -56,7 +64,11 @@ SPOUSE_LEAVE_PERIODS: dict[str, tuple[int, int]] = {
 # 배우자 출산휴가 **급여**(고용보험 지원분) 상한. 유급액 전체의 상한이 아니다 —
 # 통상임금이 상한을 넘으면 **차액은 사업주가 부담**한다(work24 제도안내). 또 출산전후휴가와
 # 일당 기준이 다르다: 2026년 기준 배우자 1일 84,210원 vs 출산전후휴가 73,333원.
-# 2025-02-23 이전(5일분 체제)의 상한은 확인하지 못해 등록하지 않았다.
+# 2025-02-23 이전(5일분 체제)의 상한은 **1차 출처로 확인하지 못해** 등록하지 않았다.
+# 2차 출처들은 401,910원(5일분, 고용노동부고시 제2023-84호·제2024-105호)을 말하지만
+# 금액이 HWP 첨부에만 있고 law.go.kr 의 그 고시 페이지는 폐지돼 열리지 않는다
+# (2026-01 부터 「출산전후휴가 급여등 상한액 고시」로 통합). 원문을 확인하면 추가할 것 —
+# 그때까지는 상한 미적용 + 경고가 추정값을 넣는 것보다 낫다.
 SPOUSE_LEAVE_UPPER_PERIODS: dict[str, float] = {
     "2025-02-23": 1_607_650,   # 20일분 — 2025년 고시
     "2026-01-01": 1_684_210,   # 20일분 — 고용노동부고시 제2025-124호
@@ -86,7 +98,7 @@ def spouse_leave_days(reference_date: str | None, year: int) -> tuple[int, int]:
 @dataclass
 class MaternityLeaveResult(BaseCalculatorResult):
     # 출산전후휴가 급여
-    leave_days: int = 0                        # 총 휴가 일수 (90 또는 120)
+    leave_days: int = 0                        # 총 휴가 일수 (90 / 미숙아 100 / 다태아 120)
     monthly_benefit: float = 0.0               # 월 급여액 (상한 적용 후)
     raw_monthly_wage: float = 0.0              # 월 통상임금 (상한 적용 전)
 
@@ -100,7 +112,7 @@ class MaternityLeaveResult(BaseCalculatorResult):
     total_employer_benefit: float = 0.0        # 사업주 부담 총액
 
     # 배우자 출산휴가
-    spouse_leave_days: int = 0                 # 배우자 출산휴가 일수 (10일)
+    spouse_leave_days: int = 0                 # 배우자 출산휴가 유급 일수 (10일 또는 20일)
     spouse_leave_pay: float = 0.0              # 배우자 출산휴가 유급액(사업주 지급 의무 총액)
     spouse_insurance_benefit: float = 0.0      # 그중 고용보험이 지원하는 급여(상한 적용)
     spouse_insurance_days: int = 0             # 고용보험 지원 일수
@@ -116,6 +128,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         inp: 임금 입력 데이터
           - is_priority_support_company: 우선지원대상기업 여부 (기본 True)
           - is_multiple_birth: 다태아 여부 (기본 False)
+          - is_premature_birth: 미숙아 여부 (기본 False, 2025-02-23~ 100일)
         ow: 통상임금 계산 결과
     """
     warnings = []
@@ -128,14 +141,29 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     year = inp.reference_year
     is_priority = getattr(inp, "is_priority_support_company", True)
     is_multiple  = getattr(inp, "is_multiple_birth", False)
+    is_premature = getattr(inp, "is_premature_birth", False)
+    reference_date = getattr(inp, "reference_date", None)
 
     # ── 휴가 일수 결정 ────────────────────────────────────────────────────
-    leave_days = 120 if is_multiple else 90
+    # 미숙아 100일은 2025-02-23 시행이라 그 이전 출산에는 적용되지 않는다(근기법 제74조①).
+    # 다태아 120일과 겹치면 더 긴 쪽이 남는다. 상한은 별도 표가 필요 없다 —
+    # 고시의 기간 총액이 `월 상한 ÷ 30 × 일수`라 일수만 바뀌면 그대로 따라온다
+    # (2026년 미숙아 100일 고시 7,333,330원 ≒ 2,200,000 × 100/30).
+    premature_applies = is_premature and (reference_date or f"{int(year):04d}-01-01") >= PREMATURE_LEAVE_FROM
+    leave_days = 120 if is_multiple else (100 if premature_applies else 90)
     if is_multiple:
         formulas.append(f"다태아 출산전후휴가: {leave_days}일")
         legal.append("근로기준법 제74조제1항 (다태아 120일)")
+    elif premature_applies:
+        formulas.append(f"미숙아 출산전후휴가: {leave_days}일")
+        legal.append("근로기준법 제74조제1항 (미숙아 100일, 2025-02-23 시행)")
     else:
         formulas.append(f"출산전후휴가: {leave_days}일")
+        if is_premature:
+            warnings.append(
+                "미숙아 출산전후휴가 100일은 2025-02-23 시행이라 그 이전 출산에는 적용되지 "
+                "않습니다. 출산일이 그 이후라면 계산 기준일을 함께 알려주세요"
+            )
 
     # ── 상한액 조회 ─────────────────────────────────────────────────────
     is_pw = getattr(inp, "is_platform_worker", False)
@@ -232,6 +260,15 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
 
     total_insurance_benefit = daily_benefit * insurance_days
     total_employer_benefit  = daily_benefit * employer_days
+    if upper_applied:
+        # 고시는 기간 총액을 **10원 미만 절사**해 적는다(미숙아 100일 7,333,330원 =
+        # 220만 × 100/30 의 절사값). 월 상한만 곱하면 3원이 남아 고시 상한을 넘는다.
+        # 90·120일은 30으로 나누어떨어져 절사해도 값이 같다.
+        cap_total = math.floor(upper * leave_days / MATERNITY_DAYS_PER_MONTH / 10) * 10
+        overflow = total_insurance_benefit + total_employer_benefit - cap_total
+        if overflow > 0:
+            total_insurance_benefit -= overflow if insurance_days else 0
+            total_employer_benefit -= overflow if not insurance_days else 0
     total_benefit = total_insurance_benefit + total_employer_benefit
 
     formulas.append(
@@ -249,7 +286,6 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     # **유급액과 보험 급여를 분리한다.** 고시 상한은 고용보험이 지급하는 급여의 상한이고
     # (우선지원대상기업 근로자만 대상), 유급 의무 자체는 사업주에게 남아 차액을 부담한다.
     # 상한을 유급액에 그대로 걸면 대규모기업 근로자의 법정 유급액이 줄어든 것처럼 보인다.
-    reference_date = getattr(inp, "reference_date", None)
     spouse_days, spouse_insurance_days = spouse_leave_days(reference_date, year)
     daily_ordinary = ow.hourly_ordinary_wage * inp.schedule.daily_work_hours
     spouse_pay = daily_ordinary * spouse_days

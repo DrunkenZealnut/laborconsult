@@ -27,6 +27,8 @@ import argparse
 import unicodedata
 import xml.etree.ElementTree as ET
 
+from app.core import safe_xml
+
 import requests
 from dotenv import load_dotenv
 
@@ -126,7 +128,7 @@ def _get_xml(url: str, params: dict) -> ET.Element | None:
         try:
             resp = _session.get(url, params=params, timeout=TIMEOUT)
             resp.raise_for_status()
-            return ET.fromstring(resp.content)
+            return safe_xml.fromstring(resp.content)
         except Exception as e:
             if attempt == MAX_RETRIES - 1:
                 print(f"    [실패] {e}")

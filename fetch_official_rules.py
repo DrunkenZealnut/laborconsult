@@ -26,6 +26,8 @@ import sys
 import time
 import urllib.parse as urlparse
 import xml.etree.ElementTree as ET
+
+from app.core import safe_xml
 from datetime import date, timezone, timedelta
 
 import requests
@@ -60,11 +62,12 @@ ADMRULS = [
     # (doc_id, 검색어, 행정규칙명 정확일치, 소관부처, 관련 기준 키)
     ("mw_notice",   "최저임금",              "2026년 적용 최저임금 고시",       "고용노동부",
      ["minimum_hourly_wage"]),
-    # 2027년 고시(시급 10,700원)는 **일부러 뺐다**. 발령(2026-08-05)은 됐으나 시행 전이라
-    # law.go.kr 의 정식 페이지(`/행정규칙/{명}`)가 아직 오류페이지다(실측 2026-09-18, 09-22 재확인).
-    # 승인 저장소는 미래 시행일을 지원하지만 official_url 을 확인할 수 없어 근거로 올릴 수 없다 —
-    # 시행이 가까워지면 이 줄을 되살려 다시 수집할 것. 그때까지 상담·계산은 내장표
-    # (`wage_calculator/constants.py::MINIMUM_HOURLY_WAGE`)의 2027 값이 담당한다.
+    # 2027년 고시(고용노동부고시 제2026–60호, 시급 10,700원)는 **노동부 게시판에서** 받는다.
+    # law.go.kr 은 시행일(2027-01-01)에야 페이지를 열어 2026-09 기준으로도 오류페이지지만,
+    # 소관부처 게시판에는 발령 당일(2026-08-05)부터 올라와 있었다. 한동안 "시행 전이라
+    # 수집 불가"로 미뤄 뒀던 것은 법제처만 본 탓이다 — 고시는 게시판을 먼저 볼 것.
+    ("mw_notice_2027", "최저임금", "2027년 적용 최저임금 고시", "고용노동부",
+     ["minimum_hourly_wage"]),
     ("np_income",   "국민연금 기준소득월액",   "국민연금 기준소득월액 하한액과 상한액", "보건복지부",
      ["insurance.pension_income_max", "insurance.pension_income_min"]),
     ("mat_upper",   "출산전후휴가 급여 상한액", "출산전후휴가 급여등 상한액 고시",   "고용노동부",
@@ -119,7 +122,7 @@ def fetch_article_xml(api_key: str, law_name: str, article_no: int, sub: int | N
                                             "LM": law_name}, timeout=TIMEOUT)
     res.raise_for_status()
     try:
-        root = ET.fromstring(res.text)
+        root = safe_xml.fromstring(res.text)
     except ET.ParseError:
         return None
     if root.tag != "법령":                      # 미매칭·자격증명 오류도 HTTP 200 이다
@@ -191,12 +194,175 @@ def pdf_attachment_text(droot: ET.Element) -> str:
     return ""
 
 
+# ── 소관부처 게시판 ─────────────────────────────────────────────────────────
+# **법제처보다 먼저 본다.** law.go.kr 은 행정규칙 페이지를 *시행일*에야 열어, 발령만 된
+# 고시를 통째로 놓친다 — 2027년 최저임금 고시(제2026–60호)가 2026-08-05 발령인데 2026-09
+# 기준으로도 오류페이지였고, 그 탓에 "시행 전이라 수집 불가"로 넉 달을 미뤄 뒀다.
+# 게시판에는 발령 당일부터 올라온다.
+#
+# 두 부처의 게시판은 **검색 가능 여부가 다르다**:
+#   고용노동부 — 검색 파라미터(query·searchWord)가 동작하지 않는다(기본 목록을 돌려준다).
+#                pageUnit=100 으로 목록을 훑는다.
+#   보건복지부 — 제목 검색이 동작한다(keyField=TITLE). 게시물이 하루 수십 건이라 목록
+#                훑기로는 못 찾는다(실측: 150건 안에 없음).
+BOARDS = {
+    "고용노동부": {
+        "host": "https://www.moel.go.kr",
+        "list": "https://www.moel.go.kr/info/lawinfo/instruction/list.do",
+        "view": "https://www.moel.go.kr/info/lawinfo/instruction/view.do?bbs_seq={id}",
+        "id_re": re.compile(r"bbs_seq=(\d+)[^>]*>\s*([^<]{3,90})"),
+        "pages": 5,
+        "body": True,          # 고시 전문이 첨부로 올라온다
+        "params": lambda page, word: {"pageIndex": page, "pageUnit": 100},
+        "file_re": re.compile(r"(/common/downloadFile\.do\?[^\"']+)"),
+    },
+    "보건복지부": {
+        "host": "https://www.mohw.go.kr",
+        "list": "https://www.mohw.go.kr/board.es",
+        "view": "https://www.mohw.go.kr/board.es?mid=a10409020000&bid=0026&act=view&list_no={id}",
+        "id_re": re.compile(r"list_no=(\d+)[^>]*>\s*([^<]{4,90})"),
+        # 본문은 **받지 않는다.** 게시판 첨부가 "제1호 가목 중 '400천원'을 '410천원'으로"
+        # 같은 **일부개정 형식**이라, 그대로 저장하면 상·하한 전체 금액이 빠진다. 게다가
+        # official_url 은 법제처 통합본을 가리키므로 저장 본문과 인용 대상 문서가 어긋난다.
+        # 발령번호만 게시판에서 받고 본문은 법제처 통합본에서 받는다.
+        "body": False,
+        "pages": 1,
+        "params": lambda page, word: {"mid": "a10409020000", "bid": "0026", "cg_code": "C03",
+                                      "keyField": "TITLE", "keyWord": word, "nPage": page},
+        "file_re": re.compile(r"(/boardDownload\.es\?[^\"']+)"),
+    },
+}
+_UA = {"User-Agent": "Mozilla/5.0"}
+NOTICE_NO_RE = re.compile(r"제\s*(\d{4})\s*[-\u2013\u2014]\s*(\d+)\s*호")
+
+
+def _norm_title(text: str) -> str:
+    """게시판 제목 정규화. `[고시]` 말머리와 「」를 떼고 공백을 접는다 —
+    보건복지부는 제목이 「…」 고시 일부개정 형태라 정확일치가 성립하지 않는다."""
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^\[(고시|훈령|예규|지침|공고)\]\s*", "", text)
+    return text.replace("\u300c", "").replace("\u300d", "")
+
+
+def board_find(dept: str, exact_name: str) -> dict | None:
+    """게시판에서 그 고시의 **가장 최근** 글을 찾는다. 첨부는 받지 않는다.
+
+    발령번호는 view 페이지 HTML 에 있으므로(고용노동부는 첨부 파일명, 보건복지부는 본문)
+    갱신 점검은 첨부 다운로드 없이 끝난다.
+    """
+    board = BOARDS.get(dept)
+    if board is None:
+        return None
+    session = requests.Session()
+    session.headers.update(_UA)
+    for page in range(1, board["pages"] + 1):
+        try:
+            res = session.get(board["list"], params=board["params"](page, exact_name),
+                              timeout=TIMEOUT)
+            res.raise_for_status()
+        except requests.RequestException:
+            return None
+        rows = board["id_re"].findall(res.text)
+        if not rows:
+            break
+        for found, title in rows:              # 목록은 최신순이라 첫 일치가 최신이다
+            if exact_name in _norm_title(title):
+                url = board["view"].format(id=found)
+                try:
+                    page_res = session.get(url, timeout=TIMEOUT)
+                    page_res.raise_for_status()
+                except requests.RequestException:
+                    return None
+                number = NOTICE_NO_RE.search(page_res.text)
+                posted = re.search(r"(\d{4})[-.](\d{2})[-.](\d{2})", page_res.text)
+                return {"url": url, "title": _norm_title(title), "html": page_res.text,
+                        "notice_no": "-".join(number.groups()) if number else "",
+                        "posted": "".join(posted.groups()) if posted else "",
+                        "session": session, "board": board}
+    return None
+
+
+def _attachment_text(raw: bytes, name: str) -> str:
+    """첨부 본문 추출(PDF / HWPX). 추출 문자열을 **다듬지 않는다** — pdf_attachment_text 참조."""
+    if raw[:4] == b"%PDF":
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            try:
+                from PyPDF2 import PdfReader
+            except ImportError:
+                print("    \u26a0\ufe0f pypdf 미설치 — 첨부 PDF 본문을 읽을 수 없습니다")
+                return ""
+        import io
+        return "\n".join((pg.extract_text() or "") for pg in PdfReader(io.BytesIO(raw)).pages).strip()
+    if raw[:2] == b"PK":            # HWPX = zip 컨테이너, 본문은 Contents/section*.xml
+        import io
+        import zipfile
+        z = zipfile.ZipFile(io.BytesIO(raw))
+        # **정규식으로 태그를 벗기지 말 것.** `</hp:t>` 를 공백으로 바꾸면 서식이 바뀌는
+        # 자리에서 쪼개진 run 사이에 없던 공백이 생긴다("10,700" + "원" → "10,700 원").
+        # 저장 본문이 인용구절 대조의 기준이라 그 한 칸이 승인을 막는다. XML 파서로
+        # 문단(hp:p) 단위로 묶고 run(hp:t)은 **붙여서** 잇는다. 엔티티도 파서가 푼다.
+        out = []
+        for entry in sorted(n for n in z.namelist() if "section" in n and n.endswith(".xml")):
+            data = z.read(entry)
+            # **DTD·엔티티 선언이 있으면 파싱하지 않는다.** stdlib ElementTree 는 내부
+            # 엔티티를 확장하므로, 1KB 짜리 XML 이 파싱 중에 수 GB 로 부풀 수 있다
+            # ("billion laughs"). 원격 첨부라 남이 만든 바이트다. HWPX 의 section XML 은
+            # DOCTYPE 을 쓰지 않으므로 거부해도 정상 문서를 잃지 않는다 —
+            # defusedxml 의존성을 더하는 대신 공격 조건 자체를 없앤다.
+            head = data[:4096].lstrip()
+            if b"<!DOCTYPE" in head or b"<!ENTITY" in data[:65536]:
+                print(f"    ⚠️ DTD/엔티티 선언이 있는 첨부는 건너뜁니다: {name}")
+                continue
+            root = safe_xml.fromstring(data)
+            for node in root.iter():
+                if node.tag.rsplit("}", 1)[-1] != "p":
+                    continue
+                line = "".join(run.text or "" for run in node.iter()
+                               if run.tag.rsplit("}", 1)[-1] == "t")
+                if line.strip():
+                    out.append(line)
+        return "\n".join(out).strip()
+    print(f"    \u26a0\ufe0f 지원하지 않는 첨부 형식: {name}")
+    return ""
+
+
+def fetch_board_instruction(dept: str, exact_name: str) -> dict | None:
+    """소관부처 게시판에서 고시 본문까지 가져온다(첨부 PDF/HWPX 추출)."""
+    hit = board_find(dept, exact_name)
+    if not hit:
+        return None
+    session, board = hit["session"], hit["board"]
+    body = ""
+    for link in board["file_re"].findall(hit["html"])[:3]:
+        url = board["host"] + link.replace("&amp;", "&")
+        try:
+            # Referer 없이 받으면 게시판이 HTML 안내문을 돌려준다(실측).
+            blob = session.get(url, headers={"Referer": hit["url"]}, timeout=40)
+            blob.raise_for_status()
+            # 추출 예외도 **첨부 단위로** 가둔다. 손상된 첫 첨부(PDF)가 밖으로 예외를
+            # 던지면 뒤따르는 HWPX 를 시도하지 못한 채 법제처 폴백으로 가는데, 시행 전
+            # 고시는 법제처에 없으므로 그대로 수집 실패가 된다.
+            body = _attachment_text(blob.content, exact_name)
+        except (requests.RequestException, Exception) as exc:
+            print(f"    ⚠️ 첨부 처리 실패({exact_name}): {type(exc).__name__}")
+            continue
+        if body:
+            break
+    if not body:
+        return None
+    return {"name": exact_name, "body": body, "body_source": "소관부처 게시판 첨부",
+            "official_url": hit["url"], "notice_no": hit["notice_no"],
+            "issued": hit["posted"], "effective": ""}
+
+
 def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict | None:
     res = requests.get(SEARCH_URL, params={"OC": api_key, "target": "admrul", "type": "XML",
                                            "query": query, "display": 20}, timeout=TIMEOUT)
     res.raise_for_status()
     try:
-        root = ET.fromstring(res.text)
+        root = safe_xml.fromstring(res.text)
     except ET.ParseError:
         return None
     hit = None
@@ -216,7 +382,7 @@ def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict |
                                                "type": "XML", "ID": rule_id}, timeout=TIMEOUT)
     detail.raise_for_status()
     try:
-        droot = ET.fromstring(detail.text)
+        droot = safe_xml.fromstring(detail.text)
     except ET.ParseError:
         return None
     # `itertext()` 로 통째로 긁으면 담당자 전화번호·부칙 이력·파일링크까지 본문이 된다.
@@ -242,7 +408,8 @@ def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict |
     }
 
 
-HEADER_FIELDS = ("doc_id", "source_type", "title", "official_url", "issuer", "date", "keys")
+HEADER_FIELDS = ("doc_id", "source_type", "title", "official_url", "issuer", "date",
+                 "notice_no", "keys")
 
 
 def write_doc(path: str, header: dict, body: str) -> None:
@@ -255,6 +422,86 @@ def write_doc(path: str, header: dict, body: str) -> None:
         f.write("\n".join(lines))
 
 
+def stored_notice(doc_id: str) -> dict | None:
+    """수집해 둔 고시의 헤더·고시번호. 없으면 None."""
+    path = os.path.join(OUT_DIR, f"{doc_id}.md")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        raw = f.read()
+    head, _, body = raw.partition("\n## 본문")
+    meta = dict(m.groups() for m in re.finditer(r"^-\s*([A-Za-z_]+):\s*(.*)$", head, re.M))
+    if not meta.get("notice_no"):
+        number = NOTICE_NO_RE.search(body)
+        meta["notice_no"] = "-".join(number.groups()) if number else ""
+    return meta
+
+
+def check_updates() -> int:
+    """소관부처 게시판에 **저장본보다 새 고시**가 올라왔는지만 본다(수집·저장 없음).
+
+    이 점검이 따로 필요한 이유: 고시는 예고 없이 개정되고 법제처 반영은 늦다. 실제로
+    출산전후휴가 급여등 상한액 고시가 2026-09-17 제2026-67호로 개정돼 배우자 유산·사산휴가가
+    신설됐는데, 저장본은 제2025-124호였다 — 게시판을 보지 않았으면 낡은 근거로 승인할 뻔했다.
+    금액이 그대로여도 본문이 바뀌면 sha256 이 달라져 승인 근거가 무효가 되므로 재수집이 필요하다.
+
+    **'확인 불가'를 '낡음'으로 보고하지 말 것.** 법제처 XML 본문에는 발령번호가 없어
+    그 경로로 수집한 문서는 번호를 알 수 없다. 재수집하면 헤더(`notice_no`)에 기록돼
+    다음부터 판정된다. 보건복지부 고시 2건이 그 상태인데, 게시판 본문은 "제1호 가목 중
+    '400천원'을 '410천원'으로" 같은 **일부개정 형식**이라 인용 근거로는 법제처 통합본이
+    낫다 — 번호만 헤더에 넣고 본문은 법제처에서 받는 것이 맞다(법제처 API 는 등록 IP 필요).
+    """
+    stale, unknown, failed, checked = [], [], [], 0
+    for doc_id, _query, exact, dept, _keys in ADMRULS:
+        if dept not in BOARDS:
+            print(f"  · {exact}: {dept} — 게시판 파서 없음, 수동 확인 필요")
+            continue
+        checked += 1
+        stored = stored_notice(doc_id)
+        board = board_find(dept, exact)          # 첨부는 받지 않는다(발령번호만 본다)
+        if not board:
+            # **조용히 넘기지 말 것.** 세지 않으면 요약이 "갱신 필요 0건"으로 나와
+            # 운영자가 '전부 최신'으로 읽는다 — 조회 실패와 최신은 다른 상태다.
+            failed.append((doc_id, exact))
+            print(f"  ✗ {exact}: 게시판 조회 실패(네트워크 또는 제목 불일치)")
+            continue
+        board_no = board["notice_no"]
+        if stored is None:
+            stale.append((doc_id, exact, "미수집", board_no))
+            print(f"  ⚠️ {exact}: 아직 수집하지 않았습니다 (게시판 {board_no or '?'})")
+            continue
+        mine = stored.get("notice_no") or ""
+        if not mine:
+            # 법제처 XML 본문에는 발령번호가 없다. 번호를 모르면 "낡았다"가 아니라
+            # "확인할 수 없다"가 맞다 — 재수집하면 헤더에 번호가 남아 다음부터 판정된다.
+            unknown.append((doc_id, exact, board_no or "?"))
+            print(f"  ? {exact}: 저장본에 발령번호 없음 (게시판 제{board_no or '?'}호) — 확인 불가")
+        elif not board_no:
+            # 게시판 번호를 못 읽은 것도 '낡음'이 아니다(docstring 원칙).
+            unknown.append((doc_id, exact, "게시판 번호 미파싱"))
+            print(f"  ? {exact}: 게시판 발령번호를 읽지 못함 — 확인 불가")
+        elif board_no == mine:
+            print(f"  ✓ {exact}: 최신 (제{board_no}호)")
+        else:
+            stale.append((doc_id, exact, mine, board_no or "?"))
+            print(f"  ⚠️ {exact}: 저장본 제{mine}호 → 게시판 제{board_no or '?'}호 — 재수집 필요")
+        time.sleep(0.2)
+    print(f"\n점검 {checked}건 · 갱신 필요 {len(stale)}건 · 확인 불가 {len(unknown)}건"
+          f" · 조회 실패 {len(failed)}건")
+    for doc_id, exact, old, new in stale:
+        print(f"  - {doc_id}: {exact}  제{old}호 → 제{new}호")
+    for doc_id, exact, new in unknown:
+        print(f"  ? {doc_id}: {exact}  (게시판 제{new}호, 저장본 번호 미기록)")
+    for doc_id, exact in failed:
+        print(f"  ✗ {doc_id}: {exact}  조회 실패")
+    if stale or unknown:
+        print("\n  재수집: python3 fetch_official_rules.py --only <기준키>")
+        print("  이후:   python3 pinecone_upload_official_rules.py")
+    # 부분 실패는 종료코드로 알린다 — 자동화에 넣었을 때 '갱신 필요'와 '조회 실패'를
+    # 구분하지 못하면 점검이 통과한 것처럼 보인다.
+    return 1 if (stale or failed) else 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -262,11 +509,15 @@ def main(argv=None) -> int:
     parser.add_argument("--only", help="이 기준 키에 관련된 문서만 수집")
     parser.add_argument("--skip-url-check", action="store_true",
                         help="official_url 확인 생략(오프라인 점검용 — 운영 수집에는 쓰지 말 것)")
+    parser.add_argument("--check-updates", action="store_true",
+                        help="수집하지 않고, 소관부처 게시판에 저장본보다 새 고시가 올라왔는지만 확인")
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
     load_dotenv(override=True)
     api_key = os.getenv("LAW_API_KEY")
+    if args.check_updates:
+        return check_updates()
     if not api_key:
         print("[오류] LAW_API_KEY 가 없습니다 — 법제처 조회 불가", file=sys.stderr)
         return 1
@@ -308,24 +559,57 @@ def main(argv=None) -> int:
     for doc_id, query, exact, dept, keys in ADMRULS:
         if args.only and args.only not in keys:
             continue
-        try:
-            doc = fetch_admrul(api_key, query, exact, dept)
-        except Exception as exc:
-            doc = None
-            print(f"  ✗ {exact}: {type(exc).__name__}")
+        # ① 소관부처 게시판 우선. 법제처는 시행일에야 페이지를 열어, 발령만 된 고시를
+        #    놓친다(2027년 최저임금 고시 실측). 게시판에는 발령 즉시 올라온다.
+        doc, url, issuer = None, None, None
+        if BOARDS.get(dept, {}).get("body"):
+            try:
+                doc = fetch_board_instruction(dept, exact)
+            except Exception as exc:
+                print(f"    ⚠️ {dept} 게시판 조회 실패({exact}): {type(exc).__name__}")
+            if doc:
+                # 본문은 게시판에서 받되, **법제처 페이지가 열리면 그 URL 을 쓴다** —
+                # 행정규칙 주소가 정식 인용이고 게시판 bbs_seq 보다 안정적이다. 이미 수집한
+                # 고시의 official_url 이 바뀌면 sha256 이 달라져 승인 근거가 무효가 되므로
+                # 불필요한 교체를 만들지 않는 쪽이 낫다. 시행 전 고시만 게시판 주소가 남는다.
+                canonical = admrul_url(exact)
+                use_canonical = not args.skip_url_check and url_resolves(canonical)
+                url = canonical if use_canonical else doc["official_url"]
+                issuer = (f"{dept} / 법제처 국가법령정보센터" if use_canonical
+                          else f"{dept} 훈령·예규·고시 게시판")
+        # ② 법제처 폴백 — 타 부처 고시와, 게시판에서 못 찾은 경우.
+        if not doc:
+            try:
+                doc = fetch_admrul(api_key, query, exact, dept)
+            except Exception as exc:
+                doc = None
+                print(f"  ✗ {exact}: {type(exc).__name__}")
+            if doc and doc["body"]:
+                url = admrul_url(exact)
+                issuer = f"{dept} / 법제처 국가법령정보센터"
+                if not args.skip_url_check and not url_resolves(url):
+                    failed.append((doc_id, exact, f"official_url 미확인: {url}"))
+                    print(f"  ✗ {exact}: official_url 이 열리지 않음")
+                    continue
         if not doc or not doc["body"]:
             failed.append((doc_id, exact, "고시 조회 실패/미수록"))
             print(f"  ✗ {exact}")
             continue
-        url = admrul_url(exact)
-        if not args.skip_url_check and not url_resolves(url):
-            failed.append((doc_id, exact, f"official_url 미확인: {url}"))
-            print(f"  ✗ {exact}: official_url 이 열리지 않음")
-            continue
+        # 발령번호는 **헤더에 남긴다.** 법제처 XML 본문에는 번호가 없어, 본문에서만 찾으면
+        # 그 문서는 영원히 "갱신 확인 불가"로 남는다. 본문을 법제처에서 받았더라도 번호는
+        # 게시판에서 가져온다(board_find 는 첨부를 받지 않아 싸다).
+        notice_no = doc.get("notice_no", "")
+        if not notice_no and dept in BOARDS:
+            try:
+                hit = board_find(dept, exact)
+                notice_no = hit["notice_no"] if hit else ""
+            except Exception:
+                notice_no = ""
         header = {"doc_id": doc_id, "source_type": "regulation",
                   "title": f"{exact} ({dept})", "official_url": url,
-                  "issuer": f"{dept} / 법제처 국가법령정보센터",
-                  "date": doc["effective"] or doc["issued"] or today, "keys": keys}
+                  "issuer": issuer,
+                  "date": doc["effective"] or doc["issued"] or today,
+                  "notice_no": notice_no, "keys": keys}
         print(f"  ✓ {exact}  ({len(doc['body'])}자 / {doc['body_source']}, "
               f"시행 {doc['effective'] or '?'})")
         if not args.dry_run:

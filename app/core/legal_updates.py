@@ -27,7 +27,10 @@ class Conflict(RuleError):
     pass
 
 
-OFFICIAL_HOSTS = ("law.go.kr", "moel.go.kr", "scourt.go.kr", "work24.go.kr",
+# 승인 근거로 허용하는 공식 호스트. `mohw.go.kr`(보건복지부)은 국민연금 기준소득월액·
+# 건강보험료 상하한 고시의 **발령 기관**이다 — 법제처가 시행일에야 페이지를 여는 동안
+# 소관부처 게시판이 유일한 1차 출처이므로 함께 둔다(moel.go.kr과 같은 이유).
+OFFICIAL_HOSTS = ("law.go.kr", "moel.go.kr", "mohw.go.kr", "scourt.go.kr", "work24.go.kr",
                   "ei.go.kr", "nps.or.kr", "nhis.or.kr", "comwel.or.kr", "nts.go.kr")
 SOURCE_TYPES = {"law", "statute", "regulation", "interpretation", "precedent"}
 PROPOSAL_FIELDS = {"topic", "kind", "key", "value", "effective_from", "effective_to",
