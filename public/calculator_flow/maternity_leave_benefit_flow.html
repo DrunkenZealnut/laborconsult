@@ -367,7 +367,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <rect x="120" y="200" width="440" height="76" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="224" text-anchor="middle" dominant-baseline="central">수당 계산</text>
 <text class="ts" x="340" y="244" text-anchor="middle" dominant-baseline="central">유급액 = 1일 통상임금 x 20일 (사업주 부담) · 고용보험 지원 상한 1,684,210원</text>
-<text class="ts" x="340" y="262" text-anchor="middle" dominant-baseline="central">= 통상시급 x 1일 소정근로시간 x 20</text>
+<text class="ts" x="340" y="262" text-anchor="middle" dominant-baseline="central">= 통상시급 x 1일 소정근로시간 x 20 (이 화면은 주 40시간·1일 8시간 가정)</text>
 </g>
 
 <line x1="340" y1="276" x2="340" y2="310" class="arr" marker-end="url(#a2)"/>
@@ -489,13 +489,23 @@ function calc(){
   document.getElementById('totalPay').textContent=fmt(totalAll)+'원';
   document.getElementById('detail').innerHTML=lines.join('');
 
-  var dailyOrd=ww/30;
+  // 1일 통상임금 = 통상시급 x 1일 소정근로시간(근로기준법 시행령 제6조). 월급 ÷ 30 은
+  // 평균임금식 일할계산이라 통상임금이 아니다 — 이 화면의 산식·예시, 그리고 계산기
+  // (maternity_leave.py: hourly_ordinary_wage x daily_work_hours)와도 어긋났다.
+  // 월 소정근로시간은 (주 소정 40h + 주휴 8h) x 365/7/12 = 208.6h 다. 최저임금 월환산에
+  // 쓰는 209h 와는 다른 값이니 섞지 말 것 — ordinary_wage._get_base_hours 와 같은 수치다.
+  var BASE_HOURS=208.6;
+  // 계산기가 통상시급을 소수 2자리로 반올림한 뒤 곱하므로 순서까지 같게 맞춘다
+  // (안 맞추면 화면과 챗봇 답변이 1원씩 어긋난다).
+  var hourlyOrd=Math.round(ww/BASE_HOURS*100)/100;
+  var dailyOrd=hourlyOrd*8;
   // 유급액(사업주 의무)과 고용보험 지원분(상한 적용)은 다른 금액이다.
   var spouseGross=Math.round(dailyOrd*20);
   var spouseCap=1684210;   // 고용노동부고시 제2025-124호, 20일분
   var spouseAmt=Math.min(spouseGross, spouseCap);
   document.getElementById('spouse').textContent =
-    '1일 통상임금 '+fmt(Math.round(dailyOrd))+'원 x 20일 = 유급액 '+fmt(spouseGross)+'원'
+    '통상시급 '+fmt(Math.round(hourlyOrd))+'원 x 8시간 = 1일 '+fmt(Math.round(dailyOrd))+'원'
+    + ' → 20일 유급액 '+fmt(spouseGross)+'원'
     + (spouseGross>spouseCap ? ' / 고용보험 지원 '+fmt(spouseAmt)+'원(상한)' : ' / 고용보험 지원 '+fmt(spouseAmt)+'원');
 
   // Timeline
