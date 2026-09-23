@@ -26,6 +26,8 @@ import sys
 import time
 import urllib.parse as urlparse
 import xml.etree.ElementTree as ET
+
+from app.core import safe_xml
 from datetime import date, timezone, timedelta
 
 import requests
@@ -120,7 +122,7 @@ def fetch_article_xml(api_key: str, law_name: str, article_no: int, sub: int | N
                                             "LM": law_name}, timeout=TIMEOUT)
     res.raise_for_status()
     try:
-        root = ET.fromstring(res.text)
+        root = safe_xml.fromstring(res.text)
     except ET.ParseError:
         return None
     if root.tag != "법령":                      # 미매칭·자격증명 오류도 HTTP 200 이다
@@ -313,7 +315,7 @@ def _attachment_text(raw: bytes, name: str) -> str:
             if b"<!DOCTYPE" in head or b"<!ENTITY" in data[:65536]:
                 print(f"    ⚠️ DTD/엔티티 선언이 있는 첨부는 건너뜁니다: {name}")
                 continue
-            root = ET.fromstring(data)
+            root = safe_xml.fromstring(data)
             for node in root.iter():
                 if node.tag.rsplit("}", 1)[-1] != "p":
                     continue
@@ -360,7 +362,7 @@ def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict |
                                            "query": query, "display": 20}, timeout=TIMEOUT)
     res.raise_for_status()
     try:
-        root = ET.fromstring(res.text)
+        root = safe_xml.fromstring(res.text)
     except ET.ParseError:
         return None
     hit = None
@@ -380,7 +382,7 @@ def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict |
                                                "type": "XML", "ID": rule_id}, timeout=TIMEOUT)
     detail.raise_for_status()
     try:
-        droot = ET.fromstring(detail.text)
+        droot = safe_xml.fromstring(detail.text)
     except ET.ParseError:
         return None
     # `itertext()` 로 통째로 긁으면 담당자 전화번호·부칙 이력·파일링크까지 본문이 된다.

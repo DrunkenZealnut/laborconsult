@@ -1231,6 +1231,57 @@ def test_tokenizer_contract() -> None:
           "단일 출처·색인 한정·2음절 보존·어미 우선·보호어 40종 자기보존·NFD 정규화")
 
 
+def test_safe_xml_single_choke_point() -> None:
+    """원격 XML 파싱은 `app.core.safe_xml` 한 곳만 거친다.
+
+    이 저장소가 파싱하는 XML 은 전부 원격 HTTP 응답이고(법제처 API·게시판 첨부),
+    stdlib ElementTree 는 내부 엔티티를 확장한다 — 1KB 가 파싱 중 수 GB 로 부푼다.
+    `legal_api.py` 의 호출부는 **상담 요청 경로**에 있어 그 확장이 곧 서비스 정지다.
+    한 곳만 막으면 나머지가 남아 '막았다'는 오해만 만들므로 진입점을 하나로 고정한다.
+    """
+    import os
+    import re
+    from xml.etree import ElementTree as ET
+    from app.core import safe_xml
+
+    # ① 거부가 기존 폴백에 걸리도록 ET.ParseError 하위여야 한다
+    assert issubclass(safe_xml.UnsafeXML, ET.ParseError)
+    try:
+        safe_xml.fromstring(b'<!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>')
+        raise AssertionError("DTD/엔티티 선언이 통과됨")
+    except ET.ParseError:
+        pass
+    assert safe_xml.fromstring(b"<law><name>x</name></law>").findtext("name") == "x"
+
+    # ② defusedxml 이 없어도 안전해야 한다(선택 의존성 — 조용히 안전하지 않아지면 안 된다)
+    saved = safe_xml._defused_fromstring
+    safe_xml._defused_fromstring = None
+    try:
+        try:
+            safe_xml.fromstring(b'<!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>')
+            raise AssertionError("defusedxml 없을 때 DTD 가 통과됨")
+        except ET.ParseError:
+            pass
+    finally:
+        safe_xml._defused_fromstring = saved
+
+    # ③ 새 호출부가 stdlib 로 새지 않는지 — 이 단언이 단일 창구를 유지하는 장치다
+    leaked = []
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"}
+                   and not d.startswith("output_")]
+        for name in files:
+            if not name.endswith(".py") or name.startswith("test_") or name == "safe_xml.py":
+                continue
+            path = os.path.join(root, name)
+            with open(path, encoding="utf-8") as f:
+                body = f.read()
+            if re.search(r"(?<!safe_xml\.)\bET\.fromstring\(", body):
+                leaked.append(path)
+    assert not leaked, f"stdlib ET.fromstring 직접 호출 — safe_xml.fromstring 을 쓸 것: {leaked}"
+    print("  ✅ safe_xml: DTD 거부·ParseError 하위·defusedxml 폴백·단일 창구 유지")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -1258,6 +1309,7 @@ def main() -> None:
     test_offline_index_not_on_request_path()
     test_bm25_interning()
     test_tokenizer_contract()
+    test_safe_xml_single_choke_point()
     print("\n✅ 오프라인 단위 테스트 전부 통과")
 
 
