@@ -1263,6 +1263,12 @@ def test_safe_xml_single_choke_point() -> None:
         ("긴 처리지시문 뒤 DTD",
          b"<?xml?><?pi " + b"y" * 6000 + b'?><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'),
     ]
+    # UTF-16 은 `<!DOCTYPE` 이 `<\x00!\x00D\x00…` 로 들어가 **바이트 검색이 통째로 빗나간다**
+    # (실측: UTF-16·UTF-16-BE 에서 엔티티가 그대로 확장됐다 — CodeRabbit PR #80).
+    # 파서는 BOM 을 보고 디코드하므로 검사도 같은 눈으로 봐야 한다.
+    _bomb = '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aa">]><law>&a;</law>'
+    bypass += [(f"{enc} 인코딩 DTD", _bomb.encode(enc))
+               for enc in ("utf-16", "utf-16-be", "utf-16-le", "utf-32")]
 
     # ② defusedxml 이 없어도 안전해야 한다(선택 의존성 — 조용히 안전하지 않아지면 안 된다).
     #    우회 케이스는 **폴백 경로에서** 검사해야 의미가 있다 — defusedxml 이 있으면
@@ -1279,6 +1285,10 @@ def test_safe_xml_single_choke_point() -> None:
         # 본문에 들어간 문자열은 거부하면 안 된다(정상 문서 손실)
         cdata = b"<law><t><![CDATA[<!ENTITY fake \"z\">]]></t></law>"
         assert safe_xml.fromstring(cdata) is not None, "CDATA 안의 문자열을 선언으로 오인"
+        # 인코딩 인식이 정상 문서를 잃게 하면 안 된다(한글 본문 포함)
+        for enc in ("utf-8", "utf-16"):
+            ok = safe_xml.fromstring('<?xml version="1.0"?><law><n>최저임금</n></law>'.encode(enc))
+            assert ok.findtext("n") == "최저임금", f"{enc} 정상 문서가 깨짐"
     finally:
         safe_xml._defused_fromstring = saved
 
@@ -1296,7 +1306,7 @@ def test_safe_xml_single_choke_point() -> None:
             if re.search(r"(?<!safe_xml\.)\bET\.fromstring\(", body):
                 leaked.append(path)
     assert not leaked, f"stdlib ET.fromstring 직접 호출 — safe_xml.fromstring 을 쓸 것: {leaked}"
-    print("  ✅ safe_xml: prolog 전체 검사(우회 2종)·ParseError 하위·폴백 안전·CDATA 오탐 없음·단일 창구")
+    print("  ✅ safe_xml: prolog 전체 검사(우회 6종·UTF-16 포함)·폴백 안전·오탐 없음·단일 창구")
 
 
 def main() -> None:
