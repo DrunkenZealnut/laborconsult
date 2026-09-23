@@ -63,6 +63,13 @@ SPOUSE_LEAVE_UPPER_PERIODS: dict[str, float] = {
 }
 
 
+def _won(value: float) -> str:
+    """금액 표시. 통상임금은 원 미만이 남으므로 그때만 소수 2자리까지 보인다 —
+    정수로 반올림해 보여 주면 화면의 산식이 서로 곱해지지 않는다
+    (실측: 95,877 × 20 = 1,917,540 ≠ 표시된 합계 1,917,546)."""
+    return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}"
+
+
 def _effective(periods: dict, reference_date: str | None, year: int):
     """시행일 구간표에서 그 시점의 값. 날짜가 없으면 그 해 1월 1일 기준. 이전이면 None."""
     day = reference_date or f"{int(year):04d}-01-01"
@@ -248,7 +255,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     spouse_pay = daily_ordinary * spouse_days
     formulas.append(
         f"배우자 출산휴가({spouse_days}일, 유급): "
-        f"{daily_ordinary:,.0f}원/일 × {spouse_days}일 = {spouse_pay:,.0f}원"
+        f"{_won(daily_ordinary)}원/일 × {spouse_days}일 = {spouse_pay:,.0f}원"
     )
     legal.append("남녀고용평등법 제18조의2 (배우자 출산휴가)")
 

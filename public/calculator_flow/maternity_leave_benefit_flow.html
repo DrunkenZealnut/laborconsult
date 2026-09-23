@@ -494,6 +494,9 @@ function calc(){
   // (maternity_leave.py: hourly_ordinary_wage x daily_work_hours)와도 어긋났다.
   // 월 소정근로시간은 (주 소정 40h + 주휴 8h) x 365/7/12 = 208.6h 다. 최저임금 월환산에
   // 쓰는 209h 와는 다른 값이니 섞지 말 것 — ordinary_wage._get_base_hours 와 같은 수치다.
+  // 통상임금은 원 미만이 남는다. 정수로 반올림해 보여 주면 화면의 산식이 서로
+  // 곱해지지 않는다(11,985 x 8 = 95,880 ≠ 표시된 95,877). 그때만 소수 2자리.
+  var won=function(v){return (Math.round(v*100)/100).toLocaleString('ko-KR',{maximumFractionDigits:2});};
   var BASE_HOURS=208.6;
   // 계산기가 통상시급을 소수 2자리로 반올림한 뒤 곱하므로 순서까지 같게 맞춘다
   // (안 맞추면 화면과 챗봇 답변이 1원씩 어긋난다).
@@ -504,7 +507,7 @@ function calc(){
   var spouseCap=1684210;   // 고용노동부고시 제2025-124호, 20일분
   var spouseAmt=Math.min(spouseGross, spouseCap);
   document.getElementById('spouse').textContent =
-    '통상시급 '+fmt(Math.round(hourlyOrd))+'원 x 8시간 = 1일 '+fmt(Math.round(dailyOrd))+'원'
+    '통상시급 '+won(hourlyOrd)+'원 x 8시간 = 1일 '+won(dailyOrd)+'원'
     + ' → 20일 유급액 '+fmt(spouseGross)+'원'
     + (spouseGross>spouseCap ? ' / 고용보험 지원 '+fmt(spouseAmt)+'원(상한)' : ' / 고용보험 지원 '+fmt(spouseAmt)+'원');
 
