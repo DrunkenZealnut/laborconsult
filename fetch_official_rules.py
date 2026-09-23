@@ -303,7 +303,17 @@ def _attachment_text(raw: bytes, name: str) -> str:
         # 문단(hp:p) 단위로 묶고 run(hp:t)은 **붙여서** 잇는다. 엔티티도 파서가 푼다.
         out = []
         for entry in sorted(n for n in z.namelist() if "section" in n and n.endswith(".xml")):
-            root = ET.fromstring(z.read(entry))
+            data = z.read(entry)
+            # **DTD·엔티티 선언이 있으면 파싱하지 않는다.** stdlib ElementTree 는 내부
+            # 엔티티를 확장하므로, 1KB 짜리 XML 이 파싱 중에 수 GB 로 부풀 수 있다
+            # ("billion laughs"). 원격 첨부라 남이 만든 바이트다. HWPX 의 section XML 은
+            # DOCTYPE 을 쓰지 않으므로 거부해도 정상 문서를 잃지 않는다 —
+            # defusedxml 의존성을 더하는 대신 공격 조건 자체를 없앤다.
+            head = data[:4096].lstrip()
+            if b"<!DOCTYPE" in head or b"<!ENTITY" in data[:65536]:
+                print(f"    ⚠️ DTD/엔티티 선언이 있는 첨부는 건너뜁니다: {name}")
+                continue
+            root = ET.fromstring(data)
             for node in root.iter():
                 if node.tag.rsplit("}", 1)[-1] != "p":
                     continue
