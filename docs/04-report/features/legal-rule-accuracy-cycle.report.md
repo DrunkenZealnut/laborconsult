@@ -415,7 +415,7 @@ node                      35개 통과 (admin_legal_rules 14 + public_fetch + ki
 - **`_employer_and_insurance(daily_wage, paid_days, insurance_days, is_priority, upper_total)`** — 핵심 수치 분리. 유급액(`daily_wage × paid_days`)은 상한을 절대 보지 않고, 고용보험 급여만 `is_priority`로 게이팅되고 `upper_total`로 상한이 걸린다. `paid_days`≠`insurance_days`(배우자 출산휴가 2025년 개정 전 10일/5일)도 인자로 분리해 수용한다.
 - **`_benefit_warning(label, days, pay, benefit, is_priority)`** — 세 휴가(배우자 출산·난임치료·배우자 유산사산)가 공유하던 "차액은 사업주가 부담" 경고 문구를 통합.
 
-세 호출부(배우자 출산휴가, `_daily_leave` 클로저 내부 2건)를 전부 이 함수로 교체했다. 1일 상한(난임·유산사산)과 기간 총액 상한(배우자 출산)은 `upper_total = daily_upper × paid_days`로 호출 전에 환산해 같은 인터페이스로 넘긴다 — `min(a,b)×n == min(a×n,b×n)`(n>0)이 성립해 두 상한 방식이 수학적으로 동치이기 때문이다.
+세 호출부(배우자 출산휴가, `_daily_leave` 클로저 내부 2건)를 전부 이 함수로 교체했다. 두 고시가 상한을 **다른 단위**로 정하므로 `upper_total` 산출 방식도 호출부마다 다르다 — 배우자 출산휴가(`SPOUSE_LEAVE_UPPER_PERIODS`)는 이미 그 일수에 대한 **기간 총액**이라 그대로 넘기고, 난임·유산사산휴가는 고시가 **1일 단가**(`daily_upper`)로만 정하므로 호출 전에 `upper_total = daily_upper × paid_days`로 환산해 넘긴다. `_employer_and_insurance` 쪽에서 보면 둘 다 "그 유급 일수 전체에 대한 상한 총액"이라는 같은 의미의 인자이므로 함수 내부는 `min(insurance_raw, upper_total)` 한 줄로 통일된다 — `min(a,b)×n == min(a×n,b×n)`(n>0)은 후자(1일 단가→총액) 변환이 안전함을 보이는 근거이지, 두 호출부가 같은 변환을 거친다는 뜻은 아니다.
 
 ### 12.2 검증
 
