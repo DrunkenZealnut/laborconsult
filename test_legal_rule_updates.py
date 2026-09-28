@@ -185,6 +185,82 @@ class LegalUpdatesTest(unittest.TestCase):
         self.assertEqual(result["new_count"], 1)
         self.assertEqual(len(self.store.document["records"]), 1)
 
+    def test_scan_collapses_chunks_of_the_same_source_url_into_one_candidate(self):
+        base = self.evidence.fetch("fixture-law")
+        chunks = [dict(base, id=f"fixture-law-chunk-{i}") for i in range(3)]
+        with patch.object(self.evidence, "search", return_value=chunks):
+            result = self.service.scan("minimum_wage", "worker")
+        self.assertEqual(result["hit_count"], 3)
+        self.assertEqual(result["new_count"], 1)
+        self.assertEqual(len(self.store.document["records"]), 1)
+
+    def test_scan_does_not_recreate_candidate_for_a_later_chunk_of_an_already_seen_document(self):
+        base = self.evidence.fetch("fixture-law")
+        with patch.object(self.evidence, "search", return_value=[dict(base, id="fixture-law-chunk-0")]):
+            self.service.scan("minimum_wage", "worker")
+        self.assertEqual(len(self.store.document["records"]), 1)
+        first = self.store.document["records"][0]
+        self.service.transition(first["id"], "reject", self.store.revision, "admin-test", "테스트 fixture 반려")
+        with patch.object(self.evidence, "search", return_value=[dict(base, id="fixture-law-chunk-1")]):
+            result = self.service.scan("minimum_wage", "worker")
+        self.assertEqual(result["new_count"], 0)
+        self.assertEqual(len(self.store.document["records"]), 1)
+
+    def test_scan_flags_nonofficial_hit_when_an_official_hit_shares_the_topic(self):
+        base = self.evidence.fetch("fixture-law")
+        official = dict(base, id="official-doc", url="https://www.moel.go.kr/official-doc")
+        nonofficial = dict(base, id="nonofficial-doc", url="https://www.nodong.kr/nonofficial-doc")
+        with patch.object(self.evidence, "search", return_value=[official, nonofficial]):
+            result = self.service.scan("minimum_wage", "worker")
+        self.assertEqual(result["new_count"], 2)
+        notes = {r["evidence_id"]: r["note"] for r in self.store.document["records"]}
+        self.assertNotIn("⚠️", notes["official-doc"])
+        self.assertIn("⚠️", notes["nonofficial-doc"])
+
+    def test_scan_flags_earlier_pending_nonofficial_when_official_arrives_later(self):
+        base = self.evidence.fetch("fixture-law")
+        nonofficial = dict(base, id="nonofficial-first", url="https://www.nodong.kr/nonofficial-first")
+        official = dict(base, id="official-later", url="https://www.moel.go.kr/official-later")
+        with patch.object(self.evidence, "search", return_value=[nonofficial]):
+            self.service.scan("minimum_wage", "worker")
+        self.assertNotIn("⚠️", self.store.document["records"][0]["note"])
+        with patch.object(self.evidence, "search", return_value=[official]):
+            self.service.scan("minimum_wage", "worker")
+        notes = {r["evidence_id"]: r["note"] for r in self.store.document["records"]}
+        self.assertIn("⚠️", notes["nonofficial-first"])
+        self.assertNotIn("⚠️", notes["official-later"])
+        # 경고를 새로 붙인 기존 후보도 이력에 남는다.
+        ids = {r["evidence_id"]: r["id"] for r in self.store.document["records"]}
+        changed = {r["id"] for r in self.store.events[-1]["payload"]["records"]}
+        self.assertEqual(changed, {ids["nonofficial-first"], ids["official-later"]})
+
+    def test_scan_keeps_distinct_source_urls_apart_even_if_official_url_matches(self):
+        base = self.evidence.fetch("fixture-law")
+        shared = "https://www.law.go.kr/shared-official"
+        official = dict(base, id="official-copy", url="https://www.moel.go.kr/a", official_url=shared)
+        reprint = dict(base, id="reprint-copy", url="https://www.nodong.kr/b", official_url=shared)
+        with patch.object(self.evidence, "search", return_value=[official, reprint]):
+            result = self.service.scan("minimum_wage", "worker")
+        self.assertEqual(result["new_count"], 2)
+
+    def test_scan_flags_reprint_whose_official_url_points_to_the_original(self):
+        base = self.evidence.fetch("fixture-law")
+        official = dict(base, id="official-src", url="https://www.moel.go.kr/src")
+        reprint = dict(base, id="reprint-src", url="https://www.nodong.kr/src",
+                       official_url="https://www.moel.go.kr/src")
+        with patch.object(self.evidence, "search", return_value=[official, reprint]):
+            self.service.scan("minimum_wage", "worker")
+        notes = {r["evidence_id"]: r["note"] for r in self.store.document["records"]}
+        self.assertNotIn("⚠️", notes["official-src"])
+        self.assertIn("⚠️", notes["reprint-src"])
+
+    def test_scan_does_not_flag_nonofficial_hit_when_no_official_hit_exists(self):
+        base = self.evidence.fetch("fixture-law")
+        nonofficial = dict(base, id="nonofficial-only", url="https://www.nodong.kr/nonofficial-only")
+        with patch.object(self.evidence, "search", return_value=[nonofficial]):
+            self.service.scan("minimum_wage", "worker")
+        self.assertNotIn("⚠️", self.store.document["records"][0]["note"])
+
     def test_request_scope_resets_on_exception_and_has_provenance(self):
         record = self.add()
         self.approve(record)
@@ -491,10 +567,15 @@ class LegalUpdatesTest(unittest.TestCase):
         self.assertEqual(self.store.events[-1]["payload"]["records"][0]["status"], "approved")
 
         # 검색은 이번 실행에서 **새로 만든** 후보만 담는다(기존 후보 재복제 금지).
-        self.service.scan("minimum_wage", "worker")
-        self.assertEqual(len(self.store.events[-1]["payload"]["records"]), 1)
-        self.service.scan("minimum_wage", "worker")
-        self.assertEqual(self.store.events[-1]["payload"]["records"], [])
+        # 이미 승인에 쓰인 fixture-law와는 다른 url을 써서 문서 단위 중복방지(위 scan 테스트들)와
+        # 섞이지 않게 한다 — 이 테스트가 보는 건 이력 payload 모양이지 발견 자체가 아니다.
+        scan_only = dict(self.evidence.fetch("fixture-law"), id="scan-only-doc",
+                         url="https://www.moel.go.kr/scan-only-doc")
+        with patch.object(self.evidence, "search", return_value=[scan_only]):
+            self.service.scan("minimum_wage", "worker")
+            self.assertEqual(len(self.store.events[-1]["payload"]["records"]), 1)
+            self.service.scan("minimum_wage", "worker")
+            self.assertEqual(self.store.events[-1]["payload"]["records"], [])
 
     def test_insurance_parameters_do_not_mutate_static_table(self):
         from wage_calculator.constants import get_insurance_rates, INSURANCE_RATES
