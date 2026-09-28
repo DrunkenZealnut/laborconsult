@@ -94,12 +94,12 @@ def build_corpus() -> None:
             pages = 0
             pagination_token = None
             while True:
-                # index.list()+fetch(by id)는 이 계정에서 list()가 반환한 ID가
-                # fetch()에서 일관되게 0건으로 돌아오는 문제가 있어(list()의
-                # ID 인덱스가 실제 벡터 데이터와 어긋난 것으로 보임 —
-                # query()/fetch_by_metadata는 정상 동작함을 확인) 메타데이터
-                # 필터 기반 페이지네이션으로 우회한다. chunk_index는 모든
-                # 청크에 항상 존재하는 정수 필드라 전체 매치용으로 사용.
+                # 메타데이터 필터 기반 페이지네이션. chunk_index는 모든 청크에
+                # 항상 존재하는 정수 필드라 전체 매치용으로 사용.
+                # (구 주석의 "list()+fetch()가 0건"은 인덱스 이상이 아니었다 —
+                # list()는 str이 아니라 ListItem을 돌려주고, 그대로 fetch(ids=)에
+                # 넘기면 예외 없이 0건이 온다. `.id`로 풀면 정상 동작한다(2026-09-27
+                # 실측). 다만 처리량 이득이 없어 이 경로를 유지한다.)
                 resp = _fetch_page(index, ns, pagination_token)
                 pages += 1
                 for vid, vec in resp.vectors.items():
