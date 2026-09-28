@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
+import re
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -133,6 +134,33 @@ def official_evidence(evidence):
         host == h or host.endswith("." + h) for h in OFFICIAL_HOSTS
     ):
         raise EvidenceError("Pinecone 메타데이터에 공식 원문 HTTPS 주소가 필요합니다")
+
+
+# 최저임금고시(2026) 실측: law.go.kr 공식 원문 1건 + nodong.kr 훈령·예규·고시 재수록본이
+# 청킹으로 쪼개진 3건 = 같은 사안이 legal_review 후보 4건으로 쌓였다(2026-09-22 스캔).
+# 근본 원인은 discovery_key가 (topic, evidence_id, sha256)만 봐서 "같은 벡터인가"만 막고
+# "같은 출처 문서인가"는 막지 못하는 것. _document_key는 그 빈틈을 정확일치로만 메운다 —
+# 제목·내용 유사도 같은 퍼지 매칭은 쓰지 않는다(오억제가 오탐지보다 위험하다는 이 코드베이스의
+# 반복된 교훈: PROTECTED_TERMS·판례 대표사건번호 등과 같은 이유).
+_CHUNK_SUFFIX_RE = re.compile(r"_chunk_\d+$")
+
+
+def _document_key(evidence):
+    """같은 근거 문서의 여러 청크를 하나로 묶는 키. url이 있으면 그걸로 충분히 정밀하고,
+    없으면(단일 벡터라 청크 접미사만 다른 경우) id에서 `_chunk_N`만 벗겨 묶는다. 둘 다
+    없으면 id 그대로 — 서로 다른 문서를 잘못 묶는 것보다 안 묶는 쪽이 안전하다."""
+    url = (evidence or {}).get("official_url") or (evidence or {}).get("url")
+    if url:
+        return url
+    return _CHUNK_SUFFIX_RE.sub("", (evidence or {}).get("id", ""))
+
+
+def _is_official(evidence):
+    try:
+        official_evidence(evidence)
+        return True
+    except EvidenceError:
+        return False
 
 
 def checked_proposal(payload, evidence):
@@ -268,21 +296,40 @@ class LegalUpdateService:
             hits, status = [], "failed"
         scan = {"id": str(uuid4()), "topic": topic, "query": query, "status": status,
                 "searched_at": now(), "hit_count": len(hits), "new_count": 0}
+        # 이 스캔의 hits 안에 공식 원문이 섞여 있는가 — store 조회 없이 먼저 계산해 둔다.
+        # topic 전체 맥락(과거 스캔분 포함)은 루프 안에서 이미 불러온 document로 마저 본다.
+        official_in_hits = any(_is_official(evidence) for evidence in hits)
         for attempt in range(3):
             revision, document = self.store.load()
             seen = {r.get("discovery_key") for r in document["records"]}
+            seen_docs = {(r.get("topic"), _document_key(r.get("evidence")))
+                        for r in document["records"]}
+            # 이 topic에 공식 원문 후보가 (이번 스캔이든 과거든) 이미 있었는가. 있다면
+            # 비공식 후보를 막지는 않되(조용한 손실은 만들지 않는다) 메모에 표시해 관리자가
+            # "이거 아까 그거랑 같은 사안 아닌가"를 원문 대조 없이 바로 알아보게 한다.
+            official_context = official_in_hits or any(
+                r.get("topic") == topic and _is_official(r.get("evidence") or {})
+                for r in document["records"])
             fresh_keys = set()
             scan["new_count"] = 0
             for evidence in hits:
                 discovery_key = fingerprint([topic, evidence["id"], evidence["sha256"]])
                 if discovery_key in seen:
                     continue
+                doc_key = (topic, _document_key(evidence))
+                if doc_key in seen_docs:
+                    # 같은 출처 문서(같은 url)의 다른 청크 — 이미 후보가 있으니 새로 만들지 않는다.
+                    continue
                 seen.add(discovery_key)
+                seen_docs.add(doc_key)
                 fresh_keys.add(discovery_key)
+                note = "자동 검색 후보: 실제 개정 여부와 적용범위 검토 필요"
+                if official_context and not _is_official(evidence):
+                    note += " ⚠️ 같은 주제에 공식 원문 근거 후보가 이미 있습니다 — 동일 사안 중복 여부를 먼저 확인하세요"
                 document["records"].append({
                     "id": str(uuid4()), "topic": topic, "kind": "legal_review", "key": "", "value": None,
                     "effective_from": None, "effective_to": None, "evidence_id": evidence["id"],
-                    "quote": "", "citation": "", "note": "자동 검색 후보: 실제 개정 여부와 적용범위 검토 필요",
+                    "quote": "", "citation": "", "note": note,
                     "evidence": evidence, "status": "pending", "origin": "scan",
                     "discovery_key": discovery_key, "created_at": now(), "updated_at": now(), "created_by": actor,
                 })

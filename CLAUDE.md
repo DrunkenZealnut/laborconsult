@@ -574,6 +574,16 @@ wage_calculator/
   받는다). 화면에 그 사실이 없어 "검색 → 승인"이 거절 메시지로만 끝나던 것을 `scanHint()` 배너 +
   `to-parameter` 전환 버튼이 대체한다. 값 추출은 여전히 사람이 한다 — 자동화하면 위의 전체요율·
   최종연도값을 그대로 집어넣는다.
+- **`discovery_key`(`topic, evidence_id, sha256`)는 "같은 벡터인가"만 막지 "같은 출처 문서인가"는
+  막지 못한다.** 실측(2026-09-22): 최저임금고시(2026)가 law.go.kr 공식 원문 1건 +
+  nodong.kr 훈령·예규·고시 재수록본이 청킹된 3건 = `legal_review` 후보 4건으로 쌓였다(같은 사안,
+  다른 벡터). `scan()`의 `_document_key()`가 같은 url(=같은 출처 문서)의 여러 청크를 **정확일치로만**
+  한 후보로 묶는다 — 제목 유사도 같은 퍼지 매칭은 안 쓴다(오억제가 오탐지보다 위험하다는 이 문서
+  반복된 교훈). law.go.kr 공식원문 vs nodong.kr 재수록본처럼 **url 자체가 다른** 교차-파이프라인
+  중복은 이 매칭으로 못 잡는다 — 그 경우는 후보를 지우지 않고(조용한 손실 방지) 같은 topic에 공식
+  근거가 이미 있으면 비공식 후보의 `note`에 ⚠️ 표시만 덧붙여 사람이 최종 판단한다. 회귀는
+  `test_legal_rule_updates.py`의 `test_scan_collapses_*`/`test_scan_does_not_recreate_*`/
+  `test_scan_flags_*`/`test_scan_does_not_flag_*`.
 - **저장은 `legal_rules_save` RPC 단일 경로**(CAS + 행 잠금 + 이력 INSERT 한 트랜잭션). 테이블은
   anon/authenticated 접근 불가이고 service_role도 직접 UPDATE/DELETE 대신 이 RPC를 쓴다. 스키마 대조는
   `check_schema.py`가 LOCKED_TABLES(anon 차단 확인) + service-role 읽기 + RPC 존재로 3중 확인한다 —
