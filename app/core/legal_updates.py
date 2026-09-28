@@ -146,13 +146,20 @@ _CHUNK_SUFFIX_RE = re.compile(r"_chunk_\d+$")
 
 
 def _document_key(evidence):
-    """같은 근거 문서의 여러 청크를 하나로 묶는 키. url이 있으면 그걸로 충분히 정밀하고,
-    없으면(단일 벡터라 청크 접미사만 다른 경우) id에서 `_chunk_N`만 벗겨 묶는다. 둘 다
-    없으면 id 그대로 — 서로 다른 문서를 잘못 묶는 것보다 안 묶는 쪽이 안전하다."""
-    url = (evidence or {}).get("official_url") or (evidence or {}).get("url")
+    """같은 근거 문서의 여러 청크를 하나로 묶는 키. 출처 `url`이 있으면 그걸로 충분히
+    정밀하고, 없으면(단일 벡터라 청크 접미사만 다른 경우) id에서 `_chunk_N`만 벗겨 묶는다.
+    둘 다 없으면 id 그대로 — 서로 다른 문서를 잘못 묶는 것보다 안 묶는 쪽이 안전하다.
+
+    `official_url`보다 `url`이 **먼저**다. 재수록본도 공식 원문을 가리키는 official_url을
+    가질 수 있어, 그걸 먼저 쓰면 출처가 다른 두 문서가 같은 키가 되어 뒤의 것이 경고
+    없이 사라진다(CodeRabbit PR #84)."""
+    url = (evidence or {}).get("url") or (evidence or {}).get("official_url")
     if url:
         return url
     return _CHUNK_SUFFIX_RE.sub("", (evidence or {}).get("id", ""))
+
+
+_DUPLICATE_WARNING = " ⚠️ 같은 주제에 공식 원문 근거 후보가 이미 있습니다 — 동일 사안 중복 여부를 먼저 확인하세요"
 
 
 def _is_official(evidence):
@@ -325,7 +332,7 @@ class LegalUpdateService:
                 fresh_keys.add(discovery_key)
                 note = "자동 검색 후보: 실제 개정 여부와 적용범위 검토 필요"
                 if official_context and not _is_official(evidence):
-                    note += " ⚠️ 같은 주제에 공식 원문 근거 후보가 이미 있습니다 — 동일 사안 중복 여부를 먼저 확인하세요"
+                    note += _DUPLICATE_WARNING
                 document["records"].append({
                     "id": str(uuid4()), "topic": topic, "kind": "legal_review", "key": "", "value": None,
                     "effective_from": None, "effective_to": None, "evidence_id": evidence["id"],
@@ -334,11 +341,26 @@ class LegalUpdateService:
                     "discovery_key": discovery_key, "created_at": now(), "updated_at": now(), "created_by": actor,
                 })
                 scan["new_count"] += 1
+            # 공식 근거가 **나중에** 발견된 경우 — 먼저 쌓인 비공식 후보에도 같은 경고를 붙인다
+            # (CodeRabbit PR #84). 검토 대기 중인 legal_review만 대상이다: 이미 처리된 후보의
+            # 메모를 바꾸면 관리자 판단 당시의 기록이 사후에 달라진다.
+            flagged_ids = set()
+            if official_context:
+                for r in document["records"]:
+                    if (r.get("topic") == topic and r.get("kind") == "legal_review"
+                            and r.get("status") == "pending"
+                            and r.get("discovery_key") not in fresh_keys
+                            and not _is_official(r.get("evidence") or {})
+                            and _DUPLICATE_WARNING not in (r.get("note") or "")):
+                        r["note"] = (r.get("note") or "") + _DUPLICATE_WARNING
+                        r["updated_at"] = now()
+                        flagged_ids.add(r["id"])
             document["scans"] = (document.get("scans", []) + [scan])[-200:]
             try:
                 self.store.save(revision, document, actor, {"type": "scan", **scan},
                                 {"records": [event_record(r) for r in document["records"]
-                                             if r.get("discovery_key") in fresh_keys]})
+                                             if r.get("discovery_key") in fresh_keys
+                                             or r.get("id") in flagged_ids]})
                 return scan
             except Conflict:
                 if attempt == 2:

@@ -581,7 +581,10 @@ wage_calculator/
   한 후보로 묶는다 — 제목 유사도 같은 퍼지 매칭은 안 쓴다(오억제가 오탐지보다 위험하다는 이 문서
   반복된 교훈). law.go.kr 공식원문 vs nodong.kr 재수록본처럼 **url 자체가 다른** 교차-파이프라인
   중복은 이 매칭으로 못 잡는다 — 그 경우는 후보를 지우지 않고(조용한 손실 방지) 같은 topic에 공식
-  근거가 이미 있으면 비공식 후보의 `note`에 ⚠️ 표시만 덧붙여 사람이 최종 판단한다. 회귀는
+  근거가 이미 있으면 비공식 후보의 `note`에 ⚠️ 표시만 덧붙여 사람이 최종 판단한다. 공식 근거가 **나중에**
+  발견되면 먼저 쌓인 `pending` 비공식 후보에도 소급해 붙인다(처리 완료 후보의 메모는 당시 판단 기록이라 건드리지 않는다).
+  문서 키는 **출처 `url`을 먼저** 쓴다 — `official_url`을 먼저 쓰면 공식 원문을 가리키는 재수록본이 원문과 같은 키가 되어
+  경고 없이 사라진다. 회귀는
   `test_legal_rule_updates.py`의 `test_scan_collapses_*`/`test_scan_does_not_recreate_*`/
   `test_scan_flags_*`/`test_scan_does_not_flag_*`.
 - **저장은 `legal_rules_save` RPC 단일 경로**(CAS + 행 잠금 + 이력 INSERT 한 트랜잭션). 테이블은

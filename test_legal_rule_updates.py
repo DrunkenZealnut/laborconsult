@@ -217,6 +217,32 @@ class LegalUpdatesTest(unittest.TestCase):
         self.assertNotIn("⚠️", notes["official-doc"])
         self.assertIn("⚠️", notes["nonofficial-doc"])
 
+    def test_scan_flags_earlier_pending_nonofficial_when_official_arrives_later(self):
+        base = self.evidence.fetch("fixture-law")
+        nonofficial = dict(base, id="nonofficial-first", url="https://www.nodong.kr/nonofficial-first")
+        official = dict(base, id="official-later", url="https://www.moel.go.kr/official-later")
+        with patch.object(self.evidence, "search", return_value=[nonofficial]):
+            self.service.scan("minimum_wage", "worker")
+        self.assertNotIn("⚠️", self.store.document["records"][0]["note"])
+        with patch.object(self.evidence, "search", return_value=[official]):
+            self.service.scan("minimum_wage", "worker")
+        notes = {r["evidence_id"]: r["note"] for r in self.store.document["records"]}
+        self.assertIn("⚠️", notes["nonofficial-first"])
+        self.assertNotIn("⚠️", notes["official-later"])
+        # 경고를 새로 붙인 기존 후보도 이력에 남는다.
+        ids = {r["evidence_id"]: r["id"] for r in self.store.document["records"]}
+        changed = {r["id"] for r in self.store.events[-1]["payload"]["records"]}
+        self.assertEqual(changed, {ids["nonofficial-first"], ids["official-later"]})
+
+    def test_scan_keeps_distinct_source_urls_apart_even_if_official_url_matches(self):
+        base = self.evidence.fetch("fixture-law")
+        shared = "https://www.law.go.kr/shared-official"
+        official = dict(base, id="official-copy", url="https://www.moel.go.kr/a", official_url=shared)
+        reprint = dict(base, id="reprint-copy", url="https://www.nodong.kr/b", official_url=shared)
+        with patch.object(self.evidence, "search", return_value=[official, reprint]):
+            result = self.service.scan("minimum_wage", "worker")
+        self.assertEqual(result["new_count"], 2)
+
     def test_scan_does_not_flag_nonofficial_hit_when_no_official_hit_exists(self):
         base = self.evidence.fetch("fixture-law")
         nonofficial = dict(base, id="nonofficial-only", url="https://www.nodong.kr/nonofficial-only")
