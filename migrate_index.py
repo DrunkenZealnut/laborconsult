@@ -53,7 +53,9 @@ PAGE_LIMIT = 100
 TIMEOUT = 180.0
 ATTEMPTS = 4
 WORKERS = 8
-STATE = Path("output_index_migration/_checkpoint.json")
+# 체크포인트는 대상 인덱스별로 둔다 — 공유하면 다른 대상으로 재실행할 때 done 스트림을
+# 건너뛰어 대상이 빈 채로 "복사 완료"가 찍힌다(CodeRabbit PR #83).
+STATE_DIR = Path("output_index_migration")
 
 _lock = threading.Lock()
 
@@ -73,15 +75,21 @@ def _retry(fn, label):
     return fn()
 
 
-def _load_state() -> dict:
-    return json.loads(STATE.read_text()) if STATE.exists() else {}
+def _state_path(target: str) -> Path:
+    return STATE_DIR / f"_checkpoint_{target}.json"
 
 
-def _save_state(state: dict) -> None:
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATE.with_suffix(".tmp")
+def _load_state(target: str) -> dict:
+    path = _state_path(target)
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _save_state(target: str, state: dict) -> None:
+    path = _state_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1))
-    tmp.replace(STATE)
+    tmp.replace(path)
 
 
 def create(target: str) -> None:
@@ -103,7 +111,7 @@ def create(target: str) -> None:
     print(f"OK {target}: {d.dimension}d {d.metric} protection={d.deletion_protection}")
 
 
-def _copy_stream(src, dst, ns: str, part: str, state: dict) -> int:
+def _copy_stream(src, dst, target: str, ns: str, part: str, state: dict) -> int:
     key = f"{ns}|{part}"
     with _lock:
         entry = state.setdefault(key, {"token": None, "copied": 0, "done": False})
@@ -126,7 +134,7 @@ def _copy_stream(src, dst, ns: str, part: str, state: dict) -> int:
             entry["copied"] += len(vectors)
             entry["token"] = token
             entry["done"] = not token
-            _save_state(state)
+            _save_state(target, state)
         if not token:
             print(f"  [{key}] 완료 {entry['copied']:,}", flush=True)
             return entry["copied"]
@@ -135,7 +143,7 @@ def _copy_stream(src, dst, ns: str, part: str, state: dict) -> int:
 def copy(target: str) -> None:
     pc = _pc()
     src, dst = pc.Index(SOURCE_INDEX), pc.Index(target)
-    state = _load_state()
+    state = _load_state(target)
     streams = [(ns, part) for ns in NAMESPACES for part in PARTITIONS]
     stop = threading.Event()
 
@@ -148,7 +156,7 @@ def copy(target: str) -> None:
 
     threading.Thread(target=progress, daemon=True).start()
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        futs = {pool.submit(_copy_stream, src, dst, ns, part, state): (ns, part)
+        futs = {pool.submit(_copy_stream, src, dst, target, ns, part, state): (ns, part)
                 for ns, part in streams}
         for f in as_completed(futs):
             f.result()
