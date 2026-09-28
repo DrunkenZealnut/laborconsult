@@ -10,7 +10,11 @@ openai>=1.45.0
 # >=8.0.0: build_bm25_corpus.py가 쓰는 fetch_by_metadata가 8.0.0 도입이다.
 # 5.x가 설치되면 코퍼스 수집이 AttributeError로 죽는다(현재 실행은 9.1.0).
 pinecone>=8.0.0
-anthropic>=0.20.0
+# <1.0: 1.x는 전송 계층이 httpx2로 바뀌어 pipeline.py의 httpx.Timeout을 거부하고
+# (Claude 답변 전량 실패 → OpenAI 폴백), messages.create의 temperature도 받지 않는다
+# (query_decomposer 분해 실패). 상한이 없어 2026-09-27 재빌드가 1.8.0을 받았고
+# 폴백이 흡수해 오류 없이 품질만 떨어졌다. 1.x 대응 전까지 상한을 풀지 말 것.
+anthropic>=0.20.0,<1.0
 python-dotenv>=1.0.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
