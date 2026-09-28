@@ -163,8 +163,15 @@ _DUPLICATE_WARNING = " ⚠️ 같은 주제에 공식 원문 근거 후보가 �
 
 
 def _is_official(evidence):
+    """경고 판정용 — 후보 **자신의 출처**가 공식 원문인가. 승인 게이트(official_evidence)는
+    `official_url`을 먼저 보는데, 그러면 공식 원문을 가리키는 official_url을 단 재수록본이
+    공식으로 분류돼 경고에서 빠진다(CodeRabbit PR #84). 그래서 출처 `url`만 떼어 넘긴다.
+    실측(2026-09-27): 공식 벡터는 url == official_url이라 이 판정에서 달라지지 않는다."""
+    source = dict(evidence or {})
+    if source.get("url"):
+        source.pop("official_url", None)
     try:
-        official_evidence(evidence)
+        official_evidence(source)
         return True
     except EvidenceError:
         return False

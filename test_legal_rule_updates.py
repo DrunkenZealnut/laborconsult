@@ -243,6 +243,17 @@ class LegalUpdatesTest(unittest.TestCase):
             result = self.service.scan("minimum_wage", "worker")
         self.assertEqual(result["new_count"], 2)
 
+    def test_scan_flags_reprint_whose_official_url_points_to_the_original(self):
+        base = self.evidence.fetch("fixture-law")
+        official = dict(base, id="official-src", url="https://www.moel.go.kr/src")
+        reprint = dict(base, id="reprint-src", url="https://www.nodong.kr/src",
+                       official_url="https://www.moel.go.kr/src")
+        with patch.object(self.evidence, "search", return_value=[official, reprint]):
+            self.service.scan("minimum_wage", "worker")
+        notes = {r["evidence_id"]: r["note"] for r in self.store.document["records"]}
+        self.assertNotIn("⚠️", notes["official-src"])
+        self.assertIn("⚠️", notes["reprint-src"])
+
     def test_scan_does_not_flag_nonofficial_hit_when_no_official_hit_exists(self):
         base = self.evidence.fetch("fixture-law")
         nonofficial = dict(base, id="nonofficial-only", url="https://www.nodong.kr/nonofficial-only")
