@@ -26,7 +26,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'semiconductor-lithography' }}
+          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'laborconsult' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python sync_legal_rules.py --persist

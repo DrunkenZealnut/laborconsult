@@ -65,8 +65,10 @@ INTENT_FALLBACK_MAX_TOKENS = 4096
 CITATION_STAGE_BUDGET = min(45.0, float(os.getenv("CITATION_STAGE_BUDGET", "45")))
 
 # Pinecone 인덱스명 단일 출처 (DB-3) — 업로드·조회·테스트 스크립트가 모두 이 값을 공유한다.
-# 프로덕션 env(PINECONE_INDEX_NAME) 실값과 일치 확인 완료(R-1) — 레거시 인덱스명 그대로 유지.
-DEFAULT_PINECONE_INDEX = "semiconductor-lithography"
+# 2026-09-27 전용 인덱스로 이전(migrate_index.py). 구 `semiconductor-lithography`는 타 프로젝트
+# 11개 NS와 공유하던 인덱스라, 이 기본값을 되돌리면 업로드가 남의 인덱스로 샌다.
+# 프로덕션 env(PINECONE_INDEX_NAME)·워크플로 폴백·.env.example과 함께 바꿀 것.
+DEFAULT_PINECONE_INDEX = "laborconsult"
 
 
 def resolve_index_name() -> str:
