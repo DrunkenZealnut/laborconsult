@@ -385,9 +385,10 @@ class AnswerOutcome:
     empty_providers: list[str] = field(default_factory=list)   # 0자를 반환한 제공자
     truncated: bool = False                                    # 실질 청크 후 스트림 중단
     error: str | None = None
+    model: str | None = None                                   # provider가 실제로 쓴 모델명
 
 
-def _stream_claude(messages: list, system: str, config: AppConfig):
+def _stream_claude(messages: list, system: str, config: AppConfig, model: str | None = None):
     """Claude 스트리밍 — read 타임아웃은 토큰 간 무진행 감지 (DB-6).
 
     첫 청크 전 실패 → _stream_answer가 OpenAI/Gemini로 폴백,
@@ -402,7 +403,7 @@ def _stream_claude(messages: list, system: str, config: AppConfig):
     with config.claude_client.with_options(
         timeout=timeout, max_retries=ANSWER_MAX_RETRIES,
     ).messages.stream(
-        model=CLAUDE_MODEL,
+        model=model or CLAUDE_MODEL,
         # 한국어 2048 토큰은 대략 1,500~2,000자로 긴 상담 답변이 잘린다.
         max_tokens=ANSWER_MAX_TOKENS,
         system=system,
@@ -412,7 +413,7 @@ def _stream_claude(messages: list, system: str, config: AppConfig):
             yield text
 
 
-def _stream_openai(messages: list, system: str, config: AppConfig):
+def _stream_openai(messages: list, system: str, config: AppConfig, model: str | None = None):
     """OpenAI 스트리밍 (o3·gpt-5.x 등 reasoning 모델 호환)"""
     import httpx
     oai_msgs = [{"role": "developer", "content": system}]
@@ -428,8 +429,9 @@ def _stream_openai(messages: list, system: str, config: AppConfig):
         ),
         max_retries=ANSWER_MAX_RETRIES,
     ).chat.completions.create(
-        # 매 호출 시 환경변수를 다시 읽어 무재시작 모델 교체(A/B 비교)를 허용
-        model=os.getenv("OPENAI_CHAT_MODEL", OPENAI_CHAT_MODEL),
+        # model 미지정 시 매 호출 환경변수를 다시 읽어 무재시작 모델 교체(A/B 비교)를 허용.
+        # 답변 경로는 _answer_providers가 model_settings로 해석한 값을 넘긴다.
+        model=model or os.getenv("OPENAI_CHAT_MODEL", OPENAI_CHAT_MODEL),
         messages=oai_msgs,
         # reasoning 모델은 추론 토큰과 출력 토큰이 이 한도를 함께 쓴다.
         # 2048에서는 추론이 한도를 모두 소진해 본문이 빈 문자열로 반환되는
@@ -442,11 +444,11 @@ def _stream_openai(messages: list, system: str, config: AppConfig):
             yield chunk.choices[0].delta.content
 
 
-def _stream_gemini(messages: list, system: str, config: AppConfig):
+def _stream_gemini(messages: list, system: str, config: AppConfig, model: str | None = None):
     """Google Gemini 스트리밍 — 3순위 폴백"""
     import google.generativeai as genai
     genai.configure(api_key=config.gemini_api_key)
-    model = genai.GenerativeModel(GEMINI_MODEL, system_instruction=system)
+    gm = genai.GenerativeModel(model or GEMINI_MODEL, system_instruction=system)
 
     contents = []
     for m in messages:
@@ -454,7 +456,7 @@ def _stream_gemini(messages: list, system: str, config: AppConfig):
         contents.append({"role": role, "parts": [_flatten_content(m["content"])]})
 
     # request_options 없이는 무제한 대기 — 3순위가 함수 전체를 잡아먹는다 (FR-04).
-    response = model.generate_content(
+    response = gm.generate_content(
         contents, stream=True,
         request_options={"timeout": ANSWER_READ_TIMEOUT + CONNECT_TIMEOUT},
     )
@@ -466,16 +468,26 @@ def _stream_gemini(messages: list, system: str, config: AppConfig):
 def _answer_providers(config: AppConfig) -> list[tuple[str, object]]:
     """답변 제공자 목록을 폴백 순서대로 반환.
 
-    ANSWER_PROVIDER로 1순위를 지정할 수 있다 (기본: Claude, 장애 시 무배포 롤백용).
+    모델·1순위는 model_settings.resolve()가 정한다 — 관리자 저장값 > 환경변수
+    (OPENAI_CHAT_MODEL·GEMINI_MODEL·ANSWER_PROVIDER) > 코드 기본값. 저장소 장애 시 기본값.
+
+    **시그니처를 (config)로 유지할 것** — test_llm_fallback.py가 이 함수를 1인자 람다로
+    교체한다. 모델은 인자를 늘리는 대신 partial로 묶는다(_stream_answer의
+    stream_fn(messages, system, config) 계약 불변).
     """
+    from functools import partial
+    from app.core import model_settings
+
+    resolved = model_settings.resolve()
+    model_of = {p: m for p, (m, _src) in resolved.models.items()}
     providers = [
-        ("Claude", _stream_claude),
-        ("OpenAI", _stream_openai),
+        ("Claude", partial(_stream_claude, model=model_of["claude"])),
+        ("OpenAI", partial(_stream_openai, model=model_of["openai"])),
     ]
     if config.gemini_api_key:
-        providers.append(("Gemini", _stream_gemini))
+        providers.append(("Gemini", partial(_stream_gemini, model=model_of["gemini"])))
 
-    primary = os.getenv("ANSWER_PROVIDER", "").strip().lower()
+    primary = resolved.primary[0]
     if primary:
         providers.sort(key=lambda p: p[0].lower() != primary)
     return providers
@@ -518,6 +530,8 @@ def _stream_answer(
                         pending.append(text)
                         continue
                     outcome.provider = name
+                    # partial.keywords는 표준 속성 — 테스트가 넣는 일반 함수는 None
+                    outcome.model = getattr(stream_fn, "keywords", {}).get("model")
                     for held in pending:
                         yield (name, held)
                     pending.clear()
@@ -607,6 +621,8 @@ def _llm_meta(
     발견했다). 스키마 변경 없이 기존 metadata 컬럼에 얹는다.
     """
     meta: dict = {"provider": outcome.provider, "attempts": outcome.attempts}
+    if outcome.model:
+        meta["model"] = outcome.model
     if outcome.empty_providers:
         meta["empty"] = outcome.empty_providers
     if len(outcome.attempts) > 1:
@@ -2423,9 +2439,9 @@ def process_question(query: str, session: Session, config: AppConfig,
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
     conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
     logger.info(
-        "llm_outcome provider=%s attempts=%s empty=%s truncated=%s "
+        "llm_outcome provider=%s model=%s attempts=%s empty=%s truncated=%s "
         "citation_fixed=%s intent=%s",
-        outcome.provider, outcome.attempts, outcome.empty_providers,
+        outcome.provider, outcome.model, outcome.attempts, outcome.empty_providers,
         outcome.truncated, citation_fixed, intent_provider,
     )
 

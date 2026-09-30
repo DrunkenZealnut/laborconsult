@@ -132,6 +132,13 @@
   .attachment-item .file-size { color: var(--color-text-muted); }
 
   .hidden { display: none !important; }
+  .model-row { border-top: 1px solid var(--color-border); padding: var(--space-2) 0; display: grid; gap: var(--space-1); }
+  .model-controls { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
+  .model-controls select { max-width: 100%; }
+  .model-primary, .model-actions { margin: var(--space-2) 0; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .model-ok { color: var(--color-text); font-weight: 600; }
+  .model-fail { color: var(--color-text); text-decoration: underline; }
+  .badge { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0 6px; font-size: var(--text-label); }
 </style>
 </head>
 <body>
@@ -143,6 +150,7 @@
     <button id="nav-conversations" onclick="showView('conversations')">대화목록</button>
     <button id="nav-quality" onclick="showView('quality')">답변 품질</button>
     <button id="nav-legal" onclick="showView('legal')">법률 기준</button>
+    <button id="nav-models" onclick="showView('models')">답변 모델</button>
     <button class="logout" onclick="logout()">로그아웃</button>
   </div>
 </header>
@@ -165,6 +173,8 @@
 </style>
 <div id="legal-view" class="container hidden"></div>
 <script src="/admin_legal_rules.js"></script>
+<div id="models-view" class="container hidden"></div>
+<script src="/admin_model_settings.js"></script>
 
 <!-- Login View -->
 <div id="login-view">
@@ -252,6 +262,7 @@ let evaluationListRequest = 0;
 let evaluationDetailRequest = 0;
 let evaluationViewGeneration = 0;
 let legalRulesController = null;
+let modelSettingsController = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -328,6 +339,8 @@ function showView(view) {
   document.getElementById('nav-quality').classList.toggle('active', view === 'quality');
   document.getElementById('legal-view').classList.toggle('hidden', view !== 'legal');
   document.getElementById('nav-legal').classList.toggle('active', view === 'legal');
+  document.getElementById('models-view').classList.toggle('hidden', view !== 'models');
+  document.getElementById('nav-models').classList.toggle('active', view === 'models');
 
   if (view === 'dashboard') loadStats();
   if (view === 'conversations') loadConversations(1);
@@ -337,6 +350,12 @@ function showView(view) {
       base: API + '/legal-rules', token: () => token, unauthorized: logout,
     });
     else legalRulesController.reload();
+  }
+  if (view === 'models') {
+    if (!modelSettingsController) modelSettingsController = ModelSettings.mount(document.getElementById('models-view'), {
+      base: API + '/model-settings', token: () => token, unauthorized: logout,
+    });
+    else modelSettingsController.reload();
   }
 }
 
