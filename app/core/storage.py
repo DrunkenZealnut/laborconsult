@@ -30,8 +30,13 @@ logger = logging.getLogger(__name__)
 SUPABASE_SCHEMA_DEFAULT = "laborconsult"
 
 
-def make_supabase_client(url: str | None = None, key: str | None = None):
-    """laborconsult 스키마로 고정된 Supabase 클라이언트. 미설정 시 None."""
+def make_supabase_client(url: str | None = None, key: str | None = None,
+                         postgrest_timeout: float | None = None):
+    """laborconsult 스키마로 고정된 Supabase 클라이언트. 미설정 시 None.
+
+    postgrest_timeout: 테이블·RPC 요청 타임아웃(초). 미지정 시 supabase-py 기본값(120초)이라
+    **요청 경로에서 읽는 호출부는 반드시 짧게 줄 것** — DB 장애 시 답변이 그만큼 멈춘다.
+    """
     url = url or os.getenv("SUPABASE_URL")
     key = key or os.getenv("SUPABASE_KEY")
     if not (url and key):
@@ -48,7 +53,10 @@ def make_supabase_client(url: str | None = None, key: str | None = None):
     from supabase import create_client
     from supabase.lib.client_options import SyncClientOptions
 
-    client = create_client(url, key, options=SyncClientOptions(schema=schema))
+    opts = {"schema": schema}
+    if postgrest_timeout is not None:
+        opts["postgrest_client_timeout"] = postgrest_timeout
+    client = create_client(url, key, options=SyncClientOptions(**opts))
     # 어느 스키마에 붙었는지 사후에 확인할 방법이 없으면 이번 사고처럼 진단이 길어진다.
     logger.info("Supabase 연결: schema=%s host=%s", schema, url.split("//")[-1].split(".")[0])
     return client

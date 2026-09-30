@@ -560,6 +560,14 @@ from api.legal_updates import build_legal_router
 app.include_router(build_legal_router(require_admin, _legal_update_service))
 
 
+from api.model_settings import build_model_router
+from app.core.pipeline import _stream_claude, _stream_gemini, _stream_openai
+app.include_router(build_model_router(
+    require_admin, get_config, JWT_SECRET,
+    {"claude": _stream_claude, "openai": _stream_openai, "gemini": _stream_gemini},
+))
+
+
 @app.get("/api/admin/stats")
 def admin_stats(_admin=Depends(require_admin)):
     sb = _get_supabase()

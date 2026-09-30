@@ -51,7 +51,8 @@ OPEN_TABLES: dict[str, tuple[str, ...]] = {
 # RLS ON + 정책 무부여 + GRANT 회수 → anon 직접 접근이 **막혀야** 정상인 테이블.
 # 읽히면 이중 방어가 뚫린 것이다.
 LOCKED_TABLES = ("chat_quota", "block_list", "abuse_events", "storage_purge_queue",
-                 "legal_rule_registry", "legal_rule_events")
+                 "legal_rule_registry", "legal_rule_events",
+                 "answer_model_settings", "answer_model_setting_events")
 
 # 부작용 없이 호출할 수 있는 RPC 만 존재 확인한다.
 # chat_guard_check·record_abuse_event 는 쓰기 부작용이 있어 여기서 부르지 않는다
@@ -219,6 +220,46 @@ def check_legal_rules(verbose: bool) -> list[str]:
     return problems
 
 
+def check_model_settings(verbose: bool) -> list[str]:
+    """답변 모델 설정 저장소 — service-role 읽기 + 저장 RPC 존재(쓰기 없음).
+
+    파이프라인은 읽기 실패를 기본값으로 **조용히** 흡수한다(fail-open). 그래서 DDL 미적용·
+    GRANT 누락이 있어도 답변은 정상으로 보이고, 관리자 화면의 저장만 실패한다 — 이 점검이
+    배포 전 유일한 탐지 수단이다.
+    """
+    print("\n[답변 모델 설정] service-role 읽기 + 저장 RPC 존재")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not key:
+        print("  – SUPABASE_SERVICE_ROLE_KEY 미설정 — 확인 건너뜀(답변은 코드 기본값으로 동작)")
+        return []
+    db = make_supabase_client(key=key)
+    problems = []
+    try:
+        rows = db.table("answer_model_settings").select("revision,settings").eq("id", 1).execute().data
+        if not rows:
+            raise RuntimeError("id=1 행 없음 — DDL의 INSERT 누락")
+        print(f"  ✓ answer_model_settings revision={rows[0]['revision']} settings={rows[0]['settings']}")
+    except Exception as e:
+        problems.append("answer_model_settings")
+        print(f"  ✗ answer_model_settings {_classify(e)}")
+        if verbose:
+            print(f"     {str(e)[:150]}")
+    try:
+        db.rpc("answer_model_settings_save",
+               {"expected_revision": 0, "new_settings": None, "event_actor": ""}).execute()
+        problems.append("answer_model_settings_save")
+        print("  ✗ answer_model_settings_save NULL 설정을 거절하지 않음")
+    except Exception as e:
+        if "INVALID_MODEL_SETTINGS" in str(e) or "22023" in str(e):
+            print("  ✓ answer_model_settings_save (NULL 거절 — 쓰기 없음)")
+        else:
+            problems.append("answer_model_settings_save")
+            print(f"  ✗ answer_model_settings_save {_classify(e)}")
+            if verbose:
+                print(f"     {str(e)[:150]}")
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Supabase 스키마 대조 (수동 실행 전용)")
     ap.add_argument("--verbose", action="store_true", help="실패 항목의 오류 원문 출력")
@@ -244,7 +285,8 @@ def main() -> int:
     problems = (check_open(sb, args.verbose)
                 + check_locked(sb, args.verbose)
                 + check_rpcs(sb, args.verbose)
-                + check_legal_rules(args.verbose))
+                + check_legal_rules(args.verbose)
+                + check_model_settings(args.verbose))
 
     print("\n" + "─" * 62)
     if not problems:
@@ -259,6 +301,7 @@ def main() -> int:
     print("  1) supabase_schema.sql        2) supabase_abuse_guard.sql")
     print("  3) supabase_board_posts.sql   4) supabase_retention_purge.sql")
     print("  5) supabase_consultation_eval.sql   6) supabase_legal_rules.sql")
+    print("  7) supabase_model_settings.sql")
     return 1
 
 

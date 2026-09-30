@@ -114,7 +114,7 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 # Live 결과 JSON을 검토한 뒤 --publish-admin으로 1회 게시한다.
 #   supabase_schema.sql → supabase_abuse_guard.sql →
 #   supabase_board_posts.sql → supabase_retention_purge.sql →
-#   supabase_consultation_eval.sql → supabase_legal_rules.sql
+#   supabase_consultation_eval.sql → supabase_legal_rules.sql → supabase_model_settings.sql
 # Admin은 이미 게시된 결과만 읽으며, 브라우저에서 Live 평가를 시작하지 않는다.
 
 # 법률 기준 승인 관리 (수치 기준의 시행일별 버전 — 아래 Legal Rule Registry 참조)
@@ -131,7 +131,7 @@ python3 sync_legal_rules.py --topic minimum_wage   # 읽기 전용 점검(저장
 python3 sync_legal_rules.py --persist              # 검토 대기 후보 저장(운영 준비 후)
 python3 -m unittest test_legal_rule_updates test_legal_rule_api  # 도메인·배선·HTTP
 node --test test_admin_legal_rules.js              # 관리 화면 렌더/요청 계약
-LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql  # 실 PostgreSQL 17 (docker 필요)
+LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_settings_sql  # 실 PostgreSQL 17 (docker 필요)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
 # 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.jsonl.gz 커밋 필수
@@ -179,7 +179,7 @@ Defined in `.env` (see `.env.example`):
 - `MAIL_SMTP_HOST` (default `smtp.gmail.com`) / `MAIL_SMTP_PORT` (default `587`, STARTTLS)
 - `MAIL_FROM_EMAIL` (defaults to username) / `MAIL_FROM_NAME` (default `기초 노동상담`)
 
-**Model config** in `app/config.py`: `claude-sonnet-5` (primary, 상수 고정), `o3` (fallback, `OPENAI_CHAT_MODEL`로 교체 가능), `gemini-pro-latest` (tertiary, `GEMINI_MODEL`). 타임아웃·재시도 예산도 같은 파일이 단일 출처다 — 값 변경 시 `docs/02-design/features/llm-fallback-hardening.design.md` §3.4 예산표를 함께 갱신할 것.
+**Model config** in `app/config.py`: `claude-sonnet-5` (primary, 상수 고정), `o3` (fallback, `OPENAI_CHAT_MODEL`로 교체 가능), `gemini-pro-latest` (tertiary, `GEMINI_MODEL`). **이 값들은 기본값이고, 답변 모델·1순위는 관리자 화면(`/admin` → 답변 모델)의 저장값이 우선한다** — 아래 Answer Model Settings 절. 타임아웃·재시도 예산도 같은 파일이 단일 출처다 — 값 변경 시 `docs/02-design/features/llm-fallback-hardening.design.md` §3.4 예산표를 함께 갱신할 것.
 
 ## Architecture
 
@@ -211,6 +211,10 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
 - `POST /api/admin/legal-rules/candidates` — 수동 후보 등록
 - `PUT /api/admin/legal-rules/candidates/{id}` — 검토 대기 후보 수정
 - `POST /api/admin/legal-rules/candidates/{id}/{action}` — approve/reject/reviewed/revoke
+- `GET /api/admin/model-settings` — 벤더별 현재 답변 모델·출처(settings/env/default)·1순위·이력 (`api/model_settings.py`)
+- `GET /api/admin/model-settings/models?provider=` — 벤더 모델 목록(최신 3개 + 현재값, Gemini는 + `-latest` 별칭)
+- `POST /api/admin/model-settings/test` — 답변 경로 스트리밍 함수 그대로 테스트 호출 → 통과 시 15분 서명 토큰
+- `PUT /api/admin/model-settings` · `POST /api/admin/model-settings/reset` — 저장(변경 모델은 토큰 필수, CAS)·기본값으로
 
 상담 답변 품질 평가 운영 순서:
 
@@ -608,6 +612,29 @@ wage_calculator/
   캐시를 얹으면 절감은 없고 관리자 쓰기 직전 읽기가 낡을 위험만 생긴다.
   반면 **Supabase 클라이언트는 `configured_store()`가 캐시한다**(자격증명이 바뀌면 통째로 교체).
 
+### Answer Model Settings (`app/core/model_settings.py` + `api/model_settings.py`)
+
+관리자 화면에서 답변 모델(Claude·OpenAI·Gemini)과 1순위를 고르면 재배포 없이 **최대 60초** 안에
+모든 인스턴스에 반영된다. 설계: `docs/02-design/features/admin-model-settings.design.md`.
+해석은 벤더별 독립으로 **저장값 > 환경변수(`OPENAI_CHAT_MODEL`·`GEMINI_MODEL`·`ANSWER_PROVIDER`) > 코드 기본값**
+이고, Claude만 환경변수를 보지 않는다(셸의 낡은 `CLAUDE_MODEL` 404 이력). 지킬 것 다섯 — 전부 조용히 실패한다:
+- **설정 읽기는 답변 경로 위에 있다 — 전용 클라이언트의 `postgrest_timeout=2`를 지우지 말 것.** supabase-py 기본은
+  120초라, 빼면 DB 장애 시 모든 답변이 2분씩 멈춘다. 읽기 실패·키 없음은 기본값으로 흡수(fail-open)하고
+  **실패도 60초 캐시한다** — 안 그러면 장애 중 매 요청이 2초씩 기다린다.
+- **fail-open이라 DDL 미적용·GRANT 누락이 답변에 드러나지 않는다.** 관리자 저장만 실패한다. `check_schema.py`의
+  `check_model_settings`가 배포 전 유일한 탐지 수단이다.
+- **테스트 호출은 답변 경로의 `_stream_*` 함수 그대로다.** 테스트 전용 호출 코드를 만들지 말 것 — 실제 호출과
+  어긋나면 "테스트는 통과, 답변은 폴백"이 된다(9-27 SDK 1.x 사고가 타임아웃 인자 하나로 났다). 목록에 있어도
+  호출 불가일 수 있다(실측: `gemini-2.5-pro`는 목록에 있지만 404).
+- **저장 게이트는 서버가 강제한다.** PUT은 변경된 모델마다 테스트 통과 토큰(HMAC, `JWT_SECRET` 서명, 15분)을
+  요구한다. 화면 버튼 비활성만으로 막으면 API 직접 호출로 검증되지 않은 모델이 저장된다.
+- **`_answer_providers(config)`의 시그니처를 늘리지 말 것.** `test_llm_fallback.py`가 1인자 람다로 교체한다.
+  모델은 `functools.partial`로 묶고, 실제 답변 모델은 `partial.keywords`에서 읽어 `metadata.llm.model`·
+  `llm_outcome model=` 로그에 남긴다.
+- 모델 목록은 **벤더별 최신 3개**(+현재값). OpenAI·Gemini는 제외 목록 방식으로 거른다(새 계열이 기본 노출되도록).
+  날짜 스냅샷은 별칭이 있으면 합치고, Gemini는 날짜 필드가 없어 버전 숫자로 정렬하되 `gemini-*-latest` 별칭을
+  별도로 모두 보인다 — 버전 순위만 쓰면 상위가 전부 flash라 pro가 빠진다(실측 09-30).
+
 ### Harassment Assessor (`harassment_assessor/`)
 
 Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
@@ -675,11 +702,12 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - **공유 DB에서 무언가를 지우기 전 확인 순서**: 테이블은 `pg_policies`·`information_schema.columns`, 함수는 **`pg_trigger`·`pg_depend`로 의존자**를, 이름이 비슷한 것들은 전체 목록을 눈으로. `DROP`·`CREATE OR REPLACE`는 둘 다 남의 것을 조용히 덮어쓸 수 있다.
   - **접속은 `app/core/storage.py::make_supabase_client()` 한 곳에서만 만든다.** `create_client()`를 직접 부르면 스키마 옵션이 빠져 `public`으로 새고, 그 실패가 조용하다(테이블이 없으면 PGRST205, 있으면 남의 것을 건드린다). 기본값이 `public`이 아니라 `laborconsult`인 것이 핵심이다 — fail-closed. 기동 시 `Supabase 연결: schema=…` 로그를 남겨 사후 확인이 가능하게 한다.
   - **`SECURITY DEFINER` 함수의 `search_path`에 `public`을 넣지 말 것.** 정의자 권한으로 실행되고 미지정 참조가 `search_path` 순서로 해석되므로, `public`이 있으면 함수가 남의 테이블을 읽고 쓴다 — 구 `purge_expired_data()`의 `DELETE FROM board_posts`가 정확히 그 경로였다(pg_cron 미활성이라 실행되진 않았다). `SET search_path = laborconsult, pg_temp`로 두고 `storage.objects`처럼 다른 스키마 객체는 **항상 명시**한다. 회귀는 `test_offline_units.py` D6(스키마 미지정 참조 0건)·D7(`search_path`에 `public` 부재)이 고정한다.
+  - **RPC에서 CAS 충돌을 `ERRCODE = '40001'`(serialization_failure)로 올리지 말 것.** PostgREST가 재시도 대상으로 다뤄 409가 아니라 **클라이언트 타임아웃까지 응답이 멈춘다**(실측 2026-09-30: 30초·40초 ReadTimeout — supabase-py 기본 타임아웃이면 120초). PostgreSQL 컨테이너 테스트는 PostgREST를 거치지 않아 이것을 **못 잡는다**. `ERRCODE = 'PT409'`(PostgREST 사용자 정의 상태 → HTTP 409 즉시)를 쓴다 — `supabase_model_settings.sql`이 그렇게 돼 있다. ⚠️ **`supabase_legal_rules.sql::legal_rules_save`는 아직 `40001`이다**(알려진 결함, 동시 편집 충돌 시에만 드러남).
   - **커스텀 스키마에는 Supabase 기본 권한이 자동 부여되지 않는다 — 테이블도 함수도.** `public`은 default privileges가 새 객체에 anon·authenticated·service_role 권한을 자동으로 주지만 `laborconsult`는 대상이 아니다. `GRANT USAGE ON SCHEMA`만으로는 부족하다. 2026-08-13에 **같은 클래스로 두 번** 걸렸다:
     - **테이블** — RLS 정책만 만들고 `GRANT SELECT, INSERT …`를 빠뜨려 `qa_*`·`law_article_cache`가 전부 `permission denied`. **RLS 정책(어느 **행**)과 GRANT(**접근 자체**)는 다른 계층이라 둘 다 있어야 한다.**
     - **함수** — `REVOKE ALL ON FUNCTION … FROM PUBLIC`이 **service_role의 유일한 경로까지 지웠다.** 함수는 생성 시 PUBLIC에 EXECUTE가 기본 부여되고 `public` 스키마에선 default privileges가 service_role에도 따로 주는데, 커스텀 스키마엔 그게 없다. `service_role`은 BYPASSRLS일 뿐 **superuser가 아니다** — 같은 이유로 자기가 소유하지 않은 함수에 GRANT를 줄 수도 없다(회수하면 SQL Editor로만 복구 가능). `purge_storage_orphans.py`가 `42501 permission denied for function storage_purge_claim`으로 죽었다.
     - 반대로 **`purge_expired_data`는 일부러 service_role에 주지 않는다** — pg_cron이 `postgres`(superuser)로 실행하므로 불필요하고, 영구 삭제 함수라 호출 경로를 좁게 둔다.
-  - **DDL은 최종 상태 6파일이고 적용 순서가 있다**: `supabase_schema.sql`(스키마 생성) → `supabase_abuse_guard.sql` → `supabase_board_posts.sql` → `supabase_retention_purge.sql` → `supabase_consultation_eval.sql` → `supabase_legal_rules.sql`. 파일이 늘면 `test_offline_units.py::_DDL_FILES`와 `check_schema.py`(테이블·RPC 대조) 양쪽에 함께 등록할 것 — 전자는 파일↔코드, 후자는 코드↔실제 DB라 **한쪽만 넣으면 적용 누락이 안 잡힌다**. **패치 파일을 따로 두지 말 것** — 이전 프로젝트 전환에서 base만 적용하고 후속 패치를 놓쳐 `qa_sessions.session_data`·`law_article_cache`가 빠진 채 프로덕션이 돌았다(매 채팅 PGRST204 → 후속 질문 맥락 유실, 법령 L2 캐시 404). `supabase_fix_*.sql` 3종은 본문에 흡수됐고 이력으로만 남아 있다.
+  - **DDL은 최종 상태 7파일이고 적용 순서가 있다**: `supabase_schema.sql`(스키마 생성) → `supabase_abuse_guard.sql` → `supabase_board_posts.sql` → `supabase_retention_purge.sql` → `supabase_consultation_eval.sql` → `supabase_legal_rules.sql` → `supabase_model_settings.sql`. 파일이 늘면 `test_offline_units.py::_DDL_FILES`와 `check_schema.py`(테이블·RPC 대조) 양쪽에 함께 등록할 것 — 전자는 파일↔코드, 후자는 코드↔실제 DB라 **한쪽만 넣으면 적용 누락이 안 잡힌다**. **패치 파일을 따로 두지 말 것** — 이전 프로젝트 전환에서 base만 적용하고 후속 패치를 놓쳐 `qa_sessions.session_data`·`law_article_cache`가 빠진 채 프로덕션이 돌았다(매 채팅 PGRST204 → 후속 질문 맥락 유실, 법령 L2 캐시 404). `supabase_fix_*.sql` 3종은 본문에 흡수됐고 이력으로만 남아 있다.
   - **완료 조건은 "실행했다"가 아니라 `python3 check_schema.py` 전수 통과다.** SQL Editor는 구문 오류 하나로 전량 롤백하고, 선택 영역만 실행되기도 한다(둘 다 실제로 겪음). CI는 DB 자격증명이 없어 **파일↔코드만** 대조한다(D5~D9) — 실제 DB 대조는 이 스크립트가 유일하다.
   - **SQL Editor에 붙여넣을 DDL에는 큰따옴표 식별자를 쓰지 말 것.** 복사 과정에서 스마트 따옴표(U+201C)로 바뀌면 `syntax error at or near …`로 죽는다(실제 발생). 인용부호 없는 이름은 그 실패 모드 자체가 없다. 회귀는 D8.
 - **스키마 파일 없는 테이블을 만들지 말 것.** `board_posts`가 `supabase_schema.sql`에 없이 SQL Editor 수동 실행으로 생겼고, 그 DDL이 **부분만 적용된 채** 사이클이 종료됐다 — 2026-08-13 실측에서 8컬럼 중 5개(`nickname`·`password_hash`·`question_text`·`status`·`ip_hash`)가 없었고, **게시판 글쓰기·삭제는 배포된 채로 한 번도 작동한 적이 없었다**(INSERT에 `try/except`가 없어 HTTP 500). `board_posts` 0행은 "아무도 안 썼다"가 아니라 "쓸 수 없었다"였다. 저장소에 단일 출처가 없으면 **어긋났다는 사실 자체를 아무도 모른다.**

@@ -623,6 +623,7 @@ _DDL_FILES = (
     # drift silently from the application's laborconsult schema.
     "supabase_consultation_eval.sql",
     "supabase_legal_rules.sql",
+    "supabase_model_settings.sql",
 )
 
 

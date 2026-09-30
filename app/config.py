@@ -17,12 +17,14 @@ CLAUDE_MODEL = "claude-sonnet-5"
 # OPENAI_CHAT_MODEL만 환경변수로 오버라이드 가능 — 모델 A/B 비교 및 무배포 롤백용.
 # CLAUDE_MODEL/EXTRACT_MODEL은 상수로 고정한다: 셸 프로필에 낡은 CLAUDE_MODEL이
 # export되어 있는 개발 환경에서 존재하지 않는 모델로 덮여 404가 나기 때문.
-OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "o3")
+OPENAI_CHAT_MODEL_DEFAULT = "o3"
+OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", OPENAI_CHAT_MODEL_DEFAULT)
 # 2026-08-06 실측: gemini-2.5-pro는 404("no longer available to new users")를 반환해
 # 3순위 폴백(답변 생성·인용 교정 2순위)이 통째로 죽어 있었다. 폴백 계측이 없어
 # 아무도 몰랐던 사각지대다(llm-fallback-hardening G7). gemini-pro-latest는 별칭이라
 # 모델 EOL을 자동 추종하므로 같은 사고가 재발하지 않는다.
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro-latest")
+GEMINI_MODEL_DEFAULT = "gemini-pro-latest"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", GEMINI_MODEL_DEFAULT)
 EXTRACT_MODEL = "claude-sonnet-5"
 
 # ── LLM 타임아웃·재시도 예산 (llm-fallback-hardening FR-04) ───────────────────
