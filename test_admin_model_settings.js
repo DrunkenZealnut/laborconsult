@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createClient, saveBody, dirty, renderProvider, renderEvents, render} =
+const {createClient, saveBody, applyTestResult, dirty, renderProvider, renderEvents, render} =
   require('./public/admin_model_settings.js');
 
 const STATE = {
@@ -73,4 +73,15 @@ test('primary radios: env-following label and keyless Gemini disabled', () => {
   assert.match(html, /기본 순서\(Claude\)/);
   const envState = Object.assign({}, STATE, {primary: {value: 'openai', source: 'env'}});
   assert.match(render(envState, {}, '', ''), /환경변수 따름\(OpenAI\)/);
+});
+
+test('late test response for a model no longer selected is ignored (success and failure)', () => {
+  const drafts = {claude: {model: 'B', options: []}};
+  assert.equal(applyTestResult(drafts, 'claude', 'A', {token: 'tA', latency_ms: 1}), drafts);
+  assert.equal(applyTestResult(drafts, 'claude', 'A', {error: 'x'}), drafts);
+  const withToken = {claude: {model: 'B', token: 'tB'}};
+  assert.equal(applyTestResult(withToken, 'claude', 'A', {error: 'late'}).claude.token, 'tB');
+  const ok = applyTestResult(drafts, 'claude', 'B', {token: 'tB', latency_ms: 900});
+  assert.deepEqual(ok.claude, {model: 'B', options: [], token: 'tB', latency_ms: 900, error: ''});
+  assert.equal(drafts.claude.token, undefined, '원본 draft를 변경하지 않는다');
 });

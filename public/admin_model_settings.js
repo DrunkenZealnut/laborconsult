@@ -40,6 +40,20 @@
     return {revision: state.revision || 0, primary: primary || null, models};
   }
 
+  /** 테스트 응답을 draft에 반영한다 — **요청을 보낸 모델이 지금도 선택돼 있을 때만.**
+   *  테스트 중에 선택을 바꾸면 늦게 온 옛 응답이 선택을 되돌리고 옛 토큰을 복원해, 저장 시
+   *  마지막으로 고른 모델이 아니라 옛 모델이 저장된다(CodeRabbit PR #85). 실패 응답도 같다 —
+   *  옛 요청의 실패가 새 모델의 토큰을 지우면 안 된다. */
+  function applyTestResult(drafts, p, requested, result) {
+    const cur = drafts[p] || {};
+    if (cur.model !== requested) return drafts;
+    const next = Object.assign({}, drafts);
+    next[p] = Object.assign({}, cur, result.error
+      ? {token: '', error: result.error}
+      : {token: result.token, latency_ms: result.latency_ms, error: ''});
+    return next;
+  }
+
   function dirty(state, drafts, primary) {
     const primaryChanged = (primary || null) !== ((state.primary || {}).source === 'settings' ? state.primary.value : null);
     return primaryChanged || PROVIDERS.some(p => drafts[p] && drafts[p].model &&
@@ -134,11 +148,18 @@
       try {
         if (t.dataset.action === 'list') {
           const data = await request('GET', '/models?provider=' + encodeURIComponent(p));
-          drafts[p] = {options: data.models, model: (state.providers[p] || {}).model};
+          // 로딩 중에 고른 모델이 있으면 유지한다 — 현재값으로 덮지 않는다.
+          const picked = (drafts[p] || {}).model;
+          drafts[p] = Object.assign({}, drafts[p], {options: data.models,
+            model: picked || (state.providers[p] || {}).model});
         } else if (t.dataset.action === 'test') {
-          const d = drafts[p] || {};
-          const data = await request('POST', '/test', {provider: p, model: d.model});
-          drafts[p] = Object.assign({}, d, {token: data.token, latency_ms: data.latency_ms, error: ''});
+          const requested = (drafts[p] || {}).model;
+          try {
+            const data = await request('POST', '/test', {provider: p, model: requested});
+            drafts = applyTestResult(drafts, p, requested, data);
+          } catch (e) {
+            drafts = applyTestResult(drafts, p, requested, {error: e.message});
+          }
         } else if (t.dataset.action === 'save') {
           await request('PUT', '', saveBody(state, drafts, primary));
           await reload();
@@ -149,8 +170,7 @@
           message = '기본값으로 되돌렸습니다.';
         }
       } catch (e) {
-        if (t.dataset.action === 'test' && p) drafts[p] = Object.assign({}, drafts[p], {token: '', error: e.message});
-        else message = e.message;
+        message = e.message;
         if (e.status === 409) { await reload(); message = e.message; }
       }
       paint();
@@ -160,7 +180,7 @@
     return {reload};
   }
 
-  const api = {createClient, saveBody, dirty, renderProvider, renderEvents, render, mount};
+  const api = {createClient, saveBody, applyTestResult, dirty, renderProvider, renderEvents, render, mount};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ModelSettings = api;
 })(typeof window !== 'undefined' ? window : globalThis);

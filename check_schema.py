@@ -301,6 +301,7 @@ def main() -> int:
     print("  1) supabase_schema.sql        2) supabase_abuse_guard.sql")
     print("  3) supabase_board_posts.sql   4) supabase_retention_purge.sql")
     print("  5) supabase_consultation_eval.sql   6) supabase_legal_rules.sql")
+    print("  7) supabase_model_settings.sql")
     return 1
 
 
