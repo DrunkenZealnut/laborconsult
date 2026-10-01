@@ -213,6 +213,13 @@ class AdapterTest(unittest.TestCase):
         client.schema.return_value.rpc.return_value.execute.side_effect = RuntimeError("LEGAL_RULE_REVISION_CONFLICT")
         with self.assertRaises(Conflict):
             store.save(0, {}, "actor", {}, {})
+        # 코드만 오고 메시지가 다른 경우(PostgREST가 message를 바꿔 실어도)도 충돌로 판정한다.
+        for code in ("PT409", "40001"):
+            err = RuntimeError("conflict")
+            err.code = code
+            client.schema.return_value.rpc.return_value.execute.side_effect = err
+            with self.assertRaises(Conflict, msg=code):
+                store.save(0, {}, "actor", {}, {})
 
 
 if __name__ == "__main__":

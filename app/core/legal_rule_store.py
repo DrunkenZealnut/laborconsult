@@ -47,7 +47,8 @@ class SupabaseRuleStore:
                 "event_actor": actor, "event_action": action, "event_payload": payload,
             }).execute()
         except Exception as exc:
-            if getattr(exc, "code", None) == "40001" or "LEGAL_RULE_REVISION_CONFLICT" in str(exc):
+            # PT409가 현행 DDL. 40001은 DDL 재적용 전의 옛 함수용으로 남긴다(전환 구간 호환).
+            if getattr(exc, "code", None) in ("PT409", "40001") or "LEGAL_RULE_REVISION_CONFLICT" in str(exc):
                 raise Conflict("다른 변경이 저장되었습니다. 새로고침 후 다시 검토하세요") from exc
             raise RuleError("법률 기준 저장에 실패했습니다") from exc
         return result.data

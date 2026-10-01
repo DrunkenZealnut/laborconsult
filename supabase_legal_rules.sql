@@ -66,7 +66,10 @@ BEGIN
     END IF;
     SELECT revision INTO current_revision FROM laborconsult.legal_rule_registry WHERE id = 1 FOR UPDATE;
     IF current_revision IS NULL OR expected_revision IS NULL OR expected_revision <> current_revision THEN
-        RAISE EXCEPTION 'LEGAL_RULE_REVISION_CONFLICT' USING ERRCODE = '40001';
+        -- 40001(serialization_failure)을 쓰지 말 것 — PostgREST가 재시도 대상으로 다뤄 409가 아니라
+        -- 클라이언트 타임아웃까지 응답이 멈춘다(실측 2026-09-30: 40초 ReadTimeout). PTxyz 는 PostgREST
+        -- 사용자 정의 상태라 HTTP 409로 즉시 응답된다(supabase_model_settings.sql 과 같은 수정).
+        RAISE EXCEPTION 'LEGAL_RULE_REVISION_CONFLICT' USING ERRCODE = 'PT409';
     END IF;
     UPDATE laborconsult.legal_rule_registry
        SET revision = current_revision + 1, document = new_document, updated_at = now() WHERE id = 1;
