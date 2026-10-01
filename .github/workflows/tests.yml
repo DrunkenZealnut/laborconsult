@@ -58,6 +58,9 @@ jobs:
       - name: 답변 모델 설정 테스트
         run: python3 test_model_settings.py
 
+      - name: LLM 폴백 감시 판정 테스트
+        run: python3 test_llm_fallback_alert.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 

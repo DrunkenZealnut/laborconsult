@@ -1,0 +1,34 @@
+name: LLM fallback alert
+
+# 최근 실사용 답변 3건이 연속 폴백이면 이 작업이 실패하고, GitHub가 실패 메일을 보낸다.
+# 폴백은 장애를 흡수해 답변을 정상으로 보이게 한다 — 8-21~9-28 38일간 실사용 답변 17/17이
+# 폴백이었는데 아무도 몰랐다(check_llm_fallback.py docstring). 감시 자신이 조회에 실패해도
+# 실패한다(exit 2) — Secret이 빠지면 첫 실행에서 드러난다.
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # 6시간마다 (KST 09·15·21·03시)
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: llm-fallback-alert
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # requirements 전체는 수 분이 걸린다. 스크립트는 app.core.storage(→ supabase)만 쓴다.
+      - run: pip install supabase python-dotenv
+      - name: Check recent production answers
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # anon 키 — qa_conversations는 SELECT 정책으로 열려 있고 service-role에는 권한이 없다(실측 42501)
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python check_llm_fallback.py
