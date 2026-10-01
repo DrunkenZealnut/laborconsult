@@ -1,6 +1,6 @@
 # admin-model-settings 갭 분석 보고서
 
-- 설계: `docs/02-design/features/admin-model-settings.design.md` (Plan: `docs/01-plan/features/admin-model-settings.plan.md`)
+- 설계: `admin-model-settings.design.md` (Plan: `admin-model-settings.plan.md`)
 - 구현: `feat/admin-model-settings` 브랜치(미커밋)
 - 분석일: 2026-09-30 · 분석: gap-detector
 

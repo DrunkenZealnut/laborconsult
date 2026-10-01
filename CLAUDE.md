@@ -615,7 +615,7 @@ wage_calculator/
 ### Answer Model Settings (`app/core/model_settings.py` + `api/model_settings.py`)
 
 관리자 화면에서 답변 모델(Claude·OpenAI·Gemini)과 1순위를 고르면 재배포 없이 **최대 60초** 안에
-모든 인스턴스에 반영된다. 설계: `docs/02-design/features/admin-model-settings.design.md`.
+모든 인스턴스에 반영된다. 설계: `docs/archive/2026-10/admin-model-settings/admin-model-settings.design.md`.
 해석은 벤더별 독립으로 **저장값 > 환경변수(`OPENAI_CHAT_MODEL`·`GEMINI_MODEL`·`ANSWER_PROVIDER`) > 코드 기본값**
 이고, Claude만 환경변수를 보지 않는다(셸의 낡은 `CLAUDE_MODEL` 404 이력). 지킬 것 다섯 — 전부 조용히 실패한다:
 - **설정 읽기는 답변 경로 위에 있다 — 전용 클라이언트의 `postgrest_timeout=2`를 지우지 말 것.** supabase-py 기본은

@@ -5,8 +5,8 @@
 > **Project**: laborconsult
 > **Author**: Claude (with DrunkenZealnut)
 > **Date**: 2026-09-30
-> **Status**: Implemented (Check 95% — `docs/03-analysis/admin-model-settings.analysis.md`)
-> **Planning Doc**: [admin-model-settings.plan.md](../../01-plan/features/admin-model-settings.plan.md)
+> **Status**: Implemented (Check 95% — `admin-model-settings.analysis.md`)
+> **Planning Doc**: [admin-model-settings.plan.md](admin-model-settings.plan.md)
 
 확정 결정(Plan): 범위 = **답변 모델 3종 + 1순위** · 검증 = **테스트 호출 통과 시 저장** · 반영 = **즉시(60초 캐시)**
 
