@@ -5,7 +5,7 @@
 > **Project**: laborconsult
 > **Author**: Claude (with DrunkenZealnut)
 > **Date**: 2026-09-30
-> **Status**: Completed (§10-8 프로덕션 모델 전환 확인만 대기 — Anthropic 사용 한도)
+> **Status**: Completed — §10-8 프로덕션 전환 확인 완료(2026-10-01)
 
 ---
 
@@ -28,7 +28,7 @@
 | 변경 | 19파일 +1,926/−28 (PR #85, 커밋 2) |
 | 테스트 | 오프라인 Python 24 · node 9(화면) · PostgreSQL 17 컨테이너 5 · 기존 스위트 전량 |
 | 실 DB | `check_schema.py` 통과, 저장 200 / 낡은 revision 409 **0.3초** / 토큰 없음 422 / 복원 200 |
-| 프로덕션 | 설정 읽기 200, `llm_outcome ... model=o3` 기록 확인 |
+| 프로덕션 | 2026-10-01 06:23:49 UTC 관리자 화면에서 `claude-opus-5-5` 저장(rev 6) → 재배포 없이 06:25:08 답변이 `llm_outcome provider=Claude model=claude-opus-5-5 attempts=['Claude']` |
 
 ### 1.3 Value Delivered
 
@@ -86,7 +86,6 @@
 
 | 항목 | 사유 | 조치 |
 |---|---|---|
-| §10-8 프로덕션에서 `claude-sonnet-5-5` 전환 확인 | **Anthropic API 사용 한도 도달**(9-30 실측: "regain access on 2026-10-01 00:00 UTC") — Claude 호출 전부 400, 테스트 호출도 실패 | 한도 상향 또는 10-01 09:00 KST 이후 관리자 화면에서 테스트·저장 → `llm_outcome model=claude-sonnet-5-5` 확인 |
 | `legal_rules_save`의 `40001` | 이 사이클에서 발견한 **기존 결함**(범위 밖) | CLAUDE.md·메모리에 기록, 별도 처리 |
 
 ### 4.2 Cancelled
@@ -132,6 +131,8 @@ Match Rate 95%, High 갭 0. 설계 외 발견 R-1·R-2(Medium)와 R-5·R-6(Low)�
 
 ### 6.3 Try
 
+- 관리자 UI에서 "테스트 통과"를 "저장 완료"로 오인한 1회(10-01, 테스트 200 후 PUT 없음)가 있었다 — 통과 직후 "저장을 눌러야 반영됩니다" 안내를 검토.
+
 - 새 Supabase RPC는 실 DB로 **충돌 경로까지** 한 번 왕복한다(정상 경로만으로는 부족).
 - 비동기 UI 상태는 "요청 시점 식별자 = 현재 식별자"를 기본 패턴으로.
 
@@ -148,9 +149,9 @@ Match Rate 95%, High 갭 0. 설계 외 발견 R-1·R-2(Medium)와 R-5·R-6(Low)�
 
 ### 8.1 Immediate
 
-1. Anthropic 사용 한도 상향(Console → Limits) 또는 10-01 09:00 KST 대기
-2. 관리자 화면에서 `claude-sonnet-5-5` 테스트·저장 → 60초 내 `llm_outcome model=claude-sonnet-5-5` 확인
-3. 한도 해제 전까지 원하면 1순위를 OpenAI로(토큰 불요) — Claude 선시도 왕복 절약
+1. ~~프로덕션 전환 확인~~ — 완료(10-01, `claude-opus-5-5`). 9-30 Anthropic 사용 한도 도달로 하루 지연됐다
+2. `ADMIN_JWT_SECRET` 설정 — 현재 6자 `ADMIN_PASSWORD`가 JWT·테스트 토큰 서명키(프로덕션 로그 `InsecureKeyLengthWarning`)
+3. `claude-opus-5-5` 비용 관찰 — 원 계획은 sonnet-5-5
 
 ### 8.2 Next Cycle 후보
 
