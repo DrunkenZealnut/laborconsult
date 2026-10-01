@@ -43,10 +43,10 @@
 
 ## 2. Related Documents
 
-- Plan: `docs/01-plan/features/admin-model-settings.plan.md`
-- Design: `docs/02-design/features/admin-model-settings.design.md`
-- Analysis: `docs/03-analysis/admin-model-settings.analysis.md`
-- 중단 사이클(참고): `docs/01-plan/features/anthropic-sdk-v1.plan.md`, `docs/02-design/features/anthropic-sdk-v1.design.md` (미커밋)
+- Plan: `admin-model-settings.plan.md`
+- Design: `admin-model-settings.design.md`
+- Analysis: `admin-model-settings.analysis.md`
+- 중단 사이클(참고): `../anthropic-sdk-v1/anthropic-sdk-v1.plan.md`, `../anthropic-sdk-v1/anthropic-sdk-v1.design.md`
 
 ---
 
