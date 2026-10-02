@@ -61,7 +61,14 @@ def is_real(r: dict) -> bool:
 
 def judge(rows: list[dict], window: int = DEFAULT_WINDOW) -> Verdict:
     """rows: qa_conversations 행(정렬 무관). 합성·llm 메타 없는 행은 제외한다."""
-    real = [r for r in rows if is_real(r)]
+    # offset 페이지 사이에 새 행이 저장되면 경계 행이 다음 페이지에 다시 온다 — 같은 행을 두 표본으로
+    # 세면 오탐이다(CodeRabbit PR #89). 새 행은 offset을 뒤로 밀 뿐이라 누락은 없고 중복만 생긴다.
+    seen, real = set(), []
+    for r in rows:
+        key = r.get("id") or (r.get("created_at"), id(r))
+        if is_real(r) and key not in seen:
+            seen.add(key)
+            real.append(r)
     real.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     picked = [(r, degraded(r["metadata"]["llm"])) for r in real[:window]]
     if len(picked) < window:

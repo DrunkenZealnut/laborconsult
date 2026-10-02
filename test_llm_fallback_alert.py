@@ -33,6 +33,11 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(v.status, "alert")
         self.assertEqual([r["id"] for r, _ in v.considered], ["2026-10-03T00:00", "2026-10-02T00:00", "2026-10-01T00:00"])
 
+    def test_duplicate_row_across_pages_is_counted_once(self):
+        a = row("2026-10-02T00:00", FB)
+        rows = [a, dict(a), row("2026-10-01T00:00", FB)]       # 같은 id가 두 페이지에 걸쳐 옴
+        self.assertEqual(c.judge(rows).status, "insufficient")
+
     def test_a4_insufficient_sample(self):
         self.assertEqual(c.judge([row("2026-10-01T00:00", FB), row("2026-10-02T00:00", FB)]).status, "insufficient")
         self.assertEqual(c.judge([]).status, "insufficient")
