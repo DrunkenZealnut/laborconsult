@@ -3,6 +3,7 @@
 from copy import deepcopy
 import json
 from types import SimpleNamespace
+import os
 from unittest.mock import patch
 
 import eval_consultation as harness
@@ -44,6 +45,8 @@ def test_consultation_eval_sql_locks_table_and_has_contract() -> None:
         "revoke all on laborconsult.consultation_eval_runs from public",
     ):
         assert fragment in sql, fragment
+    # 커스텀 스키마라 자동 부여가 없다 — 없으면 게시·조회가 모두 42501(2026-10-03 발견)
+    assert "grant select, insert on laborconsult.consultation_eval_runs to service_role" in sql
     assert "create policy" not in sql
     assert "security definer" not in sql
 
@@ -271,7 +274,7 @@ def test_admin_evaluation_runs_lists_summaries_in_laborconsult_schema() -> None:
     import api.index as api
     row = _stored_run()
     fake = FakeSupabaseRunReader([row])
-    with patch.object(api, "_get_supabase", return_value=fake):
+    with patch.object(api, "_get_eval_supabase", return_value=fake):
         response = api.admin_evaluation_runs(_admin={"role": "admin"})
     expected = {key: value for key, value in row.items() if key not in ("id", "results")}
     assert response == {"runs": [expected], "total": 1}
@@ -289,7 +292,7 @@ def test_admin_evaluation_runs_clamps_limits_and_filters_before_counting() -> No
     rows += [_stored_run(mode="offline"), _stored_run(status="failed")]
     for requested, expected in ((200, 100), (0, 1), (-10, 1), (2, 2)):
         fake = FakeSupabaseRunReader(rows)
-        with patch.object(api, "_get_supabase", return_value=fake):
+        with patch.object(api, "_get_eval_supabase", return_value=fake):
             response = api.admin_evaluation_runs(
                 limit=requested, mode="live", status="completed", _admin={"role": "admin"})
         assert fake.maximum == expected
@@ -299,7 +302,7 @@ def test_admin_evaluation_runs_clamps_limits_and_filters_before_counting() -> No
 
 def test_admin_evaluation_runs_empty_list() -> None:
     import api.index as api
-    with patch.object(api, "_get_supabase", return_value=FakeSupabaseRunReader()):
+    with patch.object(api, "_get_eval_supabase", return_value=FakeSupabaseRunReader()):
         assert api.admin_evaluation_runs(_admin={"role": "admin"}) == {"runs": [], "total": 0}
 
 
@@ -308,7 +311,7 @@ def test_admin_evaluation_run_returns_full_row_in_laborconsult_schema() -> None:
     for run_id in ("eval_20260909T120000Z_abc123", "eval_A-z_09", "eval_" + "a" * 123):
         row = _stored_run(run_id=run_id)
         fake = FakeSupabaseRunReader([_stored_run(run_id="eval_other"), row])
-        with patch.object(api, "_get_supabase", return_value=fake):
+        with patch.object(api, "_get_eval_supabase", return_value=fake):
             response = api.admin_evaluation_run(run_id, _admin={"role": "admin"})
             assert response == row
             assert fake.calls[:2] == [("schema", "laborconsult"), ("table", "consultation_eval_runs")]
@@ -318,14 +321,14 @@ def test_admin_evaluation_run_rejects_invalid_ids_before_database_access() -> No
     import api.index as api
     for run_id in ("", "eval_", "other_123", "eval_한글", "eval_a/b", "eval_a.b",
                    "eval_a\n", "eval_" + "a" * 124):
-        with patch.object(api, "_get_supabase", side_effect=AssertionError("DB accessed")):
+        with patch.object(api, "_get_eval_supabase", side_effect=AssertionError("DB accessed")):
             _assert_http_error(400, lambda: api.admin_evaluation_run(run_id, _admin={"role": "admin"}))
 
 
 def test_admin_evaluation_run_missing_rows_are_404() -> None:
     import api.index as api
     for fake in (FakeSupabaseRunReader(), FakeSupabaseRunReader(missing_response=True)):
-        with patch.object(api, "_get_supabase", return_value=fake):
+        with patch.object(api, "_get_eval_supabase", return_value=fake):
             _assert_http_error(404, lambda: api.admin_evaluation_run("eval_missing", _admin={"role": "admin"}))
 
 
@@ -334,9 +337,11 @@ def test_admin_evaluation_database_errors_are_safe_503() -> None:
     for call in (lambda: api.admin_evaluation_runs(_admin={"role": "admin"}),
                  lambda: api.admin_evaluation_run("eval_one", _admin={"role": "admin"})):
         fake = FakeSupabaseRunReader(failure=RuntimeError("secret-database-error"))
-        with patch.object(api, "_get_supabase", return_value=fake):
+        with patch.object(api, "_get_eval_supabase", return_value=fake):
             _assert_http_error(503, call)
-        with patch.object(api, "get_config", return_value=SimpleNamespace(supabase=None)):
+        # service-role 키가 없으면 503 — 앱 키(SUPABASE_KEY)로 대신 읽지 않는다
+        with patch.dict(os.environ, {"SUPABASE_SERVICE_ROLE_KEY": ""}), \
+                patch.object(api, "_eval_client", None):
             _assert_http_error(503, call)
 
 
@@ -346,7 +351,7 @@ def test_admin_evaluation_routes_enforce_existing_auth_and_serialize_results() -
     row = _stored_run()
     paths = ("/api/admin/evaluation-runs", "/api/admin/evaluation-runs/" + row["run_id"])
     with TestClient(api.app) as client, patch.object(api, "JWT_SECRET", "test-secret-" * 4):
-        with patch.object(api, "_get_supabase", side_effect=AssertionError("unauthorized DB access")):
+        with patch.object(api, "_get_eval_supabase", side_effect=AssertionError("unauthorized DB access")):
             for path in paths:
                 for headers in ({}, {"Authorization": "Bearer invalid"}):
                     response = client.get(path, headers=headers)
@@ -356,7 +361,7 @@ def test_admin_evaluation_routes_enforce_existing_auth_and_serialize_results() -
                 assert client.get(path, headers={"Authorization": "Bearer " + token}).status_code == 403
         token = api.jwt.encode({"role": "admin"}, api.JWT_SECRET, algorithm="HS256")
         for path in paths:
-            with patch.object(api, "_get_supabase", return_value=FakeSupabaseRunReader([row])):
+            with patch.object(api, "_get_eval_supabase", return_value=FakeSupabaseRunReader([row])):
                 response = client.get(path, headers={"Authorization": "Bearer " + token})
             assert response.status_code == 200, response.text
             if path == paths[1]:

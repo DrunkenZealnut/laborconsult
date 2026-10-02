@@ -52,7 +52,8 @@ OPEN_TABLES: dict[str, tuple[str, ...]] = {
 # 읽히면 이중 방어가 뚫린 것이다.
 LOCKED_TABLES = ("chat_quota", "block_list", "abuse_events", "storage_purge_queue",
                  "legal_rule_registry", "legal_rule_events",
-                 "answer_model_settings", "answer_model_setting_events")
+                 "answer_model_settings", "answer_model_setting_events",
+                 "consultation_eval_runs")
 
 # 부작용 없이 호출할 수 있는 RPC 만 존재 확인한다.
 # chat_guard_check·record_abuse_event 는 쓰기 부작용이 있어 여기서 부르지 않는다
@@ -260,6 +261,30 @@ def check_model_settings(verbose: bool) -> list[str]:
     return problems
 
 
+def check_eval_runs(verbose: bool) -> list[str]:
+    """상담 품질 평가 저장소 — service-role 읽기(조회 전용).
+
+    이 테이블은 GRANT가 빠져 service-role로도 42501이었다(2026-10-03). 게시와 관리자 조회가
+    모두 막혀 있었는데, 조회 실패는 화면에서 '불러올 수 없습니다' 한 줄로만 보여 원인이 숨었다.
+    """
+    print("\n[상담 품질 평가] service-role 읽기")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not key:
+        print("  – SUPABASE_SERVICE_ROLE_KEY 미설정 — 확인 건너뜀")
+        return []
+    try:
+        make_supabase_client(key=key).table("consultation_eval_runs").select("run_id").limit(1).execute()
+        print("  ✓ consultation_eval_runs")
+        return []
+    except Exception as e:
+        kind = _classify(e)
+        hint = {"권한없음": "service_role GRANT SELECT, INSERT 누락 — supabase_consultation_eval.sql 재적용"}.get(kind, kind)
+        print(f"  ✗ consultation_eval_runs {hint}")
+        if verbose:
+            print(f"     {str(e)[:150]}")
+        return ["consultation_eval_runs"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Supabase 스키마 대조 (수동 실행 전용)")
     ap.add_argument("--verbose", action="store_true", help="실패 항목의 오류 원문 출력")
@@ -286,7 +311,8 @@ def main() -> int:
                 + check_locked(sb, args.verbose)
                 + check_rpcs(sb, args.verbose)
                 + check_legal_rules(args.verbose)
-                + check_model_settings(args.verbose))
+                + check_model_settings(args.verbose)
+                + check_eval_runs(args.verbose))
 
     print("\n" + "─" * 62)
     if not problems:

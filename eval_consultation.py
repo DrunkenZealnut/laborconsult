@@ -417,6 +417,20 @@ def _admin_run_row(report: dict) -> dict:
     return row
 
 
+def _publisher_client(config):
+    """게시용 클라이언트 — **service-role 전용.** consultation_eval_runs는 anon 접근이 막혀 있다.
+
+    예전에는 config.supabase(SUPABASE_KEY, 보통 anon)를 썼는데, 그러면 60건(약 40분)을 다
+    돌린 뒤 마지막 INSERT에서 42501로 실패했다. 키가 없으면 None — main이 실행 전에 막는다.
+    """
+    import os
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not key:
+        return None
+    from app.core.storage import make_supabase_client
+    return make_supabase_client(key=key)
+
+
 def publish_admin_run(report: dict, supabase) -> str:
     """Insert exactly one validated report using the evaluation-only schema."""
     row = _admin_run_row(report)
@@ -504,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
         from app.config import AppConfig
 
         original_config = AppConfig.from_env()
-        publisher_client = original_config.supabase if args.publish_admin else None
+        publisher_client = _publisher_client(original_config) if args.publish_admin else None
         config = copy(original_config)
         # process_question persists answers when supabase is set. Evaluation
         # records are published only through the explicit evaluation boundary.
@@ -513,6 +527,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"live configuration: FAIL: {error}", file=sys.stderr)
         return 1
 
+    if args.publish_admin and publisher_client is None:
+        # 실행 전에 막는다 — 끝까지 돌린 뒤 게시만 실패하면 수십 분의 평가가 낭비된다.
+        print("admin publish: FAIL: SUPABASE_SERVICE_ROLE_KEY 미설정 — 평가를 시작하지 않았습니다",
+              file=sys.stderr)
+        return 1
     results = []
     for case in selected:
         try:

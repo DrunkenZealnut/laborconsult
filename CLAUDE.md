@@ -231,8 +231,10 @@ FastAPI app deployed to Vercel serverless. `api/index.py` is the entry point.
    화면은 `laborconsult.consultation_eval_runs`에 게시된 결과만 표시하고 평가를 실행하지 않는다.
 
 오프라인 모드(`--offline`)는 fixture 계약만 검증하며 결과를 관리자 테이블에 쓰지 않는다.
-`--publish-admin`은 반드시 `--live`와 함께 사용해야 한다. Live 게시에는 `SUPABASE_URL`과
-서버 측 쓰기 권한이 있는 `SUPABASE_KEY`가 필요하다(브라우저 anon 키를 사용하지 말 것).
+`--publish-admin`은 반드시 `--live`와 함께 사용해야 한다. Live 게시와 관리자 조회는 둘 다
+**`SUPABASE_SERVICE_ROLE_KEY`** 로만 닿는다(`eval_consultation._publisher_client`, `api/index.py::_get_eval_supabase`) —
+키가 없으면 게시는 **평가 시작 전에** 실패한다. 2026-10-03까지는 둘 다 `SUPABASE_KEY`(anon)를 써서, DDL의
+service_role GRANT 누락과 겹쳐 게시·조회가 모두 42501이었다(메뉴가 생긴 뒤 결과를 한 번도 보여주지 못했다).
 기본 테스트에서는 Live 평가와 Supabase migration을 자동 실행하지 않는다.
 
 *Public Q&A board* (all `_anonymize()` applied):
