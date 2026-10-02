@@ -64,6 +64,12 @@ jobs:
       - name: 임금 답변 규칙 테스트(단시간 주휴·예시 시급·effort·인용 정규식)
         run: python3 test_wage_answer_rules.py
 
+      # 이 둘은 CI에 없었다 — 게시·조회 권한 결함(2026-10-03)이 테스트 밖에서 드러난 이유 중 하나다.
+      - name: 상담 품질 평가 하네스·관리자 조회 테스트
+        run: |
+          python3 test_consultation_eval.py
+          python3 test_admin_consultation_quality.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 
