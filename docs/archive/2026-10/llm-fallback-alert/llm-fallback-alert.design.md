@@ -1,6 +1,6 @@
 # llm-fallback-alert Design Document
 
-> **Planning Doc**: [llm-fallback-alert.plan.md](../../01-plan/features/llm-fallback-alert.plan.md) · **Date**: 2026-10-02 · **Status**: Draft
+> **Planning Doc**: [llm-fallback-alert.plan.md](llm-fallback-alert.plan.md) · **Date**: 2026-10-02 · **Status**: Implemented (PR #89, 2026-10-02)
 
 확정 결정: 채널 = **GitHub Actions 실패 메일** · 임계 = **최근 실사용 3건 연속 저하** · 주기 = **6시간**
 
