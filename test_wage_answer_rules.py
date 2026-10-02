@@ -47,6 +47,20 @@ class WagelessWeeklyHolidayTest(unittest.TestCase):
                                   "weekly_work_days": 3, "daily_work_hours": 6}, "주휴수당")
         self.assertIn("3.6h", out)
 
+    def test_hours_block_kept_alongside_other_wageless_calculators(self):
+        out = pl._run_calculator({"needs_calculation": True,
+                                  "calculation_types_kr": ["주휴수당", "근로시간"],
+                                  "weekly_work_days": 3, "daily_work_hours": 6}, "주휴수당 근로시간")
+        self.assertIn("3.6h", out)
+        self.assertIn("주휴시간 산정", out.split("\n\n", 1)[0])
+        self.assertGreater(len(out.split("\n\n", 1)), 1, "시급 없는 계산기(working_hours) 결과도 함께 와야 한다")
+
+    def test_platform_worker_gets_no_holiday_block(self):
+        out = pl._run_calculator({"needs_calculation": True, "calculation_types_kr": ["주휴수당"],
+                                  "weekly_work_days": 3, "daily_work_hours": 6,
+                                  "is_platform_worker": True}, "주휴수당")
+        self.assertNotIn("주휴시간 산정", out or "")
+
     def test_assumed_days_do_not_produce_hours(self):
         """근무일수를 5일로 가정한 경우는 확정 블록을 만들지 않는다 — 가정이 확정처럼 읽힌다."""
         out = pl._run_calculator({"needs_calculation": True, "calculation_types_kr": ["주휴수당"],
@@ -72,6 +86,7 @@ class PromptRulesTest(unittest.TestCase):
         """한쪽 프롬프트 본문에만 넣으면 다른 분기에서 빠진다 — 접미 지점이 분기 뒤여야 한다."""
         from app.templates.prompts import WAGE_CALC_RULES
         self.assertIn("18 ÷ 40 × 8 = 3.6시간", WAGE_CALC_RULES)
+        self.assertIn("주 5일 이상", WAGE_CALC_RULES)      # 계산기와 같은 분기(5일 이상 = 1일 시간, 최대 8)
         src = inspect.getsource(pl)
         branch = src.index("system_prompt = SYSTEM_PROMPT_TEMPLATE.format(")
         append = src.index("system_prompt = system_prompt + WAGE_CALC_RULES")

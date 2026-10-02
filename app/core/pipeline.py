@@ -986,7 +986,7 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
         # 사용자에게 거짓 사실을 전한다(2027년 고시 누락 실장애 2026-09-22).
         + "\n위 목록에 없는 연도의 금액은 이 시스템에 등록되지 않은 것입니다. 고시 여부를 단정하지 말고 "
           "금액을 추정하지도 말며, 고용노동부 고시·최저임금위원회에서 확인하도록 안내하세요."
-        + "\n질문에 시급이 없어 예시 계산이 필요하면 반드시 위 목록에서 오늘 날짜가 속한 연도의 시급을 쓰세요. "
+        + "\n질문에 시급이 없어 예시 계산이 필요하면 반드시 위 목록에서 질문이 묻는 연도(정하지 않았으면 오늘 날짜가 속한 연도)의 시급을 쓰세요. "
           "10,000원 같은 어림값이나 학습 지식의 금액을 예시로 쓰지 마세요."
         + "\n(출처: 고용노동부 고시, 최저임금위원회)"
     )
@@ -1300,12 +1300,15 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         return None
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
+    holiday_hours_block = None
     if not has_wage:
         # 주휴 '시간'은 시급과 무관하다. 계산기를 통째로 빼면 LLM이 시간을 직접 계산하는데,
         # 단시간근로자에게 1일 소정근로시간을 그대로 쓰는 오답(주3일×6h → 6h, 맞는 값 3.6h)이
         # 실측됐다(2026-10-02). 근무일수·근로시간이 명시됐으면 시간만 확정해 넘긴다.
-        holiday_hours_block = None
-        if "weekly_holiday" in targets and not params.get("assumed_weekly_days"):
+        # 특수고용직은 근로기준법 주휴가 적용되지 않는다 — 아래 플랫폼 제외보다 먼저 반환하므로
+        # 여기서 직접 막는다(CodeRabbit PR #91).
+        if ("weekly_holiday" in targets and not params.get("assumed_weekly_days")
+                and not inp.is_platform_worker):
             holiday_hours_block = _wageless_weekly_holiday(
                 params.get("weekly_work_days"), daily_hours)
         wageless = [t for t in targets if t in _WAGELESS_TARGETS]
@@ -1339,7 +1342,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             # 임금 미제공 부분 실행 — 0원 통상임금 계산식 노이즈 제거
             result.formulas = [f for f in result.formulas
                                if not f.startswith("[통상임금]")]
-        return format_result(result)
+        formatted = format_result(result)
+        # 시급 없는 계산기와 주휴 시간을 함께 물으면 둘 다 넘긴다 — 하나라도 실행되면
+        # 주휴 블록이 버려지던 경로(CodeRabbit PR #91).
+        return f"{holiday_hours_block}\n\n{formatted}" if holiday_hours_block else formatted
     except Exception:
         # 오류 문자열이 '정확한 계산' 헤더로 LLM에 주입되던 경로 차단 (CALC-3)
         logger.exception("계산기 실행 실패 — 계산 없이 상담 경로로 진행 (targets=%s)", targets)
