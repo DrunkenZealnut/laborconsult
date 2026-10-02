@@ -12,7 +12,10 @@
   function renderRows(records) {
     if (!records.length) return '<p>변경 후보가 없습니다. 검색하거나 수동 등록하세요.</p>';
     return '<table><thead><tr><th>상태</th><th>주제 / 기준</th><th>값</th><th>적용기간 (종료일 제외)</th><th>근거</th><th>상세</th></tr></thead><tbody>' + records.map(r =>
-      `<tr><td>${esc(labels[r.status] || r.status)}</td><td>${esc(r.topic)}<br>${esc(r.key || '산식·자격 검토')}</td>` +
+      `<tr><td>${esc(labels[r.status] || r.status)}</td><td>${esc(r.topic)}` +
+      // 같은 문서가 다른 주제 검색에도 걸리면 후보를 새로 만들지 않고 주제만 덧붙인다(scan 주석).
+      `${(r.also_topics || []).length ? `<br><small>외 ${esc(r.also_topics.length)}개 주제: ${esc(r.also_topics.join(', '))}</small>` : ''}` +
+      `<br>${esc(r.key || '산식·자격 검토')}</td>` +
       `<td>${esc(r.value)}</td><td>${esc(r.effective_from)} ~ ${esc(r.effective_to || '미지정')}</td>` +
       `<td>${esc(r.citation || (r.evidence || {}).title)}</td><td><button type="button" data-action="select" data-id="${esc(r.id)}">검토</button></td></tr>`
     ).join('') + '</tbody></table>';
