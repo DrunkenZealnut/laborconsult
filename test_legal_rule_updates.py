@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from app.core.legal_updates import LegalUpdateService, Conflict, EvidenceError, RuleError
+from app.core.legal_updates import LegalUpdateService, Conflict, EvidenceError, RuleError, topics
 from wage_calculator.legal_rules import (PARAMETERS, RuleSnapshot, rule_scope, parameter,
                                          RuleUnavailable)
 
@@ -253,6 +253,45 @@ class LegalUpdatesTest(unittest.TestCase):
         notes = {r["evidence_id"]: r["note"] for r in self.store.document["records"]}
         self.assertNotIn("⚠️", notes["official-src"])
         self.assertIn("⚠️", notes["reprint-src"])
+
+    def test_same_document_across_topics_is_one_candidate_with_also_topics(self):
+        """첫 전체 스캔(2026-10-02)에서 문서 64개가 주제별로 후보 262건이 됐다 — 주제 간에도 1건."""
+        doc = dict(self.evidence.fetch("fixture-law"), id="shared-doc", url="https://www.moel.go.kr/shared")
+        other = next(t for t in topics() if t != "minimum_wage")
+        third = next(t for t in topics() if t not in ("minimum_wage", other))
+        with patch.object(self.evidence, "search", return_value=[doc]):
+            first = self.service.scan("minimum_wage", "worker")
+            second = self.service.scan(other, "worker")
+            again = self.service.scan(other, "worker")
+            self.service.scan(third, "worker")
+        self.assertEqual((first["new_count"], second["new_count"], again["new_count"]), (1, 0, 0))
+        records = self.store.document["records"]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["topic"], "minimum_wage")
+        self.assertEqual(records[0]["also_topics"], [other, third])
+        # 주제를 덧붙인 기존 후보도 이력에 남는다
+        changed = {r["id"] for r in self.store.events[-1]["payload"]["records"]}
+        self.assertEqual(changed, {records[0]["id"]})
+
+    def test_document_key_strips_each_loader_chunk_suffix_only(self):
+        from app.core.legal_updates import _document_key as k
+        self.assertEqual(k({"id": "precedent_2011da112391_chunk_2"}), "precedent_2011da112391")
+        self.assertEqual(k({"id": "ctx_interpretation_2151114_c3"}), "ctx_interpretation_2151114")
+        self.assertEqual(k({"id": "crawlprec_2023da237460_3"}), "crawlprec_2023da237460")
+        # 접미사 없는 ID의 문서 번호는 떼지 않는다 — 떼면 서로 다른 문서가 합쳐진다
+        self.assertEqual(k({"id": "regulation_406684"}), "regulation_406684")
+        self.assertEqual(k({"id": "official_mw_notice_0", "url": "https://x"}), "https://x")
+
+    def test_processed_candidate_is_not_touched_by_other_topic_scan(self):
+        doc = dict(self.evidence.fetch("fixture-law"), id="done-doc", url="https://www.moel.go.kr/done")
+        other = next(t for t in topics() if t != "minimum_wage")
+        with patch.object(self.evidence, "search", return_value=[doc]):
+            self.service.scan("minimum_wage", "worker")
+            rec = self.store.document["records"][0]
+            self.service.transition(rec["id"], "reject", self.store.revision, "admin-test", "테스트 fixture 반려")
+            result = self.service.scan(other, "worker")
+        self.assertEqual(result["new_count"], 0)
+        self.assertNotIn("also_topics", self.store.document["records"][0])
 
     def test_scan_does_not_flag_nonofficial_hit_when_no_official_hit_exists(self):
         base = self.evidence.fetch("fixture-law")

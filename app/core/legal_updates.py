@@ -142,7 +142,11 @@ def official_evidence(evidence):
 # "같은 출처 문서인가"는 막지 못하는 것. _document_key는 그 빈틈을 정확일치로만 메운다 —
 # 제목·내용 유사도 같은 퍼지 매칭은 쓰지 않는다(오억제가 오탐지보다 위험하다는 이 코드베이스의
 # 반복된 교훈: PROTECTED_TERMS·판례 대표사건번호 등과 같은 이유).
-_CHUNK_SUFFIX_RE = re.compile(r"_chunk_\d+$")
+# 청크 접미사 규약은 적재 스크립트마다 다르다: precedent_/regulation_ = `_chunk_N`, ctx_* = `_cN`,
+# crawlprec_ = `_N`. `_N`을 일반 규칙으로 떼면 접미사 없는 ID(`regulation_406684`)의 문서 번호까지
+# 잘려 서로 다른 문서가 합쳐지므로 crawlprec_에만 적용한다.
+_CHUNK_SUFFIX_RE = re.compile(r"(?:_chunk_\d+|_c\d+)$")
+_CRAWLPREC_SUFFIX_RE = re.compile(r"^(crawlprec_.+)_\d+$")
 
 
 def _document_key(evidence):
@@ -156,7 +160,8 @@ def _document_key(evidence):
     url = (evidence or {}).get("url") or (evidence or {}).get("official_url")
     if url:
         return url
-    return _CHUNK_SUFFIX_RE.sub("", (evidence or {}).get("id", ""))
+    key = _CHUNK_SUFFIX_RE.sub("", (evidence or {}).get("id", ""))
+    return _CRAWLPREC_SUFFIX_RE.sub(r"\1", key)
 
 
 _DUPLICATE_WARNING = " ⚠️ 같은 주제에 공식 원문 근거 후보가 이미 있습니다 — 동일 사안 중복 여부를 먼저 확인하세요"
@@ -316,8 +321,13 @@ class LegalUpdateService:
         for attempt in range(3):
             revision, document = self.store.load()
             seen = {r.get("discovery_key") for r in document["records"]}
-            seen_docs = {(r.get("topic"), _document_key(r.get("evidence")))
-                        for r in document["records"]}
+            # 문서 단위 중복 방지는 **주제를 가리지 않는다.** 주제별로 두면 최저임금 고시 하나가
+            # minimum_wage·weekly_holiday·overtime 검색에 모두 걸려 주제마다 후보가 생긴다 —
+            # 첫 전체 스캔(2026-10-02)에서 문서 64개가 후보 262건으로 쌓여 되돌렸다.
+            # 이미 후보가 있으면 그 후보의 also_topics에 이번 주제를 덧붙인다.
+            seen_docs = {}
+            for r in document["records"]:
+                seen_docs.setdefault(_document_key(r.get("evidence")), r)
             # 이 topic에 공식 원문 후보가 (이번 스캔이든 과거든) 이미 있었는가. 있다면
             # 비공식 후보를 막지는 않되(조용한 손실은 만들지 않는다) 메모에 표시해 관리자가
             # "이거 아까 그거랑 같은 사안 아닌가"를 원문 대조 없이 바로 알아보게 한다.
@@ -325,28 +335,37 @@ class LegalUpdateService:
                 r.get("topic") == topic and _is_official(r.get("evidence") or {})
                 for r in document["records"])
             fresh_keys = set()
+            touched_ids = set()
             scan["new_count"] = 0
             for evidence in hits:
                 discovery_key = fingerprint([topic, evidence["id"], evidence["sha256"]])
                 if discovery_key in seen:
                     continue
-                doc_key = (topic, _document_key(evidence))
-                if doc_key in seen_docs:
-                    # 같은 출처 문서(같은 url)의 다른 청크 — 이미 후보가 있으니 새로 만들지 않는다.
+                doc_key = _document_key(evidence)
+                existing = seen_docs.get(doc_key)
+                if existing is not None:
+                    # 같은 출처 문서 — 같은 주제의 다른 청크든 다른 주제의 검색이든 새로 만들지 않는다.
+                    # 다른 주제면 기존 대기 후보에 주제만 덧붙인다(처리된 후보는 당시 기록이라 손대지 않는다).
+                    if (existing.get("topic") != topic and existing.get("status") == "pending"
+                            and topic not in (existing.get("also_topics") or [])):
+                        existing["also_topics"] = (existing.get("also_topics") or []) + [topic]
+                        existing["updated_at"] = now()
+                        touched_ids.add(existing.get("id"))
                     continue
                 seen.add(discovery_key)
-                seen_docs.add(doc_key)
                 fresh_keys.add(discovery_key)
                 note = "자동 검색 후보: 실제 개정 여부와 적용범위 검토 필요"
                 if official_context and not _is_official(evidence):
                     note += _DUPLICATE_WARNING
-                document["records"].append({
+                record = {
                     "id": str(uuid4()), "topic": topic, "kind": "legal_review", "key": "", "value": None,
                     "effective_from": None, "effective_to": None, "evidence_id": evidence["id"],
                     "quote": "", "citation": "", "note": note,
                     "evidence": evidence, "status": "pending", "origin": "scan",
                     "discovery_key": discovery_key, "created_at": now(), "updated_at": now(), "created_by": actor,
-                })
+                }
+                document["records"].append(record)
+                seen_docs[doc_key] = record
                 scan["new_count"] += 1
             # 공식 근거가 **나중에** 발견된 경우 — 먼저 쌓인 비공식 후보에도 같은 경고를 붙인다
             # (CodeRabbit PR #84). 검토 대기 중인 legal_review만 대상이다: 이미 처리된 후보의
@@ -367,7 +386,8 @@ class LegalUpdateService:
                 self.store.save(revision, document, actor, {"type": "scan", **scan},
                                 {"records": [event_record(r) for r in document["records"]
                                              if r.get("discovery_key") in fresh_keys
-                                             or r.get("id") in flagged_ids]})
+                                             or r.get("id") in flagged_ids
+                                             or r.get("id") in touched_ids]})
                 return scan
             except Conflict:
                 if attempt == 2:
