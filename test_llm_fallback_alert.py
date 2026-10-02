@@ -64,9 +64,10 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(c.judge(rows).status, "alert")
 
     def test_render_has_no_conversation_text(self):
-        r = row("2026-10-01T00:00", FB)
-        r["question_text"] = "개인 상담 내용"
-        out = c.render(c.judge([r, r, r]), 3)
+        rows = [row(f"2026-10-0{i}T00:00", FB) for i in (1, 2, 3)]
+        for r in rows:
+            r["question_text"] = "개인 상담 내용"
+        out = c.render(c.judge(rows), 3)
         self.assertNotIn("개인 상담", out)
         self.assertIn("연속 폴백", out)
 
