@@ -47,7 +47,7 @@ def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tu
     둘이 따로 산식을 가지면 같은 질문에 시급 유무에 따라 다른 시간이 나온다.
 
     - 주 5일 이상: min(1일 소정근로시간, 8h)
-    - 주 5일 미만(단시간): min(1주 소정근로시간 ÷ 5, 8h)
+    - 주 5일 미만: min(1주 소정근로시간 ÷ 5, 8h)
       = 1주 소정근로시간 ÷ 40h × 8h (통상근로자 주40h·5일 기준 비례, 근로기준법 시행령 별표2)
     """
     weekly = weekly_work_days * daily_work_hours
@@ -57,7 +57,7 @@ def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tu
                        f"min({daily_work_hours:g}h, 8h) = {hours:g}h")
     hours = min(weekly / 5.0, 8.0)
     return hours, (f"주 소정근로일 {weekly_work_days:.0f}일 < 5일 → 주휴: min({weekly:g}h ÷ 5, 8h) = "
-                   f"{hours:.2f}h (= {weekly:g}h ÷ 40h × 8h, 단시간근로자 비례)")
+                   f"{hours:.2f}h (= {weekly:g}h ÷ 40h × 8h, 시행령 별표2 비례)")
 
 
 def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHolidayResult:
