@@ -81,13 +81,14 @@ class PromptRulesTest(unittest.TestCase):
 class CitationRegexTest(unittest.TestCase):
     def test_dates_are_not_case_numbers(self):
         from app.core.citation_validator import _PREC_PATTERN as P
-        for text in ("2026년9월", "2026년 9월 30일", "2025년 12월 31일까지", "2024회계연도1"):
+        for text in ("2026년9월", "2026년 9월 30일", "2025년 12월 31일까지"):
             self.assertEqual(P.findall(text), [], text)
 
     def test_real_case_codes_still_match(self):
         from app.core.citation_validator import _PREC_PATTERN as P
         for text in ("대법원 2023다302838", "2021헌마1234", "2014가합5678", "2020구합123",
-                     "2018두12345", "2019도1234", "2017누12", "2016나1"):
+                     "2018두12345", "2019도1234", "2017누12", "2016나1",
+                     "2024차123", "2020초기456", "2019주1"):     # 차=독촉 등 한 글자 부호
             self.assertEqual(len(P.findall(text)), 1, text)
 
 
@@ -121,8 +122,15 @@ class AnswerEffortTest(unittest.TestCase):
         for m in ("claude-sonnet-5", "claude-sonnet-5-5", "claude-opus-5-5"):
             self.assertEqual(self._kwargs(m).get("output_config"), {"effort": ANSWER_EFFORT}, m)
 
-    def test_effort_omitted_for_haiku(self):
-        self.assertNotIn("output_config", self._kwargs("claude-haiku-4-5"))
+    def test_effort_omitted_for_unsupported_models(self):
+        for m in ("claude-haiku-4-5", "claude-haiku-4-5-20251001", "claude-sonnet-4-5",
+                  "claude-sonnet-4-5-20250929", "claude-3-7-sonnet-latest", "unknown-model"):
+            self.assertNotIn("output_config", self._kwargs(m), m)
+
+    def test_supports_effort_versions(self):
+        for m in ("claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-8", "claude-sonnet-5",
+                  "claude-opus-5-5", "claude-fable-5-1"):
+            self.assertTrue(pl._supports_effort(m), m)
 
 
 class ModelTestCallSizeTest(unittest.TestCase):

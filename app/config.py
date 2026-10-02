@@ -47,8 +47,10 @@ ANSWER_MAX_RETRIES = max(0, min(1, int(os.getenv("ANSWER_MAX_RETRIES", "0"))))
 # 실제 단시간 주휴 질문): 기본값으로 첫 텍스트까지 sonnet-5 55.6초 / sonnet-5-5 29.6초 / opus-5-5 24.7초
 # → 전부 o3 폴백. effort=low는 0.8 / 0.8 / 11.2초. 올리려면 ANSWER_READ_TIMEOUT과 프론트 idle 60초를
 # 함께 따질 것 — 추론 중에는 하트비트도 나가지 않는다.
+# 허용값은 effort를 지원하는 모든 모델이 받는 low/medium/high(+off)뿐이다 — xhigh는 4.6에서 400
+# (CodeRabbit PR #91). 모델별 지원 여부는 pipeline._supports_effort가 판정한다.
 ANSWER_EFFORT = os.getenv("ANSWER_EFFORT", "low").strip().lower()
-if ANSWER_EFFORT not in {"low", "medium", "high", "xhigh", "max", "off"}:
+if ANSWER_EFFORT not in {"low", "medium", "high", "off"}:
     ANSWER_EFFORT = "low"
 # 답변 생성 토큰 한도. citation_validator의 교정 한도와 묶여 있다 — 한쪽만 낮추면
 # 교정 결과가 0.7 길이 가드에 걸려 통째로 폐기되고 환각 판례가 그대로 남는다.

@@ -388,6 +388,22 @@ class AnswerOutcome:
     model: str | None = None                                   # provider가 실제로 쓴 모델명
 
 
+_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
+
+
+def _supports_effort(model: str) -> bool:
+    """output_config.effort를 받는 모델인가 — Opus·Sonnet·Fable·Mythos 4.6 이상.
+
+    Haiku와 Sonnet 4.5 이하는 400을 낸다. 판정할 수 없는 이름은 보내지 않는다(안전 쪽) —
+    보내지 않아도 답변은 되고, 보내서 400이 나면 답변 전체가 폴백된다.
+    """
+    m = _CLAUDE_VERSION_RE.match(model or "")
+    if not m:
+        return False
+    major, minor = int(m.group(2)), int(m.group(3) or 0)
+    return (major, minor) >= (4, 6)
+
+
 def _stream_claude(messages: list, system: str, config: AppConfig, model: str | None = None):
     """Claude 스트리밍 — read 타임아웃은 토큰 간 무진행 감지 (DB-6).
 
@@ -402,10 +418,10 @@ def _stream_claude(messages: list, system: str, config: AppConfig, model: str | 
     )
     model = model or CLAUDE_MODEL
     # effort 미지정이면 모델이 답 전에 길게 추론해 읽기 타임아웃에 걸린다(config.ANSWER_EFFORT 주석).
-    # Haiku 4.5는 effort를 받지 않는다(400). "off"는 매개변수를 보내지 않는다(모델 기본 동작).
+    # 지원하지 않는 모델(Haiku·Sonnet 4.5 이하)은 400이라 보내지 않는다. "off"는 모델 기본 동작.
     from app.config import ANSWER_EFFORT
-    extra = ({} if ANSWER_EFFORT == "off" or model.startswith("claude-haiku")
-             else {"output_config": {"effort": ANSWER_EFFORT}})
+    extra = ({"output_config": {"effort": ANSWER_EFFORT}}
+             if ANSWER_EFFORT != "off" and _supports_effort(model) else {})
     with config.claude_client.with_options(
         timeout=timeout, max_retries=ANSWER_MAX_RETRIES,
     ).messages.stream(
