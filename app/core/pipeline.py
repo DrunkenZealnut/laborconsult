@@ -388,6 +388,22 @@ class AnswerOutcome:
     model: str | None = None                                   # provider가 실제로 쓴 모델명
 
 
+_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
+
+
+def _supports_effort(model: str) -> bool:
+    """output_config.effort를 받는 모델인가 — Opus·Sonnet·Fable·Mythos 4.6 이상.
+
+    Haiku와 Sonnet 4.5 이하는 400을 낸다. 판정할 수 없는 이름은 보내지 않는다(안전 쪽) —
+    보내지 않아도 답변은 되고, 보내서 400이 나면 답변 전체가 폴백된다.
+    """
+    m = _CLAUDE_VERSION_RE.match(model or "")
+    if not m:
+        return False
+    major, minor = int(m.group(2)), int(m.group(3) or 0)
+    return (major, minor) >= (4, 6)
+
+
 def _stream_claude(messages: list, system: str, config: AppConfig, model: str | None = None):
     """Claude 스트리밍 — read 타임아웃은 토큰 간 무진행 감지 (DB-6).
 
@@ -400,10 +416,17 @@ def _stream_claude(messages: list, system: str, config: AppConfig, model: str | 
         connect=CONNECT_TIMEOUT, read=ANSWER_READ_TIMEOUT,
         write=ANSWER_READ_TIMEOUT, pool=CONNECT_TIMEOUT,
     )
+    model = model or CLAUDE_MODEL
+    # effort 미지정이면 모델이 답 전에 길게 추론해 읽기 타임아웃에 걸린다(config.ANSWER_EFFORT 주석).
+    # 지원하지 않는 모델(Haiku·Sonnet 4.5 이하)은 400이라 보내지 않는다. "off"는 모델 기본 동작.
+    from app.config import ANSWER_EFFORT
+    extra = ({"output_config": {"effort": ANSWER_EFFORT}}
+             if ANSWER_EFFORT != "off" and _supports_effort(model) else {})
     with config.claude_client.with_options(
         timeout=timeout, max_retries=ANSWER_MAX_RETRIES,
     ).messages.stream(
-        model=model or CLAUDE_MODEL,
+        model=model,
+        **extra,
         # 한국어 2048 토큰은 대략 1,500~2,000자로 긴 상담 답변이 잘린다.
         max_tokens=ANSWER_MAX_TOKENS,
         system=system,
@@ -884,6 +907,18 @@ def _normalize_wage_units(params: dict) -> bool:
 
 
 _MINWAGE_SIGNALS = ("최저임금", "최저시급", "최저 임금", "최저 시급")
+# 최저시급 사실 블록을 붙일 의도분석 주제. **의도분석은 영문 키를 돌려준다**(prompts.py enum) —
+# 구 판정은 한글 "최저임금"을 찾아 주제 경로가 한 번도 참이 되지 않았다(2026-10-02 발견).
+# 시급 예시가 필요한 임금 주제까지 넓힌 이유: 주휴수당 질문에 이 블록이 없어 o3가 예시 시급을
+# 10,000원으로 지어냈다(Claude는 학습 지식으로 10,320원 — 모델마다 달라지는 것이 곧 결함).
+_MINWAGE_TOPICS = frozenset({"minimum_wage", "weekly_holiday", "overtime", "annual_leave",
+                             "prorated", "comprehensive", "compensatory_leave", "flexible_work",
+                             "최저임금"})
+
+
+def _wants_minwage_facts(query: str, analysis) -> bool:
+    types = set(getattr(analysis, "calculation_types", None) or []) if analysis else set()
+    return bool(types & _MINWAGE_TOPICS) or any(sig in query for sig in _MINWAGE_SIGNALS)
 
 
 def _build_approved_facts(analysis, keys) -> str:
@@ -920,10 +955,7 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
     실행되지 않는다. LLM이 학습 시점의 과거 금액을 현재 값으로 환각하는 것을
     constants 값 직접 주입으로 차단한다.
     """
-    topic_hit = bool(
-        analysis and "최저임금" in (getattr(analysis, "calculation_types", None) or [])
-    )
-    if not (topic_hit or any(s in query for s in _MINWAGE_SIGNALS)):
+    if not _wants_minwage_facts(query, analysis):
         return None
     from app.core.legal_rule_store import rules_enabled
     if rules_enabled():
@@ -954,6 +986,8 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
         # 사용자에게 거짓 사실을 전한다(2027년 고시 누락 실장애 2026-09-22).
         + "\n위 목록에 없는 연도의 금액은 이 시스템에 등록되지 않은 것입니다. 고시 여부를 단정하지 말고 "
           "금액을 추정하지도 말며, 고용노동부 고시·최저임금위원회에서 확인하도록 안내하세요."
+        + "\n질문에 시급이 없어 예시 계산이 필요하면 반드시 위 목록에서 질문이 묻는 연도(정하지 않았으면 오늘 날짜가 속한 연도)의 시급을 쓰세요. "
+          "10,000원 같은 어림값이나 학습 지식의 금액을 예시로 쓰지 마세요."
         + "\n(출처: 고용노동부 고시, 최저임금위원회)"
     )
 
@@ -1025,6 +1059,34 @@ _KNOWLEDGE_MODULES = [
 # 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반 + 독립 계산)
 # wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
 _WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
+
+
+def _wageless_weekly_holiday(weekly_days, daily_hours) -> str | None:
+    """시급 없이 주휴 **시간**만 확정한 계산 블록. 근무일수·1일 시간이 둘 다 명시돼야 한다.
+
+    금액은 만들지 않는다 — 시급을 가정하면 그 가정값이 확정 금액처럼 읽힌다. 산식은
+    weekly_holiday.weekly_holiday_hours 단일 출처(계산기와 같은 함수).
+    """
+    from wage_calculator.calculators.weekly_holiday import weekly_holiday_hours
+    from wage_calculator.constants import WEEKLY_HOLIDAY_MIN_HOURS
+    try:
+        days, daily = float(weekly_days), float(daily_hours)
+    except (TypeError, ValueError):
+        return None
+    if not (0 < days <= 7 and 0 < daily <= 24):
+        return None
+    weekly = days * daily
+    lines = ["[주휴시간 산정 — 시급 미제공으로 금액은 산정하지 않음]",
+             f"1주 소정근로시간: {days:g}일 × {daily:g}h = {weekly:g}h"]
+    if weekly < WEEKLY_HOLIDAY_MIN_HOURS:
+        lines.append(f"1주 소정근로시간 {weekly:g}h < {WEEKLY_HOLIDAY_MIN_HOURS:g}h → 주휴수당 미발생"
+                     "(근로기준법 제18조 제3항)")
+        return "\n".join(lines)
+    hours, formula = weekly_holiday_hours(days, daily)
+    lines += [f"주휴 유급시간: {formula}",
+              f"주휴수당 = 시간급 통상임금 × {hours:g}h (그 주 소정근로일 개근 + 주휴일에 근로관계 존속 시)",
+              "※ 위 시간은 계약상 소정근로일·시간 기준이다. 실제 근무시간이나 연장근로는 넣지 않는다."]
+    return "\n".join(lines)
 
 
 def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[str] | None:
@@ -1238,9 +1300,22 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         return None
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
+    holiday_hours_block = None
     if not has_wage:
+        # 주휴 '시간'은 시급과 무관하다. 계산기를 통째로 빼면 LLM이 시간을 직접 계산하는데,
+        # 단시간근로자에게 1일 소정근로시간을 그대로 쓰는 오답(주3일×6h → 6h, 맞는 값 3.6h)이
+        # 실측됐다(2026-10-02). 근무일수·근로시간이 명시됐으면 시간만 확정해 넘긴다.
+        # 특수고용직은 근로기준법 주휴가 적용되지 않는다 — 아래 플랫폼 제외보다 먼저 반환하므로
+        # 여기서 직접 막는다(CodeRabbit PR #91).
+        if ("weekly_holiday" in targets and not params.get("assumed_weekly_days")
+                and not inp.is_platform_worker):
+            holiday_hours_block = _wageless_weekly_holiday(
+                params.get("weekly_work_days"), daily_hours)
         wageless = [t for t in targets if t in _WAGELESS_TARGETS]
         if not wageless:
+            if holiday_hours_block:
+                logger.info("임금 정보 없음 — 주휴 시간만 산정(금액 미산정), 나머지 %s 제외", targets)
+                return holiday_hours_block
             logger.info("임금 정보 없음 — 임금 필요 계산기(%s) 제외 후 실행 대상 없음, "
                         "계산기 미실행", targets)
             return None
@@ -1267,7 +1342,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             # 임금 미제공 부분 실행 — 0원 통상임금 계산식 노이즈 제거
             result.formulas = [f for f in result.formulas
                                if not f.startswith("[통상임금]")]
-        return format_result(result)
+        formatted = format_result(result)
+        # 시급 없는 계산기와 주휴 시간을 함께 물으면 둘 다 넘긴다 — 하나라도 실행되면
+        # 주휴 블록이 버려지던 경로(CodeRabbit PR #91).
+        return f"{holiday_hours_block}\n\n{formatted}" if holiday_hours_block else formatted
     except Exception:
         # 오류 문자열이 '정확한 계산' 헤더로 LLM에 주입되던 경로 차단 (CALC-3)
         logger.exception("계산기 실행 실패 — 계산 없이 상담 경로로 진행 (targets=%s)", targets)
@@ -2052,7 +2130,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     if rules_enabled() and not calc_result:
         from wage_calculator.legal_rules import PARAMETERS
         managed_keys = []
-        if any(s in query for s in _MINWAGE_SIGNALS):
+        if _wants_minwage_facts(query, analysis):
             managed_keys.append("minimum_hourly_wage")
         if any(s in query for s in _INSURANCE_SIGNALS):
             managed_keys.extend(k for k in PARAMETERS if k.startswith("insurance."))
@@ -2256,6 +2334,10 @@ def process_question(query: str, session: Session, config: AppConfig,
         if used_counsel:
             from app.templates.prompts import COUNSEL_CITATION_RULES
             system_prompt = system_prompt + COUNSEL_CITATION_RULES
+        # 임금 계산 규칙(단시간 주휴 비례·예시 시급) — 같은 이유로 두 분기 공통 접미한다.
+        # 계산기가 실행되지 않는 경로(시급 미제공 등)에서 LLM이 산식을 직접 고른다.
+        from app.templates.prompts import WAGE_CALC_RULES
+        system_prompt = system_prompt + WAGE_CALC_RULES
         for provider, text in _stream_answer(messages, system_prompt, config, outcome):
             if not text:
                 # 전환 하트비트 — 내용 없음. 프론트 idle 타이머만 리셋한다 (FR-03).

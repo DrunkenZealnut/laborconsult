@@ -50,7 +50,7 @@
     const next = Object.assign({}, drafts);
     next[p] = Object.assign({}, cur, result.error
       ? {token: '', error: result.error}
-      : {token: result.token, latency_ms: result.latency_ms, error: ''});
+      : {token: result.token, latency_ms: result.latency_ms, warning: result.warning || '', error: ''});
     return next;
   }
 
@@ -70,7 +70,9 @@
       `<option value="${esc(m.id)}"${m.id === (draft.model || info.model) ? ' selected' : ''}>` +
       `${esc(m.label && m.label !== m.id ? m.label + ' — ' + m.id : m.id)}${m.current ? ' (현재)' : ''}</option>`).join('');
     const result = draft.error ? `<span class="model-fail">✗ ${esc(draft.error)}</span>`
-      : draft.token ? `<span class="model-ok">✓ 통과 ${esc((draft.latency_ms / 1000).toFixed(1))}초</span>` : '';
+      : draft.token ? `<span class="model-ok">✓ 통과 · 첫 응답 ${esc((draft.latency_ms / 1000).toFixed(1))}초</span>` +
+        (draft.warning ? ` <span class="model-fail">⚠ ${esc(draft.warning)}</span>` : '') +
+        ' <small>저장을 눌러야 반영됩니다</small>' : '';
     return `<div class="model-row" data-provider="${p}">` +
       `<div><strong>${NAMES[p]}</strong> 현재 <code>${esc(info.model)}</code> ` +
       `<span class="badge">${esc(SOURCES[info.source] || info.source)}</span>` +

@@ -40,6 +40,26 @@ class WeeklyHolidayResult(BaseCalculatorResult):
     is_eligible: bool = False          # 주휴수당 발생 여부
 
 
+def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tuple[float, str]:
+    """주휴 유급시간과 산식 설명 — **시급과 무관한 부분의 단일 출처.**
+
+    calc_weekly_holiday와 시급 없는 상담 경로(pipeline._wageless_weekly_holiday)가 함께 쓴다.
+    둘이 따로 산식을 가지면 같은 질문에 시급 유무에 따라 다른 시간이 나온다.
+
+    - 주 5일 이상: min(1일 소정근로시간, 8h)
+    - 주 5일 미만: min(1주 소정근로시간 ÷ 5, 8h)
+      = 1주 소정근로시간 ÷ 40h × 8h (통상근로자 주40h·5일 기준 비례, 근로기준법 시행령 별표2)
+    """
+    weekly = weekly_work_days * daily_work_hours
+    if weekly_work_days >= 5:
+        hours = min(daily_work_hours, 8.0)
+        return hours, (f"주 소정근로일 {weekly_work_days:.0f}일 ≥ 5일 → 주휴: "
+                       f"min({daily_work_hours:g}h, 8h) = {hours:g}h")
+    hours = min(weekly / 5.0, 8.0)
+    return hours, (f"주 소정근로일 {weekly_work_days:.0f}일 < 5일 → 주휴: min({weekly:g}h ÷ 5, 8h) = "
+                   f"{hours:.2f}h (= {weekly:g}h ÷ 40h × 8h, 시행령 별표2 비례)")
+
+
 def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHolidayResult:
     """주휴수당 계산"""
     s = inp.schedule
@@ -82,20 +102,10 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
 
     # 주휴 시간 산정 (대법원 2025.8.14. 선고 2022다291153 판결)
     # 주 소정근로일 수를 기준으로 산정
-    if s.weekly_work_days >= 5:
-        # 주 5일 이상: min(1일 소정근로시간, 8h)
-        holiday_hours = min(s.daily_work_hours, 8.0)
-        formulas.append(
-            f"주 소정근로일 {s.weekly_work_days:.0f}일 ≥ 5일 → 주휴: min({s.daily_work_hours}h, 8h) = {holiday_hours}h"
-        )
-        legal.append("대법원 2025.8.14. 선고 2022다291153 판결")
-    else:
-        # 주 5일 미만: min(1주 소정근로시간 ÷ 5, 8h)
-        holiday_hours = min(weekly_scheduled / 5.0, 8.0)
-        formulas.append(
-            f"주 소정근로일 {s.weekly_work_days:.0f}일 < 5일 → 주휴: min({weekly_scheduled}h ÷ 5, 8h) = {holiday_hours:.2f}h"
-        )
-        legal.append("대법원 2025.8.14. 선고 2022다291153 판결")
+    holiday_hours, formula = weekly_holiday_hours(s.weekly_work_days, s.daily_work_hours)
+    formulas.append(formula)
+    legal.append("대법원 2025.8.14. 선고 2022다291153 판결")
+    if s.weekly_work_days < 5:
         legal.append("근로기준법 제18조 (단시간근로자 근로조건)")
 
     weekly_pay = hourly * holiday_hours
