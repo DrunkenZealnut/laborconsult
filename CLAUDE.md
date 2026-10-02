@@ -680,7 +680,8 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - **재시도보다 전환** — 답변 경로는 `max_retries=0`. 동일 벤더 재시도는 같은 장애를 다시 만난다.
   - **모델명은 별칭으로** — 고정 버전은 모델 폐기 시 조용히 404가 된다(실제로 `gemini-2.5-pro`가 그렇게 죽어 있었고, 폴백 계측이 없어 아무도 몰랐다).
 - 의도분석(`analyze_intent`)은 Claude 실패 시 OpenAI function calling으로 폴백한다. 후처리는 `_build_analysis_result` 단일 출처를 두 벤더가 공유해야 추출 결과가 갈라지지 않는다. 어댑터는 `app/core/llm_fallback.py` — `analyzer.py`가 `pipeline.py`를 import하면 순환이 되므로 하위 모듈에 둔 것이다.
-- 폴백 결과는 `qa_conversations.metadata.llm`(provider·attempts·fallback·empty·truncated·citation_fixed)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.**
+- 폴백 결과는 `qa_conversations.metadata.llm`(provider·model·attempts·fallback·empty·truncated·citation_fixed)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.**
+  - **계측만으로는 부족했다 — 아무도 보지 않았다.** 8-21~9-28 38일간 프로덕션 실사용 답변 17/17이 폴백이었고(anthropic SDK 1.x 자동 설치), 같은 기간 로컬·벤치마크는 SDK 0.120이라 전부 Claude 성공이었다. 기록은 다 있었다. 그래서 `check_llm_fallback.py` + `.github/workflows/llm-fallback-alert.yml`이 6시간마다 **최근 실사용 3건이 연속 저하**(fallback·empty·intent_provider)면 실패해 GitHub 실패 메일로 알린다. 지킬 것 셋: ① 판정을 "Claude가 아님"으로 바꾸지 말 것 — 관리자 화면에서 1순위를 OpenAI로 두면 `attempts=['OpenAI']`가 정상이다 ② 감시는 **fail-closed**(조회 실패 exit 2) — 파이프라인 규약(fail-open)을 따르면 감시가 죽은 것도 조용해진다 ③ 비율 임계로 바꾸지 말 것 — 실사용이 하루 0~5건이라 1건으로 100%가 된다. Secret `SUPABASE_URL`·`SUPABASE_KEY`(anon — service-role에는 `qa_conversations` 권한이 없다) 필요.
 - All `app/core/*.py` modules use `from __future__ import annotations` for forward reference support.
 - Legal API (`legal_api.py`) has circuit breaker pattern: 3 consecutive failures → 30s cooldown. L1 in-memory → L2 Supabase → L3 API call.
 - **법령 조문 조회에 MST(일련번호) 사전매핑을 두지 말 것**(law-version-drift). MST를 명시하면 **그 판본이 고정 반환**돼, "전부개정 시에만 바뀐다"던 전제와 달리 일부개정마다 번호가 바뀌어 17개 중 11개가 낡은 조문을 답하고 있었다(실측: 고용보험법 §70 육아휴직 '30일 또는 7일' 확대 누락). 조회는 `LM`(법령명) 파라미터 — 법제처가 항상 현행판을 반환하고 호출도 2회→1회다. 주의 다섯(전부 실측):
