@@ -82,6 +82,15 @@ test('late test response for a model no longer selected is ignored (success and 
   const withToken = {claude: {model: 'B', token: 'tB'}};
   assert.equal(applyTestResult(withToken, 'claude', 'A', {error: 'late'}).claude.token, 'tB');
   const ok = applyTestResult(drafts, 'claude', 'B', {token: 'tB', latency_ms: 900});
-  assert.deepEqual(ok.claude, {model: 'B', options: [], token: 'tB', latency_ms: 900, error: ''});
+  assert.deepEqual(ok.claude, {model: 'B', options: [], token: 'tB', latency_ms: 900, warning: '', error: ''});
   assert.equal(drafts.claude.token, undefined, '원본 draft를 변경하지 않는다');
+});
+
+test('slow first response shows a warning and the save reminder', () => {
+  const html = renderProvider('claude', {model: 'm', source: 'default', available: true},
+    {options: [{id: 'opus', label: 'opus'}], model: 'opus', token: 't', latency_ms: 12000,
+     warning: '첫 응답까지 12.0초 — 한도 20초의 60%'});
+  assert.match(html, /첫 응답 12\.0초/);
+  assert.match(html, /⚠ 첫 응답까지 12\.0초/);
+  assert.match(html, /저장을 눌러야 반영됩니다/);
 });

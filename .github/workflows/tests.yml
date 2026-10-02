@@ -61,6 +61,9 @@ jobs:
       - name: LLM 폴백 감시 판정 테스트
         run: python3 test_llm_fallback_alert.py
 
+      - name: 임금 답변 규칙 테스트(단시간 주휴·예시 시급·effort·인용 정규식)
+        run: python3 test_wage_answer_rules.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 
