@@ -9,7 +9,7 @@
 ```
 .github/workflows/llm-fallback-alert.yml  (cron 0 */6 * * * + workflow_dispatch)
   └─ python check_llm_fallback.py --window 3
-       ├─ fetch_recent(db, limit=50)   qa_conversations(created_at desc) — anon 키
+       ├─ fetch_recent(db, window)     qa_conversations(created_at desc) 페이지 조회 — anon 키
        ├─ judge(rows, window=3) -> Verdict   ← 순수 함수, 오프라인 테스트 대상
        └─ exit 0 정상/판정불가 · 1 알림 · 2 감시 실패
 ```
@@ -36,7 +36,7 @@ def degraded(llm: dict) -> list[str]:
 ## 3. 조회
 
 - `make_supabase_client(postgrest_timeout=15)` — `SUPABASE_KEY`(anon). service-role은 `qa_conversations` 권한이 없다(실측 42501).
-- `select("id,created_at,metadata").order("created_at", desc=True).limit(50)` — 합성 행이 섞여도 실사용 3건을 확보할 여유.
+- `select("id,created_at,metadata").order("created_at", desc=True).range(...)`를 **50행 페이지로 이어 조회**해 실사용 행이 `window`개 모이면 멈춘다(최대 20페이지). 고정 `limit(50)` 한 번이면 벤치마크가 쌓은 합성 행이 창을 채워 실사용 폴백이 밀려나 "판정 불가"로 통과한다(CodeRabbit PR #89). 기록이 바닥났을 때만 표본 부족이다.
 - 클라이언트 없음·예외 → **exit 2**(FR-04). 감시가 fail-open이면 감시가 죽은 것도 조용해진다.
 
 ## 4. 출력

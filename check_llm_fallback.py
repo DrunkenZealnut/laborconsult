@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 DEFAULT_WINDOW = 3
-FETCH_LIMIT = 50          # 합성 행이 섞여도 실사용 window건을 확보할 여유
+PAGE_SIZE = 50
+MAX_PAGES = 20            # 최대 1,000행 — 벤치마크가 합성 행을 수십 건씩 쌓아도 실사용 window건을 찾는다
 KST = timezone(timedelta(hours=9))
 
 
@@ -53,10 +54,14 @@ def degraded(llm: dict) -> list[str]:
     return reasons
 
 
+def is_real(r: dict) -> bool:
+    meta = r.get("metadata") or {}
+    return not meta.get("synthetic") and bool(meta.get("llm"))
+
+
 def judge(rows: list[dict], window: int = DEFAULT_WINDOW) -> Verdict:
     """rows: qa_conversations 행(정렬 무관). 합성·llm 메타 없는 행은 제외한다."""
-    real = [r for r in rows
-            if not (r.get("metadata") or {}).get("synthetic") and (r.get("metadata") or {}).get("llm")]
+    real = [r for r in rows if is_real(r)]
     real.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     picked = [(r, degraded(r["metadata"]["llm"])) for r in real[:window]]
     if len(picked) < window:
@@ -64,9 +69,22 @@ def judge(rows: list[dict], window: int = DEFAULT_WINDOW) -> Verdict:
     return Verdict("alert" if all(reasons for _, reasons in picked) else "ok", picked)
 
 
-def fetch_recent(db, limit: int = FETCH_LIMIT) -> list[dict]:
-    return db.table("qa_conversations").select("id,created_at,metadata") \
-        .order("created_at", desc=True).limit(limit).execute().data or []
+def fetch_recent(db, window: int = DEFAULT_WINDOW) -> list[dict]:
+    """실사용 행을 window개 모을 때까지 페이지를 이어 조회한다.
+
+    고정 limit으로 한 번만 읽으면 벤치마크가 쌓은 합성 행이 창을 가득 채워, 실사용 폴백이
+    창 밖으로 밀려나 '판정 불가'로 통과한다(CodeRabbit PR #89 — 실측 8-24에 수 분간 합성 ~25건).
+    기록을 다 읽었을 때만 표본 부족이다.
+    """
+    rows: list[dict] = []
+    for page in range(MAX_PAGES):
+        chunk = db.table("qa_conversations").select("id,created_at,metadata") \
+            .order("created_at", desc=True).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1) \
+            .execute().data or []
+        rows += chunk
+        if sum(map(is_real, rows)) >= window or len(chunk) < PAGE_SIZE:
+            break
+    return rows
 
 
 def _kst(ts: str) -> str:
@@ -106,7 +124,7 @@ def main() -> int:
         db = make_supabase_client(postgrest_timeout=15)
         if db is None:
             raise RuntimeError("SUPABASE_URL / SUPABASE_KEY 미설정")
-        rows = fetch_recent(db)
+        rows = fetch_recent(db, args.window)
     except Exception as e:  # noqa: BLE001 — 감시 실패는 실패로 드러나야 한다
         print(f"::error::폴백 감시 조회 실패 — {type(e).__name__}: {str(e)[:200]}")
         return 2

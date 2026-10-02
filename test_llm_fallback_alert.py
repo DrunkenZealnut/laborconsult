@@ -66,6 +66,53 @@ class JudgeTest(unittest.TestCase):
         self.assertIn("연속 폴백", out)
 
 
+class FakeDb:
+    """created_at 내림차순 정렬된 rows를 range(a, b) 페이지로 돌려준다."""
+    def __init__(self, data):
+        self.all = sorted(data, key=lambda r: r["created_at"], reverse=True)
+        self.pages = 0
+
+    def table(self, *_):
+        return self
+
+    def select(self, *_):
+        return self
+
+    def order(self, *_a, **_k):
+        return self
+
+    def range(self, a, b):
+        self.data = self.all[a:b + 1]
+        self.pages += 1
+        return self
+
+    def execute(self):
+        return self
+
+
+class FetchTest(unittest.TestCase):
+    def test_pages_past_synthetic_burst_to_find_real_rows(self):
+        """최신 60건이 합성(벤치마크 폭주)이어도 그 뒤의 실사용 폴백 3건을 찾아 alert."""
+        syn = [row(f"2026-10-05T00:{i:02d}", OK, synthetic=True) for i in range(60)]
+        real = [row(f"2026-10-0{i}T00:00", FB) for i in (1, 2, 3)]
+        db = FakeDb(syn + real)
+        rows = c.fetch_recent(db, 3)
+        self.assertEqual(c.judge(rows).status, "alert")
+        self.assertEqual(db.pages, 2)
+
+    def test_stops_when_history_exhausted(self):
+        db = FakeDb([row("2026-10-01T00:00", FB)])
+        self.assertEqual(c.judge(c.fetch_recent(db, 3)).status, "insufficient")
+        self.assertEqual(db.pages, 1)
+
+    def test_page_cap_bounds_reads(self):
+        db = FakeDb([row(f"2026-{m:02d}-{d:02d}T00:00", OK, synthetic=True)
+                     for m in range(1, 13) for d in range(1, 29)])          # 336 synthetic
+        with patch.object(c, "MAX_PAGES", 3):
+            c.fetch_recent(db, 3)
+        self.assertEqual(db.pages, 3)
+
+
 class MainTest(unittest.TestCase):
     def test_a8_fetch_failure_exits_2(self):
         with patch("app.core.storage.make_supabase_client", return_value=None), \
@@ -73,30 +120,12 @@ class MainTest(unittest.TestCase):
             self.assertEqual(c.main(), 2)
 
     def test_alert_exits_1_and_ok_exits_0(self):
-        class Db:
-            def __init__(self, data):
-                self.data = data
-
-            def table(self, *_):
-                return self
-
-            def select(self, *_):
-                return self
-
-            def order(self, *_a, **_k):
-                return self
-
-            def limit(self, *_):
-                return self
-
-            def execute(self):
-                return self
 
         fb_rows = [row(f"2026-10-0{i}T00:00", FB) for i in (1, 2, 3)]
-        with patch("app.core.storage.make_supabase_client", return_value=Db(fb_rows)), \
+        with patch("app.core.storage.make_supabase_client", return_value=FakeDb(fb_rows)), \
                 patch("sys.argv", ["check_llm_fallback.py"]):
             self.assertEqual(c.main(), 1)
-        with patch("app.core.storage.make_supabase_client", return_value=Db([row("2026-10-04T00:00", OK)] + fb_rows)), \
+        with patch("app.core.storage.make_supabase_client", return_value=FakeDb([row("2026-10-04T00:00", OK)] + fb_rows)), \
                 patch("sys.argv", ["check_llm_fallback.py"]):
             self.assertEqual(c.main(), 0)
 
