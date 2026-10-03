@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 import unittest
+import unittest.mock
 from types import SimpleNamespace as NS
 
 from app.core import pipeline as pl
@@ -110,12 +111,12 @@ class CitationRegexTest(unittest.TestCase):
 class AnswerEffortTest(unittest.TestCase):
     """Claude 5 계열은 effort 미지정 시 답 전에 길게 추론해 읽기 타임아웃(20초)에 걸린다(실측 24.7~55.6초)."""
 
-    def _kwargs(self, model):
+    def _kwargs(self, model, events=()):
         captured = {}
 
         class Stream:
             def __enter__(self):
-                return NS(text_stream=iter([]))
+                return iter(events)
 
             def __exit__(self, *a):
                 return False
@@ -129,13 +130,89 @@ class AnswerEffortTest(unittest.TestCase):
             def with_options(self, **_):
                 return NS(messages=Messages())
 
-        list(pl._stream_claude([{"role": "user", "content": "q"}], "s", NS(claude_client=Client()), model=model))
+        captured["_out"] = list(pl._stream_claude([{"role": "user", "content": "q"}], "s",
+                                                  NS(claude_client=Client()), model=model))
         return captured
 
     def test_effort_sent_for_claude_5_models(self):
         from app.config import ANSWER_EFFORT
         for m in ("claude-sonnet-5", "claude-sonnet-5-5", "claude-opus-5-5"):
-            self.assertEqual(self._kwargs(m).get("output_config"), {"effort": ANSWER_EFFORT}, m)
+            kw = self._kwargs(m)
+            self.assertEqual(kw.get("output_config"), {"effort": ANSWER_EFFORT}, m)
+            # summarized가 아니면 추론 중 바이트가 끊겨 읽기 타임아웃(실측 공백 25.9초)
+            self.assertEqual(kw.get("thinking"), {"type": "adaptive", "display": "summarized"}, m)
+
+    def test_thinking_events_become_throttled_heartbeats_and_never_leak(self):
+        events = [NS(type="thinking", thinking="비밀 추론")] * 3 + [
+            NS(type="text", text="답변"), NS(type="content_block_stop")]
+        with unittest.mock.patch.object(pl, "THINKING_HEARTBEAT_SECONDS", 0.0):
+            out = self._kwargs("claude-opus-5-5", events)["_out"]
+        self.assertEqual(out, ["", "", "", "답변"])
+        self.assertNotIn("비밀 추론", "".join(out))
+        with unittest.mock.patch.object(pl, "THINKING_HEARTBEAT_SECONDS", 3600.0):
+            out = self._kwargs("claude-opus-5-5", events)["_out"]
+        self.assertEqual(out, ["답변"], "간격 안의 추론 이벤트는 하트비트로 내지 않는다")
+
+    def test_max_tokens_stop_after_text_is_marked_truncated(self):
+        events = [NS(type="text", text="잘린 답"),
+                  NS(type="message_delta", delta=NS(stop_reason="max_tokens"))]
+        captured = {}
+
+        class Stream:
+            def __enter__(self):
+                return iter(events)
+
+            def __exit__(self, *a):
+                return False
+
+        client = NS(with_options=lambda **_: NS(messages=NS(stream=lambda **kw: Stream())))
+        fn = lambda m, s, c: pl._stream_claude(m, s, NS(claude_client=client), model="claude-opus-5-5")
+        outcome = pl.AnswerOutcome()
+        real = pl._answer_providers
+        pl._answer_providers = lambda cfg: [("Claude", fn)]
+        try:
+            out = list(pl._stream_answer([], "", NS(gemini_api_key=None), outcome))
+        finally:
+            pl._answer_providers = real
+        self.assertEqual(out, [("Claude", "잘린 답")])
+        self.assertTrue(outcome.truncated)
+
+    def test_end_turn_is_not_truncated(self):
+        events = [NS(type="text", text="완결"), NS(type="message_delta", delta=NS(stop_reason="end_turn"))]
+        self.assertEqual(self._kwargs("claude-opus-5-5", events)["_out"], ["완결"])
+
+    def test_stream_answer_passes_provider_heartbeat_without_counting_it(self):
+        def fake(messages, system, config, model=None):
+            yield ""
+            yield ""
+            yield "본문"
+        outcome = pl.AnswerOutcome()
+        real = pl._answer_providers
+        pl._answer_providers = lambda cfg: [("Claude", fake)]
+        try:
+            out = list(pl._stream_answer([], "", NS(gemini_api_key=None), outcome))
+        finally:
+            pl._answer_providers = real
+        self.assertEqual(out, [("Claude", ""), ("Claude", ""), ("Claude", "본문")])
+        self.assertEqual(outcome.provider, "Claude")
+        self.assertEqual(outcome.attempts, ["Claude"])
+
+    def test_heartbeat_only_stream_is_still_an_empty_response(self):
+        """하트비트만 내고 끝나면 빈 응답 = 실패(다음 제공자로) — 하트비트가 성공으로 세지면 안 된다."""
+        def beats(messages, system, config, model=None):
+            yield ""
+
+        def ok(messages, system, config, model=None):
+            yield "대체 답변"
+        outcome = pl.AnswerOutcome()
+        real = pl._answer_providers
+        pl._answer_providers = lambda cfg: [("Claude", beats), ("OpenAI", ok)]
+        try:
+            list(pl._stream_answer([], "", NS(gemini_api_key=None), outcome))
+        finally:
+            pl._answer_providers = real
+        self.assertEqual(outcome.provider, "OpenAI")
+        self.assertEqual(outcome.empty_providers, ["Claude"])
 
     def test_effort_omitted_for_unsupported_models(self):
         for m in ("claude-haiku-4-5", "claude-haiku-4-5-20251001", "claude-sonnet-4-5",

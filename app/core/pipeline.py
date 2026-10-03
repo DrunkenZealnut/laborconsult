@@ -404,6 +404,9 @@ def _supports_effort(model: str) -> bool:
     return (major, minor) >= (4, 6)
 
 
+THINKING_HEARTBEAT_SECONDS = 5.0   # 추론 중 하트비트 간격 — 프론트 idle(60초)보다 충분히 짧게
+
+
 def _stream_claude(messages: list, system: str, config: AppConfig, model: str | None = None):
     """Claude 스트리밍 — read 타임아웃은 토큰 간 무진행 감지 (DB-6).
 
@@ -420,8 +423,15 @@ def _stream_claude(messages: list, system: str, config: AppConfig, model: str | 
     # effort 미지정이면 모델이 답 전에 길게 추론해 읽기 타임아웃에 걸린다(config.ANSWER_EFFORT 주석).
     # 지원하지 않는 모델(Haiku·Sonnet 4.5 이하)은 400이라 보내지 않는다. "off"는 모델 기본 동작.
     from app.config import ANSWER_EFFORT
-    extra = ({"output_config": {"effort": ANSWER_EFFORT}}
-             if ANSWER_EFFORT != "off" and _supports_effort(model) else {})
+    extra = {}
+    if ANSWER_EFFORT != "off" and _supports_effort(model):
+        # display="summarized" — 기본값 "omitted"는 추론 중 바이트를 거의 보내지 않아 읽기 타임아웃에
+        # 걸린다. 실측(opus-5-5, effort=medium, 실제 단시간 주휴 질문): omitted는 이벤트 공백 최대 25.9초
+        # → 20초 한도 초과·폴백, summarized는 최대 6.6초(추론 요약 이벤트 282개). 요약 **내용은 버린다** —
+        # 사용자에게 내보내지 않고 하트비트로만 쓴다.
+        extra = {"output_config": {"effort": ANSWER_EFFORT},
+                 "thinking": {"type": "adaptive", "display": "summarized"}}
+    last_beat = time.monotonic()
     with config.claude_client.with_options(
         timeout=timeout, max_retries=ANSWER_MAX_RETRIES,
     ).messages.stream(
@@ -432,8 +442,21 @@ def _stream_claude(messages: list, system: str, config: AppConfig, model: str | 
         system=system,
         messages=messages,
     ) as stream:
-        for text in stream.text_stream:
-            yield text
+        for event in stream:
+            if event.type == "text":
+                if event.text:
+                    yield event.text
+            elif event.type == "thinking" and time.monotonic() - last_beat >= THINKING_HEARTBEAT_SECONDS:
+                # 빈 문자열 = 하트비트(_stream_answer → 호출부가 ping으로 변환). 추론 중 무이벤트
+                # 구간이 프론트 idle 60초를 넘지 않게 한다. 추론 텍스트는 절대 내보내지 않는다.
+                last_beat = time.monotonic()
+                yield ""
+            elif (event.type == "message_delta"
+                  and getattr(getattr(event, "delta", None), "stop_reason", None) == "max_tokens"):
+                # adaptive thinking은 추론과 답변이 max_tokens를 함께 쓴다. 한도로 끝난 답변을 정상 완료로
+                # 두면 절단 고지·metadata.truncated가 빠져 완결된 답변으로 게시판에 오른다(CodeRabbit PR #95).
+                # 예외로 올리면 기존 규약대로 처리된다 — 본문이 나간 뒤면 절단, 없으면 다음 제공자.
+                raise RuntimeError("Claude response reached max_tokens")
 
 
 def _stream_openai(messages: list, system: str, config: AppConfig, model: str | None = None):
@@ -547,6 +570,11 @@ def _stream_answer(
         pending: list[str] = []   # 첫 실질 청크 이전의 공백 청크 — 전송 보류
         try:
             for text in stream_fn(messages, system, config):
+                if text == "":
+                    # 제공자 내부 하트비트(예: Claude 추론 중) — 본문이 아니다. 전환 하트비트와 같은
+                    # 형태로 흘려 호출부가 ping으로 바꾸게 한다. 공백 문자열(" ")과는 다르다.
+                    yield (name, "")
+                    continue
                 if not chars:
                     if not text.strip():
                         # 공백만 내다 죽는 제공자의 공백이 프론트로 새지 않게 보류
