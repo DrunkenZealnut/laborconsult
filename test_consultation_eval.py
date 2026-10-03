@@ -733,6 +733,7 @@ def test_live_cli_publishes_only_after_local_output_with_isolated_config() -> No
             return collect_events([{"type": "chunk", "text": "가" * 3100}, {"type": "done"}])
 
         with patch.dict(sys.modules, {"app.config": module}), \
+                patch.object(harness, "_publisher_client", lambda c: c.supabase), \
                 patch.object(harness, "run_case", run), redirect_stdout(io.StringIO()) as output:
             assert harness.main(["--live", "--limit", "2", "--publish-admin",
                                  "--output", str(path)]) == 0
@@ -755,11 +756,12 @@ def test_publish_admin_preserves_local_report_on_missing_client_or_insert_failur
     class DuplicateRunError(RuntimeError):
         code = "23505"
 
-    for failure in (None, RuntimeError("database unavailable"), DuplicateRunError("duplicate key")):
+    for failure in (RuntimeError("database unavailable"), DuplicateRunError("duplicate key")):
         module, config, _ = _fake_config_module()
-        config.supabase = FakeSupabaseInsertRecorder(failure=failure) if failure else None
+        config.supabase = FakeSupabaseInsertRecorder(failure=failure)
         with TemporaryDirectory() as directory, chdir(directory), \
                 patch.dict(sys.modules, {"app.config": module}), \
+                patch.object(harness, "_publisher_client", lambda c: c.supabase), \
                 patch.object(harness, "run_case", return_value=collect_events([
                     {"type": "chunk", "text": "saved answer"}, {"type": "done"}])), \
                 redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as error:
@@ -771,9 +773,29 @@ def test_publish_admin_preserves_local_report_on_missing_client_or_insert_failur
             if isinstance(failure, DuplicateRunError):
                 assert "duplicate" in error.getvalue().lower()
                 assert report["run_metadata"]["run_id"] in error.getvalue()
-        if failure:
-            assert len(config.supabase.inserted) == 1
-            assert config.supabase.calls[-1] == ("execute",)
+        assert len(config.supabase.inserted) == 1
+        assert config.supabase.calls[-1] == ("execute",)
+
+
+def test_publish_admin_without_service_role_key_fails_before_running_any_case() -> None:
+    """키 없이 60건(약 40분)을 다 돌린 뒤 게시만 실패하던 경로를 실행 전에 막는다."""
+    module, config, _ = _fake_config_module()
+    ran = []
+    with TemporaryDirectory() as directory, chdir(directory), \
+            patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "_publisher_client", lambda c: None), \
+            patch.object(harness, "run_case", lambda case, cfg: ran.append(case.id)), \
+            redirect_stderr(io.StringIO()) as error:
+        assert harness.main(["--live", "--limit", "1", "--publish-admin"]) == 1
+        assert not Path("eval_consultation_results.json").exists()
+    assert ran == []
+    assert "SUPABASE_SERVICE_ROLE_KEY" in error.getvalue()
+
+
+def test_publisher_uses_service_role_key_not_the_app_key() -> None:
+    import os
+    with patch.dict(os.environ, {"SUPABASE_SERVICE_ROLE_KEY": ""}, clear=False):
+        assert harness._publisher_client(SimpleNamespace(supabase=object())) is None
 
 
 def test_live_cli_does_not_publish_without_flag_or_when_output_fails_or_run_empty() -> None:
@@ -783,6 +805,7 @@ def test_live_cli_does_not_publish_without_flag_or_when_output_fails_or_run_empt
     fake = config.supabase = FakeSupabaseInsertRecorder()
     with TemporaryDirectory() as directory, chdir(directory), \
             patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "_publisher_client", lambda c: c.supabase), \
             patch.object(harness, "run_case", return_value=collect_events([
                 {"type": "chunk", "text": "saved"}, {"type": "done"}])), \
             redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -803,6 +826,7 @@ def test_live_cli_records_unexpected_pipeline_exceptions_and_publishes_failed_st
     config.supabase = FakeSupabaseInsertRecorder()
     with TemporaryDirectory() as directory, chdir(directory), \
             patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "_publisher_client", lambda c: c.supabase), \
             patch.object(harness, "run_case", side_effect=RuntimeError("startup failed")), \
             redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
         assert harness.main(["--live", "--limit", "1", "--publish-admin"]) == 1
@@ -818,6 +842,7 @@ def test_live_cli_publish_run_ids_are_unique() -> None:
     config.supabase = FakeSupabaseInsertRecorder()
     with TemporaryDirectory() as directory, chdir(directory), \
             patch.dict(sys.modules, {"app.config": module}), \
+            patch.object(harness, "_publisher_client", lambda c: c.supabase), \
             patch.object(harness, "run_case", return_value=collect_events([
                 {"type": "chunk", "text": "answer"}, {"type": "done"}])), \
             redirect_stdout(io.StringIO()):
@@ -867,6 +892,8 @@ def main() -> int:
         test_live_cli_publishes_only_after_local_output_with_isolated_config,
         test_publish_admin_preserves_local_report_on_missing_client_or_insert_failure,
         test_live_cli_does_not_publish_without_flag_or_when_output_fails_or_run_empty,
+        test_publish_admin_without_service_role_key_fails_before_running_any_case,
+        test_publisher_uses_service_role_key_not_the_app_key,
         test_live_cli_records_unexpected_pipeline_exceptions_and_publishes_failed_status,
         test_live_cli_publish_run_ids_are_unique,
     ]

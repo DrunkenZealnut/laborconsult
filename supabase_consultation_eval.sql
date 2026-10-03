@@ -26,3 +26,7 @@ ALTER TABLE laborconsult.consultation_eval_runs ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON laborconsult.consultation_eval_runs FROM anon;
 REVOKE ALL ON laborconsult.consultation_eval_runs FROM authenticated;
 REVOKE ALL ON laborconsult.consultation_eval_runs FROM PUBLIC;
+-- 커스텀 스키마라 service_role 권한이 자동 부여되지 않는다(CLAUDE.md). 이 GRANT가 없어서
+-- 게시(eval_consultation --publish-admin)와 관리자 '답변 품질' 조회가 둘 다 42501로 막혀 있었다
+-- (2026-10-03 발견 — 메뉴가 생긴 뒤 한 번도 결과를 보여준 적이 없다).
+GRANT SELECT, INSERT ON laborconsult.consultation_eval_runs TO service_role;

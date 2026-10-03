@@ -520,6 +520,28 @@ def require_admin(authorization: str = Header(None)):
     return payload
 
 
+_eval_client = None
+
+
+def _get_eval_supabase():
+    """평가 저장소(consultation_eval_runs) 전용 service-role 클라이언트, 없으면 503.
+
+    이 테이블은 anon·authenticated 접근이 막혀 있는데 예전에는 _get_supabase()(SUPABASE_KEY,
+    보통 anon)로 읽어 42501 → 503이 났다 — '답변 품질' 메뉴가 생긴 뒤 한 번도 결과를 보여주지
+    못했다(2026-10-03 발견). 법률 기준·답변 모델 저장소와 같은 service-role 경로로 맞춘다.
+    """
+    global _eval_client
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not key:
+        raise HTTPException(503, "평가 저장소가 설정되지 않았습니다")
+    if _eval_client is None:
+        from app.core.storage import make_supabase_client
+        _eval_client = make_supabase_client(key=key, postgrest_timeout=15)
+        if _eval_client is None:
+            raise HTTPException(503, "평가 저장소가 설정되지 않았습니다")
+    return _eval_client
+
+
 def _get_supabase():
     """Supabase 클라이언트 반환, 없으면 503"""
     config = get_config()
@@ -641,7 +663,7 @@ def admin_evaluation_runs(
     _admin=Depends(require_admin),
 ):
     """평가 실행 요약 목록 — 사례별 results는 상세에서만 조회한다."""
-    sb = _get_supabase()
+    sb = _get_eval_supabase()
     limit = max(1, min(limit, 100))
     try:
         query = sb.schema("laborconsult").table("consultation_eval_runs").select(
@@ -664,7 +686,7 @@ def admin_evaluation_runs(
 def admin_evaluation_run(run_id: str, _admin=Depends(require_admin)):
     """특정 평가 실행의 요약과 저장된 사례별 결과를 반환한다."""
     _validate_eval_run_id(run_id)
-    sb = _get_supabase()
+    sb = _get_eval_supabase()
     try:
         run = _single_row(
             sb.schema("laborconsult").table("consultation_eval_runs")
