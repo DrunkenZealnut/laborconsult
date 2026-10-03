@@ -49,9 +49,12 @@ ANSWER_MAX_RETRIES = max(0, min(1, int(os.getenv("ANSWER_MAX_RETRIES", "0"))))
 # 함께 따질 것 — 추론 중에는 하트비트도 나가지 않는다.
 # 허용값은 effort를 지원하는 모든 모델이 받는 low/medium/high(+off)뿐이다 — xhigh는 4.6에서 400
 # (CodeRabbit PR #91). 모델별 지원 여부는 pipeline._supports_effort가 판정한다.
-ANSWER_EFFORT = os.getenv("ANSWER_EFFORT", "low").strip().lower()
+# 기본 medium(2026-10-03) — 추론 요약 스트리밍(pipeline._stream_claude, display=summarized)으로 추론 중
+# 이벤트 공백이 6.6초로 줄어 20초 읽기 한도 안에서 추론 깊이를 올릴 수 있게 됐다. 7건 비교에서 medium은
+# 자동 채점 동일(7/7)·평균 +17초(37.6→54.1초)였고, 정보 부족 질문의 확인 질문이 더 실무적이었다.
+ANSWER_EFFORT = os.getenv("ANSWER_EFFORT", "medium").strip().lower()
 if ANSWER_EFFORT not in {"low", "medium", "high", "off"}:
-    ANSWER_EFFORT = "low"
+    ANSWER_EFFORT = "medium"
 # 답변 생성 토큰 한도. citation_validator의 교정 한도와 묶여 있다 — 한쪽만 낮추면
 # 교정 결과가 0.7 길이 가드에 걸려 통째로 폐기되고 환각 판례가 그대로 남는다.
 ANSWER_MAX_TOKENS = 8192
