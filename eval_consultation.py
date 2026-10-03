@@ -42,6 +42,8 @@ REQUIRED_CASE_KEYS = frozenset({
     "forbidden_claims",
     "risk_level",
 })
+# 지식iN fixture(data/eval_kin_queries.json)가 쓰는 추적 필드. 기존 fixture에는 없다.
+OPTIONAL_CASE_KEYS = frozenset({"source_ref", "report_score"})
 VALID_RISK_LEVELS = frozenset({"low", "medium", "high"})
 # Keep offline validation standard-library-only. Tests check these labels against
 # the production analyzer schema, including labels not yet used by the fixture.
@@ -65,6 +67,7 @@ SUPPORTED_EXPECTED_LABELS = {
 }
 DISCLAIMER_MARKER = "법적 효력"
 FIXTURE_PATH = Path(__file__).resolve().parent / "data/eval_consultation_queries.json"
+KIN_FIXTURE_PATH = Path(__file__).resolve().parent / "data/eval_kin_queries.json"
 EXPECTED_DISTRIBUTION = {
     "임금·계산": 10,
     "해고·징계·구제절차": 10,
@@ -90,6 +93,8 @@ class EvalCase:
     required_notices: list[str]
     forbidden_claims: list[str]
     risk_level: str
+    source_ref: str = ""
+    report_score: int | None = None
 
 
 def load_cases(path: Path) -> list[EvalCase]:
@@ -100,7 +105,8 @@ def load_cases(path: Path) -> list[EvalCase]:
 
     cases = []
     for index, item in enumerate(raw):
-        if not isinstance(item, dict) or set(item) != REQUIRED_CASE_KEYS:
+        if (not isinstance(item, dict) or not REQUIRED_CASE_KEYS <= set(item)
+                or not set(item) <= REQUIRED_CASE_KEYS | OPTIONAL_CASE_KEYS):
             raise ValueError(f"case {index} has invalid field set")
         cases.append(EvalCase(**item))
     return cases
@@ -131,6 +137,12 @@ def validate_cases(cases: list[EvalCase]) -> list[str]:
                 isinstance(value, str) and value.strip() for value in values
             ):
                 errors.append(f"invalid {field}: {case.id}; expected a list of nonempty strings")
+        for claim in case.forbidden_claims if isinstance(case.forbidden_claims, list) else []:
+            if isinstance(claim, str) and claim.startswith(("re:", "re!:")):
+                try:
+                    re.compile(claim.split(":", 1)[1])
+                except re.error:
+                    errors.append(f"invalid forbidden_claims regex: {case.id}")
         if not isinstance(case.expected_values, dict) or not all(
             isinstance(key, str) and type(value) in (float, int, str)
             for key, value in case.expected_values.items()
@@ -243,6 +255,40 @@ def run_case(case: EvalCase, config) -> dict:
             pipeline.analyze_intent = original
 
 
+# 금지 문구가 **부정 문맥**에 있으면 검출하지 않는다. "구 기준인 10일 미만은 폐지됐다"처럼
+# 정답이 오답 문구를 언급하며 부정하는 것이 바로 원하는 출력이라, 부분문자열 매칭만으로는
+# 정답을 감점한다(kin-answer-accuracy D6). 창은 앞뒤 40자.
+_NEGATION_RE = re.compile(
+    r"폐지|삭제|구\s*기준|과거|이전\s*기준|예전|더\s*이상|아닙니다|아니라|아닌|아님|"
+    r"적용되지\s*않|요건이\s*아니|쓰지\s*않|잘못|오해|틀린")
+_NEGATION_WINDOW = 40
+# 사건번호 같은 **식별자**는 부정 예외를 적용하지 않는다 — 인용 자체가 오류라 문맥이 무관하고,
+# 판례 인용 문장에는 "실제 일한 시간이 아니라"처럼 부정어가 흔해 예외가 오답을 통과시킨다(실측 kin-01).
+_IDENTIFIER_CLAIM_RE = re.compile(r"\d{2,4}[가-힣]{1,3}\d+")
+
+
+def claim_found(claim: str, answer: str) -> bool:
+    """금지 문구 검출. 부정 문맥 안의 일치는 세지 않는다.
+
+    `re:` — 정규식. `re!:` — 정규식이되 부정 예외를 적용하지 않는다. 조문 오인용처럼
+    **인용 자체가 오류**인 경우에 쓴다("규정이 적용되지 않습니다(근로기준법 제35조)"는
+    부정문이지만 삭제 조문을 근거로 든 오류다 — 실측 kin-17).
+    """
+    if claim.startswith("re!:"):
+        return re.search(claim[4:], answer) is not None
+    pattern = claim[3:] if claim.startswith("re:") else re.escape(claim)
+    if not claim.startswith("re:") and _IDENTIFIER_CLAIM_RE.fullmatch(claim):
+        return claim in answer
+    for m in re.finditer(pattern, answer):
+        # 일치 구간 **바깥**만 본다 — 금지 문구 자체에 부정어가 든 경우가 있다
+        # ("프리랜서 계약이면 무조건 근로자가 아닙니다"). 안까지 보면 영영 검출되지 않는다.
+        before = answer[max(0, m.start() - _NEGATION_WINDOW): m.start()]
+        after = answer[m.end(): m.end() + _NEGATION_WINDOW]
+        if not (_NEGATION_RE.search(before) or _NEGATION_RE.search(after)):
+            return True
+    return False
+
+
 def _coverage(text: str, required: list[str]) -> float:
     if not required:
         return 1.0
@@ -256,7 +302,7 @@ def score_result(case: EvalCase, observed: dict) -> dict:
     source_types = {
         hit.get("source_type", "") for hit in observed.get("sources", [])
     }
-    forbidden = [item for item in case.forbidden_claims if item in answer]
+    forbidden = [item for item in case.forbidden_claims if claim_found(item, answer)]
     intent_match = (
         analysis.get("intent") == case.expected_intent
         if case.expected_intent else None
@@ -459,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--publish-admin", action="store_true", help="Live 결과를 관리자 평가 테이블에 저장")
     parser.add_argument("--limit", type=int, help="앞에서부터 실행할 사례 수 (양수)")
     parser.add_argument("--case", metavar="ID", help="지정 ID 하나만 선택")
+    parser.add_argument("--fixture", type=Path, default=FIXTURE_PATH,
+                        help="평가 fixture 경로 (기본: 상담 60건). 지식iN 20건은 data/eval_kin_queries.json")
     parser.add_argument("--output", type=Path, default=Path("eval_consultation_results.json"),
                         help="라이브 결과 JSON 경로 (기본: %(default)s)")
     try:
@@ -471,9 +519,11 @@ def main(argv: list[str] | None = None) -> int:
         return int(error.code)
 
     try:
-        cases = load_cases(FIXTURE_PATH)
+        fixture_path = args.fixture.resolve()
+        cases = load_cases(fixture_path)
         errors = validate_cases(cases)
-        distribution_ok = (
+        # 분포 고정은 기본 60건 fixture의 계약이다. 다른 fixture는 스키마만 본다.
+        distribution_ok = fixture_path != FIXTURE_PATH or (
             all(isinstance(case.category, str) for case in cases)
             and Counter(case.category for case in cases) == EXPECTED_DISTRIBUTION
         )
@@ -509,7 +559,7 @@ def main(argv: list[str] | None = None) -> int:
 
     metadata = {
         "started_at": datetime.now(timezone.utc).isoformat(),
-        "fixture_path": str(FIXTURE_PATH),
+        "fixture_path": str(fixture_path),
         "fixture_case_count": len(cases),
         "python_version": platform.python_version(),
         "git_commit": _git_commit(),

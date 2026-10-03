@@ -1,0 +1,572 @@
+[
+  {
+    "id": "kin-01",
+    "category": "지식iN·주휴",
+    "question": "아르바이트로 9월 마지막 주(월·화·수, 하루 6시간씩 총 18시간)를 일했습니다. 그 주가 월~금 전부가 아니라는 이유로 사장님이 주휴수당을 빼셨는데, 주휴수당은 월~금 기준으로만 발생하나요? 계산법도 알려주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제55조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "3.6"
+    ],
+    "forbidden_claims": [
+      "re:다음\\s*주.{0,25}(근로|근무|출근).{0,15}(예정|계속).{0,20}(있어야|필요|요건|전제|조건)",
+      "2019다293449",
+      "re:(그\\s*주가?\\s*끝난\\s*(뒤|후)에도|다음\\s*주에도).{0,15}근로\\s*관계가?\\s*계속\\S{0,4}\\s?(되어야|돼야|있어야)"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386727",
+    "report_score": 76
+  },
+  {
+    "id": "kin-02",
+    "category": "지식iN·근로시간",
+    "question": "포괄임금 계약(기본급+시간외수당)인데 계약서 근무시간은 휴게 제외 9시간, 실제 정규 근무는 8시간입니다. 한 달째 매주 12시간씩 밤 10시까지 초과근무 중이고, 야근수당은 기본급 기준 시급으로 계산하며 시간대별로 수당·식대 인정이 다르고, 연차를 쓰면 2주간 야근수당을 안 준다고 합니다. 문제 제기가 가능한가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495385374",
+    "report_score": 82
+  },
+  {
+    "id": "kin-03",
+    "category": "지식iN·고용보험",
+    "question": "한 달에 한 번 일용 알바 계약서를 쓰고 3.3%를 떼고 주급으로 받고 있으며 고용보험 등 4대보험은 미가입입니다. 이전 계약직 기간에도 미가입이었습니다. 실업급여를 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re:10\\s*일\\s*미만"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495387368",
+    "report_score": 76
+  },
+  {
+    "id": "kin-04",
+    "category": "지식iN·고용보험",
+    "question": "스트레스성 신경증으로 어지럼증이 지속돼 회사에 구두로 퇴사 의사를 전했고 아직 퇴직일·서류는 정하지 않았습니다. 질병으로 인한 퇴사로 실업급여를 받을 수 있는지, 회사에 협조를 요청하려면 무엇이 필요한지 알고 싶습니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386774",
+    "report_score": 87
+  },
+  {
+    "id": "kin-05",
+    "category": "지식iN·주휴",
+    "question": "5인 미만 사업장입니다. 아르바이트생의 근로계약상 근무는 매주 토·일 각 5시간 15분(주 10시간 30분)인데, 입사 초기 며칠은 교육(하루 4~5시간, 날짜는 입사 후 협의)을, 추석 기간 이틀은 면접 때 미리 정한 지원근무를 했습니다. 첫 3주 실제 근로시간은 51시간입니다. 주휴수당 15시간 판단은 계약상 10시간 30분으로 하나요, 교육·추석 근무까지 넣어 4주 평균으로 하나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제18조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "2019다293449"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495387301",
+    "report_score": 68
+  },
+  {
+    "id": "kin-06",
+    "category": "지식iN·고용보험",
+    "question": "계약직으로 2년이 안 되게 일하고 있고, 자발적 퇴사는 실업급여가 안 된다고 해서 계약 종료일(약 2달 후)까지 버티는 중입니다. 지금 퇴사하면 실업급여 대신 '쉬었음 청년' 지원금은 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495387046",
+    "report_score": 72
+  },
+  {
+    "id": "kin-07",
+    "category": "지식iN·고용보험",
+    "question": "올해 초 입사 이틀 만에 '내일부터 나오지 말라'는 말을 들었는데 회사가 자진퇴사로 신고했습니다. 이틀치 임금이 최저임금에 못 미쳐 노동청에 신고했고 합의금을 받았습니다. 작년에 1년 8개월 다닌 회사는 자진퇴사였습니다. 이 상황에서 실업급여를 받을 방법이 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495371690",
+    "report_score": 87
+  },
+  {
+    "id": "kin-08",
+    "category": "지식iN·고용보험",
+    "question": "약 8개월 근무 후 야근이 많고 야근수당을 받지 못해 자진퇴사했고 2개월이 지났습니다. 수습 3개월 동안 최저임금의 80%를 받았는데, 이런 임금 문제로 자진퇴사여도 실업급여를 받을 수 있나요? 신청 방법도 알려주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "최저임금법 제5조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re:(80\\s*%|80퍼|80퍼센트).{0,40}(적법|합법|가능할 수|문제(가|는)? 없)"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495383333",
+    "report_score": 67
+  },
+  {
+    "id": "kin-09",
+    "category": "지식iN·고용보험",
+    "question": "담석증이 있는데 회사에서 괴롭힘도 당하고 있습니다. 팀장이 사직서 사유를 '담석증 수술'로 쓰라고 해서 그렇게 썼고 녹취가 있습니다. 실업급여 심사에서 질병이 아니라 직장 내 괴롭힘·통상의 다른 근로자도 이직했을 사정으로 심사받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re!:제\\s*109\\s*조\\s*제\\s*2\\s*항"
+    ],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386695",
+    "report_score": 68
+  },
+  {
+    "id": "kin-10",
+    "category": "지식iN·고용보험",
+    "question": "2차 실업인정 기간 28일 사이에 추석·개천절·대체공휴일이 있습니다. 구직급여가 28일치 그대로 나오나요, 공휴일을 빼고 나오나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495383442",
+    "report_score": 93
+  },
+  {
+    "id": "kin-11",
+    "category": "지식iN·고용보험",
+    "question": "2년 넘게 다닌 회사를 퇴직한 뒤 한 달짜리 계약직으로 주말(토·일) 하루 8시간씩 일하게 됐습니다. 이 계약이 끝난 뒤 실업급여를 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "2018두63235"
+    ],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495384447",
+    "report_score": 77
+  },
+  {
+    "id": "kin-12",
+    "category": "지식iN·고용보험",
+    "question": "공사가 끝나 9월 22일 퇴사했고 10월 7일 고용센터에서 실업급여를 신청할 예정입니다. 그 뒤 10월 12일에 취업이 되면 조기재취업수당을 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "제84조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [
+      "14일"
+    ],
+    "forbidden_claims": [
+      "re:10월\\s*1[4-9]일.{0,40}(입사|취업|재취업).{0,40}(가능|충족|받을 수|자격|해결)",
+      "re:대기\\s*기간.{0,30}7일.{0,60}조기\\s*재취업.{0,20}(가능|충족|받을 수)"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495385213",
+    "report_score": 54
+  },
+  {
+    "id": "kin-13",
+    "category": "지식iN·고용보험",
+    "question": "상용직(자발적 퇴사) → 상용직(계약만료) → 일용직(계약만료, 최종 이직) 순서로 일했고, 180일은 넘지만 일용직 기간은 90일이 안 됩니다. 이 경우 마지막 상용직(계약만료)이 기준이 되어 90일 요건이 적용되지 않나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "제43조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re:10\\s*일\\s*미만"
+    ],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495385442",
+    "report_score": 85
+  },
+  {
+    "id": "kin-14",
+    "category": "지식iN·근로시간",
+    "question": "지방자치단체 공무직이며 월~금 40시간 근무 후 12시간 초과근무를 했고, 단체협약상 주휴일인 일요일에 8시간을 더 일했습니다. 일요일 근무에 연장근로수당과 휴일근로수당을 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제56조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495387005",
+    "report_score": 91
+  },
+  {
+    "id": "kin-15",
+    "category": "지식iN·퇴직금",
+    "question": "근로계약서 없이 2016년부터 2026년 9월까지 일했는데 갑자기 그만 나오라고 합니다. 계약서가 없어도 퇴직금 등을 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "2010다111757"
+    ],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386980",
+    "report_score": 88
+  },
+  {
+    "id": "kin-16",
+    "category": "지식iN·고용보험",
+    "question": "사업주가 사업장을 양도하고 폐업해 퇴직했습니다. 그 사업주가 3개월쯤 뒤 다른 곳에서 개업할 예정이고 저는 다시 그곳에 취업할 생각입니다. 그 사이 3개월 동안 실업급여를 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386901",
+    "report_score": 87
+  },
+  {
+    "id": "kin-17",
+    "category": "지식iN·고용보험",
+    "question": "이전 직장에 2년 9개월 다니다 자진퇴사했고(피보험 기간 180일 이상), 새 직장에서 고용보험에 가입한 채 주 6일 3주가량 상용직으로 일하다 해고됐습니다. 해고로 이직확인서를 받으면 실업급여 신청이 가능한가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re!:근로기준법[^.\\n]{0,20}?제\\s*35\\s*조"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386291",
+    "report_score": 84
+  },
+  {
+    "id": "kin-18",
+    "category": "지식iN·고용보험",
+    "question": "최근 18개월 이력: 상용직(자발적 퇴사) → 상용직(계약만료) → 상용직(계약만료) → 일용직(계약만료, 최종 이직)입니다. 피보험 단위기간은 180일을 넘지만 일용직으로 일한 기간은 90일이 안 됩니다. 실업급여를 받을 수 있나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "제43조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re:10\\s*일\\s*미만"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495385724",
+    "report_score": 74
+  },
+  {
+    "id": "kin-19",
+    "category": "지식iN·주휴",
+    "question": "9월에는 주 4일(화~금), 10월부터는 주 2일(목·금, 주 15시간 미만) 근무로 바뀌었습니다. 9월 29·30일(화·수)과 10월 1·2일(목·금)이 같은 주인데, 사장님은 달이 바뀌어 각각 이틀씩이라 주휴가 없다고 합니다. 어느 쪽이 맞나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [
+      "근로기준법 제18조"
+    ],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "2019다293449",
+      "re:다음\\s*주.{0,25}(근로|근무|출근).{0,15}(예정|계속).{0,20}(있어야|필요|요건|전제|조건)"
+    ],
+    "risk_level": "high",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495383253",
+    "report_score": 78
+  },
+  {
+    "id": "kin-20",
+    "category": "지식iN·고용보험",
+    "question": "약 23개월 근무 후 9월 30일 계약이 종료됐습니다. 회사가 이직확인서를 10월 하순에 처리한다고 하는데, 구직등록·온라인 교육을 10월 23일 전에 먼저 해 두고 10월 말에 고용센터를 방문하면 되는 순서인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "medium",
+    "source_ref": "https://kin.naver.com/qna/detail.naver?docId=495386285",
+    "report_score": 74
+  }
+]

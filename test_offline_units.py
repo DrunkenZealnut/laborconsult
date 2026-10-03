@@ -240,7 +240,7 @@ def test_law_version_drift_guard() -> None:
          mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
         txt = legal_api.fetch_article("고용보험법", 70, "k")
         assert "낡은" not in (txt or "")
-        assert l2s.call_args.args[0].startswith("v2:")
+        assert l2s.call_args.args[0].startswith("v3:")
 
     _reset()
     print("  ✅ 법령 LM 전환: 구조 2파일·게이트·원문자 항·항 폴백·조의N·"

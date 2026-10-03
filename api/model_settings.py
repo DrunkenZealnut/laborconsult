@@ -35,10 +35,10 @@ _TEST_PARAGRAPH = (
 def test_messages() -> tuple[str, str]:
     """(system, user) — 답변 경로와 같은 조립 순서·비슷한 크기."""
     from datetime import date
-    from app.templates.prompts import (CONSULTATION_SYSTEM_PROMPT, INJECTION_RESISTANCE,
-                                       WAGE_CALC_RULES)
+    from app.templates.prompts import (ANSWER_ACCURACY_RULES, CONSULTATION_SYSTEM_PROMPT,
+                                       INJECTION_RESISTANCE, WAGE_CALC_RULES)
     system = (CONSULTATION_SYSTEM_PROMPT.format(today=date.today().isoformat())
-              + INJECTION_RESISTANCE + WAGE_CALC_RULES)
+              + INJECTION_RESISTANCE + WAGE_CALC_RULES + ANSWER_ACCURACY_RULES)
     context = (_TEST_PARAGRAPH * (TEST_CONTEXT_CHARS // len(_TEST_PARAGRAPH) + 1))[:TEST_CONTEXT_CHARS]
     # 질문도 실제 상담처럼 추론이 필요한 것으로 둔다 — "한 문장으로 답하라"는 추론을 거의 유발하지 않아
     # 첫 응답 시간을 과소 측정한다(실측: opus-5-5 테스트 4.6초 vs 실제 질문 24.7초).

@@ -23,7 +23,7 @@ from unittest.mock import patch
 import eval_consultation as harness
 from app.templates.prompts import ANALYZE_TOOL
 from eval_consultation import (
-    REQUIRED_CASE_KEYS, EvalCase, aggregate_results, collect_events, load_cases,
+    OPTIONAL_CASE_KEYS, REQUIRED_CASE_KEYS, EvalCase, aggregate_results, collect_events, load_cases,
     run_case, score_result, validate_cases,
 )
 
@@ -49,7 +49,7 @@ def test_fixture_has_required_fields_and_valid_enums() -> None:
     assert errors == [], "\n".join(errors)
     assert harness.SUPPORTED_EXPECTED_LABELS == SUPPORTED_EXPECTED_LABELS
     for case in cases:
-        assert set(case.__dataclass_fields__) == REQUIRED_CASE_KEYS
+        assert set(case.__dataclass_fields__) == REQUIRED_CASE_KEYS | OPTIONAL_CASE_KEYS
         assert case.risk_level in {"low", "medium", "high"}
         assert case.allowed_sources
         for value in (case.id, case.category, case.question):

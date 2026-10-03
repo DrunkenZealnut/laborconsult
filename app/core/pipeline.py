@@ -321,6 +321,11 @@ def _citation_source_hits(
         hits.append({
             "title": m.get("case_name", m.get("title", "")),
             "chunk_text": m.get("chunk_text", ""),
+            # 메타 사건번호를 **반드시** 넘긴다. 빠지면 extract_precedents_from_hits의 메타
+            # 경로(T31)가 죽어, 본문에 자기 번호가 없는 판례(letec 94%)를 인용한 답변이
+            # 환각으로 판정돼 지워진다 — rag.py는 실어 보냈는데 여기서 끊겨 있었다(2026-10-03 발견).
+            "case_no": m.get("case_no", ""),
+            "source_type": m.get("source_type", ""),
         })
     for label, text in (("법제처 법령 조문", legal_articles_text),
                         ("NLRC 판정사례", nlrc_text),
@@ -1883,6 +1888,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 2-1b. 판례·행정해석 검색 (Pinecone 우선 → 법제처 API 폴백)
     precedent_text = None
     precedent_meta: list[dict] = []
+    stale_filtered: list[str] = []   # 폐기 기준 필터가 적용한 규칙 id (관측용)
     if analysis is None:
         # 의도분석 실패 시 이 블록이 통째로 죽어 답변이 검색 근거 0으로 나가던
         # 것을 살린다(colloquial-legal-mapping G1a). 구어 원문만으로는 법률
@@ -2027,7 +2033,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 # 뒤라 원래 의도한 상한과 다르다(외부 리뷰 A-5).
                 precedent_text, precedent_meta = format_pinecone_hits(
                     pinecone_hits, top_n=adaptive_params["rerank_top_n"],
-                    max_chars=PRECEDENT_TEXT_BUDGET)
+                    max_chars=PRECEDENT_TEXT_BUDGET, stale_out=stale_filtered)
                 logger.info("Pinecone 판례·행정해석 %d건 사용", len(pinecone_hits))
 
             # ② Pinecone 결과 부족 시 법제처 API 폴백
@@ -2172,6 +2178,17 @@ def process_question(query: str, session: Session, config: AppConfig,
                 parts.append(_km_block)
         except Exception as e:
             logger.warning("지식 모듈 %s 실패 (무시): %s", _km_name, e)
+    # 현행 규칙 블록(요건·기간·조문) — 위 지식 모듈과 달리 **관리 모드에서도 실행한다.**
+    # 승인 저장소가 대체하는 것은 수치 기준 11키뿐이고, 이 규칙들에는 대체 경로가 없다
+    # (kin-answer-accuracy D1). 같은 목록에 두면 LEGAL_RULES_ENABLED=true에서 조용히 사라진다.
+    used_rule_facts: list[str] = []
+    try:
+        from app.core.rule_facts import build_rule_facts
+        for _rf_name, _rf_block in build_rule_facts(query, analysis):
+            parts.append(_rf_block)
+            used_rule_facts.append(_rf_name)
+    except Exception as e:
+        logger.warning("현행 규칙 블록 실패 (무시): %s", e)
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
     if nlrc_text:
@@ -2364,8 +2381,8 @@ def process_question(query: str, session: Session, config: AppConfig,
             system_prompt = system_prompt + COUNSEL_CITATION_RULES
         # 임금 계산 규칙(단시간 주휴 비례·예시 시급) — 같은 이유로 두 분기 공통 접미한다.
         # 계산기가 실행되지 않는 경로(시급 미제공 등)에서 LLM이 산식을 직접 고른다.
-        from app.templates.prompts import WAGE_CALC_RULES
-        system_prompt = system_prompt + WAGE_CALC_RULES
+        from app.templates.prompts import WAGE_CALC_RULES, ANSWER_ACCURACY_RULES
+        system_prompt = system_prompt + WAGE_CALC_RULES + ANSWER_ACCURACY_RULES
         for provider, text in _stream_answer(messages, system_prompt, config, outcome):
             if not text:
                 # 전환 하트비트 — 내용 없음. 프론트 idle 타이머만 리셋한다 (FR-03).
@@ -2449,6 +2466,31 @@ def process_question(query: str, session: Session, config: AppConfig,
             full_text = _ensure_notices(polished or corrected, outcome.truncated)
             yield {"type": "replace", "text": full_text}
             logger.info("환각 판례 교정 완료 — replace 이벤트 전송")
+
+    # 6-1b. 인용 관련성 (kin-answer-accuracy P1-4) — "존재"를 통과한 판례가 질문 쟁점과
+    #       맞는지. 기본 monitor(기록만)이고, enforce에서만 교정한다. 환각으로 이미 교정된
+    #       번호는 대상에서 뺀다(두 번 고치지 않는다). 절단 답변은 판정하지 않는다.
+    citation_relevance = {}
+    if full_text and citation_check["valid"] and not outcome.truncated:
+        from app.core import citation_relevance as _cr
+        if _cr.mode() != "off":
+            yield {"type": "ping"}   # 임베딩 1회(최대 10초) 동안 무이벤트가 되지 않게
+        citation_relevance = _cr.assess(query, citation_check["valid"], whitelist_hits, config)
+        _rel_deadline = time.monotonic() + CITATION_STAGE_BUDGET   # 사유 전체가 예산 하나를 공유
+        for _reason, _keys in _cr.enforcement_targets(citation_relevance).items():
+            yield {"type": "ping"}
+            _fixed = correct_hallucinated_citations(
+                response_text=full_text, hallucinated=_keys,
+                anthropic_client=config.claude_client,
+                gemini_api_key=config.gemini_api_key,
+                openai_client=config.openai_client,
+                deadline=_rel_deadline,
+                reason=_reason,
+            )
+            if _fixed:
+                full_text = _ensure_notices(_fixed, outcome.truncated)
+                yield {"type": "replace", "text": full_text}
+                citation_fixed = True
 
     # 6-b. 사후 상담 사례 대조 (T3) — 답변이 **완성된 뒤** 실행한다.
     #
@@ -2546,6 +2588,13 @@ def process_question(query: str, session: Session, config: AppConfig,
     # guard_ctx.synthetic은 비프로덕션 출처 HTTP 요청 표식(G-B)이다.
     if guard_ctx is None or guard_ctx.synthetic:
         conv_metadata["synthetic"] = True
+    # 정확성 관측(kin-answer-accuracy) — 값이 있을 때만 기록. 게시판 제외 사유가 아니다.
+    if used_rule_facts:
+        conv_metadata["rule_facts"] = used_rule_facts
+    if stale_filtered:
+        conv_metadata["stale_filtered"] = sorted(set(stale_filtered))
+    if citation_relevance:
+        conv_metadata["citation_relevance"] = citation_relevance
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
     conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
     logger.info(

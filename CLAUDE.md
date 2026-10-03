@@ -91,6 +91,7 @@ python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-
 python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
 python3 test_abuse_guard.py       # 남용 가드(인젝션·스코프·쿼터·게시판 필터) 테스트
 python3 test_llm_fallback.py      # LLM 폴백(빈응답·절단·전환 하트비트·교차벤더) 테스트
+python3 test_kin_accuracy.py      # 지식iN 정확도(폐기 기준 필터·현행 규칙 블록·인용 관련성·평가 매처)
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
@@ -109,6 +110,12 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
   --publish-admin --output /tmp/consultation-smoke.json
 ./.venv/bin/python eval_consultation.py --live --publish-admin \
   --output eval_consultation_results.json
+
+# 지식iN 실질문 20건 회귀(kin-answer-accuracy) — 질문은 사실관계 요약(원문 미보관, 저장소 공개)
+./.venv/bin/python eval_consultation.py --live --fixture data/eval_kin_queries.json \
+  --output /tmp/kin.json
+python3 -m app.core.stale_rules --scan   # 폐기 기준 패턴 영향 실측(패턴 변경 시 표본 육안 필수)
+python3 fetch_official_rules.py --doc ei_enf_84   # 특정 조문만 수집(고시는 건너뜀)
 
 # 게시 전 확인 순서: Supabase SQL Editor에서 아래 DDL을 먼저 적용하고,
 # Live 결과 JSON을 검토한 뒤 --publish-admin으로 1회 게시한다.
@@ -693,9 +700,16 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - **미매칭은 HTTP 200 + 빈 `<Law>` 루트**라 `raise_for_status()`로 못 잡는다 — 루트 태그 판정 필수(없으면 정식명 해석 폴백이 영영 안 돈다). **자격증명 오류도 HTTP 200 + `<Response>` 루트**다 — 미매칭과 구분해 failure로 올리지 않으면 키 장애가 "법령명 문제"로 영구 오진되고 서킷이 안 열린다.
   - **`법령` 루트여도 그대로 믿지 말 것** — LM은 별칭·폐지판까지 해석한다(실측: '근로자직업훈련촉진법'→'국민 평생 직업능력 개발법' 반환, '노동조합법'→1996 타법폐지판). 반환 `법령명_한글` 대조 + `제개정구분` "폐지" 거부 게이트가 없으면 **다른 법의 조문이 요청한 법령명 헤더로 인용**된다. 정식명 해석 폴백의 채택도 compact 동일(표기 변형)일 때만 — 실질 다른 이름을 허용하면 같은 오인용이 되살아난다.
   - **법령명 비교는 반드시 정규화 후에**(`_norm_law_name`/`_norm_compact`) — 가운뎃점이 ㆍ(U+318D)·(U+00B7)·‧(U+2027)로 섞여 코드포인트가 다르면 조회·부분일치가 전부 조용히 실패한다(실측: 남녀고용평등법 인용이 U+00B7 하나로 괴롭힘 상담에서 상시 누락). **항번호는 원문자**(①=U+2460)라 `\d+`로는 절대 안 잡힌다 — `_parse_hang_no` 사용, 항 미발견 시 조문 전체 폴백(None이면 인용이 통째로 사라진다).
-  - 캐시 키는 `v2:` 세대 접두사 — 구 키의 낡은 조문(L2, **만료 7일 — 자동 삭제 경로는 없고 읽히지만 않는다**)을 지우는 대신 안 읽는 방식이라 롤백 안전. 미매칭은 L1에만 negative 캐시(`_MISS_SENTINEL`) — 없으면 실패한 법령명이 매 요청 LM 왕복(미스 경로 19초)을 반복하고, L2에 남기면 오타가 7일 영속된다.
+  - **조문 포맷은 목(目)까지 담아야 한다**(`_append_ho_mok`). 요건이 목에 있는 조문이 많다 — 고용보험법 제40조①5호는 본문이 "다음 각 목의 어느 하나에 해당할 것"뿐이라, 목이 빠진 **현행 조문**을 받은 LLM이 빈자리를 상담글의 폐기 기준('10일 미만')으로 채워 현행 조문처럼 인용했다(2026-10-03 실측). `fetch_official_rules`는 같은 함정을 이미 피했는데 답변 경로에 전파되지 않았다.
+  - 캐시 키는 `v3:` 세대 접두사(v2→v3: 목 포함, 2026-10-03) — 캐시된 조문 **형식**이 바뀌면 올린다. 구 키의 낡은 조문(L2, **만료 7일 — 자동 삭제 경로는 없고 읽히지만 않는다**)을 지우는 대신 안 읽는 방식이라 롤백 안전. 미매칭은 L1에만 negative 캐시(`_MISS_SENTINEL`) — 없으면 실패한 법령명이 매 요청 LM 왕복(미스 경로 19초)을 반복하고, L2에 남기면 오타가 7일 영속된다.
   - 현행판 검증은 `python3 check_law_freshness.py`(수동, 네트워크 필요) — **대조 기준은 공포일자+공포번호**(시행일자는 부칙 단계시행 법령에서 같은 공포본을 목록·본문이 다르게 표기해 오탐). 검증 목록은 고정 17종 + `legal_consultation.py::TOPIC_SEARCH_CONFIG`의 실입력에서 생성 — 정식명만 검사하면 프로덕션 표기 결함이 새어나간다. CI는 구조만 고정하되 대상은 **`legal_api.py`와 `build_graph.py` 두 파일** — 후자에 같은 사전매핑이 복제돼 있다가 원본만 전환된 사각이 실제로 있었다.
 - **시급 없는 임금 질문의 세 가지 함정**(2026-10-02 실측): ① 주휴 '시간'은 시급과 무관하다 — `_run_calculator`가 시급 없을 때 주휴 계산기를 통째로 빼면 LLM이 단시간근로자에게 1일 소정근로시간을 그대로 쓴다(주3일×6h → 6h, 맞는 값 3.6h). 근무일수·1일 시간이 **명시**되면 `_wageless_weekly_holiday`가 시간만 확정한다(산식 단일 출처 `weekly_holiday.weekly_holiday_hours`, 근무일수를 가정한 경우는 만들지 않는다). ② 최저시급 사실 블록 판정은 **의도분석의 영문 키**(`minimum_wage`·`weekly_holiday` 등, `_MINWAGE_TOPICS`)로 한다 — 구 판정은 한글 "최저임금"을 찾아 주제 경로가 한 번도 참이 아니었고, 주휴 질문에서 o3가 예시 시급 10,000원을 지어냈다. ③ "하루 6시간씩 3일 근무했다"는 **실제 근무**라 의도분석이 소정근로로 추출하지 않는 것이 맞다(분석 프롬프트 5번) — 이 경로는 `WAGE_CALC_RULES`(두 답변 분기 공통 접미)가 조건부 산식으로 막는다.
+- **지식iN 정확도 3층**(kin-answer-accuracy, 2026-10-03). 외부 검증(10-02, 20문항 78.4점)의 오답은 LLM이 아니라 **코퍼스·검증 계층**이 원인이었다 — 일용직 현행 기준('3분의 1')은 코퍼스에 0건이고 구기준('10일 미만')만 있었다. 지킬 것:
+  - **폐기 기준 필터**(`app/core/stale_rules.py`)는 `format_pinecone_hits` 진입부, **G4 캡보다 앞**이다. qa·counsel은 제외, 판례·행정해석·해설서는 `[구 기준 주의]` 주석(판례의 삭제 조문 인용은 당시 유효한 법리다). **패턴은 공기어 창 필수**이고, 상담글이라도 현행 기준을 함께 언급하면(`current` 패턴) 제외하지 않는다 — 실측: 행정해석 변경을 올바르게 설명한 상담글이 구 문구를 인용한다는 이유로 지워지고 있었다. 제외 후 0건이면 주석으로 되돌린다. 패턴을 바꾸면 `--scan`으로 **제외 대상 전량을 눈으로** 볼 것(휴일대체 상담 오탐 1건이 그렇게 발견됐다). 킬스위치 `STALE_FILTER=off`.
+  - **현행 규칙 블록**(`app/core/rule_facts.py`)은 `_KNOWLEDGE_MODULES`와 **별도 목록**이고 관리 모드에서도 돈다 — 그 목록은 `LEGAL_RULES_ENABLED=true`에서 통째로 꺼지는데 승인 저장소는 수치 11키만 대체한다. 문구는 손으로 쓴 것이라 **`anchors`가 공식 원문(`output_공식법령/`)에 있는지** `test_kin_accuracy.py` K6이 대조한다(파일 없으면 skip → 로컬 관문). 실측: 첫 초안의 조기재취업수당 요건("대기기간이 지난 뒤")과 제43조③ 단서 요약이 원문과 달랐고 대조에서 드러났다 — **원문을 받기 전에 사실문을 확정하지 말 것.**
+  - **인용 관련성**(`app/core/citation_relevance.py`)은 기본 `CITATION_RELEVANCE_MODE=monitor`(기록만, `metadata.citation_relevance`). 그 hit 자체가 판례면 질문↔본문 유사도(`low_relevance`), 다른 글 본문에만 번호가 있으면 `secondhand`. **enforce로 바꾸지 말 것** — 실측(2026-10-03, 지식iN 20건): 쟁점이 다른 2018두63235가 유사도 0.56·0.36, 관련 판례가 0.553·0.448로 임베딩 유사도가 둘을 가르지 못했고, `secondhand`는 2023다302838·임금근로시간과-1736 같은 정당한 인용까지 잡는다. 남은 오인용(2019다293449 등)은 전부 상담글 본문 언급에서 왔다 — 다음 처방은 임계가 아니라 그 경로다.
+  - **`_citation_source_hits()`는 `case_no`를 넘겨야 한다.** 빠져 있어서 T31(메타 사건번호 화이트리스트, 2026-09-14) 수정이 파이프라인에서 한 번도 동작하지 않았다 — T31은 `rag.py` 문자열만 검사해 통과했다. 회귀는 K10.
+  - **평가 매처 `forbidden_claims`**(`eval_consultation.claim_found`): 리터럴·`re:`는 일치 **바깥** 앞뒤 40자에 부정어가 있으면 세지 않는다(정답이 오답 문구를 부정하며 언급하므로). 바깥만 보는 이유는 금지 문구 자체에 부정어가 든 경우("…근로자가 아닙니다")가 있어서다. 사건번호 리터럴과 `re!:`는 부정 예외가 없다 — 인용 문장에 "아니라"가 흔해 오인용이 통과했다(실측 kin-01). 새 금지 문구는 **10-02 원답변에 대고 검출되는지** 확인할 것(12/12 검출).
 - Citation validator (`citation_validator.py`) regex patterns: `대법원 YYYY[가-힣]NNNN` for precedents (사건부호 자리에서 날짜·수량 단위 글자 `_NOT_CASE_CODE`는 제외 — 없으면 "2026년 9월"이 판례로 잡혀 답변에서 지워졌다), `[부서명]과-NNNN` for administrative interpretations.
 - Graceful degradation everywhere: Pinecone 초기화/쿼리 실패 → `pinecone_index=None`으로 RAG 비활성(계산기·법령 API·LLM 답변은 정상, `config.py`에서 try/except), BM25 미설치 → Dense-only, Self-RAG 실패 → rerank 유지, `classify_complexity` 실패 → MODERATE 폴백. 새 기능 추가 시 반드시 폴백 경로 구현.
 - `public/calculator_flow/*.html` 내 `sendPrompt()` 호출은 반드시 `window.parent?.sendPrompt?.()` 로 — iframe 내에서 실행되므로 부모 컨텍스트 필요.
