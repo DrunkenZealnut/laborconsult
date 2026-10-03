@@ -451,6 +451,12 @@ def _stream_claude(messages: list, system: str, config: AppConfig, model: str | 
                 # 구간이 프론트 idle 60초를 넘지 않게 한다. 추론 텍스트는 절대 내보내지 않는다.
                 last_beat = time.monotonic()
                 yield ""
+            elif (event.type == "message_delta"
+                  and getattr(getattr(event, "delta", None), "stop_reason", None) == "max_tokens"):
+                # adaptive thinking은 추론과 답변이 max_tokens를 함께 쓴다. 한도로 끝난 답변을 정상 완료로
+                # 두면 절단 고지·metadata.truncated가 빠져 완결된 답변으로 게시판에 오른다(CodeRabbit PR #95).
+                # 예외로 올리면 기존 규약대로 처리된다 — 본문이 나간 뒤면 절단, 없으면 다음 제공자.
+                raise RuntimeError("Claude response reached max_tokens")
 
 
 def _stream_openai(messages: list, system: str, config: AppConfig, model: str | None = None):

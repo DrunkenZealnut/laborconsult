@@ -153,6 +153,34 @@ class AnswerEffortTest(unittest.TestCase):
             out = self._kwargs("claude-opus-5-5", events)["_out"]
         self.assertEqual(out, ["답변"], "간격 안의 추론 이벤트는 하트비트로 내지 않는다")
 
+    def test_max_tokens_stop_after_text_is_marked_truncated(self):
+        events = [NS(type="text", text="잘린 답"),
+                  NS(type="message_delta", delta=NS(stop_reason="max_tokens"))]
+        captured = {}
+
+        class Stream:
+            def __enter__(self):
+                return iter(events)
+
+            def __exit__(self, *a):
+                return False
+
+        client = NS(with_options=lambda **_: NS(messages=NS(stream=lambda **kw: Stream())))
+        fn = lambda m, s, c: pl._stream_claude(m, s, NS(claude_client=client), model="claude-opus-5-5")
+        outcome = pl.AnswerOutcome()
+        real = pl._answer_providers
+        pl._answer_providers = lambda cfg: [("Claude", fn)]
+        try:
+            out = list(pl._stream_answer([], "", NS(gemini_api_key=None), outcome))
+        finally:
+            pl._answer_providers = real
+        self.assertEqual(out, [("Claude", "잘린 답")])
+        self.assertTrue(outcome.truncated)
+
+    def test_end_turn_is_not_truncated(self):
+        events = [NS(type="text", text="완결"), NS(type="message_delta", delta=NS(stop_reason="end_turn"))]
+        self.assertEqual(self._kwargs("claude-opus-5-5", events)["_out"], ["완결"])
+
     def test_stream_answer_passes_provider_heartbeat_without_counting_it(self):
         def fake(messages, system, config, model=None):
             yield ""
