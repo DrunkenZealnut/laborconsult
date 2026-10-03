@@ -53,6 +53,21 @@ class ClaimMatcherTest(unittest.TestCase):
         self.assertFalse(claim_found(r"re:다음\s*주.{0,25}(근로|근무).{0,15}(예정).{0,20}(요건)",
                                      "| 다음 주 근무 예정은 요건이 아님 |"))
 
+    def test_k2_negation_in_another_sentence_does_not_cancel(self):
+        """다른 문장의 부정어가 단정을 지우면 안 된다(CodeRabbit PR #96)."""
+        from eval_consultation import claim_found
+        pat = r"re:10\s*일\s*미만"
+        self.assertTrue(claim_found(pat, "근로일수가 10일 미만이어야 합니다. 과거 기준은 폐지되었습니다."))
+        self.assertTrue(claim_found(pat, "폐지된 제도도 있습니다.\n일용직은 10일 미만이어야 합니다."))
+        self.assertTrue(claim_found(pat, "| 요건 | 10일 미만 | 아닙니다 |"))
+        # 같은 문장 안의 부정은 멀리 있어도 존중한다(실측 kin-01 2차 — 과거 해석 인용)
+        self.assertFalse(claim_found(
+            r"re:다음\s*주.{0,25}(근로|근무).{0,15}(예정).{0,20}(있어야)",
+            '과거 행정해석(근로기준정책과-6551, 2015.12.7.)은 대법원 2011다39946 판결을 근거로 '
+            '"다음 주 근무가 예정되어 있어야 주휴가 발생한다"고 보았습니다.'))
+        # 같은 문장 안의 부정은 계속 존중한다
+        self.assertFalse(claim_found(pat, "'10일 미만'은 2019. 10. 1. 폐지된 구 기준입니다."))
+
     def test_k2_identifier_claims_ignore_negation(self):
         """판례 인용 문장에는 "아니라"가 흔하다 — 예외를 적용하면 오인용이 통과한다(실측 kin-01)."""
         from eval_consultation import claim_found

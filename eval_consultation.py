@@ -257,11 +257,14 @@ def run_case(case: EvalCase, config) -> dict:
 
 # 금지 문구가 **부정 문맥**에 있으면 검출하지 않는다. "구 기준인 10일 미만은 폐지됐다"처럼
 # 정답이 오답 문구를 언급하며 부정하는 것이 바로 원하는 출력이라, 부분문자열 매칭만으로는
-# 정답을 감점한다(kin-answer-accuracy D6). 창은 앞뒤 40자.
+# 정답을 감점한다(kin-answer-accuracy D6). 창은 같은 문장 안 앞뒤 120자.
 _NEGATION_RE = re.compile(
     r"폐지|삭제|구\s*기준|과거|이전\s*기준|예전|더\s*이상|아닙니다|아니라|아닌|아님|"
     r"적용되지\s*않|요건이\s*아니|쓰지\s*않|잘못|오해|틀린")
-_NEGATION_WINDOW = 40
+_NEGATION_WINDOW = 120  # 문장 경계로 다시 자르므로 넉넉히 둔다(실측: "과거 행정해석(…, 2015.12.7.)은 … 판결을 근거로" 70자)
+# 문장 경계: 마침표·물음표·느낌표 뒤 공백, 줄바꿈, 표 칸 구분자. "제26조·제35조"의 가운뎃점이나
+# "2021. 8. 4."의 날짜 마침표에서 끊지 않도록 마침표는 뒤에 공백·끝이 올 때만 경계로 본다.
+_SENTENCE_BREAK_RE = re.compile(r"(?<!\d)[.!?](?=\s|$)|\n|\|")
 # 사건번호 같은 **식별자**는 부정 예외를 적용하지 않는다 — 인용 자체가 오류라 문맥이 무관하고,
 # 판례 인용 문장에는 "실제 일한 시간이 아니라"처럼 부정어가 흔해 예외가 오답을 통과시킨다(실측 kin-01).
 _IDENTIFIER_CLAIM_RE = re.compile(r"\d{2,4}[가-힣]{1,3}\d+")
@@ -284,6 +287,10 @@ def claim_found(claim: str, answer: str) -> bool:
         # ("프리랜서 계약이면 무조건 근로자가 아닙니다"). 안까지 보면 영영 검출되지 않는다.
         before = answer[max(0, m.start() - _NEGATION_WINDOW): m.start()]
         after = answer[m.end(): m.end() + _NEGATION_WINDOW]
+        # 부정은 **같은 문장·표 칸** 안에서만 그 주장을 부정한다. 창이 문장 경계를 넘으면
+        # "10일 미만이어야 합니다. 과거 기준은 폐지…"처럼 다른 문장의 부정어가 단정을 지운다.
+        before = _SENTENCE_BREAK_RE.split(before)[-1]
+        after = _SENTENCE_BREAK_RE.split(after)[0]
         if not (_NEGATION_RE.search(before) or _NEGATION_RE.search(after)):
             return True
     return False
