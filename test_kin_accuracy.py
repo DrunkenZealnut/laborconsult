@@ -58,6 +58,7 @@ class ClaimMatcherTest(unittest.TestCase):
         from eval_consultation import claim_found
         pat = r"re:10\s*일\s*미만"
         self.assertTrue(claim_found(pat, "근로일수가 10일 미만이어야 합니다. 과거 기준은 폐지되었습니다."))
+        self.assertTrue(claim_found(pat, "“근로일수가 10일 미만이어야 합니다.” 과거 기준은 폐지되었습니다."))
         self.assertTrue(claim_found(pat, "폐지된 제도도 있습니다.\n일용직은 10일 미만이어야 합니다."))
         self.assertTrue(claim_found(pat, "| 요건 | 10일 미만 | 아닙니다 |"))
         # 같은 문장 안의 부정은 멀리 있어도 존중한다(실측 kin-01 2차 — 과거 해석 인용)
