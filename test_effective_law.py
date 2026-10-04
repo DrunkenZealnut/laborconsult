@@ -453,18 +453,39 @@ class HandWrittenLegalFactsTest(unittest.TestCase):
         from harassment_assessor.assessor import _workplace_size_class as size_class
         for v, want in (("15인 미만", "unknown"), ("10명 이하", "unknown"), ("3인 이상", "unknown"),
                         ("", "unknown"), ("소규모", "unknown"), ("5인이상", "covered"),
-                        ("30인이상", "covered"), ("7명", "covered"), ("5인미만", "small")):
+                        ("30인이상", "covered"), ("7명", "covered"), ("5인미만", "small"),
+                        # 범위·근사 표현은 구간으로 — 숫자 하나만 집으면 "4~5명"이 5명이 된다(CodeRabbit PR #98)
+                        ("4~5명", "unknown"), ("4명에서 5명", "unknown"), ("4, 5명", "unknown"),
+                        ("5명 내외", "unknown"), ("약 5명", "unknown"), ("2~3명", "small"),
+                        ("6~9명", "covered"), ("약 30명", "covered"),
+                        # 여러 표현은 같은 인원의 조건 — 교집합, 어긋나면 unknown
+                        ("5인 이상 30인 미만", "covered"), ("본사 30명, 지점 3명", "unknown"),
+                        # 천 단위 쉼표 — 남겨 두면 "000명"(0명)으로 읽혀 소규모가 된다
+                        ("1,000명", "covered")):
             self.assertEqual(size_class(v), want, v)
         mid = assess_harassment(HarassmentInput(business_size="15인 미만", **base))
         penalty = [w for w in mid.warnings if "제109조 제1항" in w]
         self.assertTrue(penalty and all(w.startswith("상시 5명 이상 사업장이라면") for w in penalty))
         self.assertTrue(any("상시 근로자 수를 먼저 확인" in w for w in mid.warnings))
-        self.assertIn(constants.LEGAL_REFERENCES[0], mid.legal_basis)
+        # 규모 미확정이면 경고뿐 아니라 법적 근거·대응 절차도 조건부여야 한다 — 한 결과 안에서
+        # 경고는 "5명 이상이라면", 근거·절차는 단정형이면 안내가 갈린다(CodeRabbit PR #98).
+        marks = ("제109조", "제116조", "500만원", "3천만원", "제76조의3 제2항")
+        unconditional = [ln for ln in format_assessment(mid).splitlines()
+                         if any(k in ln for k in marks) and "상시 5명 이상" not in ln]
+        self.assertEqual(unconditional, [], "규모 미확정 결과의 5명 이상 전용 안내에 적용 조건")
+        # 조건은 괄호 안의 용도에 단다 — 조문 번호는 LEGAL_REFERENCES와 같아야 한다
+        article = lambda ref: ref.split(" (")[0]   # noqa: E731
+        n_refs = len(constants.LEGAL_REFERENCES)
+        self.assertEqual([article(r) for r in mid.legal_basis[:n_refs]],
+                         [article(r) for r in constants.LEGAL_REFERENCES])
+        self.assertTrue(all("상시 5명 이상" in r for r in mid.legal_basis[:n_refs]))
         self.assertTrue(any("별표 1" in lb for lb in mid.legal_basis))
         big2 = assess_harassment(HarassmentInput(business_size="30인이상", **base))
         self.assertTrue(any(w.startswith("괴롭힘 신고를 이유로") and "제109조 제1항" in w for w in big2.warnings),
                         "5명 이상 확정이면 단정")
         self.assertFalse(any("상시 근로자 수를 먼저 확인" in w for w in big2.warnings))
+        self.assertEqual(big2.legal_basis, constants.LEGAL_REFERENCES, "5명 이상 확정이면 근거도 단정형")
+        self.assertFalse(any("상시 5명 이상" in s["description"] for s in big2.response_steps))
 
     def test_e19_annex_absence_check(self):
         import xml.etree.ElementTree as ET

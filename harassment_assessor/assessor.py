@@ -7,6 +7,7 @@
   ③ 신체적·정신적 고통을 주거나 근무환경을 악화시키는 행위
 """
 
+import math
 import re
 
 from .models import HarassmentInput
@@ -63,8 +64,14 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
     size = _workplace_size_class(inp.business_size)
     if size == "small":
         legal_basis, steps = list(SMALL_WORKPLACE_LEGAL), list(SMALL_WORKPLACE_STEPS)
-    elif size == "unknown":   # 규모 미확정 — 적용 조건(별표 1)을 근거 목록에도 남긴다
-        legal_basis, steps = list(LEGAL_REFERENCES) + [SMALL_WORKPLACE_LEGAL[0]], list(RESPONSE_STEPS)
+    elif size == "unknown":
+        # 규모 미확정 — 경고만 조건부로 하고 근거·절차를 단정형으로 두면 한 결과 안에서 안내가
+        # 갈린다(CodeRabbit PR #98). 조건은 조문 전체가 아니라 괄호 안의 **이 용도**에 단다 —
+        # 제109조 제1항·제116조 제2항은 괴롭힘 외 다른 조항 위반도 함께 규정한다(법제처 현행판).
+        legal_basis = [ref.replace(" (", " (상시 5명 이상 사업장의 ", 1) for ref in LEGAL_REFERENCES]
+        legal_basis.append(SMALL_WORKPLACE_LEGAL[0])   # 적용 조건의 근거(시행령 별표 1)
+        steps = [dict(s, description=_IF_COVERED + s["description"]) if s.get("covered_only") else dict(s)
+                 for s in RESPONSE_STEPS]
     else:
         legal_basis, steps = list(LEGAL_REFERENCES), list(RESPONSE_STEPS)
     return AssessmentResult(
@@ -83,30 +90,65 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
 # ── 내부 헬퍼 ──────────────────────────────────────────────────────────────
 
 
-_SIZE_RE = re.compile(r"(\d+)(?:인|명)(미만|이하|이상|초과)?")
+# 규모 미확정일 때 5명 이상 전용 안내(경고·대응 절차) 앞에 붙이는 적용 조건
+_IF_COVERED = "상시 5명 이상 사업장이라면, "
+
+_SIZE_RE = re.compile(
+    # 범위 "4~5명"·"4명에서 5명"·"4, 5명" — 단위는 한쪽에만 있어도 된다
+    r"(?<!\d)(?P<lo>\d+)(?P<u1>인|명)?(?:~|∼|〜|-|–|—|,|에서|또는|혹은)(?P<hi>\d+)(?P<u2>인|명)?"
+    # 단일 인원수 + 비교어·근사 표현 "5인 미만"·"약 5명"·"5명 내외"·"10여 명"
+    r"|(?<!\d)(?P<pre>약|대략)?(?P<n>\d+)(?P<yeo>여)?(?:인|명)"
+    r"(?P<cmp>미만|이하|이상|초과|내외|안팎|정도|가량|쯤|전후|남짓)?"
+)
+
+
+def _size_bounds(m: re.Match) -> tuple[float, float] | None:
+    """인원수 표현 하나 → 가능한 상시 근로자 수 구간 [하한, 상한]. 단위 없는 범위는 인원수가 아니다."""
+    if m.group("lo"):
+        if not (m.group("u1") or m.group("u2")):
+            return None
+        lo, hi = sorted((int(m.group("lo")), int(m.group("hi"))))
+        return lo, hi
+    n, cmp_ = int(m.group("n")), m.group("cmp")
+    if cmp_ == "미만":
+        return 0, n - 1
+    if cmp_ == "이하":
+        return 0, n
+    if cmp_ == "이상":
+        return n, math.inf
+    if cmp_ == "초과":
+        return n + 1, math.inf
+    if cmp_ or m.group("pre") or m.group("yeo"):   # 근사 표현 — 앞뒤 1명까지 열어 둔다
+        return n - 1, n + 1
+    return n, n
 
 
 def _workplace_size_class(business_size: str) -> str:
     """상시 근로자 수가 5명 기준선의 어느 쪽인지: "small"(4명 이하 확정) / "covered"(5명 이상 확정)
     / "unknown"(미기재·해석 불가·기준선을 걸치는 범위).
 
-    도구 인자는 자유 문자열이라 숫자와 비교어를 해석한다 — 부분문자열로 보면 "15인 미만"이
-    "5인미만"을 포함해 소규모로 오분류된다. 반대로 "15인 미만"을 5명 이상으로 단정해서도 안 된다
-    (1~14명 범위에 4명 이하가 들어 있다) — 그런 범위는 unknown이다(CodeRabbit PR #98).
+    도구 인자는 자유 문자열이라 인원수 표현을 **구간**으로 해석한다(CodeRabbit PR #98):
+    - 부분문자열로 보면 "15인 미만"이 "5인미만"을 포함해 소규모로 오분류된다. 반대로 5명 이상으로
+      단정해서도 안 된다 — 1~14명에 4명 이하가 들어 있다.
+    - 숫자 하나만 집으면 "4~5명"이 5명이 되고 "5명 내외"가 확정 인원이 된다 — 기준선을 걸친다.
+    - 여러 표현은 같은 인원에 대한 조건이라 교집합을 취한다. "5인 이상 30인 미만"은 5~29명이고,
+      "본사 30명, 지점 3명"처럼 서로 어긋나면 비어서 unknown이다.
+    - 천 단위 쉼표를 먼저 지운다 — 남겨 두면 "1,000명"이 "000명", 즉 0명으로 읽힌다.
     """
-    m = _SIZE_RE.search((business_size or "").replace(" ", ""))
-    if not m:
+    text = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", re.sub(r"\s+", "", business_size or ""))
+    lo, hi, found = 0, math.inf, False
+    for m in _SIZE_RE.finditer(text):
+        bounds = _size_bounds(m)
+        if bounds is None:
+            continue
+        lo, hi, found = max(lo, bounds[0]), min(hi, bounds[1]), True
+    if not found or lo > hi:
         return "unknown"
-    n, cmp_ = int(m.group(1)), m.group(2)
-    if cmp_ == "미만":                     # 1..n-1
-        return "small" if n <= 5 else "unknown"
-    if cmp_ == "이하":                     # 1..n
-        return "small" if n <= 4 else "unknown"
-    if cmp_ == "이상":                     # n..
-        return "covered" if n >= 5 else "unknown"
-    if cmp_ == "초과":                     # n+1..
-        return "covered" if n >= 4 else "unknown"
-    return "small" if n <= 4 else "covered"   # 비교어 없는 인원수
+    if hi <= 4:
+        return "small"
+    if lo >= 5:
+        return "covered"
+    return "unknown"
 
 
 def _is_small_workplace(business_size: str) -> bool:
@@ -361,7 +403,7 @@ def _generate_warnings(inp: HarassmentInput,
             "(근로기준법 시행령 제7조 별표 1)."
         )
     # 벌칙·과태료 경고는 5명 이상 확정이면 단정, 미확정이면 조건부, 4명 이하면 내지 않는다.
-    cond = "" if size == "covered" else "상시 5명 이상 사업장이라면, "
+    cond = "" if size == "covered" else _IF_COVERED
 
     # 회사 미조치 (제76조의3 조치 의무 → 제116조 제2항 과태료 — 4명 이하 사업장은 적용 제외)
     if not small and inp.company_response in ("미조치", ""):
