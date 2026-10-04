@@ -326,6 +326,9 @@ class WhitelistTest(unittest.TestCase):
                              "summary": "통상임금"}}]
         shown = rendered_precedents("- 대법원 2023다302838 (…): 통상임금", results)
         self.assertEqual([d["case_number"] for d in shown], ["2023다302838"], "절단돼 안 보인 판례는 제외")
+        # 자기 줄은 잘리고 다른 줄의 "…판결로 변경됨" 표기에만 번호가 남은 판례는 제외(CodeRabbit PR #98)
+        ctx = "- 대법원 2012다89399 (…): 통상임금 — 일부 법리는 대법원 2023다302838 판결로 변경됨"
+        self.assertEqual([d["case_number"] for d in rendered_precedents(ctx, results)], ["2012다89399"])
         hits = [{"title": "대법원 2023다302838", "case_no": "2023다302838", "chunk_text": "통상임금"}]
         self.assertEqual(classify_paths(["2023다302838"], hits)["2023다302838"]["path"], "primary")
 
@@ -432,6 +435,14 @@ class HandWrittenLegalFactsTest(unittest.TestCase):
         # 도구 인자는 자유 문자열 — 띄어쓰기 변형도 같은 분기
         spaced = assess_harassment(HarassmentInput(business_size="5인 미만", **base))
         self.assertEqual(spaced.legal_basis, small.legal_basis)
+        # 숫자·비교어로 판정 — "15인 미만"은 "5인미만"을 부분문자열로 포함하지만 소규모가 아니다(CodeRabbit PR #98)
+        from harassment_assessor.assessor import _is_small_workplace as small_ws
+        for v, want in (("5인미만", True), ("4명 이하", True), ("4명", True), ("3인 미만", True),
+                        ("15인 미만", False), ("14명 이하", False), ("5인이상", False),
+                        ("300인이상", False), ("소규모", False), ("", False)):
+            self.assertIs(small_ws(v), want, v)
+        mid = assess_harassment(HarassmentInput(business_size="15인 미만", **base))
+        self.assertTrue(any("제109조 제1항" in w for w in mid.warnings))
 
     def test_e19_annex_absence_check(self):
         import xml.etree.ElementTree as ET
@@ -454,9 +465,14 @@ class GapFollowupTest(unittest.TestCase):
     def test_e20_insured_status_withholding_pattern(self):
         from app.core.rule_facts import build_rule_facts
         names = lambda q: [n for n, _ in build_rule_facts(q, None)]  # noqa: E731
-        self.assertIn("insured_status", names("알바비에서 3.3% 떼고 받아요"))
-        self.assertIn("insured_status", names("3.3프로 공제"))
-        self.assertNotIn("insured_status", names("주 23.3시간 근무, 13.3% 인상"))
+        self.assertIn("insured_status", names("알바비에서 3.3% 떼고 받는데 고용보험도 안 됐어요"))
+        self.assertIn("insured_status", names("3.3프로 공제받는데 실업급여 되나요"))
+        self.assertNotIn("insured_status", names("주 23.3시간 근무, 13.3% 인상, 고용보험 가입"))
+        # 일반 표현은 고용보험 맥락이 함께 있을 때만(CodeRabbit PR #98)
+        self.assertIn("insured_status", names("피보험자격 확인"))
+        self.assertNotIn("insured_status", names("근로자지위확인 청구 소송을 하려고 합니다"))
+        self.assertNotIn("insured_status", names("회사가 휴업 신고 안 했다고 합니다"))
+        self.assertIn("insured_status", names("회사가 고용보험 신고 안 했대요"))
 
     def test_e20_consultation_path_stats_merged(self):
         import inspect as _inspect

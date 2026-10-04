@@ -75,8 +75,13 @@ class RuleFact:
 
 
 _UNEMPLOYMENT_WORDS = ("실업급여", "구직급여", "조기재취업", "실업인정", "수급자격", "일용직", "일용근로")
-_INSURED_STATUS_WORDS = ("미가입", "미신고", "확인청구", "확인 청구", "피보험자격",
+# "피보험자격"만 단독으로 감지한다. 나머지는 일반 표현이라 **고용보험 맥락**이 함께 있을 때만 —
+# "휴업 신고 안 했다"·"근로자지위확인 청구"(지위확인 소송)·"노조 미가입"에 붙으면 안 된다
+# (CodeRabbit PR #98).
+_INSURED_STATUS_SPECIFIC = ("피보험자격",)
+_INSURED_STATUS_WORDS = ("미가입", "미신고", "확인청구", "확인 청구",
                          "가입 안", "가입이 안", "가입안", "신고 안", "신고를 안", "신고가 안")
+_INSURANCE_CONTEXT = ("고용보험", "4대보험", "4대 보험", "사대보험", "실업급여", "구직급여", "피보험")
 # "3.3" 부분문자열은 "13.3"·"주 23.3시간"에도 걸린다 — 원천징수 표현(3.3%·3.3프로)만.
 _WITHHOLDING_33_RE = re.compile(r"(?<![\d.])3\.3\s*(%|％|프로|퍼센트|퍼)")
 _DISMISSAL_WORDS = ("해고예고", "해고 예고", "예고수당", "30일 전", "30일전")
@@ -139,7 +144,9 @@ RULE_FACTS: tuple[RuleFact, ...] = (
     ),
     RuleFact(
         name="insured_status",
-        detect=lambda q, a: _has(q, _INSURED_STATUS_WORDS) or bool(_WITHHOLDING_33_RE.search(q)),
+        detect=lambda q, a: _has(q, _INSURED_STATUS_SPECIFIC) or (
+            _has(q, _INSURANCE_CONTEXT)
+            and (_has(q, _INSURED_STATUS_WORDS) or bool(_WITHHOLDING_33_RE.search(q)))),
         lines=(
             "실제로 근로자로 일했다면 고용보험 미신고·미가입 기간도 피보험자격의 취득 확인을 청구해 "
             "인정받을 수 있다. 확인청구는 언제든지 할 수 있다(고용보험법 제17조 제1항) — 다른 제도의 "

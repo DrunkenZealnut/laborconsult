@@ -11,7 +11,7 @@
 | 대조 항목 | 110개 — D1~D14, §3~§7 세부, §8 E1~E17 + 기존 테스트 갱신 6건, §9 1~10단계 |
 | 일치 / 동등(§13 미기록) / 부분 / 누락 | 104 / 2 / 4 / **0** |
 | C1~C16 확인 | 코드 확인 13 · 부분 1(C13 → 후속에서 해소) · 실측 기록 2(C2·C16) |
-| 정합성 위험 | Medium 4 · Low-Med 1 · Low 7 → 위험 6·12와 P1을 뺀 나머지 전부 조치 |
+| 정합성 위험 | Medium 4 · Low-Med 1 · Low 7 → 위험 6과 P1을 뺀 나머지 전부 조치(12는 PR 리뷰 후 조치) |
 
 미할당 변수와 fail-open 경로 이탈은 **없었다**. 확인 범위는 pipeline의 신규 변수 5개 전부가 무조건 초기화되는지, `precedent_records` 예외 흡수, `fetch_relevant_articles`의 반환 경로 3곳 모두 통계 공개, `_article_expiry` 계산, L1 튜플 의미 변경의 잔존 독자 0이다.
 
@@ -35,13 +35,13 @@
 | 3 | Medium | 법률상담 경로의 조회 통계가 `metadata.law_api`에 남지 않았다(설계 공백) | `process_consultation(law_api_stats=)` + pipeline 합산(E20) |
 | 4 | Medium(배포) | `case_numbers.py`·`graph_precedents.json`이 untracked다 — 커밋에서 빠지면 판례 참조가 조용히 실패한다 | 커밋 시 untracked 0건 확인 항목 |
 | 5 | Low-Med | `business_size` 정확일치 → "5인 미만" 우회 | `_is_small_workplace` 정규화(E18) |
+| 6 | Low | 계산기 판례가 `secondhand`로 분류된다(enforce 전환 시 영향) | **수용** — CLAUDE.md가 enforce를 금지한다 |
 | 7 | Low | `"3.3"` 부분문자열 과감지 | 원천징수 표현 정규식(E20) |
 | 8 | Low | 지역변수 `results`가 바깥 변수를 가렸다 | `candidates`로 이름 변경 |
 | 9 | Low | 앵커·별표 점검 예외 미처리, 루트가 None일 때 오경보 | try/except + "확인 불가" 구분 |
 | 10 | Low | `조문가지번호="0"` 미정규화 | `lstrip("0")`(E20) |
 | 11 | Low | 실행 위치 기준 상대경로, 미사용 import | `Path(__file__)` 기준 경로, import 정리 |
-| 6 | Low | 계산기 판례가 `secondhand`로 분류된다(enforce 전환 시 영향) | **수용** — CLAUDE.md가 enforce를 금지한다 |
-| 12 | Low | 변경 표기 안의 번호도 '렌더됨'으로 친다 | **수용** — 설계 정의와 같다 |
+| 12 | Low | 변경 표기 안의 번호도 '렌더됨'으로 친다 | 처음에는 수용 → **CodeRabbit PR #98 지적으로 조치**: 자기 항목 줄 머리(`- 법원 사건번호`)가 있을 때만 렌더로 본다 |
 
 ## 4. 문서 갭 → 조치
 

@@ -40,9 +40,9 @@
 2021헌마1234,app/core/citation_validator.py,53,comment
 2021헌마1234,app/core/legal_api.py,672,docstring
 2022다291153,app/core/pipeline.py,315,docstring
-2022다291153,app/core/rule_facts.py,202,data
-2022다291153,app/core/rule_facts.py,207,data
-2022다291153,app/core/rule_facts.py,211,data
+2022다291153,app/core/rule_facts.py,209,data
+2022다291153,app/core/rule_facts.py,214,data
+2022다291153,app/core/rule_facts.py,218,data
 2022다291153,build_graph.py,175,data
 2022다291153,wage_calculator/calculators/ordinary_wage.py,175,docstring
 2022다291153,wage_calculator/calculators/weekly_holiday.py,1,docstring

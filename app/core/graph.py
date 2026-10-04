@@ -239,16 +239,23 @@ def format_precedent_line(d: dict) -> str:
 
 
 def rendered_precedents(context: str, traversal_results: list[dict]) -> list[dict]:
-    """최종 컨텍스트 문자열(절단 이후)에 **실제로 나타난** 판례 노드 데이터만.
+    """최종 컨텍스트 문자열(절단 이후)에 **자기 항목 줄이 실제로 나타난** 판례 노드 데이터만.
 
     인용 화이트리스트에 넣을 판례는 LLM이 본 것과 같은 집합이어야 한다 —
     max_chars 절단으로 빠진 판례를 넣으면 보지 않은 근거가 "인용 가능"이 된다.
+    번호가 문자열 어딘가에 있는지만 보면, 다른 판례 줄의 "…판결로 변경됨" 표기에만
+    번호가 남고 자기 줄은 잘린 판례가 primary 근거로 승격된다(CodeRabbit PR #98).
+    그래서 format_precedent_line이 만드는 **줄 머리**(`- 법원 사건번호`)로 판정한다.
     """
     seen, out = set(), []
+    lines = (context or "").splitlines()
     for r in traversal_results:
         d = r.get("data", {})
         no = d.get("case_number", "")
-        if d.get("type") == "precedent" and no and no not in seen and no in (context or ""):
+        if d.get("type") != "precedent" or not no or no in seen:
+            continue
+        head = f"- {d.get('court', '')} {no}"
+        if any(line.startswith(head) for line in lines):
             seen.add(no)
             out.append(d)
     return out

@@ -7,6 +7,8 @@
   ③ 신체적·정신적 고통을 주거나 근무환경을 악화시키는 행위
 """
 
+import re
+
 from .models import HarassmentInput
 from .result import ElementAssessment, AssessmentResult
 from .constants import (
@@ -75,11 +77,25 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
 # ── 내부 헬퍼 ──────────────────────────────────────────────────────────────
 
 
+_SIZE_RE = re.compile(r"(\d+)(?:인|명)(미만|이하|이상|초과)?")
+
+
 def _is_small_workplace(business_size: str) -> bool:
-    """상시 4명 이하(5인 미만) 여부. 도구 인자는 자유 문자열이라 띄어쓰기 변형을 흡수한다
-    ("5인 미만"·"4명 이하" 등) — 정확일치만 보면 소규모 분기를 우회한다(gap 분석 위험 5)."""
-    s = (business_size or "").replace(" ", "")
-    return any(k in s for k in ("5인미만", "5명미만", "4인이하", "4명이하"))
+    """상시 4명 이하(5인 미만)로 **확정되는** 경우만 True. 도구 인자는 자유 문자열이다.
+
+    숫자와 비교어를 해석한다 — 부분문자열로 보면 "15인 미만"이 "5인미만"을 포함해 소규모로
+    오분류된다(CodeRabbit PR #98). "N인 미만"은 N≤5, "N명 이하"·단독 "N명"은 N≤4일 때만
+    소규모다. 해석 못 하는 값(예: "소규모")은 제외로 보지 않는다 — 적용 제외는 확인될 때만.
+    """
+    m = _SIZE_RE.search((business_size or "").replace(" ", ""))
+    if not m:
+        return False
+    n, cmp_ = int(m.group(1)), m.group(2)
+    if cmp_ == "미만":
+        return n <= 5
+    if cmp_ in ("이상", "초과"):
+        return False
+    return n <= 4   # "이하" 또는 비교어 없는 인원수
 
 
 def _check_customer_harassment(inp: HarassmentInput) -> bool:
