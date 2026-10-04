@@ -118,6 +118,14 @@ class RuleFactsTest(unittest.TestCase):
         self.assertEqual(names("상담", self._a(topic="고용보험")), ["unemployment"])
         self.assertEqual(names("직장 내 괴롭힘 신고 후 불이익"), ["harassment_retaliation"])
 
+    def test_k4_harassment_block_does_not_claim_current_deletion(self):
+        """제109조②는 2026-10-08 시행 전까지 존속한다 — 기준일 무관하게 참인 문장만 쓴다."""
+        from app.core.rule_facts import build_rule_facts
+        text = dict(build_rule_facts("직장 내 괴롭힘 신고 후 해고", None))["harassment_retaliation"]
+        self.assertIn("제109조 제1항", text)
+        self.assertIn("2026. 10. 8.부터 삭제", text)
+        self.assertNotIn("삭제된 조항", text)
+
     def test_k4_at_most_two_blocks(self):
         from app.core.rule_facts import MAX_BLOCKS, build_rule_facts
         q = "수습 최저임금 80%에 주휴도 없었고 해고예고 없이 잘려서 실업급여 받을 수 있나요"
