@@ -6,84 +6,72 @@
   {
    "type": "statute",
    "name": "근로기준법",
-   "mst": 265959,
    "short": "근기법",
    "id": "statute:근로기준법"
   },
   {
    "type": "statute",
    "name": "근로기준법 시행령",
-   "mst": 270551,
    "short": "",
    "id": "statute:근로기준법 시행령"
   },
   {
    "type": "statute",
    "name": "최저임금법",
-   "mst": 218303,
    "short": "최임법",
    "id": "statute:최저임금법"
   },
   {
    "type": "statute",
    "name": "고용보험법",
-   "mst": 276843,
    "short": "고보법",
    "id": "statute:고용보험법"
   },
   {
    "type": "statute",
    "name": "산업재해보상보험법",
-   "mst": 279733,
    "short": "산재법",
    "id": "statute:산업재해보상보험법"
   },
   {
    "type": "statute",
    "name": "근로자퇴직급여 보장법",
-   "mst": 279829,
    "short": "퇴직급여법",
    "id": "statute:근로자퇴직급여 보장법"
   },
   {
    "type": "statute",
    "name": "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률",
-   "mst": 276851,
    "short": "",
    "id": "statute:남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률"
   },
   {
    "type": "statute",
    "name": "소득세법",
-   "mst": 276127,
    "short": "",
    "id": "statute:소득세법"
   },
   {
    "type": "statute",
    "name": "기간제 및 단시간근로자 보호 등에 관한 법률",
-   "mst": 232201,
    "short": "기간제법",
    "id": "statute:기간제 및 단시간근로자 보호 등에 관한 법률"
   },
   {
    "type": "statute",
    "name": "파견근로자 보호 등에 관한 법률",
-   "mst": 223983,
    "short": "파견법",
    "id": "statute:파견근로자 보호 등에 관한 법률"
   },
   {
    "type": "statute",
    "name": "임금채권보장법",
-   "mst": 259881,
    "short": "임채법",
    "id": "statute:임금채권보장법"
   },
   {
    "type": "statute",
    "name": "노동조합 및 노동관계조정법",
-   "mst": 273667,
    "short": "노조법",
    "id": "statute:노동조합 및 노동관계조정법"
   },
@@ -439,65 +427,60 @@
    "type": "precedent",
    "case_number": "2023다302838",
    "court": "대법원",
-   "year": 2023,
-   "summary": "고정성 요건 폐지, 정기적·일률적으로 지급되는 수당은 통상임금에 포함",
+   "date": "2024.12.19",
+   "judgment_type": "전원합의체 판결",
+   "summary": "통상임금의 개념과 판단 기준 및 고정성을 통상임금의 개념적 징표로 볼 수 있는지 여부(소극)",
+   "supersedes": [
+    "2012다89399"
+   ],
+   "superseded_by": [],
    "id": "precedent:2023다302838"
   },
   {
    "type": "precedent",
    "case_number": "2012다89399",
    "court": "대법원",
-   "year": 2013,
-   "summary": "통상임금 판단 기준에 관한 전원합의체 판결",
+   "date": "2013.12.18",
+   "judgment_type": "전원합의체 판결",
+   "summary": "어떠한 임금이 통상임금에 속하는지 판단하는 기준 및 근로기준법상 통상임금에 속하는 임금을 통상임금에서 제외하기로 하는 노사합의의 효력(무효)",
+   "supersedes": [],
+   "superseded_by": [
+    "2023다302838"
+   ],
    "id": "precedent:2012다89399"
   },
   {
    "type": "precedent",
-   "case_number": "2010다111757",
+   "case_number": "2022다291153",
    "court": "대법원",
-   "year": 2013,
-   "summary": "부당해고 판단 기준과 사용자의 입증 책임",
-   "id": "precedent:2010다111757"
-  },
-  {
-   "type": "precedent",
-   "case_number": "2013다25194",
-   "court": "대법원",
-   "year": 2014,
-   "summary": "퇴직금 산정 시 평균임금 산정 기준",
-   "id": "precedent:2013다25194"
+   "date": "2025.08.14",
+   "judgment_type": "판결",
+   "summary": "주휴수당의 지급기준이 되는 시간 수를 산정하는 방법",
+   "supersedes": [],
+   "superseded_by": [],
+   "id": "precedent:2022다291153"
   },
   {
    "type": "precedent",
    "case_number": "2018다200709",
    "court": "대법원",
-   "year": 2019,
-   "summary": "연차유급휴가 사용촉진 제도의 적법 요건",
+   "date": "2019.11.14",
+   "judgment_type": "판결",
+   "summary": "근로기준법 제94조에서 정한 집단적 동의를 받아 근로자에게 불리한 내용으로 취업규칙이 변경된 경우, 변경된 취업규칙의 기준에 따라 그보다 유리한 근로조건을 정한 기존의 개별 근로계약의 내용이 변경되는지 여부(소극) 및 이때 근로자의 개별적 동의가 없는 한 취업규칙보다 유리한 근로계약의 내용이 우선하여 적용되는지 여부(적극)",
+   "supersedes": [],
+   "superseded_by": [],
    "id": "precedent:2018다200709"
   },
   {
    "type": "precedent",
-   "case_number": "2020나2016258",
-   "court": "서울고등법원",
-   "year": 2021,
-   "summary": "직장 내 괴롭힘 판단 요소와 사용자 조치 의무",
-   "id": "precedent:2020나2016258"
-  },
-  {
-   "type": "precedent",
-   "case_number": "2019다293449",
+   "case_number": "2013다25194",
    "court": "대법원",
-   "year": 2020,
-   "summary": "주휴수당 산정 기준과 소정근로시간",
-   "id": "precedent:2019다293449"
-  },
-  {
-   "type": "precedent",
-   "case_number": "2017다261387",
-   "court": "대법원",
-   "year": 2019,
-   "summary": "최저임금 산입 범위와 상여금 포함 여부",
-   "id": "precedent:2017다261387"
+   "date": "2017.12.22",
+   "judgment_type": "판결",
+   "summary": "근로계약 체결에 관한 당사자들의 의사표시에 무효 또는 취소의 사유가 있음을 이유로 근로계약의 무효 또는 취소를 주장할 수 있는지 여부(적극) 및 이때 근로계약 취소의 소급효가 인정되는지 여부(소극)",
+   "supersedes": [],
+   "superseded_by": [],
+   "id": "precedent:2013다25194"
   }
  ],
  "edges": [
@@ -858,38 +841,18 @@
   },
   {
    "rel": "INTERPRETS",
-   "source": "precedent:2010다111757",
-   "target": "concept:부당해고"
-  },
-  {
-   "rel": "INTERPRETS",
-   "source": "precedent:2013다25194",
-   "target": "concept:퇴직금"
-  },
-  {
-   "rel": "INTERPRETS",
-   "source": "precedent:2013다25194",
-   "target": "concept:평균임금"
-  },
-  {
-   "rel": "INTERPRETS",
-   "source": "precedent:2018다200709",
-   "target": "concept:연차유급휴가"
-  },
-  {
-   "rel": "INTERPRETS",
-   "source": "precedent:2020나2016258",
-   "target": "concept:직장내괴롭힘"
-  },
-  {
-   "rel": "INTERPRETS",
-   "source": "precedent:2019다293449",
+   "source": "precedent:2022다291153",
    "target": "concept:주휴수당"
   },
   {
    "rel": "INTERPRETS",
-   "source": "precedent:2017다261387",
-   "target": "concept:최저임금"
+   "source": "precedent:2018다200709",
+   "target": "concept:근로계약"
+  },
+  {
+   "rel": "INTERPRETS",
+   "source": "precedent:2013다25194",
+   "target": "concept:근로계약"
   }
  ]
 }

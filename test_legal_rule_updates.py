@@ -550,9 +550,12 @@ class LegalUpdatesTest(unittest.TestCase):
         <시행일자>20260101</시행일자></기본정보><조문단위><조문여부>조문</조문여부>
         <조문번호>5</조문번호><조문가지번호>0</조문가지번호>
         <조문내용>제5조<br /> 최저임금액</조문내용></조문단위></법령>"""
-        response = SimpleNamespace(text=xml, raise_for_status=lambda: None)
-        with patch.object(fetcher.requests, "get", return_value=response):
+        # 조회는 legal_api.fetch_law_root 단일 출처(eflaw)를 거친다 — 그 HTTP 세션을 막는다.
+        from app.core import legal_api
+        response = SimpleNamespace(content=xml.encode(), raise_for_status=lambda: None)
+        with patch.object(legal_api._http, "get", return_value=response) as get:
             article = fetcher.fetch_article_xml("fixture-key", "최저임금법", 5, None)
+        self.assertEqual(get.call_args.kwargs["params"]["target"], "eflaw")
         self.assertEqual(article["body"], "제5조 최저임금액")
         self.assertEqual(article["date"], "20260101")
 

@@ -505,21 +505,24 @@ def scan_code_citations(base: str) -> list[dict]:
                     if row not in rows:  # 한 토큰 안의 같은 번호 반복은 1건(gap L6)
                         rows.append(row)
 
-    # MAJOR_PRECEDENTS 교차검증 — 지식그래프 노드는 공백이 가장 치명적(검증 H4).
+    # GRAPH_PRECEDENT_SPECS 교차검증 — 지식그래프 노드는 공백이 가장 치명적(검증 H4).
     # build_graph.py도 스캔 대상이라 정규식으로 이미 잡혀야 하며, 구조 열거는
     # 그 완전성을 확인하는 안전망이다. base 스코프를 지킨다 — 실저장소 모듈을
     # 무조건 import하면 격리 base(테스트 픽스처)에 실데이터가 섞인다(F8).
+    # (구 MAJOR_PRECEDENTS는 손으로 쓴 요약이 틀려 원문 기록 기반 명세로 대체됐다 —
+    #  effective-law-and-graph-precedents. except 범위를 넓히지 말 것: 넓히면 이
+    #  교차검증이 조용히 꺼진다.)
     if os.path.exists(os.path.join(base, "build_graph.py")):
         try:
             import build_graph
             scanned = {r["case_no"] for r in rows}
-            for k in build_graph.MAJOR_PRECEDENTS:
+            for k in build_graph.GRAPH_PRECEDENT_SPECS:
                 canon = canonicalize(k)
                 if canon and canon[0] not in scanned:
                     rows.append({"case_no": canon[0], "file": "build_graph.py",
                                  "line": 0, "context": "data"})
         except ImportError as e:
-            print(f"  [경고] build_graph import 실패 — MAJOR_PRECEDENTS 교차검증 생략: {e}")
+            print(f"  [경고] build_graph import 실패 — GRAPH_PRECEDENT_SPECS 교차검증 생략: {e}")
     rows.sort(key=lambda r: (r["case_no"], r["file"], r["line"]))
     return rows
 

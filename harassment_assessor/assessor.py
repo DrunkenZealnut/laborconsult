@@ -25,6 +25,8 @@ from .constants import (
     E3_MET, E3_UNCLEAR,
     LEGAL_REFERENCES,
     CUSTOMER_HARASSMENT_LEGAL,
+    SMALL_WORKPLACE_LEGAL,
+    SMALL_WORKPLACE_STEPS,
     RESPONSE_STEPS,
 )
 
@@ -54,6 +56,9 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
     # 4. 주의사항
     warnings = _generate_warnings(inp, e1, e2, e3, likelihood)
 
+    # 상시 4명 이하는 근로기준법 괴롭힘 규정 미적용 — 법적 근거·대응 절차도 그에 맞춘다.
+    # 경고만 바꾸고 이 둘을 그대로 두면 한 결과 안에 "적용되지 않습니다"와 벌칙·과태료가 공존한다.
+    small = _is_small_workplace(inp.business_size)
     return AssessmentResult(
         element_1_superiority=e1,
         element_2_beyond_scope=e2,
@@ -61,13 +66,20 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
         likelihood=likelihood,
         overall_score=overall,
         behavior_types_detected=all_types,
-        legal_basis=list(LEGAL_REFERENCES),
-        response_steps=list(RESPONSE_STEPS),
+        legal_basis=list(SMALL_WORKPLACE_LEGAL if small else LEGAL_REFERENCES),
+        response_steps=list(SMALL_WORKPLACE_STEPS if small else RESPONSE_STEPS),
         warnings=warnings,
     )
 
 
 # ── 내부 헬퍼 ──────────────────────────────────────────────────────────────
+
+
+def _is_small_workplace(business_size: str) -> bool:
+    """상시 4명 이하(5인 미만) 여부. 도구 인자는 자유 문자열이라 띄어쓰기 변형을 흡수한다
+    ("5인 미만"·"4명 이하" 등) — 정확일치만 보면 소규모 분기를 우회한다(gap 분석 위험 5)."""
+    s = (business_size or "").replace(" ", "")
+    return any(k in s for k in ("5인미만", "5명미만", "4인이하", "4명이하"))
 
 
 def _check_customer_harassment(inp: HarassmentInput) -> bool:
@@ -295,26 +307,31 @@ def _generate_warnings(inp: HarassmentInput,
             "반복·지속적 행위일수록 입증이 용이합니다."
         )
 
-    # 5인 미만
-    if inp.business_size == "5인미만":
+    # 5인 미만 — 상시 4명 이하 사업장에는 근로기준법의 직장 내 괴롭힘 규정(제6장의2:
+    # 제76조의2·제76조의3)이 **적용되지 않는다**. 적용 규정은 시행령 제7조 별표 1인데 그 표에
+    # 제6장의2가 없다(2026-10-04 법제처 eflaw 현행판 별표 1 대조). 구 문구("규모와 관계없이 모든
+    # 사업장에 적용 … 5인 미만도 과태료 대상")는 반대였고, 판정 결과가 답변 컨텍스트에 그대로 들어갔다.
+    small = _is_small_workplace(inp.business_size)
+    if small:
         warnings.append(
-            "직장 내 괴롭힘 금지(제76조의2)는 사업장 규모와 관계없이 모든 사업장에 적용됩니다. "
-            "다만, 5인 미만 사업장은 제76조의3 조사·조치 의무 위반 과태료 부과 대상입니다."
+            "상시 4명 이하 사업장에는 근로기준법의 직장 내 괴롭힘 규정(제76조의2·제76조의3)과 그 위반 "
+            "벌칙·과태료가 적용되지 않습니다(근로기준법 시행령 제7조 별표 1). 괴롭힘 행위는 민사상 "
+            "손해배상이나 폭행·모욕 등 형사 절차로 다퉈야 할 수 있습니다."
         )
 
-    # 회사 미조치
-    if inp.company_response in ("미조치", ""):
+    # 회사 미조치 (제76조의3 조치 의무 → 제116조 제2항 과태료 — 4명 이하 사업장은 적용 제외)
+    if not small and inp.company_response in ("미조치", ""):
         if likelihood in ("높음", "보통"):
             warnings.append(
                 "사용자가 괴롭힘 신고 후 조사·조치를 하지 않으면 "
                 "500만원 이하 과태료 대상입니다 (제116조 제2항)."
             )
 
-    # 불리한 처우
-    if "불리한" in inp.company_response or "보복" in inp.company_response:
+    # 불리한 처우 (제76조의3제6항 → 제109조 제1항 — 4명 이하 사업장은 적용 제외)
+    if not small and ("불리한" in inp.company_response or "보복" in inp.company_response):
         warnings.append(
             "괴롭힘 신고를 이유로 해고 등 불리한 처우를 받은 경우, "
-            "3년 이하 징역/3천만원 이하 벌금에 해당합니다 (제109조 제2항)."
+            "3년 이하 징역/3천만원 이하 벌금에 해당합니다 (제109조 제1항)."
         )
 
     # 우위 관계 불분명

@@ -66,6 +66,12 @@ ARTICLES = [
     ("mw_enf_3",      "최저임금법 시행령",               3,   None, []),
     ("lsa_act_76_3",  "근로기준법",                     76,  3,    []),
     ("lsa_act_109",   "근로기준법",                     109, None, []),
+    # 피보험자격 확인청구(언제든지)·근로복지공단 위탁·이직확인서 10일 — insured_status 블록 근거
+    ("ei_act_17",     "고용보험법",                     17,  None, []),
+    ("ei_enf_145",    "고용보험법 시행령",               145, None, []),
+    ("ei_rule_82_2",  "고용보험법 시행규칙",             82,  2,    []),
+    # 상시 4명 이하 사업장 적용 규정(별표 1) — harassment_retaliation 블록의 미적용 문장 근거
+    ("lsa_enf_7",     "근로기준법 시행령",               7,   None, []),
 ]
 
 # 조문이 "고용노동부장관이 고시하는 금액"으로 **위임**하는 수치들 — 조문만으로는
@@ -130,18 +136,15 @@ def url_resolves(url: str) -> bool:
 def fetch_article_xml(api_key: str, law_name: str, article_no: int, sub: int | None) -> dict | None:
     """조문 본문. `legal_api.fetch_article` 은 캐시·서킷브레이커가 붙은 **상담용** 경로라
     배치 수집에 쓰지 않는다(L2 캐시를 수집 트래픽으로 오염시키지 않기 위함)."""
-    res = requests.get(SERVICE_URL, params={"OC": api_key, "target": "law", "type": "XML",
-                                            "LM": law_name}, timeout=TIMEOUT)
-    res.raise_for_status()
+    # 조회·게이트는 legal_api.fetch_law_root 단일 출처(eflaw 현행 시행판 · 미매칭/자격 오류/
+    # 법령명 대조/폐지 거부). `target=law`는 시행 예정 개정이 섞인 본문을 돌려줘 근거 원문이
+    # 미래 조문이 됐다(lsa_act_109 실측, effective-law). 오류 응답(Response)은 예외로 올라온다.
+    from app.core.legal_api import fetch_law_root
     try:
-        root = safe_xml.fromstring(res.text)
+        root = fetch_law_root(law_name, api_key, timeout=TIMEOUT)
     except ET.ParseError:
         return None
-    if root.tag != "법령":                      # 미매칭·자격증명 오류도 HTTP 200 이다
-        return None
-    returned = (root.findtext(".//법령명_한글") or "").replace(" ", "")
-    if returned and returned != law_name.replace(" ", ""):
-        print(f"    ⚠️ 다른 법령이 반환됨: {returned} (요청 {law_name}) — 건너뜀")
+    if root is None:                            # 미매칭·다른 법령·폐지
         return None
     want = f"{article_no:04d}" + (f"{sub:02d}" if sub else "00")
     # **목(目)까지 반드시 포함한다.** 조문이 "다음 각 목과 같다"로 넘기고 실제 수치는
@@ -438,6 +441,16 @@ def write_doc(path: str, header: dict, body: str) -> None:
         f.write("\n".join(lines))
 
 
+def stored_body(doc_id: str) -> str | None:
+    """저장된 문서의 본문(`## 본문` 아래). 없으면 None — 재수집 전 차이 확인용."""
+    path = os.path.join(OUT_DIR, f"{doc_id}.md")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    return text.split("## 본문", 1)[1] if "## 본문" in text else None
+
+
 def stored_notice(doc_id: str) -> dict | None:
     """수집해 둔 고시의 헤더·고시번호. 없으면 None."""
     path = os.path.join(OUT_DIR, f"{doc_id}.md")
@@ -644,7 +657,13 @@ def main(argv=None) -> int:
         header = {"doc_id": doc_id, "source_type": "law", "title": label,
                   "official_url": url, "issuer": "법제처 국가법령정보센터",
                   "date": article["date"], "keys": keys}
-        print(f"  ✓ {label}  ({len(article['body'])}자)")
+        stored = stored_body(doc_id)
+        if stored is None:
+            change = "신규"
+        else:
+            same = re.sub(r"\s+", "", stored) == re.sub(r"\s+", "", article["body"])
+            change = "저장본과 동일" if same else "⚠️ 저장본과 다름"
+        print(f"  ✓ {label}  ({len(article['body'])}자, {change})")
         if not args.dry_run:
             write_doc(os.path.join(OUT_DIR, f"{doc_id}.md"), header, article["body"])
         saved.append(doc_id)

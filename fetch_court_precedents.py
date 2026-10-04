@@ -33,6 +33,9 @@ import requests
 from dotenv import load_dotenv
 
 from vector_ledger import atomic_write_json
+# 사건번호 정규화·병합 대조는 app.core.case_numbers가 단일 출처다 — 답변 경로(legal_api)도
+# 같은 함수를 쓴다. 이 모듈 이름으로도 계속 노출한다(archive_precedents·테스트가 fetch.* 로 쓴다).
+from app.core.case_numbers import detail_matches, normalize_case_no  # noqa: F401
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
             override=True)
@@ -89,15 +92,6 @@ def clean_api_text(text: str | None) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
-
-def normalize_case_no(case_no: str) -> str:
-    """비교용 정규화 — NFC 통일 + 공백 제거.
-
-    macOS 파일명은 NFD로 저장되므로 NFC 정규화가 없으면 '다'(U+B2E4)와
-    'ᄃ+ᅡ'(U+1103 U+1161)가 다른 문자로 취급돼 매칭이 조용히 실패한다.
-    """
-    return re.sub(r"\s+", "", unicodedata.normalize("NFC", case_no or ""))
 
 
 def format_date(raw: str) -> str:
@@ -208,33 +202,6 @@ def search_case(case_no: str, target: str, api_key: str) -> dict | None:
         time.sleep(REQUEST_DELAY)
 
     return None
-
-
-def detail_matches(detail_case_no: str, wanted: str) -> bool:
-    """상세 응답의 사건번호가 요청 사건을 포함하는지.
-
-    병합 사건은 사건번호가 '2000다51919, 51926'처럼 온다. 엄격 일치만 보면
-    실제로 맞는 판례를 버리게 된다.
-    """
-    # 병합 사건은 '2015다221903(본소), 2015다221910(반소)'처럼 괄호 주기가 붙는다.
-    detail = re.sub(r"\([^)]*\)", "", normalize_case_no(detail_case_no))
-    want = re.sub(r"\([^)]*\)", "", normalize_case_no(wanted))
-    if detail == want:
-        return True
-    # '2000다51919,51926' → 앞 조각의 연도·부호를 뒤 번호에 붙여 비교
-    parts = [p for p in detail.split(",") if p]
-    if not parts:
-        return False
-    if want in parts:
-        return True
-    prefix = re.match(r"^(\d{2,4}[가-힣]{1,4})", parts[0])
-    if prefix:
-        expanded = {parts[0]} | {
-            p if re.match(r"^\d{2,4}[가-힣]", p) else prefix.group(1) + p
-            for p in parts[1:]
-        }
-        return want in expanded
-    return False
 
 
 # ── 상세 조회 + 정규화 ────────────────────────────────────────────────────────

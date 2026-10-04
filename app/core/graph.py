@@ -224,6 +224,36 @@ def _describe_path(G, path: list[str]) -> str:
     return " / ".join(parts)
 
 
+def format_precedent_line(d: dict) -> str:
+    """판례 노드 한 줄: 선고일·판결유형·요약(≤200자)·변경 표시."""
+    when = ", ".join(x for x in (f"{d['date']} 선고" if d.get("date") else "",
+                                 d.get("judgment_type", "")) if x)
+    head = f"- {d.get('court', '')} {d.get('case_number', '')}"
+    if when:
+        head += f" ({when})"
+    line = f"{head}: {d.get('summary', '')[:200]}"
+    newer = d.get("superseded_by") or []
+    if newer:
+        line += " — 일부 법리는 " + ", ".join(f"대법원 {n}" for n in newer) + " 판결로 변경됨"
+    return line
+
+
+def rendered_precedents(context: str, traversal_results: list[dict]) -> list[dict]:
+    """최종 컨텍스트 문자열(절단 이후)에 **실제로 나타난** 판례 노드 데이터만.
+
+    인용 화이트리스트에 넣을 판례는 LLM이 본 것과 같은 집합이어야 한다 —
+    max_chars 절단으로 빠진 판례를 넣으면 보지 않은 근거가 "인용 가능"이 된다.
+    """
+    seen, out = set(), []
+    for r in traversal_results:
+        d = r.get("data", {})
+        no = d.get("case_number", "")
+        if d.get("type") == "precedent" and no and no not in seen and no in (context or ""):
+            seen.add(no)
+            out.append(d)
+    return out
+
+
 def build_graph_context(
     seed_nodes: list[str],
     traversal_results: list[dict],
@@ -253,14 +283,13 @@ def build_graph_context(
                     lines.append(f"  연결: {desc}")
         sections.append("\n".join(lines))
 
-    # 2. 관련 판례
+    # 2. 관련 판례 — 노드 사실은 법제처 원문 기록(build_graph 게이트 G1~G5)에서 온다.
+    #    요약은 판시사항 항목 그대로라 100자에서 자르면 쟁점이 사라진다 → 200자.
     precedents = [r for r in traversal_results if r["data"].get("type") == "precedent"]
     if precedents:
         lines = ["[관련 판례 (그래프 탐색)]"]
         for p in precedents[:5]:
-            d = p["data"]
-            summary = d.get("summary", "")[:100]
-            lines.append(f"- {d.get('court', '')} {d.get('case_number', '')}: {summary}")
+            lines.append(format_precedent_line(p["data"]))
         sections.append("\n".join(lines))
 
     # 3. 법률 체계 관계
