@@ -253,6 +253,31 @@ def validate_response_citations(
     return result
 
 
+# 교정 사유별 (머리말, 번호 목록 라벨, 1번 규칙). hallucinated는 기존 문구 그대로다.
+_CORRECTION_TEXT = {
+    "hallucinated": (
+        "아래 노동법 상담 답변에서 판례 번호가 잘못 인용되었습니다.",
+        "확인되지 않은 판례 번호",
+        "1. 위 판례 번호가 포함된 문장에서 번호만 제거하고, "
+        "내용은 유지하되 출처를 다음과 같이 변경하세요:\n"
+        '   "관련 판례가 있을 수 있으나 구체적 번호는 '
+        'law.go.kr에서 확인이 필요합니다"\n',
+    ),
+    "low_relevance": (
+        "아래 노동법 상담 답변에서 질문의 쟁점과 다른 판례가 근거로 인용되었습니다.",
+        "쟁점이 다른 판례 번호",
+        "1. 위 판례 번호와 그 판례를 근거로 든 구절만 제거하세요. "
+        "법령 조문에 근거한 설명은 유지하세요.\n",
+    ),
+    "secondhand": (
+        "아래 노동법 상담 답변에서 원문을 확인하지 못한 판례 번호가 인용되었습니다.",
+        "원문 미확인 판례 번호",
+        "1. 위 판례 번호가 포함된 문장에서 번호만 제거하고 "
+        '"관련 판례는 원문 확인이 필요합니다"로 바꾸세요. 내용은 유지하세요.\n',
+    ),
+}
+
+
 def correct_hallucinated_citations(
     response_text: str,
     hallucinated: list[str],
@@ -260,8 +285,12 @@ def correct_hallucinated_citations(
     gemini_api_key: str | None = None,
     openai_client: object | None = None,
     deadline: float | None = None,
+    reason: str = "hallucinated",
 ) -> str | None:
     """다른 LLM을 사용해 환각 판례 번호를 제거한 수정 답변을 생성.
+
+    reason: "hallucinated"(기본 — 기존 문구 그대로) | "low_relevance"(쟁점이 다른 판례) |
+        "secondhand"(다른 글이 언급한 번호, 원문 미확인). 머리말과 1번 규칙만 달라진다.
 
     Haiku(1순위) → Gemini(2순위) → OpenAI(3순위) 순서로 시도.
 
@@ -282,14 +311,12 @@ def correct_hallucinated_citations(
 
     hallucinated_str = ", ".join(hallucinated)
 
+    head, label, rule = _CORRECTION_TEXT.get(reason, _CORRECTION_TEXT["hallucinated"])
     prompt = (
-        "아래 노동법 상담 답변에서 판례 번호가 잘못 인용되었습니다.\n"
-        f"확인되지 않은 판례 번호: {hallucinated_str}\n\n"
+        f"{head}\n"
+        f"{label}: {hallucinated_str}\n\n"
         "규칙:\n"
-        "1. 위 판례 번호가 포함된 문장에서 번호만 제거하고, "
-        "내용은 유지하되 출처를 다음과 같이 변경하세요:\n"
-        '   "관련 판례가 있을 수 있으나 구체적 번호는 '
-        'law.go.kr에서 확인이 필요합니다"\n'
+        f"{rule}"
         "2. 나머지 답변 내용은 절대 수정하지 마세요.\n"
         "3. 마크다운 형식을 유지하세요.\n"
         "4. 수정된 전체 답변만 출력하세요. 설명이나 부가 텍스트를 추가하지 마세요.\n\n"

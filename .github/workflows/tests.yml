@@ -70,6 +70,11 @@ jobs:
           python3 test_consultation_eval.py
           python3 test_admin_consultation_quality.py
 
+      - name: 지식iN 정확도 회귀(폐기 기준 필터·현행 규칙 블록·인용 관련성·평가 매처)
+        run: |
+          python3 test_kin_accuracy.py
+          python3 eval_consultation.py --offline --fixture data/eval_kin_queries.json
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 

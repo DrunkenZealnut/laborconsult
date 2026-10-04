@@ -906,7 +906,8 @@ _JOINER_LEN = len(_CONTEXT_JOINER)
 
 
 def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
-                         max_chars: int | None = None) -> tuple[str | None, list[dict]]:
+                         max_chars: int | None = None,
+                         stale_out: list[str] | None = None) -> tuple[str | None, list[dict]]:
     """Pinecone 검색 결과를 LLM 컨텍스트 텍스트 + 메타 리스트로 변환.
 
     인용 가드 G4가 여기서 적용되므로 **출력 건수가 입력보다 적을 수 있다** —
@@ -917,9 +918,17 @@ def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
         (formatted_text, meta_list)
         - formatted_text: LLM에 제공할 포매팅된 텍스트 (없으면 None)
         - meta_list: [{title, section, source_type, score}, ...]
+        stale_out: 넘기면 적용된 폐기 기준 규칙 id를 채운다(관측용 metadata).
     """
     if not hits:
         return None, []
+
+    # 폐기 기준 필터(kin-answer-accuracy P0-3)는 **가드보다 먼저** — 상담글을 걸러낸
+    # 자리를 다른 출처가 채우도록. 캡은 순수 차감이라 순서가 반대면 빈자리가 그대로 남는다.
+    from app.core.stale_rules import filter_stale_hits
+    hits, stale_ids = filter_stale_hits(hits)
+    if stale_out is not None:
+        stale_out.extend(stale_ids)
 
     # 인용 가드 G4 — 이 함수는 파이프라인의 단일 초크포인트라, 여기서 걸러야
     # 호출부가 늘어나도 가드가 새지 않는다. 컨텍스트에서 빠진 청크는

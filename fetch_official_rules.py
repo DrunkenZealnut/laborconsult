@@ -54,6 +54,18 @@ ARTICLES = [
     ("ltc_enf_4",     "노인장기요양보험법 시행령",         4,   None, ["insurance.long_term_care"]),
     ("eisi_enf_12",   "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률 시행령",
                                                         12,  None, ["insurance.employment_insurance"]),
+    # ── 현행 규칙 블록(app/core/rule_facts.py)의 원문 대조용 — 승인 키가 없다(kin-answer-accuracy).
+    #    수치 기준이 아니라 요건·기간 규칙이라 승인 게이트와 무관하고, 문구 검증(K6)의 기준이다.
+    ("ei_act_40",     "고용보험법",                     40,  None, []),
+    ("ei_act_43",     "고용보험법",                     43,  None, []),
+    ("ei_act_49",     "고용보험법",                     49,  None, []),
+    ("ei_act_64",     "고용보험법",                     64,  None, []),
+    ("ei_enf_84",     "고용보험법 시행령",               84,  None, []),
+    ("lsa_act_18",    "근로기준법",                     18,  None, []),
+    ("lsa_act_26",    "근로기준법",                     26,  None, []),
+    ("mw_enf_3",      "최저임금법 시행령",               3,   None, []),
+    ("lsa_act_76_3",  "근로기준법",                     76,  3,    []),
+    ("lsa_act_109",   "근로기준법",                     109, None, []),
 ]
 
 # 조문이 "고용노동부장관이 고시하는 금액"으로 **위임**하는 수치들 — 조문만으로는
@@ -415,6 +427,10 @@ HEADER_FIELDS = ("doc_id", "source_type", "title", "official_url", "issuer", "da
 def write_doc(path: str, header: dict, body: str) -> None:
     lines = [f"# {header['title']}", ""]
     for field in HEADER_FIELDS:
+        # 조문 헤더에는 발령번호가 없다 — 필드를 빼서 기존 조문 파일과 같은 형식을 유지한다.
+        # (header[field]로 읽던 시절 조문 수집이 매번 KeyError로 죽었다: 2026-10-03 발견)
+        if field not in header:
+            continue
         value = header[field]
         lines.append(f"- {field}: {', '.join(value) if isinstance(value, list) else value}")
     lines += ["", "## 본문", "", body.strip(), ""]
@@ -577,6 +593,9 @@ def main(argv=None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="조회만 하고 파일을 쓰지 않는다")
     parser.add_argument("--only", help="이 기준 키에 관련된 문서만 수집")
+    parser.add_argument("--doc", action="append",
+                        help="이 doc_id만 수집(반복 가능). 고시는 건너뛴다 — 기존 문서를 다시 받으면 "
+                             "본문 변화로 sha256 이 바뀌어 승인 근거가 무효가 될 수 있다")
     parser.add_argument("--skip-url-check", action="store_true",
                         help="official_url 확인 생략(오프라인 점검용 — 운영 수집에는 쓰지 말 것)")
     parser.add_argument("--check-updates", action="store_true",
@@ -605,6 +624,8 @@ def main(argv=None) -> int:
     for doc_id, law, no, sub, keys in ARTICLES:
         if args.only and args.only not in keys:
             continue
+        if args.doc and doc_id not in args.doc:
+            continue
         label = f"{law} 제{no}조" + (f"의{sub}" if sub else "")
         try:
             article = fetch_article_xml(api_key, law, no, sub)
@@ -632,6 +653,8 @@ def main(argv=None) -> int:
     print(f"\n=== 행정규칙(고시) {len(ADMRULS)}건 ===")
     for doc_id, query, exact, dept, keys in ADMRULS:
         if args.only and args.only not in keys:
+            continue
+        if args.doc and doc_id not in args.doc:
             continue
         # ① 소관부처 게시판 우선. 법제처는 시행일에야 페이지를 열어, 발령만 된 고시를
         #    놓친다(2027년 최저임금 고시 실측). 게시판에는 발령 즉시 올라온다.

@@ -324,11 +324,11 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
     Args:
         sub: "조의N" 번호 (예: 제76조의2 → sub=2)
     """
-    # v2: 접두사 — LM 전환 시점의 캐시 세대 구분. 구 키(MST 시절)의 낡은
-    # 조문이 L2에 남지만(만료 7일 — 자동 삭제 경로는 없다) 지우는 대신
-    # **안 읽는** 방식이라 마이그레이션이 없고, 롤백 시 구버전 코드가 구 키를
-    # 그대로 읽어 안전하다.
-    cache_key = f"v2:{law_name}_{article_no}"
+    # 세대 접두사 — 캐시된 조문 **형식**이 바뀌면 올린다. 구 키의 낡은 조문이 L2에
+    # 남지만(만료 7일 — 자동 삭제 경로는 없다) 지우는 대신 **안 읽는** 방식이라
+    # 마이그레이션이 없고, 롤백 시 구버전 코드가 구 키를 그대로 읽어 안전하다.
+    # v2: LM 전환(MST 시절 낡은 판본). v3: 목(目) 포함(2026-10-03 — v2 캐시는 목이 빠져 있다).
+    cache_key = f"v3:{law_name}_{article_no}"
     if sub:
         cache_key += f"의{sub}"
     if paragraph:
@@ -522,12 +522,28 @@ def _format_full_article(jo_el: ET.Element) -> str | None:
         hang_content = hang.find("항내용")
         if hang_content is not None and hang_content.text:
             parts.append(hang_content.text.strip())
-        for ho in hang.iter("호"):
-            ho_content = ho.find("호내용")
-            if ho_content is not None and ho_content.text:
-                parts.append(f"  {ho_content.text.strip()}")
+        _append_ho_mok(hang, parts)
 
     return "\n".join(parts) if parts else None
+
+
+def _append_ho_mok(hang_el: ET.Element, parts: list[str]) -> None:
+    """호와 그 아래 **목(目)** 을 붙인다.
+
+    목을 빼면 안 된다 — 요건이 목에 있는 조문이 많다. 고용보험법 제40조①5호는 본문이
+    "다음 각 목의 어느 하나에 해당할 것"뿐이고 실제 요건(3분의 1 미만·건설일용 14일)은
+    가·나목에 있다. 목이 빠진 현행 조문을 받은 LLM은 빈자리를 상담글의 폐기 기준
+    ("10일 미만")으로 채워 **현행 조문인 것처럼** 인용했다(지식iN 13·18번, 2026-10-03 실측).
+    fetch_official_rules 는 같은 함정을 이미 피하고 있었고 답변 경로만 남아 있었다.
+    """
+    for ho in hang_el.iter("호"):
+        ho_content = ho.find("호내용")
+        if ho_content is not None and ho_content.text:
+            parts.append(f"  {ho_content.text.strip()}")
+        for mok in ho.iter("목"):
+            mok_content = mok.find("목내용")
+            if mok_content is not None and mok_content.text:
+                parts.append(f"    {mok_content.text.strip()}")
 
 
 def _format_article_text(jo_no_text: str, hang_el: ET.Element) -> str:
@@ -536,10 +552,7 @@ def _format_article_text(jo_no_text: str, hang_el: ET.Element) -> str:
     hang_content = hang_el.find("항내용")
     if hang_content is not None and hang_content.text:
         parts.append(hang_content.text.strip())
-    for ho in hang_el.iter("호"):
-        ho_content = ho.find("호내용")
-        if ho_content is not None and ho_content.text:
-            parts.append(f"  {ho_content.text.strip()}")
+    _append_ho_mok(hang_el, parts)
     return "\n".join(parts)
 
 
