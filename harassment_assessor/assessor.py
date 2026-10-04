@@ -60,7 +60,13 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
 
     # 상시 4명 이하는 근로기준법 괴롭힘 규정 미적용 — 법적 근거·대응 절차도 그에 맞춘다.
     # 경고만 바꾸고 이 둘을 그대로 두면 한 결과 안에 "적용되지 않습니다"와 벌칙·과태료가 공존한다.
-    small = _is_small_workplace(inp.business_size)
+    size = _workplace_size_class(inp.business_size)
+    if size == "small":
+        legal_basis, steps = list(SMALL_WORKPLACE_LEGAL), list(SMALL_WORKPLACE_STEPS)
+    elif size == "unknown":   # 규모 미확정 — 적용 조건(별표 1)을 근거 목록에도 남긴다
+        legal_basis, steps = list(LEGAL_REFERENCES) + [SMALL_WORKPLACE_LEGAL[0]], list(RESPONSE_STEPS)
+    else:
+        legal_basis, steps = list(LEGAL_REFERENCES), list(RESPONSE_STEPS)
     return AssessmentResult(
         element_1_superiority=e1,
         element_2_beyond_scope=e2,
@@ -68,8 +74,8 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
         likelihood=likelihood,
         overall_score=overall,
         behavior_types_detected=all_types,
-        legal_basis=list(SMALL_WORKPLACE_LEGAL if small else LEGAL_REFERENCES),
-        response_steps=list(SMALL_WORKPLACE_STEPS if small else RESPONSE_STEPS),
+        legal_basis=legal_basis,
+        response_steps=steps,
         warnings=warnings,
     )
 
@@ -80,22 +86,32 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
 _SIZE_RE = re.compile(r"(\d+)(?:인|명)(미만|이하|이상|초과)?")
 
 
-def _is_small_workplace(business_size: str) -> bool:
-    """상시 4명 이하(5인 미만)로 **확정되는** 경우만 True. 도구 인자는 자유 문자열이다.
+def _workplace_size_class(business_size: str) -> str:
+    """상시 근로자 수가 5명 기준선의 어느 쪽인지: "small"(4명 이하 확정) / "covered"(5명 이상 확정)
+    / "unknown"(미기재·해석 불가·기준선을 걸치는 범위).
 
-    숫자와 비교어를 해석한다 — 부분문자열로 보면 "15인 미만"이 "5인미만"을 포함해 소규모로
-    오분류된다(CodeRabbit PR #98). "N인 미만"은 N≤5, "N명 이하"·단독 "N명"은 N≤4일 때만
-    소규모다. 해석 못 하는 값(예: "소규모")은 제외로 보지 않는다 — 적용 제외는 확인될 때만.
+    도구 인자는 자유 문자열이라 숫자와 비교어를 해석한다 — 부분문자열로 보면 "15인 미만"이
+    "5인미만"을 포함해 소규모로 오분류된다. 반대로 "15인 미만"을 5명 이상으로 단정해서도 안 된다
+    (1~14명 범위에 4명 이하가 들어 있다) — 그런 범위는 unknown이다(CodeRabbit PR #98).
     """
     m = _SIZE_RE.search((business_size or "").replace(" ", ""))
     if not m:
-        return False
+        return "unknown"
     n, cmp_ = int(m.group(1)), m.group(2)
-    if cmp_ == "미만":
-        return n <= 5
-    if cmp_ in ("이상", "초과"):
-        return False
-    return n <= 4   # "이하" 또는 비교어 없는 인원수
+    if cmp_ == "미만":                     # 1..n-1
+        return "small" if n <= 5 else "unknown"
+    if cmp_ == "이하":                     # 1..n
+        return "small" if n <= 4 else "unknown"
+    if cmp_ == "이상":                     # n..
+        return "covered" if n >= 5 else "unknown"
+    if cmp_ == "초과":                     # n+1..
+        return "covered" if n >= 4 else "unknown"
+    return "small" if n <= 4 else "covered"   # 비교어 없는 인원수
+
+
+def _is_small_workplace(business_size: str) -> bool:
+    """상시 4명 이하로 **확정되는** 경우만 True — 적용 제외는 확인될 때만 판단한다."""
+    return _workplace_size_class(business_size) == "small"
 
 
 def _check_customer_harassment(inp: HarassmentInput) -> bool:
@@ -327,7 +343,8 @@ def _generate_warnings(inp: HarassmentInput,
     # 제76조의2·제76조의3)이 **적용되지 않는다**. 적용 규정은 시행령 제7조 별표 1인데 그 표에
     # 제6장의2가 없다(2026-10-04 법제처 eflaw 현행판 별표 1 대조). 구 문구("규모와 관계없이 모든
     # 사업장에 적용 … 5인 미만도 과태료 대상")는 반대였고, 판정 결과가 답변 컨텍스트에 그대로 들어갔다.
-    small = _is_small_workplace(inp.business_size)
+    size = _workplace_size_class(inp.business_size)
+    small = size == "small"
     if small:
         warnings.append(
             "상시 4명 이하 사업장에는 근로기준법의 직장 내 괴롭힘 규정(제76조의2·제76조의3)과 그 위반 "
@@ -335,18 +352,29 @@ def _generate_warnings(inp: HarassmentInput,
             "손해배상이나 폭행·모욕 등 형사 절차로 다퉈야 할 수 있습니다."
         )
 
+    elif size == "unknown":
+        # 규모 미확정 — 적용 여부가 상시 근로자 수에 달려 있으니 단정하지 않는다(2차 재평가 9번 지적:
+        # "5인 미만 사업장에서는 제76조의2·3이 적용되지 않는 범위를 확인하지 않았다").
+        warnings.append(
+            "상시 근로자 수를 먼저 확인해야 합니다. 상시 4명 이하 사업장에는 근로기준법의 직장 내 "
+            "괴롭힘 규정(제76조의2·제76조의3)과 그 위반 벌칙·과태료가 적용되지 않습니다"
+            "(근로기준법 시행령 제7조 별표 1)."
+        )
+    # 벌칙·과태료 경고는 5명 이상 확정이면 단정, 미확정이면 조건부, 4명 이하면 내지 않는다.
+    cond = "" if size == "covered" else "상시 5명 이상 사업장이라면, "
+
     # 회사 미조치 (제76조의3 조치 의무 → 제116조 제2항 과태료 — 4명 이하 사업장은 적용 제외)
     if not small and inp.company_response in ("미조치", ""):
         if likelihood in ("높음", "보통"):
             warnings.append(
-                "사용자가 괴롭힘 신고 후 조사·조치를 하지 않으면 "
+                f"{cond}사용자가 괴롭힘 신고 후 조사·조치를 하지 않으면 "
                 "500만원 이하 과태료 대상입니다 (제116조 제2항)."
             )
 
     # 불리한 처우 (제76조의3제6항 → 제109조 제1항 — 4명 이하 사업장은 적용 제외)
     if not small and ("불리한" in inp.company_response or "보복" in inp.company_response):
         warnings.append(
-            "괴롭힘 신고를 이유로 해고 등 불리한 처우를 받은 경우, "
+            f"{cond}괴롭힘 신고를 이유로 해고 등 불리한 처우를 받은 경우, "
             "3년 이하 징역/3천만원 이하 벌금에 해당합니다 (제109조 제1항)."
         )
 

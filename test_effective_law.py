@@ -320,15 +320,23 @@ class WhitelistTest(unittest.TestCase):
     def test_e10_rendered_precedents_only(self):
         from app.core.citation_relevance import classify_paths
         from app.core.graph import rendered_precedents
-        results = [{"data": {"type": "precedent", "case_number": "2023다302838", "court": "대법원",
-                             "summary": "통상임금"}},
-                   {"data": {"type": "precedent", "case_number": "2012다89399", "court": "대법원",
-                             "summary": "통상임금"}}]
-        shown = rendered_precedents("- 대법원 2023다302838 (…): 통상임금", results)
-        self.assertEqual([d["case_number"] for d in shown], ["2023다302838"], "절단돼 안 보인 판례는 제외")
-        # 자기 줄은 잘리고 다른 줄의 "…판결로 변경됨" 표기에만 번호가 남은 판례는 제외(CodeRabbit PR #98)
-        ctx = "- 대법원 2012다89399 (…): 통상임금 — 일부 법리는 대법원 2023다302838 판결로 변경됨"
-        self.assertEqual([d["case_number"] for d in rendered_precedents(ctx, results)], ["2012다89399"])
+        from app.core.graph import format_precedent_line
+        new = {"type": "precedent", "case_number": "2023다302838", "court": "대법원",
+               "date": "2024.12.19", "judgment_type": "전원합의체 판결", "summary": "통상임금의 개념과 판단 기준"}
+        old = {"type": "precedent", "case_number": "2012다89399", "court": "대법원", "date": "2013.12.18",
+               "judgment_type": "전원합의체 판결", "summary": "통상임금 판단 기준", "superseded_by": ["2023다302838"]}
+        results = [{"data": new}, {"data": old}]
+        full = "[관련 판례 (그래프 탐색)]\n" + format_precedent_line(new) + "\n" + format_precedent_line(old)
+        self.assertEqual([d["case_number"] for d in rendered_precedents(full, results)],
+                         ["2023다302838", "2012다89399"])
+        # 자기 줄은 없고 다른 줄의 "…판결로 변경됨" 표기에만 번호가 남은 판례는 제외
+        only_old = format_precedent_line(old)
+        self.assertEqual([d["case_number"] for d in rendered_precedents(only_old, results)], ["2012다89399"])
+        # max_chars 절단 — 줄 머리 직후·요약 중간에서 잘린 판례는 제외(잘리기 전 요약을 hit에 붙이지 않는다)
+        line_new = format_precedent_line(new)
+        for cut in (len("- 대법원 2023다302838"), len(line_new) - 3):
+            ctx = only_old + "\n" + line_new[:cut]
+            self.assertEqual([d["case_number"] for d in rendered_precedents(ctx, results)], ["2012다89399"], cut)
         hits = [{"title": "대법원 2023다302838", "case_no": "2023다302838", "chunk_text": "통상임금"}]
         self.assertEqual(classify_paths(["2023다302838"], hits)["2023다302838"]["path"], "primary")
 
@@ -441,8 +449,22 @@ class HandWrittenLegalFactsTest(unittest.TestCase):
                         ("15인 미만", False), ("14명 이하", False), ("5인이상", False),
                         ("300인이상", False), ("소규모", False), ("", False)):
             self.assertIs(small_ws(v), want, v)
+        # "15인 미만"은 1~14명 — 4명 이하가 섞인 범위라 벌칙을 단정하지 않고 조건부로, 규모 확인을 요구한다
+        from harassment_assessor.assessor import _workplace_size_class as size_class
+        for v, want in (("15인 미만", "unknown"), ("10명 이하", "unknown"), ("3인 이상", "unknown"),
+                        ("", "unknown"), ("소규모", "unknown"), ("5인이상", "covered"),
+                        ("30인이상", "covered"), ("7명", "covered"), ("5인미만", "small")):
+            self.assertEqual(size_class(v), want, v)
         mid = assess_harassment(HarassmentInput(business_size="15인 미만", **base))
-        self.assertTrue(any("제109조 제1항" in w for w in mid.warnings))
+        penalty = [w for w in mid.warnings if "제109조 제1항" in w]
+        self.assertTrue(penalty and all(w.startswith("상시 5명 이상 사업장이라면") for w in penalty))
+        self.assertTrue(any("상시 근로자 수를 먼저 확인" in w for w in mid.warnings))
+        self.assertIn(constants.LEGAL_REFERENCES[0], mid.legal_basis)
+        self.assertTrue(any("별표 1" in lb for lb in mid.legal_basis))
+        big2 = assess_harassment(HarassmentInput(business_size="30인이상", **base))
+        self.assertTrue(any(w.startswith("괴롭힘 신고를 이유로") and "제109조 제1항" in w for w in big2.warnings),
+                        "5명 이상 확정이면 단정")
+        self.assertFalse(any("상시 근로자 수를 먼저 확인" in w for w in big2.warnings))
 
     def test_e19_annex_absence_check(self):
         import xml.etree.ElementTree as ET
