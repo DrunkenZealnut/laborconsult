@@ -7,7 +7,7 @@
   들어가 오인용(2019다293449 = 동산인도를 "주휴수당 판례"로)이 검증을 통과했다.
 - 규칙 블록·계산기가 제시한 판례가 화이트리스트 밖이라 정당한 인용이 지워질 수 있었다.
 
-설계: docs/02-design/features/effective-law-and-graph-precedents.design.md §8 (E1~E17),
+설계: docs/archive/2026-10/effective-law-and-graph-precedents/effective-law-and-graph-precedents.design.md §8 (E1~E17),
 §13 C12~C14(E18·E19), gap 분석 후속(E20).
 """
 from __future__ import annotations

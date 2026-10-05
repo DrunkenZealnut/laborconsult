@@ -1,7 +1,7 @@
 # effective-law-and-graph-precedents — 완료 보고서
 
 > 기준일 판본 조회 전환 + GraphRAG 판례표 재구축 · 2026-10-04 (Plan → Design rev2 → Do → Check → PR 리뷰, 1일)
-> Plan `docs/01-plan/features/effective-law-and-graph-precedents.plan.md` · Design `docs/02-design/features/effective-law-and-graph-precedents.design.md` · Analysis `docs/03-analysis/effective-law-and-graph-precedents.analysis.md`
+> Plan `effective-law-and-graph-precedents.plan.md` · Design `effective-law-and-graph-precedents.design.md` · Analysis `effective-law-and-graph-precedents.analysis.md` (모두 `docs/archive/2026-10/effective-law-and-graph-precedents/`)
 
 ## Executive Summary
 
@@ -12,7 +12,7 @@
 | 기능 | 2차 외부 재평가(10-04) 검증에서 드러난 두 결함을 고친다. ① 법제처 조문 조회가 시행 예정 개정을 현행처럼 반환한다. ② 손으로 쓴 그래프 판례표가 오인용을 만든다 |
 | 기간 | 2026-10-04 (1일) |
 | 브랜치 | `feat/effective-law-and-graph-precedents` → PR #98 (커밋 4개: `99f19c7` 구현 + CodeRabbit 반영 3회) |
-| 상태 | head `d948cae` CI 전부 통과 · CodeRabbit 미해결 스레드 0 · **미머지**(사용자 승인 대기) |
+| 상태 | **2026-10-05 머지**(merge commit `13f1803`) · Vercel 프로덕션 배포 성공 · 머지 직전 `check_law_freshness --anchors` 17종 ✅ |
 
 ### 1.2 결과
 
@@ -20,7 +20,7 @@
 |---|---|
 | Match Rate | **98.2%** (엄격 96.4% · 110항목: 일치 104 / 동등 2 / 부분 4 / 누락 0) |
 | 변경 | 30파일, +2,497 / −511. 신규 6개(모듈 1·판례 원문 기록 1·테스트 1·문서 3), 수정 24개 |
-| 테스트 | `test_effective_law.py` 30건 신규(E1~E20, CI 등록) · 기존 테스트 6건 갱신 · 오프라인 전 스위트와 Node 86건 통과 · 판례 아카이브 verify 통과 |
+| 테스트 | `test_effective_law.py` 30건 신규(E1~E20, CI 등록) · 기존 테스트 6건 갱신 · 오프라인 전 스위트 통과 · Node 86/86(CI의 `test_*.js` 7개 파일을 `node --test`로 실행) · 판례 아카이브 verify 통과 |
 | 판본 검증 | `check_law_freshness` 17종 전부 ✅. 음성 대조: 조회를 `target=law`로 되돌리면 근로기준법 18·고용보험법 6 조문 차이로 실패(§13 C1·C2) |
 | 지식iN 20건 3차 Live | 자동 통과 **17/20**(기준선 12 → 이전 사이클 15·14 → 17). 2019다293449·2013다25194·2010다111757 오인용 **0**(C16·C20) |
 | 그래프 판례 | 손으로 쓴 8건(정확 2) → 법제처 원문 5건. 삭제 4·요약 교체 2·신규 1(§1.3) |
@@ -100,7 +100,7 @@ B1·B3·B4는 외부 재평가 점수에 직접 걸린 결함이다. 셋 다 공
 
 | 항목 | 상태 | 다음 |
 |---|---|---|
-| PR #98 머지 | 대기 | 사용자 승인 후 머지하면 Vercel이 자동 배포한다. 조문 캐시 키가 `v4:`라 이전 캐시는 읽히지 않는다 |
+| PR #98 머지 | **완료**(2026-10-05, `13f1803`) | Vercel 프로덕션 배포 성공. 조문 캐시 키가 `v4:`라 이전 캐시는 읽히지 않는다 |
 | 신규 공식 원문 5건 Pinecone 적재 | 보류(설계 §3.2) | `ei_act_17`·`ei_enf_145`·`ei_rule_82_2`·`lsa_enf_7`·`lsa_act_109`. 다음 업로드 때 함께 올리고 BM25 재빌드가 뒤따른다. 규칙 블록은 검색과 무관하다 |
 | kin-11 2018두63235 | 범위 밖 | 크롤 판례 RAG 경로의 오인용이다. 인용 관련성은 monitor로 유지하고 다음 사이클에서 다룬다 |
 | kin-15 피보험자격 언급 | 수용 | 키워드로 잡을 수 없는 유형이다(C10) |
@@ -109,10 +109,10 @@ B1·B3·B4는 외부 재평가 점수에 직접 걸린 결함이다. 셋 다 공
 
 ## 7. 운영 체크리스트
 
-- [ ] 배포 전 로컬에서 `python3 check_law_freshness.py --anchors` 실행 (LAW_API_KEY는 등록 IP에서만 동작해 Actions로 돌릴 수 없다)
+- [x] 배포 전 로컬에서 `python3 check_law_freshness.py --anchors` 실행 — 2026-10-05 머지 직전, 17종 ✅·앵커·별표 부재 이상 없음 (LAW_API_KEY는 등록 IP에서만 동작해 Actions로 돌릴 수 없다)
 - [ ] **2026-10-08 오전**(근로기준법 시행 예정분) 같은 명령을 다시 실행한다. 블록 문구와 별표 부재 주장이 새 판본에서도 참인지 본다
-- [ ] PR #98 머지 후 Vercel 배포를 확인한다
-- [ ] `/pdca archive effective-law-and-graph-precedents`
+- [x] PR #98 머지 후 Vercel 배포를 확인한다 — 프로덕션 배포 성공
+- [x] `/pdca archive effective-law-and-graph-precedents` — 2026-10-05
 
 ## 8. 교훈
 

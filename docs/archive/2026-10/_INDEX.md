@@ -5,6 +5,8 @@
 | admin-model-settings | 95% | 2026-10-01 | [Plan](admin-model-settings/admin-model-settings.plan.md), [Design](admin-model-settings/admin-model-settings.design.md), [Analysis](admin-model-settings/admin-model-settings.analysis.md), [Report](admin-model-settings/admin-model-settings.report.md) |
 | llm-fallback-alert | — ※※ | 2026-10-02 | [Plan](llm-fallback-alert/llm-fallback-alert.plan.md), [Design](llm-fallback-alert/llm-fallback-alert.design.md) |
 | anthropic-sdk-v1 | — (중단) ※ | 2026-10-01 | [Plan](anthropic-sdk-v1/anthropic-sdk-v1.plan.md), [Design](anthropic-sdk-v1/anthropic-sdk-v1.design.md) |
+| kin-answer-accuracy | 98% | 2026-10-05 | [Plan](kin-answer-accuracy/kin-answer-accuracy.plan.md), [Design](kin-answer-accuracy/kin-answer-accuracy.design.md), [Analysis](kin-answer-accuracy/kin-answer-accuracy.analysis.md), [Report](kin-answer-accuracy/kin-answer-accuracy.report.md) |
+| effective-law-and-graph-precedents | 98.2% | 2026-10-05 | [Plan](effective-law-and-graph-precedents/effective-law-and-graph-precedents.plan.md), [Design](effective-law-and-graph-precedents/effective-law-and-graph-precedents.design.md), [Analysis](effective-law-and-graph-precedents/effective-law-and-graph-precedents.analysis.md), [Report](effective-law-and-graph-precedents/effective-law-and-graph-precedents.report.md) |
 
 ※ **Design 후 중단.** 9-27 재빌드가 anthropic SDK 1.8.0을 받아 Claude 답변이 전량 폴백된 사고의
 후속으로 SDK 1.x 대응을 설계했으나, "API만 쓰는데 SDK를 왜 올리나"라는 판단으로 중단했다 —
