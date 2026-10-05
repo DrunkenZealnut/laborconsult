@@ -1943,14 +1943,14 @@ def t27_precedent_archive() -> None:
         check("T27 색인 누락 보고(summary)",
               "999999_색인에만있음.md" in build_res["summary"]["index_missing"])
 
-        # H4 — MAJOR_PRECEDENTS 교차검증은 실저장소 base에서 별도 확인
+        # H4 — GRAPH_PRECEDENT_SPECS 교차검증은 실저장소 base에서 별도 확인
         # (픽스처 base에는 build_graph.py가 없어 백스톱이 돌지 않는 것이 정상)
         import build_graph
         real_scan = {r["case_no"]
                      for r in arc.scan_code_citations(arc.BASE_DIR)}
-        graph_nos = {arc.canonicalize(k)[0] for k in build_graph.MAJOR_PRECEDENTS
+        graph_nos = {arc.canonicalize(k)[0] for k in build_graph.GRAPH_PRECEDENT_SPECS
                      if arc.canonicalize(k)}
-        check("T27 MAJOR_PRECEDENTS 전량 스캔 포함(H4)", graph_nos <= real_scan,
+        check("T27 GRAPH_PRECEDENT_SPECS 전량 스캔 포함(H4)", graph_nos <= real_scan,
               f"누락: {sorted(graph_nos - real_scan)}")
 
         # 기준선 verify 통과

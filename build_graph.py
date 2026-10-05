@@ -16,12 +16,10 @@ import re
 import sys
 import time
 from pathlib import Path
-from xml.etree import ElementTree as ET
+from urllib.parse import urlparse
 
-from app.core import safe_xml
 
 import networkx as nx
-import requests
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -33,8 +31,8 @@ CACHE_DIR = Path("data/article_cache")
 # ⚠️ 과거에는 legal_api.py와 같은 MST 사전매핑을 복제해 두었는데, 원본이
 # LM(법령명) 조회로 전환된 뒤(law-version-drift) 이쪽만 낡은 판본 12종이
 # 남아 있었다 — 8종이 실측에서 '낡음' 판정된 바로 그 값이었고, 재빌드하면
-# 낡은 조문이 그래프에 다시 고정되는 구조였다(분석 G-1). 법령명으로 조회하면
-# 항상 현행판이 온다.
+# 낡은 조문이 그래프에 다시 고정되는 구조였다(분석 G-1). 조회는 법령명 +
+# eflaw(legal_api.fetch_law_root)로 한다 — `target=law`는 시행 예정 개정이 섞인다.
 
 GRAPH_LAWS: list[str] = [
     "근로기준법",
@@ -152,58 +150,182 @@ CALC_CONCEPT_MAP: dict[str, list[str]] = {
     "industrial_accident": ["산재보상"],
 }
 
-# ── 주요 판례 수동 매핑 ──────────────────────────────────────────────────────
+# ── 그래프 판례 — 법제처 원문 기록 + 큐레이션 명세 ──────────────────────────
+# ⚠️ 판례 노드의 사실 내용(요약·선고일·변경 관계)을 손으로 쓰지 말 것.
+# 손으로 쓴 구 표(MAJOR_PRECEDENTS 8건)는 2건만 맞았다(2026-10-04 법제처 대조):
+# 2019다293449(실제 동산인도)를 "주휴수당 산정 기준"으로, 2013다25194(근로계약 취소)를
+# "평균임금 기준"으로, 2018다200709(유리한 근로계약 우선)를 "연차 사용촉진"으로 적었고,
+# 3건은 법제처에 정확일치가 없었다. 그래프 컨텍스트는 인용 화이트리스트에 들어가므로
+# 그 번호들은 **항상 검증을 통과했다** — 지식iN 2차 재평가 오인용 4문항의 출처다.
+#
+# 이제 사실은 `data/graph_precedents.json`(법제처 판시사항·판결요지·참조판례, 커밋)에서만
+# 온다. 아래 명세는 **무엇을 어디에 연결할지**만 정한다. 키는 리터럴로 둘 것 —
+# archive_precedents의 코드 인용 스캔이 이 파일의 사건번호를 읽는다(교차검증 H4).
+#
+#   python3 build_graph.py --refresh-precedents          # 법제처에서 기록 갱신(LAW_API_KEY)
+#   python3 build_graph.py --refresh-precedents --verify # 커밋본 = 원격인지 확인(수동 점검)
+#   python3 build_graph.py --skip-api                    # 그래프 재빌드(게이트 G1~G5)
 
-MAJOR_PRECEDENTS: dict[str, dict] = {
-    "2023다302838": {
-        "court": "대법원", "year": 2023,
-        "articles": ["근로기준법:2", "근로기준법:56"],
-        "concepts": ["통상임금"],
-        "summary": "고정성 요건 폐지, 정기적·일률적으로 지급되는 수당은 통상임금에 포함",
-    },
-    "2012다89399": {
-        "court": "대법원", "year": 2013,
-        "articles": ["근로기준법:2"],
-        "concepts": ["통상임금"],
-        "summary": "통상임금 판단 기준에 관한 전원합의체 판결",
-    },
-    "2010다111757": {
-        "court": "대법원", "year": 2013,
-        "articles": ["근로기준법:23"],
-        "concepts": ["부당해고"],
-        "summary": "부당해고 판단 기준과 사용자의 입증 책임",
-    },
-    "2013다25194": {
-        "court": "대법원", "year": 2014,
-        "articles": ["근로기준법:34"],
-        "concepts": ["퇴직금", "평균임금"],
-        "summary": "퇴직금 산정 시 평균임금 산정 기준",
-    },
-    "2018다200709": {
-        "court": "대법원", "year": 2019,
-        "articles": ["근로기준법:60"],
-        "concepts": ["연차유급휴가"],
-        "summary": "연차유급휴가 사용촉진 제도의 적법 요건",
-    },
-    "2020나2016258": {
-        "court": "서울고등법원", "year": 2021,
-        "articles": ["근로기준법:76"],
-        "concepts": ["직장내괴롭힘"],
-        "summary": "직장 내 괴롭힘 판단 요소와 사용자 조치 의무",
-    },
-    "2019다293449": {
-        "court": "대법원", "year": 2020,
-        "articles": ["근로기준법:55"],
-        "concepts": ["주휴수당"],
-        "summary": "주휴수당 산정 기준과 소정근로시간",
-    },
-    "2017다261387": {
-        "court": "대법원", "year": 2019,
-        "articles": ["최저임금법:6"],
-        "concepts": ["최저임금"],
-        "summary": "최저임금 산입 범위와 상여금 포함 여부",
-    },
+# 실행 위치와 무관하게 — 다른 디렉터리에서 돌리면 G1이 "기록 없음"으로 원인을 잘못 가리켰다.
+PRECEDENT_RECORDS_PATH = Path(__file__).resolve().parent / "data" / "graph_precedents.json"
+
+GRAPH_PRECEDENT_SPECS: dict[str, dict] = {
+    "2023다302838": {"concepts": ["통상임금"], "supersedes": ["2012다89399"]},
+    "2012다89399":  {"concepts": ["통상임금"]},
+    "2022다291153": {"concepts": ["주휴수당"]},
+    "2018다200709": {"concepts": ["근로계약"]},
+    "2013다25194":  {"concepts": ["근로계약"]},
 }
+
+# 기록에 남기는 필드 — 전문(full_text)은 게이트에 필요 없고 커서 저장하지 않는다.
+_RECORD_FIELDS = ("case_no", "court", "date", "judgment_type", "case_name", "serial_id",
+                  "source_url", "issue", "summary", "ref_cases")
+
+
+class PrecedentGateError(RuntimeError):
+    """그래프 판례 게이트 위반 — 빌드를 멈춘다(조용히 통과시키지 않는다)."""
+
+
+def _norm_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def holding_items(issue: str) -> list[str]:
+    """판시사항을 항목으로 나눈다. `[1] … [2] …` 또는 ` / ` 구분(실측 두 형식)."""
+    text = _norm_ws(issue)
+    items = [p.strip() for p in re.split(r"\[\d+\]", text) if p.strip()]
+    if len(items) <= 1:
+        items = [p.strip() for p in re.split(r"\s+/\s+", text) if p.strip()]
+    return items
+
+
+def _concept_keywords(concept: str) -> list[str]:
+    return [concept] + list(CONCEPT_MAP.get(concept, {}).get("aliases", []))
+
+
+def _supersede_evidence(ref_cases: str, case_no: str) -> bool:
+    """참조판례에서 그 사건번호와 **같은 항목 안에** "(변경)" 표지가 있는가(G4).
+
+    참조판례에는 여러 건이 나열되므로 표지가 문서 어딘가에 있는지만 보면 다른 판례의
+    변경 표지를 이 판례의 것으로 오인한다 — 번호부터 다음 사건번호 전까지로 묶는다.
+    """
+    text = _norm_ws(ref_cases)
+    idx = text.find(case_no)
+    if idx < 0:
+        return False
+    rest = text[idx + len(case_no):]
+    nxt = re.search(r"\d{2,4}[가-힣]{1,4}\d+", rest)
+    segment = rest[:nxt.start()] if nxt else rest
+    return "(변경)" in segment
+
+
+def load_precedent_records(path: Path = PRECEDENT_RECORDS_PATH) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def precedent_nodes(specs: dict[str, dict] | None = None,
+                    records: dict[str, dict] | None = None) -> dict[str, dict]:
+    """명세 + 원문 기록 → 판례 노드 속성. 게이트 G1~G5 위반 시 PrecedentGateError.
+
+    순수 함수다 — build_precedents와 오프라인 테스트(재빌드 동등성 E16)가 같이 쓴다.
+    """
+    from app.core.case_numbers import detail_matches
+
+    specs = GRAPH_PRECEDENT_SPECS if specs is None else specs
+    records = load_precedent_records() if records is None else records
+    nodes: dict[str, dict] = {}
+    for case_no, spec in specs.items():
+        rec = records.get(case_no)
+        # G1 — 기록 존재 + 사건번호 일치(병합 사건 허용)
+        if not rec or not detail_matches(rec.get("case_no", ""), case_no):
+            raise PrecedentGateError(f"G1 원문 기록 없음/불일치: {case_no}")
+        # G5 — 출처
+        url = rec.get("source_url", "")
+        host = (urlparse(url).hostname or "") if url.startswith("https://") else ""
+        if not (host == "law.go.kr" or host.endswith(".law.go.kr")):
+            raise PrecedentGateError(f"G5 출처가 법제처 https가 아님: {case_no} {url!r}")
+        if not str(rec.get("serial_id", "")).isdigit():
+            raise PrecedentGateError(f"G5 판례일련번호 없음: {case_no}")
+        concepts = spec.get("concepts", [])
+        holding_text = _norm_ws(rec.get("issue", "")) + " " + _norm_ws(rec.get("summary", ""))
+        # G3 — 연결 개념은 원문에 근거가 있어야 한다
+        for concept in concepts:
+            if not any(k in holding_text for k in _concept_keywords(concept)):
+                raise PrecedentGateError(f"G3 개념 근거 없음: {case_no} → {concept}")
+        # G2 — 요약 = 판시사항 항목 하나를 그대로(연결 개념 키워드를 포함하는 첫 항목)
+        keywords = [k for c in concepts for k in _concept_keywords(c)]
+        items = holding_items(rec.get("issue", ""))
+        summary = next((it for it in items if any(k in it for k in keywords)), None)
+        if summary is None:
+            raise PrecedentGateError(f"G2 개념 키워드를 담은 판시사항 항목 없음: {case_no}")
+        # G4 — 변경 관계는 변경한 판례의 참조판례 "(변경)" 표지로만
+        for older in spec.get("supersedes", []):
+            if not _supersede_evidence(rec.get("ref_cases", ""), older):
+                raise PrecedentGateError(f"G4 변경 표지 없음: {case_no} → {older}")
+        nodes[case_no] = {
+            "case_number": case_no,
+            "court": rec.get("court", ""),
+            "date": rec.get("date", ""),
+            "judgment_type": rec.get("judgment_type", ""),
+            "summary": summary,
+            "concepts": list(concepts),
+            "supersedes": list(spec.get("supersedes", [])),
+            "superseded_by": [],
+        }
+    for case_no, node in nodes.items():
+        for older in node["supersedes"]:
+            if older in nodes:
+                nodes[older]["superseded_by"].append(case_no)
+    return nodes
+
+
+def refresh_precedent_records(verify: bool = False) -> int:
+    """법제처에서 명세의 판례 원문 기록을 받는다. verify=True면 쓰지 않고 커밋본과 비교한다."""
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+    api_key = os.getenv("LAW_API_KEY")
+    if not api_key:
+        print("LAW_API_KEY 미설정 — 법제처 조회가 필요합니다.")
+        return 1
+    # 스크립트 모듈은 함수 안에서 import — import 시 dotenv를 다시 읽는 부작용을 이 경로로 한정
+    import fetch_court_precedents as fc
+    from app.core.case_numbers import detail_matches
+
+    fetched: dict[str, dict] = {}
+    for case_no in GRAPH_PRECEDENT_SPECS:
+        hit = fc.search_case(case_no, "prec", api_key)   # 사건번호 정확일치 + 페이지 순회
+        if not hit:
+            print(f"  ✗ {case_no}: 법제처 정확일치 없음")
+            return 1
+        root = fc.fetch_detail(hit["serial_id"], "prec", api_key)
+        rec = fc.normalize_record(root, "prec", hit["serial_id"]) if root is not None else None
+        if not rec or not detail_matches(rec["case_no"], case_no):   # 수집 스크립트와 같은 재확인
+            print(f"  ✗ {case_no}: 상세 응답 사건번호 불일치")
+            return 1
+        fetched[case_no] = {k: rec.get(k, "") for k in _RECORD_FIELDS}
+        print(f"  ✓ {case_no} {rec['date']} {rec['judgment_type']} {rec['case_name'][:30]}")
+        time.sleep(0.2)
+
+    if verify:
+        current = load_precedent_records()
+        diffs = [k for k in sorted(set(current) | set(fetched))
+                 if {f: (current.get(k) or {}).get(f) for f in _RECORD_FIELDS}
+                 != {f: (fetched.get(k) or {}).get(f) for f in _RECORD_FIELDS}]
+        print("커밋본 = 원격" if not diffs else f"⚠️ 커밋본과 다름: {diffs}")
+        return 1 if diffs else 0
+
+    today = time.strftime("%Y-%m-%d")
+    for rec in fetched.values():
+        rec["fetched_at"] = today
+    PRECEDENT_RECORDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(PRECEDENT_RECORDS_PATH, "w", encoding="utf-8") as f:
+        json.dump(dict(sorted(fetched.items())), f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    print(f"→ {PRECEDENT_RECORDS_PATH} ({len(fetched)}건)")
+    return 0
 
 # ── 조문 참조 정규식 ─────────────────────────────────────────────────────────
 
@@ -235,35 +357,22 @@ def build_statutes(G: nx.DiGraph) -> None:
 # Phase 2: 조문 노드 (Legal API 또는 캐시)
 # ══════════════════════════════════════════════════════════════════════════════
 
-LAW_SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
-
-
 def _fetch_articles_from_api(law_name: str) -> list[dict]:
-    """법제처 API에서 조문 목록 조회 — LM(법령명)이라 항상 현행판.
+    """법제처 API에서 조문 목록 조회 — legal_api.fetch_law_root(eflaw 현행 시행판).
 
-    미매칭·오해석은 빈 리스트로 강등한다(legal_api.py의 게이트와 같은 원리
-    — LM은 별칭·폐지판까지 해석하므로 반환 법령명을 대조해야 다른 법의
-    조문이 이 법 이름의 노드에 붙는 것을 막는다).
+    조회·게이트(미매칭·자격 오류·반환 법령명 대조·폐지 거부)는 legal_api 단일 출처다.
+    여기에 복제본을 두면 원본만 고쳐지는 사각이 생긴다 — MST 사전매핑과 `replace(" ", "")`
+    법령명 비교가 실제로 이 파일에 복제돼 남아 있었다(effective-law D11).
+    미매칭·오해석·오류는 빈 리스트로 강등한다.
     """
     api_key = os.getenv("LAW_API_KEY")
     if not api_key:
         return []
     try:
-        resp = requests.get(LAW_SERVICE_URL, params={
-            "OC": api_key, "target": "law", "LM": law_name, "type": "XML",
-        }, timeout=10)
-        resp.raise_for_status()
-        root = safe_xml.fromstring(resp.content)
-        if root.tag != "법령":
-            logger.warning("법령 미매칭: %s (root=%s)", law_name, root.tag)
-            return []
-        returned = (root.findtext(".//기본정보/법령명_한글") or "").strip()
-        if returned and returned.replace(" ", "") != law_name.replace(" ", ""):
-            logger.warning("법령명 오해석 거부: %s → %s", law_name, returned)
-            return []
-        status = (root.findtext(".//기본정보/제개정구분") or "").strip()
-        if "폐지" in status:
-            logger.warning("폐지 법령 거부: %s (%s)", law_name, status)
+        from app.core.legal_api import fetch_law_root
+        root = fetch_law_root(law_name, api_key, timeout=10)
+        if root is None:
+            logger.warning("법령 미매칭·오해석·폐지: %s", law_name)
             return []
         articles = []
         for art_el in root.iter("조문단위"):
@@ -297,7 +406,9 @@ def build_articles(G: nx.DiGraph, skip_api: bool = False) -> None:
         name = data["name"]
         # 캐시 파일명은 법령명 기반 — 구 MST 기반 파일({mst}.json)은 낡은
         # 판본의 스냅샷이라 재사용하지 않는다(자연 미스 → 현행판 재수집).
-        cache_file = CACHE_DIR / f"{name.replace(' ', '_')}.json"
+        # `.eflaw` 접미사: target=law 시절 파일({name}.json)은 시행 예정 본문이 섞여
+        # 있을 수 있어 읽지 않는다(effective-law — 캐시 세대와 같은 원리).
+        cache_file = CACHE_DIR / f"{name.replace(' ', '_')}.eflaw.json"
 
         # 캐시 만료 7일 — 만료 검사 없이 재사용하면 그래프 재빌드가 캐시
         # 시점의 판본을 계속 굳힌다(CodeRabbit #55: "현행성 보장은 캐시
@@ -440,18 +551,12 @@ def build_calculators(G: nx.DiGraph) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def build_precedents(G: nx.DiGraph) -> None:
-    for case_num, info in MAJOR_PRECEDENTS.items():
+    """명세 + 원문 기록으로 판례 노드를 만든다. 게이트 위반이면 예외로 빌드를 멈춘다."""
+    for case_num, node in precedent_nodes().items():
         pid = f"precedent:{case_num}"
-        G.add_node(pid, type="precedent", case_number=case_num,
-                   court=info["court"], year=info["year"],
-                   summary=info.get("summary", ""))
-        # INTERPRETS: Precedent → Article
-        for art_ref in info.get("articles", []):
-            art_id = f"article:{art_ref}"
-            if G.has_node(art_id):
-                G.add_edge(pid, art_id, rel="INTERPRETS")
-        # INTERPRETS: Precedent → Concept
-        for concept in info.get("concepts", []):
+        G.add_node(pid, type="precedent", **{k: v for k, v in node.items() if k != "concepts"})
+        # INTERPRETS: Precedent → Concept (원문 근거가 확인된 개념만 — G3)
+        for concept in node["concepts"]:
             cid = f"concept:{concept}"
             if G.has_node(cid):
                 G.add_edge(pid, cid, rel="INTERPRETS")
@@ -502,7 +607,14 @@ def main():
     parser = argparse.ArgumentParser(description="노동법 지식 그래프 구축")
     parser.add_argument("--skip-api", action="store_true", help="Legal API 호출 생략")
     parser.add_argument("--stats", action="store_true", help="기존 그래프 통계만 출력")
+    parser.add_argument("--refresh-precedents", action="store_true",
+                        help="법제처에서 그래프 판례 원문 기록(data/graph_precedents.json) 갱신")
+    parser.add_argument("--verify", action="store_true",
+                        help="--refresh-precedents와 함께: 쓰지 않고 커밋본과 원격을 비교")
     args = parser.parse_args()
+
+    if args.refresh_precedents:
+        sys.exit(refresh_precedent_records(verify=args.verify))
 
     if args.stats:
         if not GRAPH_PATH.exists():

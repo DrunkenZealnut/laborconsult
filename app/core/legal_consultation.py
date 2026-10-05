@@ -117,8 +117,13 @@ def process_consultation(
     consultation_topic: str | None,
     relevant_laws: list[str],
     config: AppConfig,
+    *,
+    law_api_stats: dict | None = None,
 ) -> tuple[str, list[dict]]:
     """법률상담 전용 처리 — 법제처 API 법조문 조회.
+
+    law_api_stats: 넘기면 fetch_relevant_articles의 조회 통계를 채운다(effective-law D12 —
+        이 경로의 eflaw 장애·판례 거부도 metadata.law_api로 관측되게).
 
     Returns:
         (context_text, source_hits) — LLM 컨텍스트 + 빈 목록 (하위 호환)
@@ -138,7 +143,8 @@ def process_consultation(
     legal_articles_text = None
     if all_laws and config.law_api_key:
         try:
-            legal_articles_text = fetch_relevant_articles(all_laws, config.law_api_key)
+            legal_articles_text = fetch_relevant_articles(all_laws, config.law_api_key,
+                                                          stats=law_api_stats)
         except Exception as e:
             logger.warning("법령 API 조회 실패: %s", e)
 

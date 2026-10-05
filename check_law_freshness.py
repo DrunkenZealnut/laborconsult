@@ -1,33 +1,35 @@
 #!/usr/bin/env python3
-"""법령 조문 조회가 현행판을 반환하는지 실측 (law-version-drift 수동 검증).
+"""법령 조문 조회가 **기준일 시행판**을 반환하는지 본문으로 실측한다 (수동 검증).
 
-CI에서는 돌지 않는다(법제처 API 필요) — check_schema.py처럼 배포 전
-수동 실행 항목이다. 오프라인 CI는 구조(MST 미사용)만 고정하고, "실제로
-현행판이 오는가"는 이 스크립트만 확인할 수 있다.
+CI에서는 돌지 않는다 — 법제처 API 키가 등록 IP에서만 동작한다(Actions 불가).
+`check_schema.py`처럼 **배포 전 수동 실행 항목**이고, 아래 "시행 예정 판본" 목록이
+가리키는 **시행일 당일 오전**에도 돌린다.
 
-검증 방식: 각 법령을 (a) 프로덕션과 동일한 LM 요청과 (b) 법령 검색의
-현행 목록으로 이중 조회해 **공포일자+공포번호**(판본 식별자)가 일치하는지
-대조한다 — 시행일자로 대조하면 부칙 단계시행 법령에서 오탐이 난다(아래
-주석 참조). 불일치가 하나라도 있으면 종료 코드 1 — 드리프트 재발이다.
+검증 방식(effective-law-and-graph-precedents D3·D4):
+1. 기준판 = 판본 목록(`lawSearch target=eflaw`)에서 `max(시행일자 ≤ KST 오늘)`.
+   법제처의 '현행' 표지(nw=3)를 기준으로 삼지 않는다 — 법제처 반영이 늦으면 표지와
+   본문이 같이 늦어 지연을 잡지 못한다.
+2. 프로덕션 경로(`legal_api.fetch_law_root`, efYd 없음)와 `efYd=<기준판>` 본문을
+   **조문 단위로** 프로덕션 포맷 함수(`_format_full_article`)로 만들어 대조한다.
+   헤더(시행일자·공포번호)만 보면 안 된다 — `target=law`는 헤더가 현행판인데 본문에
+   시행 예정 개정이 섞여 왔고(2026-10-04 실측), 헤더 대조였던 구 검증은 그동안 ✅를 냈다.
+3. **fail-closed**: 한쪽에만 있는 조문도 차이, 판본 목록 미일치·빈 루트·예외는 실패.
+   감시 도구가 실패를 삼키면 감시가 죽은 것도 조용해진다.
 
-대상 17종은 과거 MST 사전매핑에 있던 주요 노동법이다(실측에서 11종이
-낡아 있던 바로 그 목록 — 재발 감시 대상으로 보존).
+    python3 check_law_freshness.py            # 본문 대조 + 시행 예정 판본 목록
+    python3 check_law_freshness.py --anchors  # + 규칙 블록 조문 앵커의 다음 판본 경고
 """
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
 from xml.etree import ElementTree as ET
 
 from app.core import safe_xml
-
-from dotenv import load_dotenv
-
-load_dotenv(override=True)
-
 from app.core.legal_api import (  # noqa: E402
-    _http, LAW_SEARCH_URL, LAW_SERVICE_URL,
+    LAW_SEARCH_URL, _format_full_article, _http, _norm_compact, fetch_law_root,
 )
 
 # 기본 17종: 과거 _PRELOADED_MST 목록(실측에서 11종이 낡아 있던 재발 감시 대상).
@@ -68,88 +70,229 @@ def _watched_laws() -> list[str]:
     return list(names)
 
 
-# ⚠️ 대조 기준은 시행일자가 아니라 **공포일자+공포번호**다. 부칙 단계시행이
-# 있는 법(세법 등)은 같은 공포본이라도 목록은 최신 단계 시행일(예: 7/1),
-# 본문 조회는 본칙 시행일(예: 1/1)을 표기해 시행일 대조가 오탐을 낸다
-# (실측 2026-08-20: 소득세법·조세특례제한법 — 공포본은 동일한데 시행일만
-# 달라 '드리프트'로 잘못 판정). 공포일자+공포번호는 판본의 식별자라
-# 표기 차이가 없다.
-
-def lm_promulgation(name: str, key: str) -> tuple[str, str] | None:
-    """프로덕션과 동일한 LM 요청을 재현해 (공포일자, 공포번호)를 얻는다.
-
-    ⚠️ fetch_article 자체를 호출하는 것이 아니라 요청을 재현한다 — 조문
-    텍스트가 아니라 판본 메타데이터가 필요해서다. 대신 프로덕션의 핵심
-    가드(반환 법령명 대조)를 동일하게 적용한다: 대조 없이는 LM이 별칭·
-    폐지판을 오해석해 **다른 법의 공포일**로 검증이 통과·실패할 수 있다
-    (분석 P1-1과 같은 구멍이 검증 도구에 남는 것).
-    """
-    from app.core.legal_api import _norm_compact
-
-    r = _http.get(LAW_SERVICE_URL, params={
-        "OC": key, "target": "law", "type": "XML", "LM": name,
-    }, timeout=20)
-    r.raise_for_status()
-    root = safe_xml.fromstring(r.content)
-    if root.tag != "법령":
-        return None
-    returned = (root.findtext(".//기본정보/법령명_한글") or "").strip()
-    if returned and _norm_compact(returned) != _norm_compact(name):
-        print(f"    ⚠️ 법령명 오해석: {name!r} → {returned!r}")
-        return None
-    date = (root.findtext(".//기본정보/공포일자") or "").strip()
-    no = (root.findtext(".//기본정보/공포번호") or "").strip()
-    # 공포번호까지 있어야 판본 식별자다 — 번호가 빈 응답을 통과시키면
-    # 양쪽 다 비었을 때 ("date","")==("date","")로 거짓 성공한다.
-    return (date, no) if date and no else None
+def _today_kst() -> str:
+    from wage_calculator.legal_rules import kst_today
+    return kst_today().replace("-", "")
 
 
-def current_promulgation(name: str, key: str) -> tuple[str, str] | None:
-    """법령 검색의 현행(현행연혁코드=현행) 판본의 (공포일자, 공포번호)."""
+def law_versions(name: str, key: str) -> list[dict]:
+    """판본 목록(시행일자 내림차순). 법령명은 compact 일치만 — 시행령·시행규칙이 섞인다."""
     r = _http.get(LAW_SEARCH_URL, params={
-        "OC": key, "target": "law", "type": "XML", "query": name, "display": "5",
+        "OC": key, "target": "eflaw", "type": "XML", "query": name,
+        "sort": "efdes", "display": "100",
     }, timeout=20)
     r.raise_for_status()
     root = safe_xml.fromstring(r.content)
+    if root.tag == "Response":
+        raise RuntimeError((root.findtext(".//result") or "API 오류 응답").strip()[:80])
+    out = []
     for el in root.iter("law"):
-        nm = (el.findtext("법령명한글") or el.findtext("법령명_한글") or "").strip()
-        status = (el.findtext("현행연혁코드") or "").strip()
-        if nm == name and status in ("현행", ""):
-            date = (el.findtext("공포일자") or "").strip()
-            no = (el.findtext("공포번호") or "").strip()
-            return (date, no) if date and no else None
+        nm = (el.findtext("법령명한글") or "").strip()
+        if _norm_compact(nm) != _norm_compact(name):
+            continue
+        out.append({
+            "date": (el.findtext("시행일자") or "").strip(),
+            "status": (el.findtext("현행연혁코드") or "").strip(),
+            "promulgated": (el.findtext("공포일자") or "").strip(),
+            "number": (el.findtext("공포번호") or "").strip(),
+            "kind": (el.findtext("제개정구분명") or "").strip(),
+        })
+    return out
+
+
+def reference_version(versions: list[dict], today: str) -> str | None:
+    """기준판 = max(시행일자 ≤ today). 없으면 None(→ 실패)."""
+    dates = [v["date"] for v in versions if v["date"] and v["date"] <= today]
+    return max(dates) if dates else None
+
+
+def _article_key(jo: ET.Element) -> str:
+    no = (jo.findtext("조문번호") or "").strip()
+    branch = (jo.findtext("조문가지번호") or "").strip().lstrip("0")   # "0"·"00" = 가지 없음
+    return no + (f"의{branch}" if branch else "")
+
+
+def _article_texts(root: ET.Element) -> dict[str, str]:
+    """조문키 → 프로덕션 포맷 텍스트. 편·장·절 제목(조문여부=전문)은 제외."""
+    out: dict[str, str] = {}
+    for jo in root.iter("조문단위"):
+        if (jo.findtext("조문여부") or "").strip() != "조문":
+            continue
+        out[_article_key(jo)] = _format_full_article(jo) or ""
+    return out
+
+
+def _sort_key(k: str) -> tuple[int, int]:
+    m = re.match(r"(\d+)(?:의(\d+))?", k)
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else (10**9, 0)
+
+
+def _diff_articles(a: dict[str, str], b: dict[str, str]) -> list[str]:
+    """내용이 다르거나 **한쪽에만 있는** 조문 키(정렬). 공통 조문만 보면 판본이 통째로
+    다른 경우(한쪽이 비어 있음)에도 '차이 0'으로 통과한다."""
+    return sorted((k for k in set(a) | set(b) if a.get(k) != b.get(k)), key=_sort_key)
+
+
+def check_law(name: str, key: str, today: str) -> dict:
+    """한 법령의 판정. {"ok", "reason", "reference", "header", "diff", "upcoming"}."""
+    res = {"name": name, "ok": False, "reason": "", "reference": None,
+           "header": None, "diff": [], "upcoming": []}
+    try:
+        versions = law_versions(name, key)
+    except Exception as e:  # 조회 실패도 실패다(fail-closed)
+        res["reason"] = f"판본 목록 조회 실패: {e}"
+        return res
+    if not versions:
+        res["reason"] = "판본 목록에 법령명 일치 없음"
+        return res
+    res["upcoming"] = sorted({(v["date"], v["kind"]) for v in versions if v["date"] > today})
+    ref = reference_version(versions, today)
+    res["reference"] = ref
+    if not ref:
+        res["reason"] = "기준일 이전 판본 없음"
+        return res
+    try:
+        prod = fetch_law_root(name, key)
+        base = fetch_law_root(name, key, ef_yd=ref)
+    except Exception as e:
+        res["reason"] = f"본문 조회 실패: {e}"
+        return res
+    if prod is None or base is None:
+        res["reason"] = f"본문 미매칭(프로덕션 {'O' if prod is not None else 'X'}, 기준판 {'O' if base is not None else 'X'})"
+        return res
+    res["header"] = (prod.findtext(".//기본정보/시행일자") or "").strip()
+    a, b = _article_texts(prod), _article_texts(base)
+    if not a or not b:
+        res["reason"] = "조문 0개"
+        return res
+    res["diff"] = _diff_articles(a, b)
+    if res["diff"]:
+        res["reason"] = f"기준판과 다른 조문 {len(res['diff'])}개"
+        return res
+    res["ok"] = True
+    return res
+
+
+def _anchor_warnings(key: str, today: str) -> list[str]:
+    """규칙 블록 **조문** 앵커가 다음 시행 판본에서도 참인지(실패 코드 아님 — 경고)."""
+    import fetch_official_rules as fo
+    from app.core.rule_facts import RULE_FACTS
+    articles = {a[0]: a for a in fo.ARTICLES}
+    norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
+    warnings, next_root = [], {}
+    for fact in RULE_FACTS:
+        for doc_id, phrase in fact.anchors:
+            if doc_id not in articles:
+                warnings.append(f"{fact.name}: 앵커 문서 미등록 {doc_id}")
+                continue
+            _, law, no, sub, _k = articles[doc_id]
+            try:
+                if law not in next_root:
+                    upcoming = sorted(v["date"] for v in law_versions(law, key) if v["date"] > today)
+                    next_root[law] = ((upcoming[0], fetch_law_root(law, key, ef_yd=upcoming[0]))
+                                      if upcoming else None)
+            except Exception as e:  # 경고 단계 — 원인을 남기고 다음 앵커로
+                warnings.append(f"{fact.name}: {law} 다음 판본 확인 불가 ({e})")
+                next_root[law] = None
+                continue
+            if not next_root[law]:
+                continue
+            ef, root = next_root[law]
+            if root is None:   # 판본 본문을 못 받았으면 '거짓'이 아니라 '확인 불가'다
+                warnings.append(f"{fact.name}: {law} {ef} 판본 본문 확인 불가")
+                continue
+            text = _article_texts(root).get(f"{no}의{sub}" if sub else str(no), "")
+            if norm(phrase) not in norm(text):
+                warnings.append(f"{fact.name}: {law} 제{no}조 앵커가 {ef}부터 거짓 — {phrase[:30]}")
+    return warnings
+
+
+def _annex_absence(root: ET.Element, title_part: str, absent: str) -> bool | None:
+    """별표 제목에 title_part가 든 표의 본문에 absent가 **없으면** True. 표를 못 찾으면 None."""
+    for annex in root.iter("별표단위"):
+        if title_part in (annex.findtext("별표제목") or ""):
+            return absent not in "".join(annex.itertext())
     return None
 
 
-def main() -> int:
+def _annex_checks(key: str, today: str) -> tuple[list[str], list[str]]:
+    """규칙 블록의 '별표에 없다' 주장 점검. (현행 위반=실패, 다음 판본 위반=경고)."""
+    from app.core.rule_facts import ANNEX_ABSENCE_CLAIMS
+    failures, warnings = [], []
+    for block, law, title_part, absent in ANNEX_ABSENCE_CLAIMS:
+        try:
+            current = _annex_absence(fetch_law_root(law, key) or ET.Element("x"), title_part, absent)
+        except Exception as e:  # 현행판 확인 실패도 실패다(fail-closed)
+            failures.append(f"{block}: {law} 별표 조회 실패 ({e})")
+            continue
+        if current is not True:
+            failures.append(f"{block}: {law} 별표({title_part})에 '{absent}'가 "
+                            f"{'생겼다' if current is False else '확인 불가(별표 없음)'} — 블록 문장 재검토")
+        try:
+            upcoming = sorted(v["date"] for v in law_versions(law, key) if v["date"] > today)
+            if upcoming:
+                nroot = fetch_law_root(law, key, ef_yd=upcoming[0])
+                nxt = _annex_absence(nroot, title_part, absent) if nroot is not None else None
+                if nxt is False:
+                    warnings.append(f"{block}: {upcoming[0]}부터 {law} 별표에 '{absent}' 포함 — 블록 문장이 거짓이 됨")
+                elif nxt is None:
+                    warnings.append(f"{block}: {law} {upcoming[0]} 판본 별표 확인 불가")
+        except Exception as e:
+            warnings.append(f"{block}: {law} 다음 판본 별표 확인 불가 ({e})")
+    return failures, warnings
+
+
+def main(argv: list[str] | None = None) -> int:
+    from dotenv import load_dotenv  # import 시점이 아니라 실행 시에만(테스트 환경변수 보호)
+    load_dotenv(override=True)
+
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--anchors", action="store_true", help="규칙 블록 앵커의 다음 판본 경고")
+    args = parser.parse_args(argv)
+
     key = os.getenv("LAW_API_KEY")
     if not key:
         print("LAW_API_KEY 미설정 — 이 검증은 법제처 API가 필요합니다.")
         return 1
-
-    print(f"{'법령':<34} {'LM(공포일-호)':>16} {'현행(공포일-호)':>16}  판정")
-    print("─" * 76)
-    bad = 0
+    today = _today_kst()
     watched = _watched_laws()
+    print(f"기준일 {today} (KST) · 대상 {len(watched)}종")
+    print(f"{'법령':<34} {'기준판':>9} {'헤더':>9}  판정")
+    print("─" * 76)
+    bad, upcoming = 0, []
     for name in watched:
-        try:
-            lm = lm_promulgation(name, key)
-            cur = current_promulgation(name, key)
-        except Exception as e:
-            bad += 1
-            print(f"{name:<34} 조회 실패: {e}")
-            continue
-        ok = lm is not None and lm == cur
-        bad += (not ok)
-        fmt = lambda p: f"{p[0]}-{p[1]}" if p else "—"
-        print(f"{name:<34} {fmt(lm):>16} {fmt(cur):>16}  "
-              f"{'✅' if ok else '⚠️ 드리프트'}")
+        r = check_law(name, key, today)
+        bad += (not r["ok"])
+        lag = r["header"] and r["reference"] and r["header"] != r["reference"]
+        verdict = "✅" if r["ok"] else f"❌ {r['reason']}"
+        if r["ok"] and lag:
+            verdict += f"  ⚠️ 헤더 시행일자 {r['header']} ≠ 기준판(법제처 반영 지연?)"
+        print(f"{name:<34} {r['reference'] or '—':>9} {r['header'] or '—':>9}  {verdict}")
+        if r["diff"]:
+            print(f"    차이 조문: {', '.join(r['diff'][:20])}{' …' if len(r['diff']) > 20 else ''}")
+        if r["upcoming"]:
+            upcoming.append((name, r["upcoming"]))
 
-    print("─" * 68)
+    print("─" * 76)
+    if upcoming:
+        print("시행 예정 판본 (그날 오전 이 스크립트를 다시 돌릴 것):")
+        for name, items in upcoming:
+            print(f"  {name}: " + ", ".join(f"{d}({k})" for d, k in items))
+    if args.anchors:
+        warnings = _anchor_warnings(key, today)
+        annex_fail, annex_warn = _annex_checks(key, today)
+        warnings += annex_warn
+        print("규칙 블록 앵커(다음 판본)·별표 부재 주장:", "이상 없음" if not (warnings or annex_fail) else "")
+        for w in warnings:
+            print(f"  ⚠️ {w}")
+        for f in annex_fail:
+            print(f"  ❌ {f}")
+        bad += len(annex_fail)
     if bad:
-        print(f"❌ {bad}건 불일치 — 조회 경로가 현행판을 반환하지 않습니다.")
+        print(f"❌ {bad}건 실패 — 조회 경로가 기준일 시행판을 반환하지 않거나 확인할 수 없습니다.")
         return 1
-    print(f"✅ {len(watched)}종 전부 현행판 반환")
+    print(f"✅ {len(watched)}종 전부 기준일 시행판 반환")
     return 0
 
 

@@ -1,8 +1,10 @@
 """법제처 국가법령정보 Open API 클라이언트
 
 법제처 DRF API(law.go.kr)를 통해 현행 법령 조문·판례를 실시간 조회한다.
-- 조문: 법령명(LM) 직접 조회 — 항상 현행판. MST(일련번호) 지정은 그 판본을
-  고정 반환하므로 쓰지 않는다(드리프트 이력은 _OFFICIAL_NAME_CACHE 위 주석)
+- 조문: 법령명(LM) + `target=eflaw`(시행일 법령) 조회 — 법제처가 **현행 시행판**을
+  돌려준다. `target=law`는 시행 예정 개정이 섞인 본문을 현행 헤더로 돌려주므로
+  쓰지 않는다(effective-law-and-graph-precedents, 2026-10-04). MST(일련번호) 지정은
+  그 판본을 고정 반환하므로 쓰지 않는다(드리프트 이력은 _OFFICIAL_NAME_CACHE 위 주석)
 - 조문/판례 조회 → XML 파싱 → 텍스트 추출
 - 3단계 캐시: L1(인메모리) → L2(Supabase) → L3(API)
 - Circuit breaker: 연속 실패 시 일시 차단으로 타임아웃 누적 방지
@@ -19,6 +21,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree as ET
 
 from app.core import safe_xml
@@ -34,6 +37,14 @@ LAW_SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
 LAW_SEARCH_TIMEOUT = int(os.getenv("LAW_API_SEARCH_TIMEOUT", "3"))
 LAW_SERVICE_TIMEOUT = int(os.getenv("LAW_API_SERVICE_TIMEOUT", "8"))
 LAW_CACHE_TTL = int(os.getenv("LAW_API_CACHE_TTL", "86400"))  # 24시간
+
+# 조문 캐시 만료(effective-law D2). 판본은 **시행일(날짜) 경계**에서만 바뀌므로 만료를
+# 다음 KST 자정에 맞춘다 — 24h TTL만으로는 새 판본 시행 뒤 최대 하루 동안 옛 판본을 냈다.
+# 법제처가 자정 직후 현행판을 늦게 바꿀 수 있어 KST 00~03시 응답은 1시간만 보관한다.
+# 판례·헌재·NLRC 캐시는 판본과 무관하므로 이 상한을 받지 않는다.
+_KST = timezone(timedelta(hours=9))
+_EARLY_HOURS_END = 3
+_EARLY_TTL = 3600
 
 
 # ── Circuit Breaker ──────────────────────────────────────────────────────────
@@ -110,14 +121,19 @@ _LAW_NAME_ALIASES: dict[str, str] = {
 # 바뀐다** — 매핑해 둔 주요 법령일수록 낡은 조문을 답하는 역설이 생겼다
 # (실측 2026-08-20: 17개 중 11개가 낡았고, 고용보험법 §70 육아휴직 급여
 # 요건의 "30일 또는 7일" 확대가 누락돼 있었다). 조문 조회는 법령명(LM)
-# 파라미터로 한다 — 법제처가 항상 현행판을 반환해 드리프트가 원리적으로
-# 불가능하고, 검색(MST 획득) 왕복이 사라져 호출도 2회→1회로 준다.
+# 파라미터로 한다 — 검색(MST 획득) 왕복이 사라져 호출도 2회→1회로 준다.
+#
+# ⚠️ 단, LM만으로 현행판이 보장되지는 않는다. `target=law&LM=`은 헤더(시행일자·
+# 공포번호)는 현행판인데 본문에 **시행 예정 개정**이 섞여 온다(실측 2026-10-04:
+# 근로기준법 18개·고용보험법 6개 조문, 제109조②가 10-08 시행분 "삭제"로 옴).
+# 그래서 `target=eflaw`(efYd 생략 = 현행 시행판)를 쓴다 — fetch_law_root 참조.
 
 # ── 정식 법령명 해석 캐시 (LM 미매칭 폴백 결과: 입력명 → 정식명 | None) ──────
 _OFFICIAL_NAME_CACHE: dict[str, str | None] = {}
 
 
-# ── L1 조문 캐시 (인메모리, TTL 기반) ────────────────────────────────────────
+# ── L1 조문 캐시 (인메모리, 만료 시각 기반) ──────────────────────────────────
+# 값은 (만료 epoch, 텍스트). 조문은 _article_expiry(), 그 밖(판례·NLRC)은 +TTL.
 _ARTICLE_CACHE: dict[str, tuple[float, str]] = {}
 
 # 미매칭 negative 표지 — L1 전용(TTL 동일 적용). L2에는 절대 저장하지 않는다.
@@ -129,16 +145,34 @@ def _cache_get(key: str) -> str | None:
     entry = _ARTICLE_CACHE.get(key)
     if entry is None:
         return None
-    ts, text = entry
-    if time.time() - ts > LAW_CACHE_TTL:
+    expires_at, text = entry
+    if time.time() >= expires_at:
         del _ARTICLE_CACHE[key]
         return None
     return text
 
 
-def _cache_set(key: str, text: str) -> None:
-    """L1 캐시에 조문 텍스트 저장."""
-    _ARTICLE_CACHE[key] = (time.time(), text)
+def _cache_set(key: str, text: str, expires_at: float | None = None) -> None:
+    """L1 캐시에 저장. expires_at(epoch)를 주지 않으면 기존대로 +LAW_CACHE_TTL."""
+    if expires_at is None:
+        expires_at = time.time() + LAW_CACHE_TTL
+    _ARTICLE_CACHE[key] = (expires_at, text)
+
+
+def _article_expiry(now: float | None = None) -> float:
+    """조문 캐시 만료 epoch = min(now + TTL, 다음 KST 자정). KST 00~03시 응답은 +1h 상한.
+
+    판본은 날짜 경계에서만 바뀌므로 자정에 끊으면 새 판본 시행 후 옛 판본을 내지 않는다.
+    서버 시계는 UTC여도 된다 — 경계 계산을 KST로 한다(Vercel은 UTC).
+    """
+    now = time.time() if now is None else now
+    kst = datetime.fromtimestamp(now, _KST)
+    next_midnight = (kst + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    expiry = min(now + LAW_CACHE_TTL, next_midnight.timestamp())
+    if kst.hour < _EARLY_HOURS_END:
+        expiry = min(expiry, now + _EARLY_TTL)
+    return expiry
 
 
 # ── L2 Supabase 영속 캐시 ────────────────────────────────────────────────────
@@ -197,8 +231,9 @@ def _l2_cache_get(key: str) -> str | None:
 
 
 def _l2_cache_set(key: str, law_name: str, article_no: int | None,
-                  content: str, source_type: str = "law") -> None:
-    """L2(Supabase)에 캐시 저장. 실패 시 무시."""
+                  content: str, source_type: str = "law",
+                  expires_at: float | None = None) -> None:
+    """L2(Supabase)에 캐시 저장. 실패 시 무시. expires_at(epoch) 미지정 시 +TTL."""
     sb = _init_supabase()
     if sb is None:
         return
@@ -211,7 +246,8 @@ def _l2_cache_set(key: str, law_name: str, article_no: int | None,
         # 충분히 짧다.
         expires = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
-            time.gmtime(time.time() + LAW_CACHE_TTL),
+            time.gmtime(expires_at if expires_at is not None
+                        else time.time() + LAW_CACHE_TTL),
         )
         sb.table("law_article_cache").upsert({
             "cache_key": key,
@@ -271,12 +307,15 @@ def _resolve_official_name(law_name: str, api_key: str) -> str | None:
     # (실측: probe 요청의 호출 엔드포인트가 LM 하나뿐 — 분석 P2-2).
 
     try:
+        # eflaw 목록은 판본마다 같은 법령을 반복한다 — nw=3(현행)으로 법령당 1행만
+        # 받아야 상위 법령의 판본들이 칸을 채워 목표 법령이 밀려나지 않는다.
         resp = _http.get(LAW_SEARCH_URL, params={
             "OC": api_key,
-            "target": "law",
+            "target": "eflaw",
             "type": "XML",
             "query": canonical,
-            "display": "5",
+            "nw": "3",
+            "display": "10",
         }, timeout=LAW_SEARCH_TIMEOUT)
         resp.raise_for_status()
 
@@ -310,6 +349,66 @@ def _resolve_official_name(law_name: str, api_key: str) -> str | None:
     return None
 
 
+# ── 법령 본문 루트 조회 (공용 — 캐시·서킷 없음) ─────────────────────────────
+
+def fetch_law_root(lm: str, api_key: str, *, ef_yd: str | None = None,
+                   timeout: float | None = None) -> ET.Element | None:
+    """법령 본문 XML 루트(`<법령>`). **조문 조회와 게이트의 단일 출처**다.
+
+    답변 경로(fetch_article)·공식 원문 수집(fetch_official_rules)·그래프 빌드·현행성
+    점검(check_law_freshness)이 모두 이 함수를 쓴다 — 조회·게이트가 네 벌로 복제돼
+    있던 것을 합쳤다(effective-law D11). 캐시·서킷은 호출자 몫이다.
+
+    - ``target=eflaw``. ``ef_yd``가 없으면 법제처 **현행 시행판**, 있으면 그 판본
+      (판본 시행일만 유효 — 임의 날짜는 빈 ``<Law>``가 온다).
+    - 요청 LM은 ``_resolve_law_name``으로 정규화한다(약칭·가운뎃점 이형).
+
+    ⚠️ 미매칭도 HTTP 200으로 온다 — 본문이 빈 <Law> 루트다(실측).
+    raise_for_status()로는 절대 잡히지 않으므로 루트 태그로 판정해야
+    한다. 이 판정이 없으면 폴백이 영영 발동하지 않는다.
+
+    ⚠️ 자격증명·파라미터 오류도 HTTP 200이다 — <Response> 루트에 오류
+    문구가 온다(실측: 키 만료 시 "필수입력요소 검증에 실패"). 이를
+    미매칭으로 취급하면 API 키 장애가 "법령명 문제"로 영구 오진되고
+    회로도 안 열린다 — 예외로 올려 failure 경로를 태운다(분석 P1-3).
+
+    ⚠️ 법령 루트여도 그대로 믿지 않는다 — LM은 별칭·폐지판까지
+    해석한다(실측: '근로자직업훈련촉진법' → '국민 평생 직업능력
+    개발법' 반환, '노동조합법' → 1996년 타법폐지판). 반환 법령명이
+    요청과 다르거나 폐지면 거부해야 **다른 법의 조문이 요청한 법령명
+    헤더를 달고 나가는** 오인용을 막는다(분석 P1-1).
+    """
+    lm = _resolve_law_name(lm)
+    params = {
+        "OC": api_key,
+        "target": "eflaw",
+        "LM": lm,
+        "type": "XML",
+    }
+    if ef_yd:
+        params["efYd"] = ef_yd
+    resp = _http.get(LAW_SERVICE_URL, params=params,
+                     timeout=LAW_SERVICE_TIMEOUT if timeout is None else timeout)
+    resp.raise_for_status()
+    root = safe_xml.fromstring(resp.content)
+    if root.tag == "Response":
+        detail = (root.findtext(".//result") or root.findtext(".//message")
+                  or "").strip()[:80]
+        raise RuntimeError(f"법제처 API 오류 응답: {detail}")
+    if root.tag != "법령":
+        return None
+    returned = (root.findtext(".//기본정보/법령명_한글")
+                or root.findtext(".//기본정보/법령명한글") or "").strip()
+    if returned and _norm_compact(returned) != _norm_compact(lm):
+        logger.warning("법령명 오해석 거부 (요청 %r → 반환 %r)", lm, returned)
+        return None
+    status = (root.findtext(".//기본정보/제개정구분") or "").strip()
+    if "폐지" in status:
+        logger.warning("폐지 법령 거부 (%s: %s)", lm, status)
+        return None
+    return root
+
+
 # ── 조문 조회 (3단계 캐시: L1 → L2 → L3) ────────────────────────────────────
 
 def fetch_article(law_name: str, article_no: int, api_key: str,
@@ -317,18 +416,20 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
                   sub: int | None = None) -> str | None:
     """특정 법률의 조문 텍스트를 3단계 캐시 계층으로 조회.
 
-    법령명(LM)으로 조회하므로 항상 **현행판**이 온다 — MST(일련번호)를
-    명시하던 구 방식은 그 판본이 고정 반환돼, 사전매핑이 낡을수록 옛 조문을
-    답하는 드리프트가 있었다(law-version-drift).
+    법령명(LM) + eflaw로 조회하므로 **현행 시행판**이 온다(fetch_law_root).
+    MST(일련번호)를 명시하던 구 방식은 그 판본이 고정 반환돼, 사전매핑이 낡을수록
+    옛 조문을 답하는 드리프트가 있었다(law-version-drift). `target=law`는 시행 예정
+    개정이 섞여 미래 조문을 답했다(effective-law).
 
     Args:
         sub: "조의N" 번호 (예: 제76조의2 → sub=2)
     """
-    # 세대 접두사 — 캐시된 조문 **형식**이 바뀌면 올린다. 구 키의 낡은 조문이 L2에
-    # 남지만(만료 7일 — 자동 삭제 경로는 없다) 지우는 대신 **안 읽는** 방식이라
-    # 마이그레이션이 없고, 롤백 시 구버전 코드가 구 키를 그대로 읽어 안전하다.
+    # 세대 접두사 — 캐시된 조문 **형식·출처**가 바뀌면 올린다. 구 키의 낡은 조문이 L2에
+    # 남지만(만료는 기록 시점 +최대 24h — 자동 삭제 경로는 없다) 지우는 대신 **안 읽는**
+    # 방식이라 마이그레이션이 없고, 롤백 시 구버전 코드가 구 키를 그대로 읽어 안전하다.
     # v2: LM 전환(MST 시절 낡은 판본). v3: 목(目) 포함(2026-10-03 — v2 캐시는 목이 빠져 있다).
-    cache_key = f"v3:{law_name}_{article_no}"
+    # v4: eflaw 전환(2026-10-04 — v3 캐시에는 target=law의 시행 예정 본문이 들어 있다).
+    cache_key = f"v4:{law_name}_{article_no}"
     if sub:
         cache_key += f"의{sub}"
     if paragraph:
@@ -344,54 +445,15 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
     # L2: Supabase 영속 캐시
     l2_cached = _l2_cache_get(cache_key)
     if l2_cached is not None:
-        _cache_set(cache_key, l2_cached)  # L1에도 저장
+        _cache_set(cache_key, l2_cached, _article_expiry())  # L1에도 저장(자정 상한)
         return l2_cached
 
     if _circuit_check():
         return None
 
     def _fetch_by_lm(lm: str) -> ET.Element | None:
-        """LM(법령명) 조회. 매칭 실패를 None으로 정규화한다.
-
-        ⚠️ 미매칭도 HTTP 200으로 온다 — 본문이 빈 <Law> 루트다(실측).
-        raise_for_status()로는 절대 잡히지 않으므로 루트 태그로 판정해야
-        한다. 이 판정이 없으면 폴백이 영영 발동하지 않는다.
-
-        ⚠️ 자격증명·파라미터 오류도 HTTP 200이다 — <Response> 루트에 오류
-        문구가 온다(실측: 키 만료 시 "필수입력요소 검증에 실패"). 이를
-        미매칭으로 취급하면 API 키 장애가 "법령명 문제"로 영구 오진되고
-        회로도 안 열린다 — 예외로 올려 failure 경로를 태운다(분석 P1-3).
-
-        ⚠️ 법령 루트여도 그대로 믿지 않는다 — LM은 별칭·폐지판까지
-        해석한다(실측: '근로자직업훈련촉진법' → '국민 평생 직업능력
-        개발법' 반환, '노동조합법' → 1996년 타법폐지판). 반환 법령명이
-        요청과 다르거나 폐지면 거부해야 **다른 법의 조문이 요청한 법령명
-        헤더를 달고 나가는** 오인용을 막는다(분석 P1-1).
-        """
-        resp = _http.get(LAW_SERVICE_URL, params={
-            "OC": api_key,
-            "target": "law",
-            "LM": lm,
-            "type": "XML",
-        }, timeout=LAW_SERVICE_TIMEOUT)
-        resp.raise_for_status()
-        root = safe_xml.fromstring(resp.content)
-        if root.tag == "Response":
-            detail = (root.findtext(".//result") or root.findtext(".//message")
-                      or "").strip()[:80]
-            raise RuntimeError(f"법제처 API 오류 응답: {detail}")
-        if root.tag != "법령":
-            return None
-        returned = (root.findtext(".//기본정보/법령명_한글")
-                    or root.findtext(".//기본정보/법령명한글") or "").strip()
-        if returned and _norm_compact(returned) != _norm_compact(lm):
-            logger.warning("법령명 오해석 거부 (요청 %r → 반환 %r)", lm, returned)
-            return None
-        status = (root.findtext(".//기본정보/제개정구분") or "").strip()
-        if "폐지" in status:
-            logger.warning("폐지 법령 거부 (%s: %s)", lm, status)
-            return None
-        return root
+        """조회·게이트는 fetch_law_root 단일 출처(미매칭=None, 오류 응답=예외)."""
+        return fetch_law_root(lm, api_key)
 
     # L3: API 호출 — 성공 경로는 1회(구 방식은 검색+조회 2회)
     try:
@@ -409,7 +471,7 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
         if root is None:
             logger.warning("법령 LM 미매칭 (%s): 정식명 해석 실패", law_name)
             # negative 캐시는 L1에만 — L2에 남기면 오타 하나가 7일간 영속된다.
-            _cache_set(cache_key, _MISS_SENTINEL)
+            _cache_set(cache_key, _MISS_SENTINEL, _article_expiry())
             # 서킷은 중립 — success를 기록하면 폴백 검색의 failure가 상쇄되고
             # (검색 장애에도 회로 영구 미개방), 무기록이면 probe가 갇힌다.
             _circuit_record_neutral()
@@ -417,8 +479,10 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
 
         article_text = _extract_article(root, article_no, paragraph, sub)
         if article_text:
-            _cache_set(cache_key, article_text)                          # L1
-            _l2_cache_set(cache_key, law_name, article_no, article_text) # L2
+            expiry = _article_expiry()
+            _cache_set(cache_key, article_text, expiry)                  # L1
+            _l2_cache_set(cache_key, law_name, article_no, article_text,
+                          expires_at=expiry)                             # L2
             _circuit_record_success()
             return article_text
 
@@ -663,6 +727,7 @@ def search_precedent(query: str, api_key: str,
             results.append({
                 "id": int(prec_id),
                 "case_name": _el_text(prec, "사건명") or "",
+                "case_no": _el_text(prec, "사건번호") or "",
                 "date": _el_text(prec, "선고일자") or "",
                 "court": _el_text(prec, "법원명") or "",
             })
@@ -788,6 +853,7 @@ def search_detc(query: str, api_key: str,
             results.append({
                 "id": int(detc_id),
                 "case_name": _el_text(detc, "사건명") or "",
+                "case_no": _el_text(detc, "사건번호") or "",
                 "date": _el_text(detc, "종국일자") or "",
                 "court": "헌법재판소",
             })
@@ -898,16 +964,52 @@ def fetch_precedent(prec_id: int, api_key: str) -> str | None:
 
 # ── 통합 조회 (pipeline.py에서 호출) ──────────────────────────────────────────
 
+# 판례 번호 참조의 검색 폭 — 1페이지만 본다(답변 지연). 수집 스크립트처럼 페이지를 넘기지
+# 않으므로 뒤 페이지에 밀린 사건은 None이 된다 — 엉뚱한 판례보다 공백이 낫다.
+_PREC_REF_SEARCH_SIZE = 20
+
+
+def _pick_exact_case(results: list[dict], wanted: str) -> dict | None:
+    """검색 결과 중 사건번호가 요청과 **정확일치**(병합 사건 포함)하는 첫 항목.
+
+    법제처 검색은 사건명 기준 fuzzy라 사건번호로 조회해도 무관한 판례를 돌려준다
+    (실측: '90누9421' → 6건, 요청 사건 없음). 첫 결과를 그대로 채택하던 답변 경로는
+    엉뚱한 판례 본문을 요청 번호의 근거처럼 실었다(effective-law D5).
+    """
+    from app.core.case_numbers import detail_matches
+    for r in results:
+        if r.get("case_no") and detail_matches(r["case_no"], wanted):
+            return r
+    return None
+
+
 def fetch_relevant_articles(
     relevant_laws: list[str],
     api_key: str | None,
+    *,
+    stats: dict | None = None,
 ) -> str | None:
     """relevant_laws 목록을 병렬로 조회하여 통합 텍스트 반환.
 
     법조문과 판례를 동시에 처리. 부분 실패 허용.
     API 키가 없거나 모든 조회 실패 시 None 반환 → 기존 흐름 유지.
+
+    stats: 넘기면 {requested, ok, miss, error, prec_rejected}를 채운다(effective-law D12).
+        `target=law` 폴백을 없앤 대신 실패를 **조용하지 않게** 남기는 관측 지점이다.
     """
+    counts = {"requested": 0, "ok": 0, "miss": 0, "error": 0, "prec_rejected": 0}
+    lock = threading.Lock()
+
+    def _count(field: str) -> None:
+        with lock:
+            counts[field] += 1
+
+    def _publish() -> None:
+        if stats is not None:
+            stats.update(counts)
+
     if not api_key or not relevant_laws:
+        _publish()
         return None
 
     t0 = time.time()
@@ -919,6 +1021,7 @@ def fetch_relevant_articles(
         tasks.append((idx, ref, parsed))  # parsed=None이면 판례로 시도
 
     if not tasks:
+        _publish()
         return None
 
     # 2. 병렬 조회
@@ -926,6 +1029,7 @@ def fetch_relevant_articles(
 
     def _fetch_one(idx: int, ref: str, parsed_law: dict | None) -> tuple[int, str | None]:
         """법조문 또는 판례 1건 조회."""
+        _count("requested")
         # 법령 조문
         if parsed_law is not None:
             text = fetch_article(
@@ -938,7 +1042,9 @@ def fetch_relevant_articles(
             if text:
                 law_display = _resolve_law_name(parsed_law["law"])
                 sub_suffix = f"의{parsed_law['sub']}" if "sub" in parsed_law else ""
+                _count("ok")
                 return idx, f"[{law_display} 제{parsed_law['article']}조{sub_suffix}]\n{text}"
+            _count("miss")
             return idx, None
 
         # 판례/헌재 결정 참조
@@ -946,21 +1052,31 @@ def fetch_relevant_articles(
         if parsed_prec is not None:
             query = f"{parsed_prec['year']}{parsed_prec['type']}{parsed_prec['number']}"
 
-            if parsed_prec["court"] == "헌재":
-                detc_results = search_detc(query, api_key, max_results=1)
-                if detc_results:
-                    text = fetch_detc(detc_results[0]["id"], api_key)
-                    if text:
-                        case_name = detc_results[0]["case_name"] or query
-                        return idx, f"[헌재 {case_name}]\n{text}"
-            else:
-                prec_results = search_precedent(query, api_key, max_results=1)
-                if prec_results:
-                    text = fetch_precedent(prec_results[0]["id"], api_key)
-                    if text:
-                        case_name = prec_results[0]["case_name"] or query
-                        return idx, f"[{case_name}]\n{text}"
+            # 정확일치 게이트(D5) — 사건번호가 요청과 같은 결과만 채택한다. 헤더에 사건번호를
+            # 싣는다: 판례 본문은 자기 번호를 적지 않는 경우가 많아, 사건명만 두면 정당하게
+            # 조회한 판례의 인용이 화이트리스트에 오르지 못한다.
+            is_detc = parsed_prec["court"] == "헌재"
+            candidates = (search_detc(query, api_key, max_results=_PREC_REF_SEARCH_SIZE) if is_detc
+                          else search_precedent(query, api_key, max_results=_PREC_REF_SEARCH_SIZE))
+            hit = _pick_exact_case(candidates, query)
+            if hit is None:
+                if candidates:
+                    _count("prec_rejected")
+                    logger.info("판례 정확일치 실패: 요청 %s → 후보 %s", query,
+                                [r.get("case_no") for r in candidates[:5]])
+                else:
+                    _count("miss")
+                return idx, None
+            text = fetch_detc(hit["id"], api_key) if is_detc else fetch_precedent(hit["id"], api_key)
+            if text:
+                case_name = hit["case_name"] or query
+                prefix = "헌재 " if is_detc else ""
+                _count("ok")
+                return idx, f"[{prefix}{case_name} {hit['case_no']}]\n{text}"
+            _count("miss")
+            return idx, None
 
+        _count("miss")
         return idx, None
 
     with ThreadPoolExecutor(max_workers=min(len(tasks), 5)) as pool:
@@ -974,11 +1090,14 @@ def fetch_relevant_articles(
                 if article_text:
                     results[idx] = article_text
             except Exception as e:
+                _count("error")
                 logger.warning("병렬 조문 조회 실패: %s", e)
 
     elapsed = time.time() - t0
-    logger.info("법령 API 조회 완료: %d/%d건 / %.2fs",
-                len(results), len(tasks), elapsed)
+    logger.info("법령 API 조회 완료: %d/%d건 / %.2fs (미매칭 %d · 오류 %d · 판례 거부 %d)",
+                len(results), len(tasks), elapsed,
+                counts["miss"], counts["error"], counts["prec_rejected"])
+    _publish()
 
     if not results:
         return None

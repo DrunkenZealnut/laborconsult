@@ -66,6 +66,14 @@ class ClaimMatcherTest(unittest.TestCase):
             r"re:다음\s*주.{0,25}(근로|근무).{0,15}(예정).{0,20}(있어야)",
             '과거 행정해석(근로기준정책과-6551, 2015.12.7.)은 대법원 2011다39946 판결을 근거로 '
             '"다음 주 근무가 예정되어 있어야 주휴가 발생한다"고 보았습니다.'))
+        # '변경되었' 단독은 부정이 아니다 — 바뀐 요건이 지금 적용된다는 단정은 검출돼야 한다(CodeRabbit PR #98)
+        self.assertTrue(claim_found(
+            r"re:다음\s*주.{0,25}(근로|근무).{0,15}(예정).{0,20}(있어야)",
+            "규정이 변경되었지만 다음 주 근무 예정이 있어야 주휴수당이 생깁니다."))
+        # 종전 해석을 소개하며 변경됐다고 쓰는 정답(실측 kin-19 3차) — '종전'이 부정 근거
+        self.assertFalse(claim_found(
+            r"re:다음\s*주.{0,25}(근로|근무).{0,15}(예정).{0,20}(요건)",
+            "다음 주 근무 예정을 요건으로 보던 종전 해석(근로기준정책과-6551, 2015. 12. 7.)은 변경되었습니다."))
         # 같은 문장 안의 부정은 계속 존중한다
         self.assertFalse(claim_found(pat, "'10일 미만'은 2019. 10. 1. 폐지된 구 기준입니다."))
 
@@ -123,10 +131,10 @@ class RuleFactsTest(unittest.TestCase):
         from app.core.rule_facts import build_rule_facts
         text = dict(build_rule_facts("직장 내 괴롭힘 신고 후 해고", None))["harassment_retaliation"]
         self.assertIn("제109조 제1항", text)
-        self.assertIn("2026. 10. 8.부터 삭제", text)
+        self.assertIn("2026. 10. 8. 시행 시 삭제", text)   # 시제 중립 — 10-08 전후 모두 참
         self.assertNotIn("삭제된 조항", text)
 
-    def test_k4_at_most_two_blocks(self):
+    def test_k4_at_most_max_blocks(self):
         from app.core.rule_facts import MAX_BLOCKS, build_rule_facts
         q = "수습 최저임금 80%에 주휴도 없었고 해고예고 없이 잘려서 실업급여 받을 수 있나요"
         self.assertEqual(len(build_rule_facts(q, None)), MAX_BLOCKS)
@@ -141,14 +149,22 @@ class RuleFactsTest(unittest.TestCase):
         self.assertIn("3분의 1 미만", text)
 
     def test_k5_rule_facts_run_in_managed_mode(self):
-        """D1 — 관리 모드에서도 실행돼야 한다(_KNOWLEDGE_MODULES 루프와 분리)."""
+        """D1 — 관리 모드에서도 실행돼야 한다(_KNOWLEDGE_MODULES의 rules_enabled 게이트와 분리).
+
+        effective-law D10으로 블록 계산이 화이트리스트 구성 앞으로 옮겨졌다 — 위치가 아니라
+        "계산·부착 어디에도 rules_enabled 게이트가 없다"를 고정한다.
+        """
         from app.core import pipeline as pl
         src = inspect.getsource(pl.process_question)
-        loop = src.index("for _km_name, _km_builder in ([] if rules_enabled() else _KNOWLEDGE_MODULES)")
-        facts = src.index("build_rule_facts(query, analysis)")
-        self.assertGreater(facts, loop)
-        between = src[loop:facts]
-        self.assertNotIn("if rules_enabled", between.split("used_rule_facts")[-1])
+        start = src.index("rule_fact_blocks: list[tuple[str, str]] = []")
+        call = src.index("build_rule_facts(query, analysis)")
+        self.assertLess(start, call)
+        self.assertNotIn("rules_enabled", src[start:call])
+        attach = src.index("for _rf_name, _rf_block in rule_fact_blocks:")
+        line_start = src.rfind("\n", 0, attach)
+        self.assertNotIn("rules_enabled", src[line_start:attach])
+        # 화이트리스트보다 먼저 계산(D10)
+        self.assertLess(call, src.index("whitelist_hits = _citation_source_hits("))
 
     def test_k6_anchors_exist_in_official_text(self):
         from app.core.rule_facts import RULE_FACTS
@@ -157,7 +173,7 @@ class RuleFactsTest(unittest.TestCase):
             self.skipTest("output_공식법령/ 없음 — fetch_official_rules.py --doc 로 수집 후 로컬에서 확인")
         norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
         for fact in RULE_FACTS:
-            self.assertTrue(fact.anchors or fact.name == "weekly_holiday", fact.name)
+            self.assertTrue(fact.anchors, fact.name)
             for doc_id, phrase in fact.anchors:
                 path = base / f"{doc_id}.md"
                 if not path.exists():
@@ -366,8 +382,9 @@ class LawArticleFormatTest(unittest.TestCase):
         self.assertIn("3분의 1 미만", _format_article_text("제40조", hang))
 
     def test_k13_cache_generation_bumped(self):
+        # 목 포함(v3) 이후 eflaw 전환(v4)으로 한 번 더 올라갔다 — 어느 쪽이든 v2 캐시를 읽으면 안 된다.
         from app.core import legal_api
-        self.assertIn('cache_key = f"v3:', inspect.getsource(legal_api.fetch_article))
+        self.assertIn('cache_key = f"v4:', inspect.getsource(legal_api.fetch_article))
 
 
 class AnswerRulesTest(unittest.TestCase):

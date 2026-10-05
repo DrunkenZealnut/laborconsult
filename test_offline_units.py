@@ -98,7 +98,12 @@ def test_law_version_drift_guard() -> None:
         assert "PRELOADED_MST" not in code, f"{target}: MST 사전매핑 부활 금지"
         assert '"MST"' not in code and "'MST'" not in code, \
             f"{target}: MST 파라미터 사용 금지 — 판본 고정 = 드리프트"
-        assert '"LM"' in code, f"{target}: 조문 조회는 LM(법령명) 파라미터"
+    # 조문 조회는 LM(법령명) + eflaw — 단일 출처 legal_api.fetch_law_root. build_graph는
+    # 복제 대신 그것을 쓴다(effective-law D11: 조회·게이트 복제본이 원본만 고쳐지는 사각).
+    api_src = Path("app/core/legal_api.py").read_text(encoding="utf-8")
+    assert '"LM"' in api_src, "legal_api: 조문 조회는 LM(법령명) 파라미터"
+    assert "fetch_law_root" in Path("build_graph.py").read_text(encoding="utf-8"), \
+        "build_graph.py: 조문 조회는 legal_api.fetch_law_root 경유(복제 금지)"
     api_code = "\n".join(
         ln for ln in Path("app/core/legal_api.py").read_text(encoding="utf-8")
         .splitlines() if not ln.lstrip().startswith("#"))
@@ -233,18 +238,18 @@ def test_law_version_drift_guard() -> None:
     assert legal_api._circuit["fail_count"] == 1, \
         "키 장애가 '법령명 미매칭'으로 오진되면 회로가 영영 안 열린다"
 
-    # E: 캐시 세대 — v2 키 저장, 구 키(MST 시절) 불독
+    # E: 캐시 세대 — v4 키 저장(eflaw 전환), 구 키(MST·target=law 시절) 불독
     _reset()
     legal_api._cache_set("고용보험법_70", "낡은 조문")
     with l2_off, mock.patch.object(legal_api, "_l2_cache_set") as l2s, \
          mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
         txt = legal_api.fetch_article("고용보험법", 70, "k")
         assert "낡은" not in (txt or "")
-        assert l2s.call_args.args[0].startswith("v3:")
+        assert l2s.call_args.args[0].startswith("v4:")
 
     _reset()
     print("  ✅ 법령 LM 전환: 구조 2파일·게이트·원문자 항·항 폴백·조의N·"
-          "폴백 3회·오해석 거부·negative 캐시·Response=failure·캐시 v2")
+          "폴백 3회·오해석 거부·negative 캐시·Response=failure·캐시 v4")
 
 def test_colloquial_fallback_only_wiring() -> None:
     """구어 사전은 의도분석 실패 폴백에서만 발동한다 (Design §2.2·분석 G-3).

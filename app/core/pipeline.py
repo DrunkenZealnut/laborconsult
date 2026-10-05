@@ -308,6 +308,9 @@ def _citation_source_hits(
     legal_articles_text: str | None,
     nlrc_text: str | None,
     graph_context: str | None,
+    *,
+    extra_hits: list[dict] | None = None,
+    system_texts: list[tuple[str, str]] | None = None,
 ) -> list[dict]:
     """인용 가능 목록·검증 화이트리스트의 공통 원천 (DB-4).
 
@@ -315,6 +318,12 @@ def _citation_source_hits(
     정당한 인용이 환각으로 오판·삭제되던 사각지대를 해소한다.
     텍스트 블록은 hits로 감싸기만 하며, 번호 추출은 citation_validator의
     정규식이 수행 — 소스에 실재하는 번호만 목록에 오른다.
+
+    extra_hits: case_no를 가진 개별 판례 hit(primary) — 그래프가 **실제로 렌더한**
+        판례, 규칙 블록이 제시한 판례(prec_anchors).
+    system_texts: (label, text) — 코드가 만든 사실(규칙 블록 전문·계산기 결과).
+        둘이 빠져 있으면 블록이 "따르라"고 준 판례나 계산기 법적 근거(2022다291153)를
+        LLM이 인용하는 순간 환각으로 판정돼 지워진다(effective-law D10).
     """
     hits = list(consultation_hits or [])
     for m in (precedent_meta or []):
@@ -330,6 +339,10 @@ def _citation_source_hits(
     for label, text in (("법제처 법령 조문", legal_articles_text),
                         ("NLRC 판정사례", nlrc_text),
                         ("법령 지식그래프", graph_context)):
+        if text:
+            hits.append({"title": label, "chunk_text": text})
+    hits.extend(extra_hits or [])
+    for label, text in (system_texts or []):
         if text:
             hits.append({"title": label, "chunk_text": text})
     return hits
@@ -1872,13 +1885,15 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     # 2-1. 법령 API 조문 조회 (선택적 — API 키 있고 relevant_laws 추출 시)
     legal_articles_text = None
+    law_api_stats: dict = {}   # 미매칭·오류·판례 정확일치 거부 관측(effective-law D12)
     if analysis and analysis.relevant_laws and config.law_api_key:
         try:
             # 중복 제거(순서 보존) — LLM이 같은 조문을 두 번 내면 5슬롯 중
             # 하나가 낭비되고 동일 키 API 왕복이 중복된다(분석 P2-4).
             # legal_consultation.py 호출부는 이미 하고 있어 비대칭이었다.
             legal_articles_text = fetch_relevant_articles(
-                list(dict.fromkeys(analysis.relevant_laws)), config.law_api_key
+                list(dict.fromkeys(analysis.relevant_laws)), config.law_api_key,
+                stats=law_api_stats,
             )
             if legal_articles_text:
                 logger.info("법령 API 조문 %d건 조회 완료", len(analysis.relevant_laws))
@@ -2087,21 +2102,28 @@ def process_question(query: str, session: Session, config: AppConfig,
             and not assessment_result):
         yield {"type": "status", "text": "법률 자료 검색 중..."}
         try:
+            consultation_law_stats: dict = {}
             consultation_context, consultation_hits = process_consultation(
                 query=query,
                 consultation_topic=analysis.consultation_topic,
                 relevant_laws=analysis.relevant_laws,
                 config=config,
+                law_api_stats=consultation_law_stats,
             )
+            # 두 조회 경로(2-1 relevant_laws · 법률상담)의 통계를 합산한다 — 한쪽만 보면
+            # 법률상담 경로의 eflaw 장애·판례 거부가 관측되지 않는다(gap 위험 3).
+            for _k, _v in consultation_law_stats.items():
+                law_api_stats[_k] = law_api_stats.get(_k, 0) + _v
         except Exception as e:
             logger.warning("법률상담 처리 실패 (RAG fallback): %s", e)
 
     # ── GraphRAG 검색 ─────────────────────────────────────────────────
     graph_context = ""
+    graph_results: list[dict] = []   # try 밖에서 초기화 — 실패해도 화이트리스트 구성이 돈다
     if analysis:
         try:
             from app.core.graph import graph_search
-            graph_context, _graph_results = graph_search(
+            graph_context, graph_results = graph_search(
                 relevant_laws=analysis.relevant_laws,
                 precedent_keywords=getattr(analysis, "precedent_keywords", None),
                 consultation_topic=getattr(analysis, "consultation_topic", None),
@@ -2132,10 +2154,40 @@ def process_question(query: str, session: Session, config: AppConfig,
         logger.debug("충돌 해결 모듈 실패 (무시): %s", e)
 
     # 3. 컨텍스트 구성
+    # 현행 규칙 블록은 화이트리스트보다 **먼저** 계산한다 — 블록이 제시한 판례가 인용
+    # 가능 목록에 올라야 한다(effective-law D10). parts에 붙이는 위치는 아래 그대로다.
+    # 관리 모드에서도 실행한다: 승인 저장소가 대체하는 것은 수치 기준 11키뿐이고,
+    # 이 규칙들에는 대체 경로가 없다(kin-answer-accuracy D1).
+    rule_fact_blocks: list[tuple[str, str]] = []
+    try:
+        from app.core.rule_facts import build_rule_facts
+        rule_fact_blocks = build_rule_facts(query, analysis)
+    except Exception as e:
+        logger.warning("현행 규칙 블록 실패 (무시): %s", e)
+    used_rule_facts = [name for name, _ in rule_fact_blocks]
+
     # 인용 가능 목록·사후 검증이 같은 원천을 쓰도록 화이트리스트 hits를 한 번 구성 (DB-4)
+    extra_citation_hits: list[dict] = []
+    try:
+        from app.core.graph import rendered_precedents
+        for d in rendered_precedents(graph_context, graph_results):
+            extra_citation_hits.append({
+                "title": f"{d.get('court', '')} {d.get('case_number', '')}".strip(),
+                "case_no": d.get("case_number", ""),
+                "chunk_text": d.get("summary", ""),
+                "source_type": "precedent",
+            })
+        if used_rule_facts:
+            from app.core.rule_facts import prec_anchor_hits
+            extra_citation_hits.extend(prec_anchor_hits(used_rule_facts))
+    except Exception as e:
+        logger.warning("인용 화이트리스트 보강 실패 (무시): %s", e)
     whitelist_hits = _citation_source_hits(
         consultation_hits if consultation_context else None,
         precedent_meta, legal_articles_text, nlrc_text, graph_context,
+        extra_hits=extra_citation_hits,
+        system_texts=([("현행 규칙 블록", block) for _, block in rule_fact_blocks]
+                      + ([("임금계산기 결과", calc_result)] if calc_result else [])),
     )
     if consultation_context:
         # 법률상담 경로: 전용 컨텍스트 사용
@@ -2178,17 +2230,10 @@ def process_question(query: str, session: Session, config: AppConfig,
                 parts.append(_km_block)
         except Exception as e:
             logger.warning("지식 모듈 %s 실패 (무시): %s", _km_name, e)
-    # 현행 규칙 블록(요건·기간·조문) — 위 지식 모듈과 달리 **관리 모드에서도 실행한다.**
-    # 승인 저장소가 대체하는 것은 수치 기준 11키뿐이고, 이 규칙들에는 대체 경로가 없다
-    # (kin-answer-accuracy D1). 같은 목록에 두면 LEGAL_RULES_ENABLED=true에서 조용히 사라진다.
-    used_rule_facts: list[str] = []
-    try:
-        from app.core.rule_facts import build_rule_facts
-        for _rf_name, _rf_block in build_rule_facts(query, analysis):
-            parts.append(_rf_block)
-            used_rule_facts.append(_rf_name)
-    except Exception as e:
-        logger.warning("현행 규칙 블록 실패 (무시): %s", e)
+    # 현행 규칙 블록(요건·기간·조문) — 위 지식 모듈과 달리 **관리 모드에서도 실행한다**
+    # (kin-answer-accuracy D1). 계산은 화이트리스트 구성 전에 했다(effective-law D10).
+    for _rf_name, _rf_block in rule_fact_blocks:
+        parts.append(_rf_block)
     if assessment_result:
         parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
     if nlrc_text:
@@ -2595,6 +2640,10 @@ def process_question(query: str, session: Session, config: AppConfig,
         conv_metadata["stale_filtered"] = sorted(set(stale_filtered))
     if citation_relevance:
         conv_metadata["citation_relevance"] = citation_relevance
+    # 법령 조회가 실패·미매칭·거부를 냈을 때만 남긴다 — target=law 폴백을 없앤 대신의
+    # 관측 지점이다(eflaw 장애·법령명 문제·판례 번호 오기가 여기서 드러난다).
+    if any(law_api_stats.get(k) for k in ("miss", "error", "prec_rejected")):
+        conv_metadata["law_api"] = dict(law_api_stats)
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
     conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
     logger.info(
