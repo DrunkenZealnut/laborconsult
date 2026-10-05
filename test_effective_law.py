@@ -8,7 +8,7 @@
 - 규칙 블록·계산기가 제시한 판례가 화이트리스트 밖이라 정당한 인용이 지워질 수 있었다.
 
 설계: docs/archive/2026-10/effective-law-and-graph-precedents/effective-law-and-graph-precedents.design.md §8 (E1~E17),
-§13 C12~C14(E18·E19), gap 분석 후속(E20).
+§13 C12~C14(E18·E19), gap 분석 후속(E20), 구제신청 기한 핫픽스(E21 — design-validator M14).
 """
 from __future__ import annotations
 
@@ -409,7 +409,21 @@ class RuleBlockTest(unittest.TestCase):
 
 
 class HandWrittenLegalFactsTest(unittest.TestCase):
-    """E18·E19 — 코드에 손으로 쓴 법률 사실(판정기 문구·별표 부재 주장)."""
+    """E18·E19·E21 — 코드에 손으로 쓴 법률 사실(판정기 문구·별표 부재 주장·구제신청 기한)."""
+
+    def test_e21_remedy_deadline_is_three_months(self):
+        """부당해고 구제신청 기한은 '부당해고등이 있었던 날부터 3개월 이내'다(근로기준법 제28조 제2항).
+        답변 시스템 프롬프트와 노동위원회 연락처 설명에 '30일 이내'가 손으로 적혀 있었다
+        (2026-10-05 design-validator M14 — 처음 설계 문서의 오기가 그대로 코드로 복제됐다)."""
+        wrong = re.compile(r"구제\s*신청[^.\n]{0,40}30\s*일|30\s*일[^.\n]{0,40}구제\s*신청")
+        targets = [*ROOT.glob("app/**/*.py"), *ROOT.glob("api/**/*.py"), *ROOT.glob("harassment_assessor/*.py"),
+                   *ROOT.glob("wage_calculator/**/*.py"), ROOT / "chatbot.py",
+                   *ROOT.glob("public/*.html"), *ROOT.glob("public/*.js")]
+        hits = [f"{p.relative_to(ROOT)}:{i}" for p in targets if p.is_file()
+                for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if wrong.search(ln)]
+        self.assertEqual(hits, [], "구제신청 기한은 3개월(근로기준법 제28조 제2항)")
+        src = (ROOT / "app/core/pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("부당해고등이 있었던 날부터 3개월 이내", src)
 
     def test_e18_harassment_assessor_cites_current_articles(self):
         """판정 결과는 답변 컨텍스트에 그대로 들어간다 — 손으로 쓴 '제109조 제2항'이 지식iN
