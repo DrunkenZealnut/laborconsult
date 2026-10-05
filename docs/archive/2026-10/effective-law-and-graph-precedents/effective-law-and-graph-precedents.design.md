@@ -1,6 +1,6 @@
 # effective-law-and-graph-precedents — Design (rev2)
 
-> Plan: `docs/01-plan/features/effective-law-and-graph-precedents.plan.md` · 작성 2026-10-04
+> Plan: `effective-law-and-graph-precedents.plan.md`(같은 폴더) · 작성 2026-10-04
 > **rev2 (2026-10-04)**: design-validator 지적 20건을 전부 반영했다. 반영 위치는 §11에 표로 정리했다.
 > 실측은 전부 2026-10-04 법제처 Open API(등록 IP)에서 했고, 수치와 근거는 §1에 둔다.
 

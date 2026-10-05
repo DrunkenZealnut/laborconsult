@@ -1,6 +1,6 @@
 # kin-answer-accuracy — Design
 
-> Plan: `docs/01-plan/features/kin-answer-accuracy.plan.md` · 작성 2026-10-03
+> Plan: `kin-answer-accuracy.plan.md`(같은 폴더) · 작성 2026-10-03
 > 범위: Plan P0-1~P0-3, P1-4~P1-6. P2는 범위 밖.
 
 ## 0. 설계 결정 요약

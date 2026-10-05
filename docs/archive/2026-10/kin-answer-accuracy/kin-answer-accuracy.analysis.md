@@ -1,7 +1,7 @@
 # kin-answer-accuracy — Gap Analysis (Check)
 
 > 2026-10-03 · gap-detector 대조 + 후속 조치 반영
-> 대상: Design `docs/02-design/features/kin-answer-accuracy.design.md` §0~§10 (§11 C1~C18은 승인된 변경)
+> 대상: Design `kin-answer-accuracy.design.md`(같은 폴더) §0~§10 (§11 C1~C18은 승인된 변경)
 
 ## 요약
 

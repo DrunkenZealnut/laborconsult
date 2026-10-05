@@ -1,7 +1,7 @@
 # kin-answer-accuracy — 완료 보고서
 
 > 지식iN 실질문 답변 정확도 개선 · 2026-10-03 (Plan → Design → Do → Check 1일)
-> Plan `docs/01-plan/features/kin-answer-accuracy.plan.md` · Design `docs/02-design/features/kin-answer-accuracy.design.md` · Analysis `docs/03-analysis/kin-answer-accuracy.analysis.md`
+> Plan `kin-answer-accuracy.plan.md` · Design `kin-answer-accuracy.design.md` · Analysis `kin-answer-accuracy.analysis.md` (모두 `docs/archive/2026-10/kin-answer-accuracy/`)
 
 ## Executive Summary
 
@@ -11,7 +11,7 @@
 |---|---|
 | 기능 | 지식iN 실질문 검증(10-02, 20문항 평균 78.4/100)에서 지목된 오답의 구조적 원인 제거 |
 | 기간 | 2026-10-03 (1일) |
-| 브랜치 | `feat/kin-answer-accuracy` (미커밋) |
+| 브랜치 | `feat/kin-answer-accuracy` → PR #96 머지(2026-10-04, `0678f9d`) · 핫픽스 PR #97(괴롭힘 블록 제109조② 문장, `08ae9be`) |
 
 ### 1.2 결과
 
@@ -82,8 +82,8 @@
 | 항목 | 상태 | 다음 |
 |---|---|---|
 | Plan 목표: 사람 재채점 평균 ≥ 88 | **미측정** | 오류 문항 11개를 리포트 배점표로 재채점(외부 검토자) |
-| 판례 오인용 5건(2019다293449 등) | 미해결 | 전부 상담글 본문의 번호 언급 경로 — 다음 처방은 임계가 아니라 그 경로(예: 상담글 출처 번호는 인용 가능 목록에서 분리) |
-| 9번 규칙 블록 효과 | 미측정 | 재측정 1회 |
+| 판례 오인용 5건(2019다293449 등) | **후속 처리**(effective-law-and-graph-precedents) | 이 보고서의 진단("전부 상담글 본문 경로")은 틀렸다. 2019다293449·2013다25194·2010다111757의 출처는 **손으로 쓴 그래프 판례표**였다. 그래프 컨텍스트가 화이트리스트에 들어가 검증을 통과했고, `secondhand` 분류도 그 경로 때문이었다. 원문 게이트로 재구축한 뒤 3차 Live에서 이 셋의 오인용은 0이다. 2018두63235(크롤 판례 RAG 경로)는 남아 있다 |
+| 9번 규칙 블록 효과 | **측정**(effective-law C12·C16) | 9번 오조문의 실제 출처는 괴롭힘 판정기에 손으로 쓴 "제109조 제2항"이었다(판정 결과가 컨텍스트에 그대로 들어감). 판정기를 정정한 뒤 단건 재측정 통과 |
 | 신규 조문 10개 Pinecone 적재 | 보류 | 규칙 블록은 검색과 무관. 적재 시 BM25 재빌드(3.5시간) 동반 |
 | `eval_retrieval`·`eval_corpus_mix` 기준선 이동 | 수용 | 비교 시 `STALE_FILTER=off` |
 

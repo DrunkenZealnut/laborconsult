@@ -64,7 +64,7 @@ CLAUDE.md에서 고친 곳:
 
 ## 5. 검증
 
-- 오프라인 전 스위트 통과: Python 14종 + `-m unittest legal_rule` 66 + eval offline 2종 + Node 45/45. `test_effective_law.py`는 30건이다.
+- 오프라인 전 스위트 통과: Python 14종 + `-m unittest legal_rule` 66 + eval offline 2종 + Node 86/86(CI가 돌리는 `test_*.js` 7개 파일 전체를 `node --test`로 실행한 결과. 처음 적은 45/45는 일부 파일만 돌린 값이었다). `test_effective_law.py`는 30건이다.
 - 판례 아카이브 `build → verify` 전체 통과(코드 줄 번호 갱신 반영).
 - 그래프 재빌드 동등성(E16) 통과.
 
