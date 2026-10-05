@@ -104,7 +104,7 @@ All three function bodies match the design spec exactly (iteration logic, format
 | Rule 11 after existing rule 10 | Line 408-412, after rule 10 (line 407) | ✅ Match |
 | "부당해고 구제신청, 부당노동행위, 차별시정, 노동쟁의 조정 등 노동위원회 소관 사안이면 제공된 노동위원회 연락처를 답변에 포함하세요" | Exact match at line 409-410 | ✅ |
 | "임금체불, 근로기준법 위반 등 고용노동부(근로감독관) 소관 사안은 기존대로 1350을 안내하세요" | Exact match at line 411 | ✅ |
-| "해고를 당한 근로자에게는 노동위원회 구제신청(30일 이내)을 반드시 안내하세요" | Exact match at line 412 | ✅ |
+| "해고를 당한 근로자에게는 노동위원회 구제신청(30일 이내)을 반드시 안내하세요" | Exact match at line 412 | ✅ (⚠️ 2026-10-05 정정: 법정 기한은 3개월 — 근로기준법 제28조 제2항) |
 
 **D-2 Score: 100%** — SYSTEM_PROMPT rule 11 matches design verbatim.
 
