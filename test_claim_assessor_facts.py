@@ -321,6 +321,26 @@ class ClaimAuthorityFactsTest(unittest.TestCase):
             if date:   # 저장본 판본이 시행 예정분이면 안 된다(D16 — 4건이 20280101 헤더였다)
                 self.assertLessEqual(date.group(1).replace("-", ""), today, doc_id)
 
+    def test_c17_kin15_matcher_flags_only_wrong_filing_agency(self):
+        """kin-15 금지 문구는 고용센터를 확인청구 **접수처**로 지정한 문장만 잡는다(CodeRabbit PR #101).
+
+        구 패턴(고용센터 뒤 30자 안에 확인청구)은 역할을 올바르게 나눈 정답 문장까지 잡았다.
+        """
+        from eval_consultation import claim_found
+        kin15 = [c for c in json.loads((ROOT / "data/eval_kin_queries.json").read_text(encoding="utf-8"))
+                 if c["id"] == "kin-15"][0]
+        pattern = next(p for p in kin15["forbidden_claims"] if "고용센터" in p)
+        for wrong in ("고용센터에 피보험자격 확인청구를 하면 최대 3년까지 소급 가입이 인정됩니다.",
+                      "고용센터에 **피보험자격 확인청구**를 하면 소급 가입이 인정될 수 있습니다.",   # 3차 원답변 형태
+                      "관할 고용센터에서 피보험자격 확인을 청구하세요.",
+                      "고용센터를 통해 피보험자격 확인청구를 진행할 수 있습니다."):
+            self.assertTrue(claim_found(pattern, wrong), wrong)
+        for right in ("고용센터는 수급자격을 판단하고 피보험자격 확인청구는 근로복지공단에서 처리합니다.",
+                      "이직사유 판단과 수급자격 인정은 고용센터가 하고, 피보험자격 확인청구는 근로복지공단에 합니다.",
+                      "고용센터에 문의하면 피보험자격 확인청구 방법을 안내받을 수 있지만 청구는 근로복지공단에 합니다.",
+                      "비자발적 이직이므로 **고용센터에 실업급여**를 신청하고, 확인청구는 **근로복지공단**에 합니다."):
+            self.assertFalse(claim_found(pattern, right), right)
+
     def test_c16_freshness_anchor_check_includes_answer_rules(self):
         src = (ROOT / "check_law_freshness.py").read_text(encoding="utf-8")
         self.assertIn("ANSWER_RULE_ANCHORS", src)
