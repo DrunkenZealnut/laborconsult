@@ -255,6 +255,11 @@
   .msg.assistant > :first-child { margin-top: 0; }
   .msg.assistant > :last-child { margin-bottom: 0; }
   .msg.status { align-self: center; background: transparent; color: var(--color-text-muted); font-size: var(--text-label); padding: var(--space-half) var(--space-1); }
+  /* 요청 거절·서버 오류 안내 — 답변과 다른 클래스라 답변 액션 바·복사·지식iN 변환 대상이 아니다 */
+  .msg-wrapper.notice-side { align-items: stretch; }
+  .msg.notice { background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border-strong); border-left: 3px solid var(--accent); border-radius: var(--radius); }
+  #search-box.locked { opacity: 0.6; }
+  #msg-input:disabled { cursor: not-allowed; }
 
   .sources { font-size: var(--text-label); color: var(--color-text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--color-border); }
   .sources a { color: var(--color-text-muted); text-decoration: none; }
@@ -347,10 +352,6 @@
   .msg-wrapper { display: flex; flex-direction: column; }
   .msg-wrapper.user-side { align-items: flex-end; }
   .msg-wrapper.assistant-side { align-items: flex-start; }
-  .copy-btn { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; padding: var(--space-half) var(--space-1); cursor: pointer; color: var(--color-text-muted); font-size: var(--text-label); opacity: 0; transition: opacity 0.15s; display: inline-flex; align-items: center; gap: var(--space-half); margin-top: var(--space-half); align-self: flex-start; }
-  .msg-wrapper:hover .copy-btn { opacity: 1; }
-  .copy-btn:hover { color: var(--color-text); border-color: var(--accent); }
-  .copy-btn.copied { color: var(--color-text); border-color: var(--color-text); font-weight: var(--weight-bold); }
 
   /* Chat input area */
   #input-wrapper { border-top: 1px solid var(--color-border); background: var(--color-surface); padding-bottom: env(safe-area-inset-bottom); }
@@ -501,7 +502,6 @@
   }
 
   @media (max-width: 600px) {
-    .copy-btn { opacity: 0.7; }
     .msg { max-width: 100%; }
     #input-area { padding: 10px; }
     #file-preview { padding: var(--space-1) 10px 0; }
@@ -854,6 +854,64 @@ try { sessionId = sessionStorage.getItem('chatSessionId'); } catch (e) { /* igno
 let pendingFiles = [];
 const MAX_FILES = 3;
 
+// ── 이용 제한 잠금 (일일 횟수·자동 차단·분당 한도) ──────────────────────────────
+// 서버는 요청 거절을 error 이벤트의 code와 retry_after(초)로 알린다. 잠금을 기억하지 않으면 전송이
+// 끝날 때마다 버튼이 다시 열려, 한도에 걸린 뒤에도 겉으로는 정상처럼 보이고 같은 거절을 계속 받는다.
+const LOCK_STORAGE_KEY = 'chatLock';
+const LOCKING_CODES = ['quota', 'blocked', 'rate_limited'];
+const LOCK_MAX_MS = 24 * 3600 * 1000;
+const INPUT_PLACEHOLDER = msgInput.placeholder;
+let chatLock = null;
+let chatLockTimer = null;
+
+function guardLockFromEvent(event, now) {
+  if (!event || LOCKING_CODES.indexOf(event.code) < 0) return null;
+  const ms = Math.min(Math.max(0, Number(event.retry_after) || 0) * 1000, LOCK_MAX_MS);
+  if (!ms) return null;   // 풀리는 시각을 모르면 잠그지 않는다(영구 잠금 방지)
+  return { code: event.code, until: now + ms, text: String(event.text || '') };
+}
+
+function isLockActive(lock, now) {
+  return !!lock && typeof lock.until === 'number' && lock.until > now;
+}
+
+function lockNotice(lock) {
+  if (lock.code === 'quota') return '오늘 상담 가능 횟수를 모두 사용했습니다. 자정(한국 시간) 이후 다시 이용할 수 있습니다.';
+  const at = new Date(lock.until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  return '요청이 많아 잠시 이용이 제한되었습니다. ' + at + ' 이후 다시 시도해 주세요.';
+}
+
+function applyChatLock() {
+  const locked = isLockActive(chatLock, Date.now());
+  btn.disabled = locked;
+  attachBtn.disabled = locked;
+  msgInput.disabled = locked;
+  msgInput.placeholder = locked ? lockNotice(chatLock) : INPUT_PLACEHOLDER;
+  const box = document.getElementById('search-box');
+  if (box) box.classList.toggle('locked', locked);
+  return locked;
+}
+
+function setChatLock(lock) {
+  chatLock = isLockActive(lock, Date.now()) ? lock : null;
+  try {
+    if (chatLock) localStorage.setItem(LOCK_STORAGE_KEY, JSON.stringify(chatLock));
+    else localStorage.removeItem(LOCK_STORAGE_KEY);
+  } catch (e) { /* 저장 불가(사생활 보호 모드 등) — 이 탭에서만 잠근다 */ }
+  clearTimeout(chatLockTimer);
+  if (chatLock) chatLockTimer = setTimeout(function () { setChatLock(null); }, chatLock.until - Date.now() + 500);
+  applyChatLock();
+}
+
+// 새로고침해도 잠금이 이어진다 — 풀리면 저장값을 지운다
+(function restoreChatLock() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOCK_STORAGE_KEY) || 'null');
+    if (isLockActive(saved, Date.now())) setChatLock(saved);
+    else localStorage.removeItem(LOCK_STORAGE_KEY);
+  } catch (e) { /* 읽기 불가 — 잠금 없이 시작 */ }
+})();
+
 msgInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !btn.disabled) {
     e.preventDefault();
@@ -1009,6 +1067,22 @@ function resetChat() {
 
 // ── 메시지 ───────────────────────────────────────────────────────────────────
 
+// 요청 거절·서버 오류 안내. 답변(.msg.assistant)과 다른 클래스·role을 써서 답변 액션 바·복사·
+// 지식iN 변환·답변 수집의 대상이 되지 않게 한다. 서버 문구는 평문으로 넣는다.
+function addNotice(text, code) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg-wrapper notice-side';
+  const d = document.createElement('div');
+  d.className = 'msg notice';
+  d.setAttribute('role', 'alert');
+  d.dataset.notice = code || 'server_error';
+  d.textContent = text || '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  wrapper.appendChild(d);
+  chat.appendChild(wrapper);
+  chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+
 function addMsg(role, html, rawMarkdown) {
   const wrapper = document.createElement('div');
   wrapper.className = 'msg-wrapper ' + (role === 'user' ? 'user-side' : 'assistant-side');
@@ -1022,41 +1096,6 @@ function addMsg(role, html, rawMarkdown) {
   chat.appendChild(wrapper);
   chat.scrollTop = chat.scrollHeight;
   return d;
-}
-
-function ensureCopyBtn(el) {
-  const wrapper = el.closest('.msg-wrapper');
-  if (!wrapper || wrapper.querySelector('.copy-btn')) return;
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'copy-btn';
-  copyBtn.title = '질문+답변 복사';
-  copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 복사';
-  copyBtn.onclick = () => copyConversation(wrapper, copyBtn);
-  wrapper.appendChild(copyBtn);
-}
-
-function copyConversation(wrapper, cbtn) {
-  const parts = [];
-  let prev = wrapper.previousElementSibling;
-  while (prev && prev.classList.contains('msg-wrapper') && !prev.querySelector('.msg.user')) {
-    prev = prev.previousElementSibling;
-  }
-  if (prev && prev.querySelector('.msg.user')) {
-    const userEl = prev.querySelector('.msg.user');
-    parts.push('**Q.** ' + userEl.textContent.trim());
-  }
-  const assistantEl = wrapper.querySelector('.msg.assistant');
-  const mdText = assistantEl.dataset.md || assistantEl.textContent;
-  parts.push('**A.**\n' + mdText.trim());
-
-  navigator.clipboard.writeText(parts.join('\n\n')).then(() => {
-    cbtn.classList.add('copied');
-    cbtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
-    setTimeout(() => {
-      cbtn.classList.remove('copied');
-      cbtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-    }, 2000);
-  });
 }
 
 function removeStatus() {
@@ -1292,9 +1331,7 @@ function renderContacts(agencies, afterEl) {
     chip.innerHTML = html;
     bar.appendChild(chip);
   }
-  const copyBtnEl = wrapper.querySelector('.copy-btn');
-  if (copyBtnEl) wrapper.insertBefore(bar, copyBtnEl);
-  else wrapper.appendChild(bar);
+  wrapper.appendChild(bar);
 }
 
 async function readSSE(resp, onActivity) {
@@ -1309,6 +1346,8 @@ async function readSSE(resp, onActivity) {
   let pendingCases = null;
   let pendingCalc = null;
   let streamDone = false;
+  let errorEvent = null;   // 요청 거절·서버 오류 — 답변이 아니다
+  let noticeEl = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -1335,9 +1374,11 @@ async function readSSE(resp, onActivity) {
         pendingContacts = event.agencies;
       } else if (event.type === 'error') {
         removeStatus();
-        const el = addMsg('assistant', event.text);
-        ensureCopyBtn(el);
-        if (pendingContacts) renderContacts(pendingContacts, el);
+        errorEvent = event;
+        noticeEl = addNotice(event.text, event.code);
+        if (pendingContacts) renderContacts(pendingContacts, noticeEl);
+        const lock = guardLockFromEvent(event, Date.now());
+        if (lock) setChatLock(lock);
       } else if (event.type === 'sources') {
         pendingSources = event.hits || null;   // 답변 완료 후 출처 표시
       } else if (event.type === 'cases') {
@@ -1369,7 +1410,8 @@ async function readSSE(resp, onActivity) {
     try { await reader.cancel(); } catch (_) { /* ignore */ }
   }
   // 마지막 assistant 메시지에 액션 바 표시
-  var lastAssistant = assistantEl || chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant');
+  // 거절·오류만 온 응답에는 답변이 없다 — 이전 답변을 찾아 액션 바를 붙이지 않는다
+  var lastAssistant = assistantEl || (errorEvent ? null : chat.querySelector('.msg-wrapper.assistant-side:last-of-type .msg.assistant'));
   if (lastAssistant) {
     renderCalcResult(pendingCalc, lastAssistant);
     renderCases(pendingCases, lastAssistant);
@@ -1382,10 +1424,12 @@ async function readSSE(resp, onActivity) {
     // 여기서는 항상 최종 텍스트를 본다.
     if (window.answerGlance) window.answerGlance.finalize(lastAssistant);
   }
-  if (!assistantEl && !lastAssistant && !document.querySelector('.msg.status + .msg.assistant')) {
+  if (!assistantEl && !lastAssistant && !errorEvent && !document.querySelector('.msg.status + .msg.assistant')) {
     removeStatus();
-    addMsg('assistant', '서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.');
+    noticeEl = addNotice('서버 응답이 중단되었습니다. 잠시 후 다시 시도해주세요.', 'server_error');
+    errorEvent = { type: 'error', code: 'server_error' };
   }
+  return { error: errorEvent, notice: noticeEl };
 }
 
 // ── 답변 출처 표시 (sources 이벤트) ──────────────────────────────────────────
@@ -1680,6 +1724,7 @@ document.addEventListener('keydown', e => {
 // ── 전송 ─────────────────────────────────────────────────────────────────────
 
 async function send() {
+  if (isLockActive(chatLock, Date.now())) { applyChatLock(); return; }   // 입력창 안내가 사유를 보여 준다
   const text = msgInput.value.trim();
   if (!text && pendingFiles.length === 0) return;
 
@@ -1745,7 +1790,14 @@ async function doSend(text, attachments) {
       try { const body = await resp.json(); detail = body.detail || ''; } catch (_) {}
       throw new Error('서버 오류 (' + resp.status + ')' + (detail ? ': ' + detail : ''));
     }
-    await readSSE(resp, resetIdleTimeout);
+    const outcome = await readSSE(resp, resetIdleTimeout);
+    const err = outcome && outcome.error;
+    if (err && outcome.notice) {
+      const code = err.code || 'server_error';
+      if (code === 'server_error') attachRetry(outcome.notice, text, attachments);
+      // 길이 초과 등 입력 거절 — 지운 질문을 되돌려 고쳐 보낼 수 있게 한다
+      else if (code === 'invalid' && !msgInput.value) { msgInput.value = text; msgInput.dispatchEvent(new Event('input')); }
+    }
   } catch (e) {
     removeStatus();
     const timedOut = e.name === 'AbortError';
@@ -1756,22 +1808,26 @@ async function doSend(text, attachments) {
   } finally {
     clearTimeout(timeoutId);
     removeStatus();
-    btn.disabled = false;
-    msgInput.focus();
+    // 잠금(일일 횟수·차단)이면 계속 막는다 — 결과와 무관하게 버튼을 다시 열면 한도에 걸린 뒤에도 정상처럼 보인다
+    if (!applyChatLock()) msgInput.focus();
   }
 }
 
-function addErrorWithRetry(message, text, attachments) {
-  const el = addMsg('assistant', escHtml(message));
+function attachRetry(el, text, attachments) {
   const retryBtn = document.createElement('button');
   retryBtn.className = 'retry-btn';
   retryBtn.textContent = '다시 시도';
   retryBtn.addEventListener('click', () => {
+    if (isLockActive(chatLock, Date.now())) return;
     retryBtn.disabled = true;
     doSend(text, attachments);
   });
   el.appendChild(document.createElement('br'));
   el.appendChild(retryBtn);
+}
+
+function addErrorWithRetry(message, text, attachments) {
+  attachRetry(addNotice(message, 'server_error'), text, attachments);
 }
 
 // ── FAQ ──────────────────────────────────────────────────────────────────────

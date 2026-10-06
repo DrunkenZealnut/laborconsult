@@ -89,9 +89,19 @@ BEGIN
             'retry_after', GREATEST(0, EXTRACT(EPOCH FROM (v_until - now()))::int));
     END IF;
 
-    -- 지난 날짜 행 정리(자기 키만) + 원자 증가
+    -- 지난 날짜 행 정리(자기 키만)
     DELETE FROM laborconsult.chat_quota
      WHERE subject_key = p_subject_key AND day < p_day;
+
+    -- 이미 한도에 닿았으면 더 올리지 않는다 — 거절된 재시도까지 세면 카운터가 의미 없이 커지고
+    -- (2026-10-06 실측 51→54), 그날 한도(DAILY_CHAT_QUOTA)를 올려도 풀리지 않는다.
+    SELECT q.count INTO v_count FROM laborconsult.chat_quota q
+     WHERE q.subject_key = p_subject_key AND q.day = p_day;
+    IF v_count IS NOT NULL AND v_count >= p_daily_limit THEN
+        RETURN jsonb_build_object('allowed', false, 'reason', 'quota', 'count', v_count);
+    END IF;
+
+    -- 원자 증가. 한도 직전에서 동시에 들어온 요청은 여기서 한도를 넘을 수 있다 — 넘은 요청만 거절한다.
     INSERT INTO laborconsult.chat_quota (subject_key, day, count)
         VALUES (p_subject_key, p_day, 1)
         ON CONFLICT (subject_key, day)
