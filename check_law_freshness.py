@@ -29,45 +29,21 @@ from xml.etree import ElementTree as ET
 
 from app.core import safe_xml
 from app.core.legal_api import (  # noqa: E402
-    LAW_SEARCH_URL, _format_full_article, _http, _norm_compact, fetch_law_root,
+    LAW_SEARCH_URL, _format_full_article, _http, _norm_compact, _raise_if_error_root, fetch_law_root,
 )
-
-# 기본 17종: 과거 _PRELOADED_MST 목록(실측에서 11종이 낡아 있던 재발 감시 대상).
-_BASE_LAWS = [
-    "근로기준법", "근로기준법 시행령", "근로기준법 시행규칙",
-    "최저임금법", "최저임금법 시행령",
-    "고용보험법", "고용보험법 시행령",
-    "산업재해보상보험법", "산업재해보상보험법 시행령",
-    "근로자퇴직급여 보장법",
-    "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률",
-    "소득세법", "조세특례제한법",
-    "기간제 및 단시간근로자 보호 등에 관한 법률",
-    "파견근로자 보호 등에 관한 법률",
-    "임금채권보장법", "노동조합 및 노동관계조정법",
-]
-
-_LAW_NAME_RE = re.compile(r"^(.+?)\s*제\d+조")
 
 
 def _watched_laws() -> list[str]:
-    """검증 목록 = 기본 17종 + **프로덕션이 실제로 조회하는 이름들**.
+    """검증 목록 = 예열 대상과 같다(`law_catalog.warm_law_names()`, production-law-api-recovery D14).
 
-    정식명 고정 목록만 검사하면 프로덕션 실입력의 표기 결함이 새어나간다 —
-    실측: `legal_consultation.py`의 남녀고용평등법 인용이 가운뎃점 이형
-    (U+00B7)으로 상시 실패 중이었는데, 이 스크립트는 정식 표기(U+318D)
-    판본을 검사해 ✅를 냈다(분석 P1-4). 하드코딩 인용을 여기로 끌어와야
-    같은 클래스가 다시 새지 않는다.
+    기본 17종 + **프로덕션이 실제로 조회하는 이름들**(주제 기본 조문·키워드 조문의 법령). 정식명 고정
+    목록만 검사하면 프로덕션 실입력의 표기 결함이 새어나간다 — 실측: `legal_consultation.py`의
+    남녀고용평등법 인용이 가운뎃점 이형(U+00B7)으로 상시 실패 중이었는데, 이 스크립트는 정식 표기
+    (U+318D) 판본을 검사해 ✅를 냈다(분석 P1-4). 예열과 목록이 갈리면 "점검은 하는데 예열은 안 되는"
+    사각이 생기므로 목록을 이 스크립트에 따로 두지 않는다.
     """
-    from app.core.legal_api import _resolve_law_name
-    from app.core.legal_consultation import TOPIC_SEARCH_CONFIG
-
-    names = dict.fromkeys(_BASE_LAWS)          # 순서 보존 집합
-    for cfg in TOPIC_SEARCH_CONFIG.values():
-        for ref in cfg.get("default_laws", []):
-            m = _LAW_NAME_RE.match(ref)
-            if m:
-                names.setdefault(_resolve_law_name(m.group(1).strip()))
-    return list(names)
+    from app.core.law_catalog import warm_law_names
+    return warm_law_names()
 
 
 def _today_kst() -> str:
@@ -83,8 +59,8 @@ def law_versions(name: str, key: str) -> list[dict]:
     }, timeout=20)
     r.raise_for_status()
     root = safe_xml.fromstring(r.content)
-    if root.tag == "Response":
-        raise RuntimeError((root.findtext(".//result") or "API 오류 응답").strip()[:80])
+    # 인증 오류(등록 IP 아님 등)는 LawApiAuthError — '판본 없음'으로 읽으면 예열이 판본을 고르지 못한다.
+    _raise_if_error_root(root)
     out = []
     for el in root.iter("law"):
         nm = (el.findtext("법령명한글") or "").strip()

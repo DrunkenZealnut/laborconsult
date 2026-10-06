@@ -81,6 +81,11 @@ jobs:
       - name: 확인청구 기관·괴롭힘 판정기 사실 전제 테스트
         run: python3 test_claim_assessor_facts.py
 
+      # 프로덕션(Vercel) IP는 법제처 미등록이라 실호출이 전부 인증 실패한다 — 예열 키·조회 키 불일치,
+      # 인증 오류를 '없음'으로 읽는 경로, 감시 공백이 모두 조용히 실패하는 클래스다.
+      - name: 법제처 조회 복구(예열 키·인증 오류·키워드 조문·감시) 테스트
+        run: python3 test_law_api_recovery.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 

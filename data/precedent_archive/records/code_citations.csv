@@ -25,7 +25,7 @@
 2015헌바327,app/core/stale_rules.py,68,comment
 2016다243078,wage_calculator/legal_hints.py,198,data
 2016다243078,wage_calculator/legal_hints.py,219,data
-2017헌바127,app/core/legal_api.py,672,docstring
+2017헌바127,app/core/legal_api.py,912,docstring
 2018다200709,build_graph.py,157,comment
 2018다200709,build_graph.py,176,data
 2018다238518,wage_calculator/legal_hints.py,394,data
@@ -38,8 +38,8 @@
 2021다201143,wage_calculator/legal_hints.py,215,data
 2021다201143,wage_calculator/legal_hints.py,219,data
 2021헌마1234,app/core/citation_validator.py,53,comment
-2021헌마1234,app/core/legal_api.py,672,docstring
-2022다291153,app/core/pipeline.py,316,docstring
+2021헌마1234,app/core/legal_api.py,912,docstring
+2022다291153,app/core/pipeline.py,319,docstring
 2022다291153,app/core/rule_facts.py,234,data
 2022다291153,app/core/rule_facts.py,239,data
 2022다291153,app/core/rule_facts.py,243,data
@@ -66,7 +66,7 @@
 2023다302838,app/core/citation_validator.py,53,comment
 2023다302838,app/core/citation_validator.py,75,docstring
 2023다302838,app/core/citation_validator.py,198,docstring
-2023다302838,app/core/legal_api.py,672,docstring
+2023다302838,app/core/legal_api.py,912,docstring
 2023다302838,app/templates/prompts.py,470,data
 2023다302838,build_graph.py,173,data
 2023다302838,wage_calculator/calculators/ordinary_wage.py,1,docstring
@@ -86,5 +86,5 @@
 2023다302838,wage_calculator/models.py,45,comment
 2023다302838,wage_calculator/models.py,46,comment
 2023다302838,wage_calculator_cli.py,182,cli_case
-90누9421,app/core/legal_api.py,973,docstring
+90누9421,app/core/legal_api.py,1293,docstring
 96다24699,wage_calculator/calculators/comprehensive.py,62,data

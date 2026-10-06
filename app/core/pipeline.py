@@ -29,14 +29,17 @@ from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
 from wage_calculator.result import format_result
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
-                                 held_assessment, ground, decide_mode, as_list)
+                                 held_assessment, ground, decide_mode, as_list,
+                                 is_sexual_harassment)
 from app.core.labor_offices import find_commission, format_commission, format_all_commissions
 from app.core.employment_centers import find_center, format_center, format_center_guide
 from app.core.comwel_offices import find_office, format_office, format_office_guide
 from app.core.legal_api import (
     fetch_relevant_articles, fetch_relevant_precedents,
     search_precedent_multi, fetch_precedent_details, fetch_relevant_nlrc,
+    new_law_stats, law_stats_requested, law_api_live_mode, law_ref_key, select_law_refs,
 )
+from app.core.law_catalog import keyword_laws, SEXUAL_HARASSMENT_DROP_REFS
 from app.core.precedent_query import build_precedent_queries
 from app.core.query_decomposer import (
     decompose_query, classify_complexity, COMPLEXITY_PARAMS, QUERY_MERGE_HEADROOM,
@@ -1618,8 +1621,11 @@ def _consultation_allowed(analysis, calc_result, assessment_result, assessor_inf
     판정기가 잘못 돌아 이 경로까지 건너뛰면 주제별 법령 매핑과 조문이 통째로 빠졌다. 이 셋은
     `consultation_type`이 비어도 돌린다(분석기가 괴롭힘 질문에는 그 값을 비우라는 지시를 받는다).
     판정기와 무관한 질문은 예전처럼 `consultation_type`이 있을 때만 돈다 — 설계 공식을 문자 그대로
-    쓰면 모든 질문이 2-2로 간다(설계 §13 X12). 성희롱은 괴롭힘 기본 조문(제76조의2·3)이 실리므로
-    생략한다 — 2-1 relevant_laws와 RAG가 맡는다.
+    쓰면 모든 질문이 2-2로 간다(설계 §13 X12).
+
+    성희롱도 생략하지 않는다(production-law-api-recovery D10). 생략하면 "성희롱 + 해고" 질문이 해고 기본
+    조문까지 잃었다. 대신 2-1·2-2 양쪽에서 근로기준법 제76조의2·3만 뺀다(SEXUAL_HARASSMENT_DROP_REFS).
+    `reason == "sexual"`은 metadata.assessor 기록용으로 남는다.
     """
     if not analysis or calc_result:
         return False
@@ -1627,16 +1633,46 @@ def _consultation_allowed(analysis, calc_result, assessment_result, assessor_inf
     mode = info.get("mode")
     if assessment_result and mode in ("assessed", "off"):
         return False
-    if info.get("reason") == "sexual":
-        return False
     return bool(getattr(analysis, "consultation_type", None)) or mode in ("held", "skipped", "not_called")
+
+
+# 2-1 조문 상한(키워드 + 의도분석 합계). 2-2도 같은 상한을 쓴다(legal_consultation).
+_ARTICLE_REFS_LIMIT = 5
+
+
+def _is_sexual_query(query: str) -> bool:
+    """성희롱 서술 여부 — 판정기 실행 여부와 무관하게 질문 본문으로 계산한다(D10, 단일 판정)."""
+    try:
+        return is_sexual_harassment(query)
+    except Exception:   # 조문 선택용 — 실패해도 상담 경로를 막지 않는다
+        logger.warning("성희롱 판정 실패", exc_info=True)
+        return False
+
+
+def _article_refs_21(query: str, analysis, sexual: bool) -> list[str]:
+    """2-1 조문 목록 = 키워드 조문(최대 3) → 의도분석 조문, 정규화 키로 중복 제거, 합계 최대 5(D8).
+
+    키워드 조문은 의도분석이 없거나 `consultation_type`이 비어도, 계산 질문이어도 실린다 — 2-2는
+    `consultation_type`이 있어야 돌고 계산 질문이면 건너뛰어, 키워드를 2-2에 두면 빠지는 질문이 생겼다.
+    키워드는 질문 **본문**으로만 판정한다(첨부 문서의 '취업규칙' 같은 낱말로 조문이 붙지 않게).
+    """
+    try:
+        keyword = keyword_laws(query)
+    except Exception:   # 조문 선택용 — 실패해도 의도분석 조문은 그대로 조회한다
+        logger.warning("키워드 조문 판정 실패", exc_info=True)
+        keyword = []
+    relevant = list(getattr(analysis, "relevant_laws", None) or [])
+    return select_law_refs(keyword + relevant,
+                           drop_refs=SEXUAL_HARASSMENT_DROP_REFS if sexual else (),
+                           limit=_ARTICLE_REFS_LIMIT)
 
 
 def _not_called_info(tool_type: str, query: str) -> dict:
     """괴롭힘 키워드였지만 도구가 판정을 고르지 않았을 때의 metadata.assessor(L12).
 
-    성희롱 여부는 LLM 없이 질문에서 정해지므로 여기서도 계산한다 — 없으면 미호출 성희롱 질문에 2-2가
-    돌아 괴롭힘 기본 조문(제76조의2·3)이 실렸다(Check §3-1). tool은 wage·none(추출 실패)을 구분한다.
+    성희롱 여부는 LLM 없이 질문에서 정해지므로 여기서도 계산해 기록한다(Check §3-1). 조문 선택은 이
+    기록이 아니라 `_is_sexual_query`가 맡는다(production-law-api-recovery D10 — 2-2는 돌고 제76조의2·3만
+    빠진다). tool은 wage·none(추출 실패)을 구분한다.
     """
     info = {"mode": "not_called", "tool": tool_type}
     try:
@@ -1949,20 +1985,21 @@ def process_question(query: str, session: Session, config: AppConfig,
                 assessor_info = _not_called_info(tool_type, query)
         # else: 순수 비계산·비괴롭힘 상담 → _extract_params 생략, RAG/상담 경로로 진행
 
-    # 2-1. 법령 API 조문 조회 (선택적 — API 키 있고 relevant_laws 추출 시)
+    # 2-1. 법령 API 조문 조회 — 키워드 조문(최대 3) → 의도분석 조문, 합계 최대 5 (production-law-api-recovery D8)
     legal_articles_text = None
-    law_api_stats: dict = {}   # 미매칭·오류·판례 정확일치 거부 관측(effective-law D12)
-    if analysis and analysis.relevant_laws and config.law_api_key:
+    # 조문·판례 조회 관측(metadata.law_api v2, D7·D7b) — 2-1·2-2·판례 검색·NLRC가 같은 dict에 누적한다.
+    law_api_stats: dict = new_law_stats()
+    sexual = _is_sexual_query(query)
+    # 중복 제거(순서 보존, 정규화 키) — LLM이 같은 조문을 두 번 내면 5슬롯 중 하나가 낭비되고
+    # 동일 키 API 왕복이 중복된다(분석 P2-4).
+    article_refs_21 = _article_refs_21(query, analysis, sexual)
+    if article_refs_21 and config.law_api_key:
         try:
-            # 중복 제거(순서 보존) — LLM이 같은 조문을 두 번 내면 5슬롯 중
-            # 하나가 낭비되고 동일 키 API 왕복이 중복된다(분석 P2-4).
-            # legal_consultation.py 호출부는 이미 하고 있어 비대칭이었다.
             legal_articles_text = fetch_relevant_articles(
-                list(dict.fromkeys(analysis.relevant_laws)), config.law_api_key,
-                stats=law_api_stats,
+                article_refs_21, config.law_api_key, stats=law_api_stats,
             )
             if legal_articles_text:
-                logger.info("법령 API 조문 %d건 조회 완료", len(analysis.relevant_laws))
+                logger.info("법령 API 조문 %d건 조회 완료", len(article_refs_21))
         except Exception as e:
             logger.warning("법령 API 조회 실패 (무시하고 진행): %s", e)
 
@@ -2121,7 +2158,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             if not precedent_text and config.law_api_key:
                 if prec_queries:
                     prec_results = search_precedent_multi(
-                        prec_queries, config.law_api_key, max_total=5,
+                        prec_queries, config.law_api_key, max_total=5, stats=law_api_stats,
                     )
                     if prec_results:
                         precedent_text, precedent_meta = fetch_precedent_details(
@@ -2130,7 +2167,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 if not precedent_text:
                     prec_query = getattr(analysis, "question_summary", None) or query[:80]
                     precedent_text, precedent_meta = fetch_relevant_precedents(
-                        prec_query, config.law_api_key, max_results=3,
+                        prec_query, config.law_api_key, max_results=3, stats=law_api_stats,
                     )
                 if precedent_text:
                     logger.info("법제처 API 판례 폴백 사용")
@@ -2152,7 +2189,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 # 같은 절제로 상위 3개만 결합한다.
                 nlrc_query = " ".join(nlrc_keywords[:3])
                 nlrc_text = fetch_relevant_nlrc(
-                    nlrc_query, config.law_api_key, max_results=3,
+                    nlrc_query, config.law_api_key, max_results=3, stats=law_api_stats,
                 )
                 if nlrc_text:
                     logger.info("NLRC 판정사례 검색 완료")
@@ -2163,25 +2200,24 @@ def process_question(query: str, session: Session, config: AppConfig,
     consultation_context = None
     consultation_hits = []
     # 판정이 있으면 판정기가 근거·절차를 대신하므로 생략한다. 판단 보류·미실행·도구 미호출이면 돌리고
-    # 주제가 비면 "직장내괴롭힘"으로 넘긴다. 성희롱은 괴롭힘 기본 조문(제76조의2·3)이 실리므로 생략한다
-    # (claim-authority-and-assessor-facts D14·X12 — 조건은 _consultation_allowed가 단일 출처).
+    # 주제가 비면 "직장내괴롭힘"으로 넘긴다(claim-authority-and-assessor-facts D14·X12 — 조건은
+    # _consultation_allowed가 단일 출처). 성희롱이면 주제를 유지한 채 제76조의2·3만 뺀다(D10).
     _assessor_ran = (assessor_info or {}).get("mode") in ("held", "skipped", "not_called")
     if _consultation_allowed(analysis, calc_result, assessment_result, assessor_info):
         yield {"type": "status", "text": "법률 자료 검색 중..."}
         try:
-            consultation_law_stats: dict = {}
+            # 2-1이 이미 조회한 키는 빼고(같은 조문 이중 적재·이중 집계 방지), 통계는 같은 dict에 누적한다 —
+            # 한쪽만 보면 법률상담 경로의 장애·판례 거부가 관측되지 않는다(effective-law gap 위험 3).
             consultation_context, consultation_hits = process_consultation(
                 query=query,
                 consultation_topic=(analysis.consultation_topic
                                     or ("직장내괴롭힘" if _assessor_ran else None)),
                 relevant_laws=analysis.relevant_laws,
                 config=config,
-                law_api_stats=consultation_law_stats,
+                law_api_stats=law_api_stats,
+                exclude_keys={law_ref_key(r) for r in article_refs_21},
+                drop_refs=SEXUAL_HARASSMENT_DROP_REFS if sexual else (),
             )
-            # 두 조회 경로(2-1 relevant_laws · 법률상담)의 통계를 합산한다 — 한쪽만 보면
-            # 법률상담 경로의 eflaw 장애·판례 거부가 관측되지 않는다(gap 위험 3).
-            for _k, _v in consultation_law_stats.items():
-                law_api_stats[_k] = law_api_stats.get(_k, 0) + _v
         except Exception as e:
             logger.warning("법률상담 처리 실패 (RAG fallback): %s", e)
 
@@ -2718,10 +2754,11 @@ def process_question(query: str, session: Session, config: AppConfig,
         conv_metadata["stale_filtered"] = sorted(set(stale_filtered))
     if citation_relevance:
         conv_metadata["citation_relevance"] = citation_relevance
-    # 법령 조회가 실패·미매칭·거부를 냈을 때만 남긴다 — target=law 폴백을 없앤 대신의
-    # 관측 지점이다(eflaw 장애·법령명 문제·판례 번호 오기가 여기서 드러난다).
-    if any(law_api_stats.get(k) for k in ("miss", "error", "prec_rejected")):
-        conv_metadata["law_api"] = dict(law_api_stats)
+    # 법령 조회 관측(v2, production-law-api-recovery D7b) — 요청이 1건이라도 있으면 **항상** 남긴다.
+    # 실패한 대화만 남기면 성공률을 계산할 수 없다(폴백 감시 ② 조문 성공률). target=law 폴백을 없앤
+    # 대신의 관측 지점이기도 하다(eflaw 장애·법령명 문제·판례 번호 오기가 여기서 드러난다).
+    if law_stats_requested(law_api_stats) > 0:
+        conv_metadata["law_api"] = {"live": law_api_live_mode(), **law_api_stats}
     # 판정기 모드·사유·버린 필드명(값은 남기지 않는다) — 게시판 제외 사유가 아니다
     if assessor_info:
         conv_metadata["assessor"] = assessor_info

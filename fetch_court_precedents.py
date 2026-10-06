@@ -36,6 +36,7 @@ from vector_ledger import atomic_write_json
 # 사건번호 정규화·병합 대조는 app.core.case_numbers가 단일 출처다 — 답변 경로(legal_api)도
 # 같은 함수를 쓴다. 이 모듈 이름으로도 계속 노출한다(archive_precedents·테스트가 fetch.* 로 쓴다).
 from app.core.case_numbers import detail_matches, normalize_case_no  # noqa: F401
+from app.core.legal_api import LawApiAuthError, _raise_if_error_root
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
             override=True)
@@ -117,17 +118,25 @@ _session = requests.Session()
 
 
 def _get_xml(url: str, params: dict) -> ET.Element | None:
-    """재시도 포함 GET → XML 루트. 실패 시 None."""
+    """재시도 포함 GET → XML 루트. 실패 시 None.
+
+    인증 오류(`<Response>` 루트 — 등록 IP가 아니거나 키 문제)는 재시도하지 않고 LawApiAuthError로
+    올린다. None으로 바꾸면 호출부가 '미발견'을 진행 기록(`_progress.json`의 not_found)에 **영구
+    저장**해 다음 실행도 그 사건을 건너뛴다(production-law-api-recovery D6). main()이 멈춘다.
+    """
     for attempt in range(MAX_RETRIES):
         try:
             resp = _session.get(url, params=params, timeout=TIMEOUT)
             resp.raise_for_status()
-            return safe_xml.fromstring(resp.content)
+            root = safe_xml.fromstring(resp.content)
         except Exception as e:
             if attempt == MAX_RETRIES - 1:
                 print(f"    [실패] {e}")
                 return None
             time.sleep(2 ** attempt)
+            continue
+        _raise_if_error_root(root)
+        return root
     return None
 
 
@@ -420,7 +429,13 @@ def main() -> None:
         sys.exit(f"[오류] 입력 CSV가 없습니다: {input_csv}")
 
     print("API 키 검증 중...", end=" ", flush=True)
-    if not probe_api_key(api_key):
+    try:
+        probed = probe_api_key(api_key)
+    except LawApiAuthError as e:
+        print("실패")
+        print(f"[오류] 법제처 인증 오류 — 등록 IP가 아닌 곳에서 실행했거나 키 문제입니다: {e}")
+        sys.exit(2)
+    if not probed:
         sys.exit("실패\n[오류] LAW_API_KEY로 판례를 조회할 수 없습니다. 키 등록 상태를 확인하세요.")
     print("정상")
 
@@ -445,65 +460,73 @@ def main() -> None:
     stats = {"saved": 0, "skip_dup": 0, "skip_done": 0, "not_found": 0}
     processed = 0
 
-    for row in rows:
-        if args.limit and processed >= args.limit:
-            break
+    try:
+        for row in rows:
+            if args.limit and processed >= args.limit:
+                break
 
-        raw_no = row["사건번호"].strip()
-        case_no = OCR_FIXES.get(raw_no, raw_no)
-        case_no = normalize_case_no(case_no)
+            raw_no = row["사건번호"].strip()
+            case_no = OCR_FIXES.get(raw_no, raw_no)
+            case_no = normalize_case_no(case_no)
 
-        if case_no in progress["fetched"] or case_no in progress["not_found"]:
-            stats["skip_done"] += 1
-            continue
-        if case_no in existing:
-            stats["skip_dup"] += 1
-            continue
+            if case_no in progress["fetched"] or case_no in progress["not_found"]:
+                stats["skip_done"] += 1
+                continue
+            if case_no in existing:
+                stats["skip_dup"] += 1
+                continue
 
-        processed += 1
-        target = resolve_target(case_no, row["법원"])
+            processed += 1
+            target = resolve_target(case_no, row["법원"])
 
-        hit = search_case(case_no, target, api_key)
-        time.sleep(REQUEST_DELAY)
+            hit = search_case(case_no, target, api_key)
+            time.sleep(REQUEST_DELAY)
 
-        if not hit:
-            stats["not_found"] += 1
-            progress["not_found"][case_no] = "검색 정확일치 없음"
-            print(f"  [{processed}] {case_no} ({row['법원']}) — 미발견")
-            continue
+            if not hit:
+                stats["not_found"] += 1
+                progress["not_found"][case_no] = "검색 정확일치 없음"
+                print(f"  [{processed}] {case_no} ({row['법원']}) — 미발견")
+                continue
 
-        root = fetch_detail(hit["serial_id"], target, api_key)
-        time.sleep(REQUEST_DELAY)
+            root = fetch_detail(hit["serial_id"], target, api_key)
+            time.sleep(REQUEST_DELAY)
 
-        if root is None:
-            stats["not_found"] += 1
-            progress["not_found"][case_no] = "상세 조회 실패"
-            print(f"  [{processed}] {case_no} — 상세 조회 실패")
-            continue
+            if root is None:
+                stats["not_found"] += 1
+                progress["not_found"][case_no] = "상세 조회 실패"
+                print(f"  [{processed}] {case_no} — 상세 조회 실패")
+                continue
 
-        rec = normalize_record(root, target, hit["serial_id"])
-        if not detail_matches(rec["case_no"], case_no):
-            # 상세 응답이 다른 사건이면 채택하지 않는다.
-            stats["not_found"] += 1
-            progress["not_found"][case_no] = f"상세 사건번호 불일치({rec['case_no']})"
-            print(f"  [{processed}] {case_no} — 상세 불일치")
-            continue
-        # 병합 사건(2000다51919, 51926)은 요청한 번호로 파일명을 고정한다.
-        rec["case_no"] = case_no
+            rec = normalize_record(root, target, hit["serial_id"])
+            if not detail_matches(rec["case_no"], case_no):
+                # 상세 응답이 다른 사건이면 채택하지 않는다.
+                stats["not_found"] += 1
+                progress["not_found"][case_no] = f"상세 사건번호 불일치({rec['case_no']})"
+                print(f"  [{processed}] {case_no} — 상세 불일치")
+                continue
+            # 병합 사건(2000다51919, 51926)은 요청한 번호로 파일명을 고정한다.
+            rec["case_no"] = case_no
 
-        filename = safe_filename(rec["case_no"], rec["case_name"])
+            filename = safe_filename(rec["case_no"], rec["case_name"])
+            if not args.dry_run:
+                with open(os.path.join(OUTPUT_DIR, filename), "w", encoding="utf-8") as f:
+                    f.write(to_markdown(rec))
+
+            progress["fetched"][case_no] = filename
+            existing.add(case_no)
+            stats["saved"] += 1
+            print(f"  [{processed}] {case_no} → {rec['case_name'][:40]} "
+                  f"(요지 {len(rec['summary'])}자, 전문 {len(rec['full_text'])}자)")
+
+            if not args.dry_run and stats["saved"] % 25 == 0:
+                save_progress(progress)
+    except LawApiAuthError as e:
+        # 이 사건은 기록하지 않는다 — '미발견'으로 남기면 다음 실행이 영영 건너뛴다(D6).
+        # 그때까지의 수집·미발견은 정상 판정이라 저장한다.
+        print(f"\n❌ 법제처 인증 오류 — 실행을 멈춥니다(진행 기록에 '미발견'으로 남기지 않음): {e}")
         if not args.dry_run:
-            with open(os.path.join(OUTPUT_DIR, filename), "w", encoding="utf-8") as f:
-                f.write(to_markdown(rec))
-
-        progress["fetched"][case_no] = filename
-        existing.add(case_no)
-        stats["saved"] += 1
-        print(f"  [{processed}] {case_no} → {rec['case_name'][:40]} "
-              f"(요지 {len(rec['summary'])}자, 전문 {len(rec['full_text'])}자)")
-
-        if not args.dry_run and stats["saved"] % 25 == 0:
             save_progress(progress)
+        sys.exit(2)
 
     if not args.dry_run:
         save_progress(progress)

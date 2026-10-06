@@ -377,6 +377,12 @@ def fetch_board_instruction(dept: str, exact_name: str) -> dict | None:
 
 
 def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict | None:
+    """법제처 행정규칙(고시) 검색 → 상세. 미수록은 None.
+
+    인증 오류(`<Response>` 루트)는 None이 아니라 LawApiAuthError다 — '미수록'으로 읽으면 등록 IP가 아닌
+    곳에서 돈 실행이 고시 5건을 전부 '조회 실패/미수록'으로 보고하고 끝났다(production-law-api-recovery D6).
+    """
+    from app.core.legal_api import _raise_if_error_root
     res = requests.get(SEARCH_URL, params={"OC": api_key, "target": "admrul", "type": "XML",
                                            "query": query, "display": 20}, timeout=TIMEOUT)
     res.raise_for_status()
@@ -384,6 +390,7 @@ def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict |
         root = safe_xml.fromstring(res.text)
     except ET.ParseError:
         return None
+    _raise_if_error_root(root)
     hit = None
     for item in root.findall(".//admrul"):
         name = (item.findtext("행정규칙명") or "").strip()
@@ -404,6 +411,7 @@ def fetch_admrul(api_key: str, query: str, exact_name: str, dept: str) -> dict |
         droot = safe_xml.fromstring(detail.text)
     except ET.ParseError:
         return None
+    _raise_if_error_root(droot)
     # `itertext()` 로 통째로 긁으면 담당자 전화번호·부칙 이력·파일링크까지 본문이 된다.
     # 근거 원문은 고시 **내용**이어야 하므로 조문내용만 취한다.
     body = "\n".join(
@@ -605,7 +613,15 @@ def record_notice_numbers(dry_run: bool = False, only: str | None = None) -> int
     return 1 if skipped else 0
 
 
+def _auth_abort(exc: Exception) -> int:
+    """인증 오류는 문서 하나의 실패가 아니다 — 나머지를 헛돌지 않고 멈춘다(exit 2)."""
+    print(f"\n❌ 법제처 인증 오류 — 등록 IP가 아닌 곳에서 실행했거나 키 문제입니다. 수집을 멈춥니다: {exc}")
+    return 2
+
+
 def main(argv=None) -> int:
+    from app.core.legal_api import LawApiAuthError
+
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="조회만 하고 파일을 쓰지 않는다")
@@ -646,6 +662,8 @@ def main(argv=None) -> int:
         label = f"{law} 제{no}조" + (f"의{sub}" if sub else "")
         try:
             article = fetch_article_xml(api_key, law, no, sub)
+        except LawApiAuthError as exc:
+            return _auth_abort(exc)
         except Exception as exc:
             article = None
             print(f"  ✗ {label}: {type(exc).__name__}")
@@ -701,6 +719,8 @@ def main(argv=None) -> int:
         if not doc:
             try:
                 doc = fetch_admrul(api_key, query, exact, dept)
+            except LawApiAuthError as exc:
+                return _auth_abort(exc)
             except Exception as exc:
                 doc = None
                 print(f"  ✗ {exact}: {type(exc).__name__}")

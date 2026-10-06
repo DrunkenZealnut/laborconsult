@@ -1,7 +1,9 @@
 """LLM 폴백 감시 판정 오프라인 테스트 (llm-fallback-alert, API 키·네트워크 불요)."""
 from __future__ import annotations
 
+import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import check_llm_fallback as c
@@ -72,11 +74,23 @@ class JudgeTest(unittest.TestCase):
         self.assertIn("연속 폴백", out)
 
 
+def warm_ok(**kw):
+    """정상 예열 상태 행(production-law-api-recovery D12) — 방금 끝났고 실패·행 감소가 없다."""
+    status = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": 7473,
+              "prev_rows": 7473, "laws_ok": ["근로기준법"], "laws_failed": {}}
+    status.update(kw)
+    return status
+
+
 class FakeDb:
-    """created_at 내림차순 정렬된 rows를 range(a, b) 페이지로 돌려준다."""
-    def __init__(self, data):
+    """created_at 내림차순 정렬된 rows를 range(a, b) 페이지로 돌려준다.
+
+    `law_article_cache`는 예열 상태 행 조회(select·eq·execute)에 warm을 돌려준다(None이면 행 없음).
+    """
+    def __init__(self, data, warm="ok"):
         self.all = sorted(data, key=lambda r: r["created_at"], reverse=True)
         self.pages = 0
+        self.warm = warm_ok() if warm == "ok" else warm
 
     def table(self, *_):
         return self
@@ -85,6 +99,10 @@ class FakeDb:
         return self
 
     def order(self, *_a, **_k):
+        return self
+
+    def eq(self, *_):
+        self.data = [] if self.warm is None else [{"content": json.dumps(self.warm, ensure_ascii=False)}]
         return self
 
     def range(self, a, b):

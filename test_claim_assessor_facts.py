@@ -210,12 +210,17 @@ class PipelineWiringTest(unittest.TestCase):
                 self.assertIn("duration", info.get("dropped", []), "도구가 지어낸 기간은 버린 필드로 기록된다")
 
     def test_c9b_not_called_is_recorded_with_sexual_reason(self):
-        """Check §3-1 — 도구가 괴롭힘을 고르지 않아도 성희롱이면 2-2를 생략해야 한다."""
-        from app.core.pipeline import _consultation_allowed, _not_called_info
+        """Check §3-1 — 도구가 괴롭힘을 고르지 않아도 성희롱 사유는 기록한다. 2-2는 생략하지 않고 돌되
+        제76조의2·3만 뺀다(production-law-api-recovery D10 — 생략하면 '성희롱 + 해고'가 해고 조문을 잃었다)."""
+        from app.core.pipeline import _article_refs_21, _consultation_allowed, _not_called_info
         self.assertEqual(_not_called_info("wage", "팀장이 매일 욕해요"), {"mode": "not_called", "tool": "wage"})
-        sexual = _not_called_info("none", "팀장이 회식 자리에서 성적인 농담을 해요")
+        q = "팀장이 회식 자리에서 성적인 농담을 해요"
+        sexual = _not_called_info("none", q)
         self.assertEqual(sexual, {"mode": "not_called", "tool": "none", "reason": "sexual"})
-        self.assertFalse(_consultation_allowed(NS(consultation_type="procedure_guide"), None, None, sexual))
+        self.assertTrue(_consultation_allowed(NS(consultation_type="procedure_guide"), None, None, sexual))
+        refs = _article_refs_21(q, NS(relevant_laws=["근로기준법 제76조의2", "근로기준법 제76조의3 제2항"]), True)
+        self.assertFalse(any("제76조의" in r for r in refs), refs)
+        self.assertTrue(any(r.endswith("제12조") for r in refs), "남녀고용평등법 제12조(키워드)는 실린다")
         self.assertIn("assessor_info = _not_called_info(tool_type, query)", self.SRC)
         self.assertIn('conv_metadata["assessor"] = assessor_info', self.SRC)
 
@@ -274,10 +279,10 @@ class PipelineWiringTest(unittest.TestCase):
         self.assertTrue(_consultation_allowed(none, None, None, {"mode": "skipped", "reason": "no_case"}))
         self.assertTrue(_consultation_allowed(none, None, None, {"mode": "not_called", "tool": "wage"}),
                         "미호출도 판정기가 돌지 않은 경우다 — consultation_type이 비어도 돌린다(Check §3-2)")
-        self.assertFalse(_consultation_allowed(a, None, None, {"mode": "not_called", "tool": "none",
-                                                                "reason": "sexual"}))
-        self.assertFalse(_consultation_allowed(a, None, None, {"mode": "skipped", "reason": "sexual"}),
-                         "성희롱은 괴롭힘 기본 조문이 실리므로 생략")
+        self.assertTrue(_consultation_allowed(a, None, None, {"mode": "not_called", "tool": "none",
+                                                               "reason": "sexual"}))
+        self.assertTrue(_consultation_allowed(a, None, None, {"mode": "skipped", "reason": "sexual"}),
+                        "성희롱도 2-2를 돌린다 — 괴롭힘 조문은 drop_refs로 뺀다(production-law-api-recovery D10)")
         self.assertFalse(_consultation_allowed(a, "계산", None, None), "계산 결과가 있으면 생략(기존)")
         self.assertTrue(_consultation_allowed(a, None, None, None), "판정기와 무관한 상담 질문(기존)")
         self.assertFalse(_consultation_allowed(none, None, None, None))

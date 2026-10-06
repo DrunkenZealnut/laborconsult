@@ -17,10 +17,22 @@ GitHub Actions(.github/workflows/llm-fallback-alert.yml)가 6시간마다 돌린
 - **감시 자신은 fail-closed다.** 조회가 실패하면 exit 2로 실패한다 — 파이프라인처럼 조용히 넘어가면
   감시가 죽은 것도 조용해진다.
 - **대화 본문은 읽지 않는다.** Actions 로그는 저장소 협업자에게 보인다. metadata만 조회한다.
+
+법령 조회 감시(production-law-api-recovery D11) — 같은 실행·같은 종료 코드 규약으로 판정한다.
+프로덕션 법제처 조회는 IP 미등록으로 6주 넘게 전부 실패했는데 아무에게도 보이지 않았다.
+  ① 예열 상태(`law_article_cache`의 `meta:law_warm_status`): 마지막 실행 후 36시간 초과, `laws_failed`가
+     비어 있지 않음, 행 수가 직전 대비 20% 넘게 감소, 상태 행 없음 → 알림. 조회 실패는 exit 2.
+  ② 조문 성공률: 조문을 요청한 최근 실사용 10건에서 Σok / Σ(requested − skipped_unwarmed) < 0.8 → 알림.
+     분모 합이 20 미만이면 보류한다. CLAUDE.md가 금지한 것은 **대화 단위** 비율(하루 0~5건이라 1건으로
+     100%가 된다)이고, 이 조건은 요청 수 합(대화당 5~10건)으로 판정한다.
+  ③ 인증 오류: `live=on`인 대화에서 auth_error > 0 → 알림(고정 IP 전환 뒤에 의미가 있다).
+  `metadata.law_api` v2(`{"live", "articles", "precedents"}`)만 읽고 옛 평평한 구조는 건너뛴다.
+  이 스크립트는 legal_api를 import하지 않는다 — Actions는 supabase만 설치한다(requests 없음).
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -30,6 +42,12 @@ DEFAULT_WINDOW = 3
 PAGE_SIZE = 50
 MAX_PAGES = 20            # 최대 1,000행 — 벤치마크가 합성 행을 수십 건씩 쌓아도 실사용 window건을 찾는다
 KST = timezone(timedelta(hours=9))
+
+LAW_WINDOW = 10           # ② 조문을 요청한 최근 실사용 대화 수
+LAW_MIN_DENOMINATOR = 20  # ② 분모(요청 − 예열 밖) 합이 이보다 작으면 판정 보류
+LAW_MIN_OK_RATE = 0.8
+WARM_MAX_AGE = timedelta(hours=36)
+WARM_MAX_DROP = 0.2
 
 
 @dataclass
@@ -101,6 +119,129 @@ def _kst(ts: str) -> str:
         return str(ts)
 
 
+# ── 법령 조회 감시 (production-law-api-recovery D11) ──────────────────────────
+
+@dataclass
+class LawVerdict:
+    status: str                                    # "ok" | "alert"
+    reasons: list = field(default_factory=list)    # 알림 사유
+    notes: list = field(default_factory=list)      # 보류·참고(알림 아님)
+    ok_rate: float | None = None
+    denominator: int = 0
+    sampled: int = 0
+
+
+def law_record(row: dict) -> dict | None:
+    """v2 metadata.law_api(조문·판례 분리)만. 옛 평평한 구조·요청 0건은 None."""
+    rec = (row.get("metadata") or {}).get("law_api")
+    if not isinstance(rec, dict) or not isinstance(rec.get("articles"), dict):
+        return None
+    return rec
+
+
+def _article_requested(rec: dict) -> bool:
+    return (rec.get("articles") or {}).get("requested", 0) > 0
+
+
+def fetch_recent_law(db, window: int = LAW_WINDOW) -> list[dict]:
+    """조문을 요청한 실사용 행을 window개 모을 때까지(또는 기록 끝·MAX_PAGES) 페이지를 이어 조회한다."""
+    rows: list[dict] = []
+    for page in range(MAX_PAGES):
+        chunk = db.table("qa_conversations").select("id,created_at,metadata") \
+            .order("created_at", desc=True).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1) \
+            .execute().data or []
+        rows += chunk
+        found = sum(1 for r in rows if is_real_law(r) and _article_requested(law_record(r)))
+        if found >= window or len(chunk) < PAGE_SIZE:
+            break
+    return rows
+
+
+def is_real_law(r: dict) -> bool:
+    meta = r.get("metadata") or {}
+    return not meta.get("synthetic") and law_record(r) is not None
+
+
+def fetch_warm_status(db) -> dict | None:
+    """예열 상태 행 — 만료 필터 없이 원시 조회한다(D12). 행이 없으면 None, 조회 실패는 예외(exit 2)."""
+    from app.core.storage import LAW_WARM_STATUS_KEY
+    data = db.table("law_article_cache").select("content") \
+        .eq("cache_key", LAW_WARM_STATUS_KEY).execute().data or []
+    if not data:
+        return None
+    try:
+        return json.loads(data[0]["content"])
+    except (TypeError, ValueError, KeyError):
+        return {"_unparsed": True}
+
+
+def judge_warm(status: dict | None, now: datetime) -> list[str]:
+    """① 예열 상태의 알림 사유."""
+    if status is None:
+        return ["예열 상태 행 없음(warm_law_cache.py가 한 번도 끝나지 않았거나 행이 지워졌다)"]
+    if status.get("_unparsed"):
+        return ["예열 상태 행을 해석할 수 없음"]
+    reasons = []
+    try:
+        at = datetime.fromisoformat(str(status.get("at")).replace("Z", "+00:00"))
+        if now - at > WARM_MAX_AGE:
+            reasons.append(f"예열 마지막 실행 {_kst(status['at'])} — {WARM_MAX_AGE.total_seconds() / 3600:.0f}시간 초과"
+                           "(맥이 꺼져 있거나 launchd 작업이 멈췄다)")
+    except (TypeError, ValueError):
+        reasons.append("예열 상태의 실행 시각을 해석할 수 없음")
+    if status.get("laws_failed"):
+        reasons.append(f"예열 실패 법령: {', '.join(status['laws_failed'])}")
+    rows, prev = status.get("rows") or 0, status.get("prev_rows")
+    if prev and rows < prev * (1 - WARM_MAX_DROP):
+        reasons.append(f"예열 행 수 감소 {prev:,} → {rows:,}(-{(1 - rows / prev) * 100:.0f}%)")
+    return reasons
+
+
+def judge_law(rows: list[dict], warm_status: dict | None, now: datetime | None = None,
+              window: int = LAW_WINDOW) -> LawVerdict:
+    now = now or datetime.now(timezone.utc)
+    reasons = judge_warm(warm_status, now)
+    notes: list[str] = []
+
+    seen, real = set(), []
+    for r in rows:
+        key = r.get("id") or (r.get("created_at"), id(r))
+        if is_real_law(r) and key not in seen:
+            seen.add(key)
+            real.append(r)
+    real.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+
+    # ② 조문 성공률 — 조문을 요청한 최근 window건
+    picked = [law_record(r) for r in real if _article_requested(law_record(r))][:window]
+    ok = sum((rec["articles"].get("ok") or 0) for rec in picked)
+    denom = sum((rec["articles"].get("requested") or 0) - (rec["articles"].get("skipped_unwarmed") or 0)
+                for rec in picked)
+    rate = ok / denom if denom > 0 else None
+    if denom < LAW_MIN_DENOMINATOR:
+        notes.append(f"조문 성공률 판정 보류(요청 {denom} < {LAW_MIN_DENOMINATOR}, 대화 {len(picked)}건)")
+    elif rate < LAW_MIN_OK_RATE:
+        reasons.append(f"조문 성공률 {rate:.0%} < {LAW_MIN_OK_RATE:.0%}(최근 {len(picked)}건, {ok}/{denom})")
+
+    # ③ 실호출이 켜진 대화의 인증 오류 — 최근 v2 기록 window건
+    auth = [rec for rec in map(law_record, real[:window]) if rec.get("live") == "on"
+            and ((rec.get("articles") or {}).get("auth_error", 0) + (rec.get("precedents") or {}).get("auth_error", 0)) > 0]
+    if auth:
+        reasons.append(f"실호출(live=on) 인증 오류 {len(auth)}건 — 법제처 등록 IP·키를 확인할 것")
+    return LawVerdict("alert" if reasons else "ok", reasons, notes, rate, denom, len(picked))
+
+
+def render_law(v: LawVerdict, status: dict | None) -> str:
+    title = "🚨 알림" if v.status == "alert" else "✅ 정상"
+    lines = [f"## 법령 조회 감시: {title}", ""]
+    if status and not status.get("_unparsed"):
+        lines.append(f"- 예열: {_kst(str(status.get('at')))} · {status.get('rows') or 0:,}행 · "
+                     f"성공 {len(status.get('laws_ok') or [])}종 · 실패 {len(status.get('laws_failed') or {})}종")
+    rate = "—" if v.ok_rate is None else f"{v.ok_rate:.0%}"
+    lines.append(f"- 조문 성공률: {rate} (최근 {v.sampled}건, 분모 {v.denominator})")
+    lines += [f"- 🚨 {r}" for r in v.reasons] + [f"- {n}" for n in v.notes]
+    return "\n".join(lines)
+
+
 def render(verdict: Verdict, window: int) -> str:
     title = {"ok": "✅ 정상", "alert": f"🚨 최근 실사용 {window}건 연속 폴백",
              "insufficient": f"– 판정 불가(실사용 {len(verdict.considered)}건 < {window})"}[verdict.status]
@@ -132,12 +273,15 @@ def main() -> int:
         if db is None:
             raise RuntimeError("SUPABASE_URL / SUPABASE_KEY 미설정")
         rows = fetch_recent(db, args.window)
+        law_rows = fetch_recent_law(db)
+        warm_status = fetch_warm_status(db)
     except Exception as e:  # noqa: BLE001 — 감시 실패는 실패로 드러나야 한다
         print(f"::error::폴백 감시 조회 실패 — {type(e).__name__}: {str(e)[:200]}")
         return 2
 
     verdict = judge(rows, args.window)
-    report = render(verdict, args.window)
+    law_verdict = judge_law(law_rows, warm_status)
+    report = render(verdict, args.window) + "\n\n" + render_law(law_verdict, warm_status)
     print(report)
     summary = os.getenv("GITHUB_STEP_SUMMARY")
     if summary:
@@ -145,8 +289,9 @@ def main() -> int:
             f.write(report + "\n")
     if verdict.status == "alert":
         print(f"::error::최근 실사용 답변 {args.window}건이 모두 1순위 제공자 실패 후 폴백으로 생성됐습니다")
-        return 1
-    return 0
+    for reason in law_verdict.reasons:
+        print(f"::error::법령 조회 감시 — {reason}")
+    return 1 if (verdict.status == "alert" or law_verdict.status == "alert") else 0
 
 
 if __name__ == "__main__":

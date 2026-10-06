@@ -272,6 +272,13 @@ def is_public_excluded(meta) -> bool:
     return isinstance(meta, dict) and any(meta.get(k) for k in PUBLIC_EXCLUDE_KEYS)
 
 
+# 법령 조문 캐시 예열 상태 행(production-law-api-recovery D12) — `law_article_cache`의 특수 키다.
+# 예열(warm_law_cache.py)이 쓰고 폴백 감시(check_llm_fallback.py ①)가 만료 필터 없이 읽는다(만료 2099).
+# 여기 두는 이유: 감시는 Actions에서 supabase만 설치하고 돈다 — 상수를 legal_api(requests)에 두면
+# 감시가 import 단계에서 죽는다.
+LAW_WARM_STATUS_KEY = "meta:law_warm_status"
+
+
 # 세션 ID를 직접 만드는 호출부(벤치마크·모델비교·검증 스크립트)를 위한 규약.
 # 이 접두사로 시작하는 세션의 대화는 공개 게시판에 노출하지 않는다.
 #

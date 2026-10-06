@@ -215,10 +215,19 @@ def derive_input(query: str) -> HarassmentInput:
     )
 
 
+def is_sexual_harassment(text: str) -> bool:
+    """직장 내 성희롱 서술인가 — **단일 판정**(production-law-api-recovery D10).
+
+    판정 모드(아래 decide_mode)·2-1/2-2 조문 선택(근로기준법 제76조의2·3 제외)·키워드 조문(남녀고용평등법
+    제12·14조)이 모두 이 함수를 쓴다. 판정이 두 벌이면 "성적인 농담"처럼 한쪽만 잡는 표현이 생긴다.
+    """
+    return bool(_SEXUAL_RE.search(_norm(text)))
+
+
 def decide_mode(query: str) -> GroundingResult:
     q = _norm(query)
     inp = derive_input(query)   # 원문 그대로 — 행위자·빈도는 줄바꿈도 문장 경계로 본다
-    if _SEXUAL_RE.search(q):
+    if is_sexual_harassment(q):
         return GroundingResult("skipped", "sexual", inp)
     actor_case = bool(inp.perpetrator_role) and (bool(_SELF_REF_RE.search(q)) or not _THIRD_CASE_RE.search(q))
     if not (_victim_claim(q) or actor_case):
