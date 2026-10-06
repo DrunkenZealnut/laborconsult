@@ -196,15 +196,25 @@ def test_law_version_drift_guard() -> None:
         txt = legal_api.fetch_article("고용보험법", 76, "k", sub=2)
         assert txt and "괴롭힘" in txt, txt
 
-    # B1: 표기 변형(공백) → 미스 → 검색 해석(compact 동일) → 재시도 성공 (3회)
+    # B1: 표기 변형(공백) → 미스 → 검색 해석(표기 키 동일) → 재시도 성공 (3회).
+    #     예열 대상 법령은 변형도 정식명으로 바로 조회하므로(canonical_law_name 색인, 1회) 폴백은
+    #     예열 밖 법령에서 본다(production-law-api-recovery D3).
+    _reset()
+    ok_ret = OK_XML.replace("고용보험법".encode(), "산업안전보건법".encode())
+    search_ok = SEARCH_OK.replace("근로자퇴직급여 보장법".encode(), "산업안전보건법".encode())
+    with l2_off, l2_set, \
+         mock.patch.object(legal_api._http, "get",
+                           side_effect=[_resp(MISS_XML), _resp(search_ok),
+                                        _resp(ok_ret)]) as g:
+        txt = legal_api.fetch_article("산업안전 보건법", 70, "k")
+        assert txt is not None and g.call_count == 3, (txt, g.call_count)
     _reset()
     ok_ret = OK_XML.replace("고용보험법".encode(), "근로자퇴직급여 보장법".encode())
     with l2_off, l2_set, \
-         mock.patch.object(legal_api._http, "get",
-                           side_effect=[_resp(MISS_XML), _resp(SEARCH_OK),
-                                        _resp(ok_ret)]) as g:
+         mock.patch.object(legal_api._http, "get", return_value=_resp(ok_ret)) as g:
         txt = legal_api.fetch_article("근로자퇴직급여보장법", 70, "k")
-        assert txt is not None and g.call_count == 3, (txt, g.call_count)
+        assert txt is not None and g.call_count == 1, (txt, g.call_count)
+        assert g.call_args.kwargs["params"]["LM"] == "근로자퇴직급여 보장법", "예열 대상 변형은 정식명으로 조회"
 
     # B2: 오해석 거부(P1-1) — 반환 법령명이 다르면 게이트가 막고, 검색 결과도
     # compact 불일치라 재시도하지 않는다(다른 법 조문이 요청명 헤더로 나가는
@@ -238,18 +248,20 @@ def test_law_version_drift_guard() -> None:
     assert legal_api._circuit["fail_count"] == 1, \
         "키 장애가 '법령명 미매칭'으로 오진되면 회로가 영영 안 열린다"
 
-    # E: 캐시 세대 — v4 키 저장(eflaw 전환), 구 키(MST·target=law 시절) 불독
+    # E: 캐시 세대 — v5 키 저장(정식명·공백 제거 키, production-law-api-recovery D3),
+    #    구 키(MST·target=law·eflaw v4 시절) 불독
     _reset()
     legal_api._cache_set("고용보험법_70", "낡은 조문")
+    legal_api._cache_set("v4:고용보험법_70", "v4 시절 조문")
     with l2_off, mock.patch.object(legal_api, "_l2_cache_set") as l2s, \
          mock.patch.object(legal_api._http, "get", return_value=_resp(OK_XML)):
         txt = legal_api.fetch_article("고용보험법", 70, "k")
-        assert "낡은" not in (txt or "")
-        assert l2s.call_args.args[0].startswith("v4:")
+        assert "낡은" not in (txt or "") and "v4 시절" not in (txt or "")
+        assert l2s.call_args.args[0].startswith("v5:")
 
     _reset()
     print("  ✅ 법령 LM 전환: 구조 2파일·게이트·원문자 항·항 폴백·조의N·"
-          "폴백 3회·오해석 거부·negative 캐시·Response=failure·캐시 v4")
+          "폴백 3회·오해석 거부·negative 캐시·Response=failure·캐시 v5")
 
 def test_colloquial_fallback_only_wiring() -> None:
     """구어 사전은 의도분석 실패 폴백에서만 발동한다 (Design §2.2·분석 G-3).

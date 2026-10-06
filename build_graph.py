@@ -294,20 +294,26 @@ def refresh_precedent_records(verify: bool = False) -> int:
     import fetch_court_precedents as fc
     from app.core.case_numbers import detail_matches
 
+    from app.core.legal_api import LawApiAuthError
+
     fetched: dict[str, dict] = {}
-    for case_no in GRAPH_PRECEDENT_SPECS:
-        hit = fc.search_case(case_no, "prec", api_key)   # 사건번호 정확일치 + 페이지 순회
-        if not hit:
-            print(f"  ✗ {case_no}: 법제처 정확일치 없음")
-            return 1
-        root = fc.fetch_detail(hit["serial_id"], "prec", api_key)
-        rec = fc.normalize_record(root, "prec", hit["serial_id"]) if root is not None else None
-        if not rec or not detail_matches(rec["case_no"], case_no):   # 수집 스크립트와 같은 재확인
-            print(f"  ✗ {case_no}: 상세 응답 사건번호 불일치")
-            return 1
-        fetched[case_no] = {k: rec.get(k, "") for k in _RECORD_FIELDS}
-        print(f"  ✓ {case_no} {rec['date']} {rec['judgment_type']} {rec['case_name'][:30]}")
-        time.sleep(0.2)
+    try:
+        for case_no in GRAPH_PRECEDENT_SPECS:
+            hit = fc.search_case(case_no, "prec", api_key)   # 사건번호 정확일치 + 페이지 순회
+            if not hit:
+                print(f"  ✗ {case_no}: 법제처 정확일치 없음")
+                return 1
+            root = fc.fetch_detail(hit["serial_id"], "prec", api_key)
+            rec = fc.normalize_record(root, "prec", hit["serial_id"]) if root is not None else None
+            if not rec or not detail_matches(rec["case_no"], case_no):   # 수집 스크립트와 같은 재확인
+                print(f"  ✗ {case_no}: 상세 응답 사건번호 불일치")
+                return 1
+            fetched[case_no] = {k: rec.get(k, "") for k in _RECORD_FIELDS}
+            print(f"  ✓ {case_no} {rec['date']} {rec['judgment_type']} {rec['case_name'][:30]}")
+            time.sleep(0.2)
+    except LawApiAuthError as e:   # '정확일치 없음'으로 오진하지 않는다(production-law-api-recovery D6)
+        print(f"  ✗ 법제처 인증 오류 — 등록 IP가 아닌 곳에서 실행했거나 키 문제다: {e}")
+        return 2
 
     if verify:
         current = load_precedent_records()
@@ -363,8 +369,12 @@ def _fetch_articles_from_api(law_name: str) -> list[dict]:
     조회·게이트(미매칭·자격 오류·반환 법령명 대조·폐지 거부)는 legal_api 단일 출처다.
     여기에 복제본을 두면 원본만 고쳐지는 사각이 생긴다 — MST 사전매핑과 `replace(" ", "")`
     법령명 비교가 실제로 이 파일에 복제돼 남아 있었다(effective-law D11).
-    미매칭·오해석·오류는 빈 리스트로 강등한다.
+    미매칭·오해석·오류는 빈 리스트로 강등한다. **인증 오류(LawApiAuthError)는 강등하지 않고
+    올린다** — 빈 리스트가 되면 그 법령의 조문 노드가 조용히 빠진 그래프가 커밋된다
+    (production-law-api-recovery D6). build_articles가 빌드를 멈춘다.
     """
+    from app.core.legal_api import LawApiAuthError
+
     api_key = os.getenv("LAW_API_KEY")
     if not api_key:
         return []
@@ -391,6 +401,8 @@ def _fetch_articles_from_api(law_name: str) -> list[dict]:
                 "text": content[:500],
             })
         return articles
+    except LawApiAuthError:
+        raise
     except Exception as e:
         logger.warning("API 조회 실패 (%s): %s", law_name, e)
         return []
@@ -412,21 +424,24 @@ def build_articles(G: nx.DiGraph, skip_api: bool = False) -> None:
 
         # 캐시 만료 7일 — 만료 검사 없이 재사용하면 그래프 재빌드가 캐시
         # 시점의 판본을 계속 굳힌다(CodeRabbit #55: "현행성 보장은 캐시
-        # 수명까지"). 만료분은 삭제해 아래 미스 경로로 재수집시킨다.
-        if cache_file.exists() and not skip_api:
-            age = time.time() - cache_file.stat().st_mtime
-            if age > 7 * 86400:
-                cache_file.unlink()
+        # 수명까지"). 만료분은 다시 받되, **받는 데 성공한 뒤에** 교체한다 — 먼저 지우면
+        # 인증 오류·일시 장애에서 조문 노드가 조용히 빠진 그래프가 나왔다(production-law-api-recovery D6).
+        expired = (cache_file.exists() and not skip_api
+                   and time.time() - cache_file.stat().st_mtime > 7 * 86400)
 
         articles = []
-        if cache_file.exists():
+        if cache_file.exists() and not expired:
             with open(cache_file, "r", encoding="utf-8") as f:
                 articles = json.load(f)
         elif not skip_api:
-            articles = _fetch_articles_from_api(name)
+            articles = _fetch_articles_from_api(name)   # 인증 오류는 여기서 올라와 빌드가 멈춘다
             if articles:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(articles, f, ensure_ascii=False, indent=1)
+            elif expired:
+                logger.warning("조문 재수집 실패 (%s) — 만료된 캐시를 그대로 쓴다", name)
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    articles = json.load(f)
             time.sleep(0.5)  # 속도 제한
 
         for art in articles:
@@ -632,7 +647,12 @@ def main():
     build_statutes(G)
 
     logger.info("Phase 2: 조문 노드 구축...")
-    build_articles(G, skip_api=args.skip_api)
+    from app.core.legal_api import LawApiAuthError
+    try:
+        build_articles(G, skip_api=args.skip_api)
+    except LawApiAuthError as e:   # 조문 노드가 빠진 그래프를 저장하지 않는다(production-law-api-recovery D6)
+        print(f"❌ 법제처 인증 오류 — 그래프를 저장하지 않고 멈춘다(등록 IP·키 확인, 또는 --skip-api): {e}")
+        sys.exit(2)
 
     logger.info("Phase 3: 조문 간 참조 추출...")
     extract_cites(G)

@@ -382,9 +382,13 @@ class LawArticleFormatTest(unittest.TestCase):
         self.assertIn("3분의 1 미만", _format_article_text("제40조", hang))
 
     def test_k13_cache_generation_bumped(self):
-        # 목 포함(v3) 이후 eflaw 전환(v4)으로 한 번 더 올라갔다 — 어느 쪽이든 v2 캐시를 읽으면 안 된다.
+        # 목 포함(v3) 이후 eflaw 전환(v4)·정식명 키(v5, production-law-api-recovery D3)로 올라갔다 —
+        # 어느 쪽이든 목이 빠진 v2 캐시를 읽으면 안 된다. 키는 예열과 조회가 같이 쓰는 단일 함수다.
         from app.core import legal_api
-        self.assertIn('cache_key = f"v4:', inspect.getsource(legal_api.fetch_article))
+        src = inspect.getsource(legal_api.fetch_article)
+        self.assertIn("cache_key = article_cache_key(", src)
+        self.assertNotRegex(src, r'f"v[234]:')
+        self.assertTrue(legal_api.article_cache_key("고용보험법", 40).startswith("v5:"))
 
 
 class AnswerRulesTest(unittest.TestCase):

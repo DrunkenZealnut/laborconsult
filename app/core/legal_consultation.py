@@ -9,9 +9,12 @@ from __future__ import annotations
 import logging
 
 from app.config import AppConfig
-from app.core.legal_api import fetch_relevant_articles
+from app.core.legal_api import fetch_relevant_articles, select_law_refs
 
 logger = logging.getLogger(__name__)
+
+# 2-2 조문 상한 — 2-1과 같다(production-law-api-recovery D8).
+CONSULTATION_REFS_LIMIT = 5
 
 # ── 주제별 기본 법조문 설정 ──────────────────────────────────────────────────
 
@@ -119,11 +122,15 @@ def process_consultation(
     config: AppConfig,
     *,
     law_api_stats: dict | None = None,
+    exclude_keys=(),
+    drop_refs=(),
 ) -> tuple[str, list[dict]]:
     """법률상담 전용 처리 — 법제처 API 법조문 조회.
 
-    law_api_stats: 넘기면 fetch_relevant_articles의 조회 통계를 채운다(effective-law D12 —
-        이 경로의 eflaw 장애·판례 거부도 metadata.law_api로 관측되게).
+    law_api_stats: 넘기면 fetch_relevant_articles의 조회 통계를 v2 구조로 **누적**한다(effective-law D12 ·
+        production-law-api-recovery D7b — 이 경로의 장애·판례 거부도 metadata.law_api로 관측되게).
+    exclude_keys: 2-1이 이미 조회한 참조의 정규화 키(`law_ref_key`) — 같은 조문을 두 번 싣지도 세지도 않는다.
+    drop_refs: 뺄 조문(항 무관). 성희롱 질문이면 근로기준법 제76조의2·3이다(D10).
 
     Returns:
         (context_text, source_hits) — LLM 컨텍스트 + 빈 목록 (하위 호환)
@@ -133,11 +140,11 @@ def process_consultation(
         TOPIC_SEARCH_CONFIG["기타"],
     )
 
-    # 1. 법조문 목록: LLM 추출 + 주제별 기본값 병합
-    all_laws = list(relevant_laws or [])
-    for law in topic_config["default_laws"]:
-        if law not in all_laws:
-            all_laws.append(law)
+    # 1. 법조문 목록: 주제별 기본 조문 → 의도분석 조문(D8). 의도분석 조문은 2-1이 먼저 조회하므로
+    #    여기에는 2-1의 5개 상한에서 넘친 것만 남는다. 정규화 키로 중복을 빼고 최대 5개.
+    all_laws = select_law_refs(list(topic_config["default_laws"]) + list(relevant_laws or []),
+                               exclude_keys=exclude_keys, drop_refs=drop_refs,
+                               limit=CONSULTATION_REFS_LIMIT)
 
     # 2. 법조문 API 조회 (법제처 국가법령정보센터)
     legal_articles_text = None

@@ -7,7 +7,7 @@ Public API:
 """
 
 from .assessor import assess_harassment, held_assessment
-from .grounding import GroundingResult, as_list, decide_mode, ground
+from .grounding import GroundingResult, as_list, decide_mode, ground, is_sexual_harassment
 from .models import HarassmentInput
 from .result import AssessmentResult, ElementAssessment, format_assessment
 
@@ -16,6 +16,7 @@ __all__ = [
     "held_assessment",
     "ground",
     "decide_mode",
+    "is_sexual_harassment",
     "as_list",
     "GroundingResult",
     "HarassmentInput",

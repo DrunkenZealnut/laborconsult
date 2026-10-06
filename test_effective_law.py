@@ -61,7 +61,7 @@ class EflawSwitchTest(unittest.TestCase):
 
     def test_e1_no_target_law_in_lookup_files(self):
         for path in ("app/core/legal_api.py", "fetch_official_rules.py",
-                     "build_graph.py", "check_law_freshness.py"):
+                     "build_graph.py", "check_law_freshness.py", "warm_law_cache.py"):
             self.assertEqual(_law_target_uses(path), [], f"{path}: target=law 금지(시행 예정분 혼입)")
 
     def test_e1_detector_catches_variants(self):
@@ -122,7 +122,7 @@ class CacheExpiryTest(unittest.TestCase):
         utc = datetime(2026, 10, 4, 15, 30, tzinfo=timezone.utc).timestamp()
         self.assertEqual(_article_expiry(utc), utc + 3600)
 
-    def test_e3_article_cache_v4_with_midnight_expiry(self):
+    def test_e3_article_cache_v5_with_midnight_expiry(self):
         from app.core import legal_api
         xml = ("<법령><기본정보><법령명_한글>고용보험법</법령명_한글><제개정구분>일부개정</제개정구분>"
                "</기본정보><조문단위><조문번호>17</조문번호><조문여부>조문</조문여부>"
@@ -130,15 +130,16 @@ class CacheExpiryTest(unittest.TestCase):
         legal_api._ARTICLE_CACHE.clear()
         legal_api._circuit.update({"fail_count": 0, "open_until": 0.0, "probing": False})
         legal_api._cache_set("v3:고용보험법_17", "target=law 시절 본문")   # 구 세대는 읽지 않는다
+        legal_api._cache_set("v4:고용보험법_17", "target=law 시절 본문")   # v4도(정식명 키 v5 전환)
         with mock.patch.object(legal_api, "_l2_cache_get", return_value=None), \
              mock.patch.object(legal_api, "_l2_cache_set") as l2s, \
              mock.patch.object(legal_api._http, "get", return_value=_resp(xml)) as g:
             text = legal_api.fetch_article("고용보험법", 17, "k")
         self.assertIn("제17조", text)
         self.assertNotIn("target=law 시절", text)
-        self.assertEqual(g.call_count, 1, "v3 키가 있어도 API로 다시 받는다")
+        self.assertEqual(g.call_count, 1, "v3·v4 키가 있어도 API로 다시 받는다")
         key = l2s.call_args.args[0]
-        self.assertTrue(key.startswith("v4:"), key)
+        self.assertTrue(key.startswith("v5:"), key)
         expires = l2s.call_args.kwargs["expires_at"]
         self.assertLessEqual(abs(expires - legal_api._article_expiry()), 5)
         self.assertEqual(legal_api._ARTICLE_CACHE[key][0], expires)
@@ -179,21 +180,25 @@ class PrecedentRefGateTest(unittest.TestCase):
         fuzzy = {"id": 1, "case_name": "동산인도", "case_no": "2019다2934"}
         exact = {"id": 2, "case_name": "임금", "case_no": "2022다291153"}
         text, fetch, stats = self._run(["대법원 2022다291153"], [fuzzy, exact])
-        fetch.assert_called_once_with(2, "k")
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.args, (2, "k"))
         self.assertIn("[임금 2022다291153]", text, "헤더에 사건번호")
-        self.assertEqual(stats["ok"], 1)
+        self.assertEqual(stats["precedents"]["ok"], 1)
+        self.assertEqual(stats["articles"]["requested"], 0, "판례 참조는 조문과 따로 센다(v2)")
         text, fetch, stats = self._run(["대법원 2022다291153"], [fuzzy])
         self.assertIsNone(text)
         fetch.assert_not_called()
-        self.assertEqual(stats["prec_rejected"], 1)
+        self.assertEqual(stats["precedents"]["rejected"], 1)
 
     def test_e5_merged_case_and_detc(self):
         merged = {"id": 3, "case_name": "손해배상", "case_no": "2000다51919, 51926"}
         text, fetch, _ = self._run(["대법원 2000다51926"], [merged])
-        fetch.assert_called_once_with(3, "k")
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.args, (3, "k"))
         detc = {"id": 9, "case_name": "근로기준법 제35조 위헌소원", "case_no": "2015헌바327"}
         text, fetch, _ = self._run(["헌재 2015헌바327"], [dict(detc, case_no="2014헌바3"), detc], detc=True)
-        fetch.assert_called_once_with(9, "k")
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.args, (9, "k"))
         self.assertIn("2015헌바327", text)
 
     def test_e15_stats_and_metadata_condition(self):
@@ -201,11 +206,15 @@ class PrecedentRefGateTest(unittest.TestCase):
         stats = {}
         with mock.patch.object(legal_api, "fetch_article", side_effect=["조문", None]):
             legal_api.fetch_relevant_articles(["근로기준법 제26조", "근로기준법 제999조"], "k", stats=stats)
-        self.assertEqual((stats["requested"], stats["ok"], stats["miss"]), (2, 1, 1))
+        a = stats["articles"]
+        self.assertEqual((a["requested"], a["ok"], a["miss"]), (2, 1, 1))
+        # v2(production-law-api-recovery D7b): 실패한 대화만이 아니라 요청이 있으면 항상 기록한다 —
+        # 성공률을 계산하려면 성공한 대화도 남아야 한다.
         from app.core import pipeline
         src = inspect.getsource(pipeline.process_question)
-        self.assertIn('conv_metadata["law_api"] = dict(law_api_stats)', src)
-        self.assertIn('any(law_api_stats.get(k) for k in ("miss", "error", "prec_rejected"))', src)
+        self.assertIn('if law_stats_requested(law_api_stats) > 0:', src)
+        self.assertIn('conv_metadata["law_api"] = {"live": law_api_live_mode(), **law_api_stats}', src)
+        self.assertNotIn('"prec_rejected"', src)
 
 
 class FreshnessCheckTest(unittest.TestCase):
@@ -536,8 +545,15 @@ class GapFollowupTest(unittest.TestCase):
         from app.core import legal_consultation, pipeline
         self.assertIn("stats=law_api_stats", _inspect.getsource(legal_consultation.process_consultation))
         src = _inspect.getsource(pipeline.process_question)
-        self.assertIn("law_api_stats=consultation_law_stats", src)
-        self.assertIn("law_api_stats[_k] = law_api_stats.get(_k, 0) + _v", src)
+        # 2-2는 같은 dict를 받아 누적한다(fetch_relevant_articles가 merge_law_stats로 더한다) —
+        # 한쪽만 보면 법률상담 경로의 장애·판례 거부가 관측되지 않는다(gap 위험 3).
+        self.assertIn("law_api_stats=law_api_stats", src)
+        from app.core import legal_api
+        stats = legal_api.new_law_stats()
+        with mock.patch.object(legal_api, "fetch_article", side_effect=["조문", None, "조문"]):
+            legal_api.fetch_relevant_articles(["근로기준법 제26조"], "k", stats=stats)
+            legal_api.fetch_relevant_articles(["근로기준법 제27조", "근로기준법 제28조"], "k", stats=stats)
+        self.assertEqual((stats["articles"]["requested"], stats["articles"]["ok"]), (3, 2), "두 호출이 누적된다")
 
     def test_e20_article_key_zero_branch(self):
         import xml.etree.ElementTree as ET
