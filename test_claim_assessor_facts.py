@@ -340,6 +340,20 @@ class ClaimAuthorityFactsTest(unittest.TestCase):
                       "고용센터에 문의하면 피보험자격 확인청구 방법을 안내받을 수 있지만 청구는 근로복지공단에 합니다.",
                       "비자발적 이직이므로 **고용센터에 실업급여**를 신청하고, 확인청구는 **근로복지공단**에 합니다."):
             self.assertFalse(claim_found(pattern, right), right)
+        # '3년'은 확인청구 **기한**으로 내세운 문맥만 잡는다 — 피보험기간 소급 범위 설명은 정답이다(제50조⑤)
+        three = next(p for p in kin15["forbidden_claims"] if "3년" in p)
+        for wrong in ("피보험자격 확인청구는 최대 3년까지만 할 수 있습니다.",
+                      "3년 이내에 피보험자격 확인청구를 해야 합니다.",
+                      "3년이 지나면 확인청구를 할 수 없습니다.",
+                      "확인청구 기한은 최대 3년입니다.",
+                      "확인청구는 근로 종료 후 3년 이내에만 가능합니다."):
+            self.assertTrue(claim_found(three, wrong), wrong)
+        for right in ("신고되지 않은 기간의 피보험기간은 최대 3년까지 소급해 인정될 수 있습니다.",
+                      "확인청구는 언제든지 할 수 있고, '3년'은 피보험기간을 계산하는 범위입니다.",
+                      "퇴직금과 임금채권의 소멸시효는 3년입니다.",
+                      "퇴직금은 3년 이내에 청구해야 합니다.",
+                      "확인청구는 기한이 없지만, 피보험기간 소급은 최대 3년까지입니다."):
+            self.assertFalse(claim_found(three, right), right)
 
     def test_c16_freshness_anchor_check_includes_answer_rules(self):
         src = (ROOT / "check_law_freshness.py").read_text(encoding="utf-8")
