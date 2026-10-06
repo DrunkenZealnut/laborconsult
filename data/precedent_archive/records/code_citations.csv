@@ -39,10 +39,10 @@
 2021다201143,wage_calculator/legal_hints.py,219,data
 2021헌마1234,app/core/citation_validator.py,53,comment
 2021헌마1234,app/core/legal_api.py,672,docstring
-2022다291153,app/core/pipeline.py,315,docstring
-2022다291153,app/core/rule_facts.py,209,data
-2022다291153,app/core/rule_facts.py,214,data
-2022다291153,app/core/rule_facts.py,218,data
+2022다291153,app/core/pipeline.py,316,docstring
+2022다291153,app/core/rule_facts.py,234,data
+2022다291153,app/core/rule_facts.py,239,data
+2022다291153,app/core/rule_facts.py,243,data
 2022다291153,build_graph.py,175,data
 2022다291153,wage_calculator/calculators/ordinary_wage.py,175,docstring
 2022다291153,wage_calculator/calculators/weekly_holiday.py,1,docstring
@@ -67,7 +67,7 @@
 2023다302838,app/core/citation_validator.py,75,docstring
 2023다302838,app/core/citation_validator.py,198,docstring
 2023다302838,app/core/legal_api.py,672,docstring
-2023다302838,app/templates/prompts.py,448,data
+2023다302838,app/templates/prompts.py,470,data
 2023다302838,build_graph.py,173,data
 2023다302838,wage_calculator/calculators/ordinary_wage.py,1,docstring
 2023다302838,wage_calculator/calculators/ordinary_wage.py,92,comment

@@ -78,6 +78,9 @@ jobs:
       - name: 기준일 판본 조회·그래프 판례 원문 게이트·인용 화이트리스트 테스트
         run: python3 test_effective_law.py
 
+      - name: 확인청구 기관·괴롭힘 판정기 사실 전제 테스트
+        run: python3 test_claim_assessor_facts.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 

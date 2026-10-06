@@ -10,17 +10,18 @@
 import math
 import re
 
-from .models import HarassmentInput
+from .models import HarassmentInput, Likelihood
 from .result import ElementAssessment, AssessmentResult
 from .constants import (
-    BEHAVIOR_TYPE_KEYWORDS,
+    BEHAVIOR_TYPE_PATTERNS,
     SUPERIORITY_SCORES,
     ROLE_KEYWORDS,
-    MAJORITY_KEYWORDS,
+    MAJORITY_RE,
     BEYOND_SCOPE_FACTORS,
     FREQUENCY_MULTIPLIER,
     DURATION_MULTIPLIER,
-    IMPACT_KEYWORDS,
+    IMPACT_PATTERNS,
+    HOLD_REQUIRED_FACTS,
     LIKELIHOOD_HIGH,
     LIKELIHOOD_MEDIUM,
     E1_MET, E1_UNCLEAR,
@@ -61,19 +62,7 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
 
     # 상시 4명 이하는 근로기준법 괴롭힘 규정 미적용 — 법적 근거·대응 절차도 그에 맞춘다.
     # 경고만 바꾸고 이 둘을 그대로 두면 한 결과 안에 "적용되지 않습니다"와 벌칙·과태료가 공존한다.
-    size = _workplace_size_class(inp.business_size)
-    if size == "small":
-        legal_basis, steps = list(SMALL_WORKPLACE_LEGAL), list(SMALL_WORKPLACE_STEPS)
-    elif size == "unknown":
-        # 규모 미확정 — 경고만 조건부로 하고 근거·절차를 단정형으로 두면 한 결과 안에서 안내가
-        # 갈린다(CodeRabbit PR #98). 조건은 조문 전체가 아니라 괄호 안의 **이 용도**에 단다 —
-        # 제109조 제1항·제116조 제2항은 괴롭힘 외 다른 조항 위반도 함께 규정한다(법제처 현행판).
-        legal_basis = [ref.replace(" (", " (상시 5명 이상 사업장의 ", 1) for ref in LEGAL_REFERENCES]
-        legal_basis.append(SMALL_WORKPLACE_LEGAL[0])   # 적용 조건의 근거(시행령 별표 1)
-        steps = [dict(s, description=_IF_COVERED + s["description"]) if s.get("covered_only") else dict(s)
-                 for s in RESPONSE_STEPS]
-    else:
-        legal_basis, steps = list(LEGAL_REFERENCES), list(RESPONSE_STEPS)
+    legal_basis, steps = _legal_basis_and_steps(inp.business_size)
     return AssessmentResult(
         element_1_superiority=e1,
         element_2_beyond_scope=e2,
@@ -85,6 +74,57 @@ def assess_harassment(inp: HarassmentInput) -> AssessmentResult:
         response_steps=steps,
         warnings=warnings,
     )
+
+
+def _legal_basis_and_steps(business_size: str) -> tuple[list[str], list[dict]]:
+    """사업장 규모 3상태에 맞춘 법적 근거·대응 절차(판정·판단 보류 공용).
+
+    상시 4명 이하는 근로기준법 괴롭힘 규정 미적용 — 경고만 바꾸고 근거·절차를 그대로 두면 한 결과 안에
+    "적용되지 않습니다"와 벌칙·과태료가 공존한다. 규모 미확정이면 조건은 조문 전체가 아니라 괄호 안의
+    **이 용도**에 단다 — 제109조 제1항·제116조 제2항은 괴롭힘 외 다른 조항 위반도 함께 규정한다
+    (CodeRabbit PR #98, 법제처 현행판).
+    """
+    size = _workplace_size_class(business_size)
+    if size == "small":
+        return list(SMALL_WORKPLACE_LEGAL), list(SMALL_WORKPLACE_STEPS)
+    if size == "unknown":
+        legal_basis = [ref.replace(" (", " (상시 5명 이상 사업장의 ", 1) for ref in LEGAL_REFERENCES]
+        legal_basis.append(SMALL_WORKPLACE_LEGAL[0])   # 적용 조건의 근거(시행령 별표 1)
+        steps = [dict(st, description=_IF_COVERED + st["description"]) if st.get("covered_only") else dict(st)
+                 for st in RESPONSE_STEPS]
+        return legal_basis, steps
+    return list(LEGAL_REFERENCES), list(RESPONSE_STEPS)
+
+
+_HOLD_REASON_TEXT = {
+    "no_behavior": "질문에서 구체적인 괴롭힘 행위가 확인되지 않아 판정하지 않았습니다.",
+    "no_actor": "행위자와의 관계가 확인되지 않아 판정하지 않았습니다.",
+}
+
+
+def held_assessment(inp: HarassmentInput, reason: str) -> AssessmentResult:
+    """판단 보류 — 사안은 서술됐지만 판정에 필요한 사실(행위·행위자)이 질문에서 확인되지 않을 때.
+
+    3요소를 "확인 필요"로 두고 필요한 사실을 안내한다. 법적 근거·대응 절차는 판정과 같은
+    사업장 규모 3상태 규칙을 따른다 — 요건 설명과 증거 확보 안내는 보류여도 유효하다.
+    """
+    pending = ElementAssessment(status="확인 필요", reasoning="질문에서 확인되지 않음")
+    legal_basis, steps = _legal_basis_and_steps(inp.business_size)
+    warnings = [_HOLD_REASON_TEXT.get(reason, _HOLD_REASON_TEXT["no_behavior"]),
+                "판단에 필요한 사실: " + " / ".join(HOLD_REQUIRED_FACTS)]
+    return AssessmentResult(
+        element_1_superiority=ElementAssessment(element_name="① 지위·관계 우위", **_pending_fields(pending)),
+        element_2_beyond_scope=ElementAssessment(element_name="② 업무 적정범위 초과", **_pending_fields(pending)),
+        element_3_harm=ElementAssessment(element_name="③ 고통·근무환경 악화", **_pending_fields(pending)),
+        likelihood=Likelihood.HOLD.value,
+        legal_basis=legal_basis,
+        response_steps=steps,
+        warnings=warnings,
+    )
+
+
+def _pending_fields(e: ElementAssessment) -> dict:
+    return {"status": e.status, "score": 0.0, "reasoning": e.reasoning}
 
 
 # ── 내부 헬퍼 ──────────────────────────────────────────────────────────────
@@ -179,13 +219,16 @@ def _build_customer_result(inp: HarassmentInput) -> AssessmentResult:
 
 
 def _detect_behavior_types(inp: HarassmentInput) -> list[str]:
-    """입력된 behavior_types + description에서 추가 유형 감지"""
+    """입력된 behavior_types + description에서 추가 유형 감지.
+
+    근거 검증을 거친 입력(grounded)은 **넘겨받은 유형이 단일 출처**다 — 여기서 다시 찾으면
+    불리한 처우 문맥이라 뺀 '전보'가 되살아난다(design-validator H2). 그 외(직접 호출)만 감지한다.
+    """
     types = set(inp.behavior_types)
-    text = f"{inp.behavior_description} {inp.impact}".lower()
-    for btype, keywords in BEHAVIOR_TYPE_KEYWORDS.items():
-        if btype not in types:
-            if any(kw in text for kw in keywords):
-                types.add(btype)
+    if inp.grounded:
+        return sorted(types)
+    text = f"{inp.behavior_description} {inp.impact}"
+    types |= {t for t, rx in BEHAVIOR_TYPE_PATTERNS.items() if rx.search(text)}
     return sorted(types)
 
 
@@ -198,7 +241,7 @@ def _infer_relationship(inp: HarassmentInput) -> tuple[str, str]:
     combined = f"{inp.perpetrator_role} {inp.victim_role} {inp.behavior_description}"
 
     # 인원수 우위 키워드
-    if any(kw in combined for kw in MAJORITY_KEYWORDS):
+    if MAJORITY_RE.search(combined):
         return "다수_소수", f"인원수 우위 감지 ('{inp.perpetrator_role}')"
 
     # 직위 키워드
@@ -297,10 +340,10 @@ def _assess_harm(inp: HarassmentInput, all_types: list[str]) -> ElementAssessmen
     if "따돌림_무시" in all_types:
         score += 0.2
 
-    # impact 키워드 가산
-    impact_text = f"{inp.impact} {inp.behavior_description}".lower()
-    for kw, bonus in IMPACT_KEYWORDS.items():
-        if kw in impact_text:
+    # impact 키워드 가산 — grounded 입력은 질문에서 찾은 피해 표현(impact)만 본다
+    impact_text = inp.impact if inp.grounded else f"{inp.impact} {inp.behavior_description}"
+    for rx, bonus, _label in IMPACT_PATTERNS:
+        if rx.search(impact_text):
             score += bonus
 
     # 기간 가산
@@ -344,18 +387,11 @@ def _calculate_overall(e1: ElementAssessment, e2: ElementAssessment,
     """
     overall = (e1.score * 0.30) + (e2.score * 0.35) + (e3.score * 0.35)
 
-    # 예외1: 3요소 모두 "해당"이면 무조건 "높음"
+    # "높음"은 3요소가 모두 "해당"일 때만 — 괴롭힘은 세 요건을 모두 갖춰야 성립한다.
+    # 종합 점수만으로 "높음"을 내면 요소가 '불분명'이어도 단정이 된다(3차 재평가 9번: ①해당·②불분명·③해당
+    # → 0.67 "높음", claim-authority-and-assessor-facts D9).
     if e1.status == "해당" and e2.status == "해당" and e3.status == "해당":
         return max(overall, LIKELIHOOD_HIGH), "높음"
-
-    # 예외2: 요소1 "미해당"이면 최대 "보통"
-    if e1.status == "미해당":
-        if overall >= LIKELIHOOD_MEDIUM:
-            return overall, "보통"
-        return overall, "낮음"
-
-    if overall >= LIKELIHOOD_HIGH:
-        return overall, "높음"
     if overall >= LIKELIHOOD_MEDIUM:
         return overall, "보통"
     return overall, "낮음"

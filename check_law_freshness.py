@@ -174,16 +174,21 @@ def check_law(name: str, key: str, today: str) -> dict:
 
 
 def _anchor_warnings(key: str, today: str) -> list[str]:
-    """규칙 블록 **조문** 앵커가 다음 시행 판본에서도 참인지(실패 코드 아님 — 경고)."""
+    """규칙 블록·답변 규칙의 **조문** 앵커가 다음 시행 판본에서도 참인지(실패 코드 아님 — 경고).
+
+    답변 규칙(`prompts.ANSWER_RULE_ANCHORS`)도 손으로 쓴 사실이라 같은 점검을 받는다
+    (claim-authority-and-assessor-facts M11 — 규칙 블록만 돌면 새 등록부가 조용히 빠진다)."""
     import fetch_official_rules as fo
     from app.core.rule_facts import RULE_FACTS
+    from app.templates.prompts import ANSWER_RULE_ANCHORS
     articles = {a[0]: a for a in fo.ARTICLES}
     norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
     warnings, next_root = [], {}
-    for fact in RULE_FACTS:
-        for doc_id, phrase in fact.anchors:
+    groups = [(f.name, f.anchors) for f in RULE_FACTS] + [("answer_rules", ANSWER_RULE_ANCHORS)]
+    for group, anchors in groups:
+        for doc_id, phrase in anchors:
             if doc_id not in articles:
-                warnings.append(f"{fact.name}: 앵커 문서 미등록 {doc_id}")
+                warnings.append(f"{group}: 앵커 문서 미등록 {doc_id}")
                 continue
             _, law, no, sub, _k = articles[doc_id]
             try:
@@ -192,18 +197,18 @@ def _anchor_warnings(key: str, today: str) -> list[str]:
                     next_root[law] = ((upcoming[0], fetch_law_root(law, key, ef_yd=upcoming[0]))
                                       if upcoming else None)
             except Exception as e:  # 경고 단계 — 원인을 남기고 다음 앵커로
-                warnings.append(f"{fact.name}: {law} 다음 판본 확인 불가 ({e})")
+                warnings.append(f"{group}: {law} 다음 판본 확인 불가 ({e})")
                 next_root[law] = None
                 continue
             if not next_root[law]:
                 continue
             ef, root = next_root[law]
             if root is None:   # 판본 본문을 못 받았으면 '거짓'이 아니라 '확인 불가'다
-                warnings.append(f"{fact.name}: {law} {ef} 판본 본문 확인 불가")
+                warnings.append(f"{group}: {law} {ef} 판본 본문 확인 불가")
                 continue
             text = _article_texts(root).get(f"{no}의{sub}" if sub else str(no), "")
             if norm(phrase) not in norm(text):
-                warnings.append(f"{fact.name}: {law} 제{no}조 앵커가 {ef}부터 거짓 — {phrase[:30]}")
+                warnings.append(f"{group}: {law} 제{no}조 앵커가 {ef}부터 거짓 — {phrase[:30]}")
     return warnings
 
 
