@@ -35,6 +35,7 @@ class Likelihood(Enum):
     MEDIUM = "보통"
     LOW    = "낮음"
     NA     = "비해당"
+    HOLD   = "판단 보류"   # 질문에서 판정에 필요한 사실이 확인되지 않음(grounding.py)
 
 
 class ElementStatus(Enum):
@@ -70,3 +71,7 @@ class HarassmentInput:
 
     # 사업장
     business_size: str = ""
+
+    # 근거 검증을 거친 입력인가(grounding.derive_input). True면 판정기는 행위 유형을 다시 찾지 않고
+    # (불리한 처우로 뺀 유형이 되살아나지 않게 — design-validator H2), 피해 가산은 impact만 본다.
+    grounded: bool = False

@@ -1,0 +1,233 @@
+{
+ "_comment": "괴롭힘 판정 모드 회귀(claim-authority-and-assessor-facts §1.4). fixture_ref는 평가 질문 id, 나머지는 합성 문장이다. 반례가 정답보다 많다 — 정답 5건만 맞추는 규칙은 흔한 표현에서 틀렸다(M13).",
+ "cases": [
+  {
+   "id": "risk-03",
+   "mode": "skipped",
+   "reason": "no_case",
+   "fixture_ref": "risk-03"
+  },
+  {
+   "id": "risk-04",
+   "mode": "assessed",
+   "reason": "",
+   "fixture_ref": "risk-04"
+  },
+  {
+   "id": "risk-05",
+   "mode": "skipped",
+   "reason": "retaliation",
+   "fixture_ref": "risk-05"
+  },
+  {
+   "id": "risk-06",
+   "mode": "skipped",
+   "reason": "sexual",
+   "fixture_ref": "risk-06"
+  },
+  {
+   "id": "kin-09",
+   "mode": "held",
+   "reason": "no_behavior",
+   "fixture_ref": "kin-09"
+  },
+  {
+   "id": "h1-pos-욕해요",
+   "mode": "assessed",
+   "reason": "",
+   "question": "팀장이 매일 욕해요. 괴롭힘인가요?"
+  },
+  {
+   "id": "h1-pos-욕을들었",
+   "mode": "assessed",
+   "reason": "",
+   "question": "부장님한테 욕을 들었어요"
+  },
+  {
+   "id": "h1-neg-의욕",
+   "mode": "held",
+   "reason": "no_behavior",
+   "question": "괴롭힘 때문에 의욕을 잃었어요. 식욕도 없고요"
+  },
+  {
+   "id": "h1-neg-목욕",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "목욕하고 왔는데 직장 내 괴롭힘 신고 방법이 궁금해요"
+  },
+  {
+   "id": "h2-mixed",
+   "mode": "assessed",
+   "reason": "",
+   "question": "팀장이 매일 욕설을 해서 신고했더니 지방으로 전보됐어요"
+  },
+  {
+   "id": "m3-concept",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "직장 내 괴롭힘 유형(폭언·따돌림·업무 배제)을 설명해 주세요"
+  },
+  {
+   "id": "m3-exclusion",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "5인 미만은 괴롭힘 규정 적용이 배제되나요?"
+  },
+  {
+   "id": "m3-employer",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "직원이 괴롭힘을 당했다고 신고했는데 회사는 무엇을 해야 하나요?"
+  },
+  {
+   "id": "m4-갈궈요",
+   "mode": "assessed",
+   "reason": "",
+   "question": "팀장이 매일 갈궈요"
+  },
+  {
+   "id": "m4-갑질",
+   "mode": "held",
+   "reason": "no_behavior",
+   "question": "부장님 갑질이 심해요"
+  },
+  {
+   "id": "m4-당해서",
+   "mode": "held",
+   "reason": "no_behavior",
+   "question": "괴롭힘을 당해서 퇴사하려고 합니다"
+  },
+  {
+   "id": "m4-neg-무공백",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "이게괴롭힘에해당하나요"
+  },
+  {
+   "id": "m6-신고후발령",
+   "mode": "skipped",
+   "reason": "retaliation",
+   "question": "괴롭힘 신고 후 불리한 부서로 발령이 났어요"
+  },
+  {
+   "id": "m6-신고했는데",
+   "mode": "skipped",
+   "reason": "retaliation",
+   "question": "괴롭힘을 신고했는데 전보 조치가 내려왔습니다"
+  },
+  {
+   "id": "m6-진정했더니",
+   "mode": "skipped",
+   "reason": "retaliation",
+   "question": "노동청에 진정했더니 회사가 징계를 하겠대요"
+  },
+  {
+   "id": "l6-다수",
+   "mode": "assessed",
+   "reason": "",
+   "question": "동료 3명이 저를 따돌려요"
+  },
+  {
+   "id": "l6-규모",
+   "mode": "assessed",
+   "reason": "",
+   "question": "직원 13명인 회사인데 과장이 폭언을 해요"
+  },
+  {
+   "id": "l7-성적인말",
+   "mode": "skipped",
+   "reason": "sexual",
+   "question": "상사가 성적인 말과 욕설을 합니다"
+  },
+  {
+   "id": "구어-소리던짐",
+   "mode": "assessed",
+   "reason": "",
+   "question": "상사가 회의 때마다 소리를 지르고 물건을 던져요"
+  },
+  {
+   "id": "구어-업무안줌",
+   "mode": "assessed",
+   "reason": "",
+   "question": "입사 3년차인데 6개월째 팀장이 업무를 안 줘요"
+  },
+  {
+   "id": "동료-따돌림",
+   "mode": "assessed",
+   "reason": "",
+   "question": "제가 동료에게 따돌림을 당하고 있어요"
+  },
+  {
+   "id": "행위자없음",
+   "mode": "held",
+   "reason": "no_actor",
+   "question": "폭언을 당하고 있는데 어떻게 해야 하나요"
+  },
+  {
+   "id": "c3-줄바꿈",
+   "mode": "assessed",
+   "reason": "",
+   "question": "팀장님은 친절하세요\n매일 욕을 하는 건 동료예요"
+  },
+  {
+   "id": "c3-주격우선",
+   "mode": "assessed",
+   "reason": "",
+   "question": "동료가 팀장 앞에서 매일 욕을 해요"
+  },
+  {
+   "id": "c3-신고접수",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "팀장이 직원에게 매일 욕을 했다는 신고가 들어왔는데 회사는 어떻게 조사해야 하나요"
+  },
+  {
+   "id": "c3-친구회사",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "제 친구 회사에서 사장이 직원들에게 매일 욕을 한대요"
+  },
+  {
+   "id": "c3-자기지칭",
+   "mode": "assessed",
+   "reason": "",
+   "question": "팀장이 저와 다른 직원에게 매일 욕을 해요"
+  },
+  {
+   "id": "c3-이사온",
+   "mode": "held",
+   "reason": "no_actor",
+   "question": "이사 온 뒤로 매일 따돌림을 당하고 있어요"
+  },
+  {
+   "id": "c3-동기부여",
+   "mode": "held",
+   "reason": "no_actor",
+   "question": "동기부여가 안 돼요. 매일 욕을 들어요"
+  },
+  {
+   "id": "c3-대표적으로",
+   "mode": "held",
+   "reason": "no_actor",
+   "question": "대표적으로 매일 욕을 들어요"
+  },
+  {
+   "id": "c3-욕을들어요",
+   "mode": "held",
+   "reason": "no_actor",
+   "question": "매일 욕을 들어요. 어떻게 해야 하나요"
+  },
+  {
+   "id": "c3-과장된",
+   "mode": "assessed",
+   "reason": "",
+   "question": "과장된 소문 때문에 동료들이 저를 무시해요"
+  },
+  {
+   "id": "c8-휴일",
+   "mode": "skipped",
+   "reason": "no_case",
+   "question": "팀장이 휴일을 안 줘요"
+  }
+ ]
+}

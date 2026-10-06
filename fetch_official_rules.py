@@ -70,6 +70,10 @@ ARTICLES = [
     ("ei_act_17",     "고용보험법",                     17,  None, []),
     ("ei_enf_145",    "고용보험법 시행령",               145, None, []),
     ("ei_rule_82_2",  "고용보험법 시행규칙",             82,  2,    []),
+    # 이직사유 판단 주체(직업안정기관의 장이 인정)·미신고 기간 피보험기간 산정(소급 3년) —
+    # unemployment·insured_status 블록과 답변 규칙(ANSWER_RULE_ANCHORS)의 근거(claim-authority-and-assessor-facts)
+    ("ei_act_58",     "고용보험법",                     58,  None, []),
+    ("ei_act_50",     "고용보험법",                     50,  None, []),
     # 상시 4명 이하 사업장 적용 규정(별표 1) — harassment_retaliation 블록의 미적용 문장 근거
     ("lsa_enf_7",     "근로기준법 시행령",               7,   None, []),
 ]

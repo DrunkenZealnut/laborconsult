@@ -1,0 +1,137 @@
+{
+ "_comment": "괴롭힘 도구 인자 실호출 기록(2026-10-05, _extract_params 실호출 질문당 2회). 질문 원문은 data/eval_consultation_queries.json·eval_kin_queries.json의 id로 참조한다 — 근거 검증(C1)과 킬스위치 동치(C10) 테스트용. LLM이 질문에 없는 값을 채운 사례가 들어 있다.",
+ "cases": [
+  {
+   "fixture_ref": "risk-03",
+   "run": 1,
+   "params": {
+    "is_harassment_question": true
+   }
+  },
+  {
+   "fixture_ref": "risk-03",
+   "run": 2,
+   "params": {
+    "is_harassment_question": true
+   }
+  },
+  {
+   "fixture_ref": "risk-04",
+   "run": 1,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "상사가 매일 공개적으로 모욕하고 업무에서 배제함",
+    "behavior_types": [
+     "폭언_모욕",
+     "따돌림_무시"
+    ],
+    "relationship_type": "상급자",
+    "perpetrator_role": "상사",
+    "frequency": "매일",
+    "duration": "6개월"
+   }
+  },
+  {
+   "fixture_ref": "risk-04",
+   "run": 2,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "상사가 매일 공개적으로 모욕하고 업무에서 배제함",
+    "behavior_types": [
+     "폭언_모욕",
+     "따돌림_무시"
+    ],
+    "relationship_type": "상급자",
+    "perpetrator_role": "상사",
+    "frequency": "매일",
+    "duration": "1개월"
+   }
+  },
+  {
+   "fixture_ref": "risk-05",
+   "run": 1,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "직장 내 괴롭힘 신고 후 회사가 불리한 부서로 전보 조치하겠다고 함",
+    "behavior_types": [
+     "부당인사"
+    ],
+    "company_response": "불리한 처우 예고(전보)",
+    "relationship_type": "사용자"
+   }
+  },
+  {
+   "fixture_ref": "risk-05",
+   "run": 2,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "직장 내 괴롭힘 신고 후 회사가 신고자를 불리한 부서로 전보 조치하겠다고 함",
+    "behavior_types": [
+     "부당인사"
+    ],
+    "company_response": "불리한 처우(전보 예고)"
+   }
+  },
+  {
+   "fixture_ref": "risk-06",
+   "run": 1,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "직장 상사가 반복적으로 성적인 발언을 함 (직장 내 성희롱)",
+    "behavior_types": [
+     "폭언_모욕"
+    ],
+    "relationship_type": "상급자",
+    "perpetrator_role": "상사",
+    "frequency": "반복"
+   }
+  },
+  {
+   "fixture_ref": "risk-06",
+   "run": 2,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "직장 상사가 반복적으로 성적인 발언을 함",
+    "behavior_types": [
+     "폭언_모욕"
+    ],
+    "relationship_type": "상급자",
+    "perpetrator_role": "상사",
+    "frequency": "반복"
+   }
+  },
+  {
+   "fixture_ref": "kin-09",
+   "run": 1,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "팀장이 사직서에 실제 사유(직장 내 괴롭힘) 대신 '담석증 수술'로 퇴사 사유를 작성하도록 지시함. 담석증이라는 질병을 가진 근로자에게 압박을 가해 허위 사직 사유를 작성하게 한 것으로 보임",
+    "behavior_types": [
+     "부당업무",
+     "부당인사"
+    ],
+    "perpetrator_role": "팀장",
+    "evidence": [
+     "녹취"
+    ]
+   }
+  },
+  {
+   "fixture_ref": "kin-09",
+   "run": 2,
+   "params": {
+    "is_harassment_question": true,
+    "behavior_description": "팀장이 사직서 사유를 '담석증 수술'로 쓰라고 강요하여 실제 퇴사 사유(직장 내 괴롭힘)를 은폐하도록 함. 관련 녹취 보유.",
+    "behavior_types": [
+     "부당업무"
+    ],
+    "perpetrator_role": "팀장",
+    "relationship_type": "상급자",
+    "evidence": [
+     "녹음"
+    ],
+    "company_response": "미조치"
+   }
+  }
+ ]
+}

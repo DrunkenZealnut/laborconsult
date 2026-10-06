@@ -28,7 +28,8 @@ from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
 from wage_calculator.result import format_result
-from harassment_assessor import assess_harassment, HarassmentInput, format_assessment
+from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
+                                 held_assessment, ground, decide_mode, as_list)
 from app.core.labor_offices import find_commission, format_commission, format_all_commissions
 from app.core.employment_centers import find_center, format_center, format_center_guide
 from app.core.comwel_offices import find_office, format_office, format_office_guide
@@ -796,8 +797,8 @@ WAGE_CALC_TOOL = {
 HARASSMENT_TOOL = {
     "name": "harassment_params",
     "description": (
-        "사용자의 질문이 직장 내 괴롭힘(직장 갑질, 폭언, 따돌림, 부당대우 등)에 관한 것이면 "
-        "is_harassment_question=true로 설정하고 관련 파라미터를 추출하세요. "
+        "사용자가 자기 사안의 직장 내 괴롭힘(직장 갑질, 폭언, 따돌림, 부당대우 등)을 서술한 경우에 "
+        "is_harassment_question=true로 설정하고 관련 파라미터를 추출하세요. 질문에 없는 사실은 채우지 마세요. "
         "임금 계산 질문이나 일반 법률 상담이면 이 도구를 사용하지 마세요."
     ),
     "input_schema": {
@@ -809,53 +810,53 @@ HARASSMENT_TOOL = {
             },
             "perpetrator_role": {
                 "type": "string",
-                "description": "가해자 직위/역할 (예: 팀장, 사장, 선배, 동료, 고객)",
+                "description": "가해자 직위/역할 (예: 팀장, 사장, 선배, 동료, 고객). 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "victim_role": {
                 "type": "string",
-                "description": "피해자 직위/역할 (예: 사원, 인턴, 계약직)",
+                "description": "피해자 직위/역할 (예: 사원, 인턴, 계약직). 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "relationship_type": {
                 "type": "string",
-                "description": "관계 유형: 상급자/사용자/정규직_비정규직/다수_소수/선임_후임/동료/하급자/고객",
+                "description": "관계 유형: 상급자/사용자/정규직_비정규직/다수_소수/선임_후임/동료/하급자/고객. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "behavior_description": {
                 "type": "string",
-                "description": "괴롭힘 행위 상세 설명",
+                "description": "괴롭힘 행위 상세 설명. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "behavior_types": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "행위 유형: 폭행_협박/폭언_모욕/따돌림_무시/부당업무/사적용무/감시_통제/부당인사",
+                "description": "행위 유형: 폭행_협박/폭언_모욕/따돌림_무시/부당업무/사적용무/감시_통제/부당인사. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "frequency": {
                 "type": "string",
-                "description": "빈도: 1회/수회/반복/매일/수개월간",
+                "description": "빈도: 1회/수회/반복/매일/수개월간. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "duration": {
                 "type": "string",
-                "description": "기간: 1회성/1주/1개월/3개월/6개월/1년이상",
+                "description": "기간: 1회성/1주/1개월/3개월/6개월/1년이상. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "witnesses": {
                 "type": "boolean",
-                "description": "목격자 유무",
+                "description": "목격자 유무. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "evidence": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "증거 목록 (예: 녹음, 문자, 진단서)",
+                "description": "증거 목록 (예: 녹음, 문자, 진단서). 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "impact": {
                 "type": "string",
-                "description": "피해 결과 (예: 우울증, 퇴사, 불면 등)",
+                "description": "피해 결과 (예: 우울증, 퇴사, 불면 등). 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "company_response": {
                 "type": "string",
-                "description": "회사의 대응 (예: 미조치, 조사중, 불리한 처우)",
+                "description": "회사의 대응 (예: 미조치, 조사중, 불리한 처우). 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
             "business_size": {
                 "type": "string",
-                "description": "사업장 규모: 5인미만/5인이상/30인이상/300인이상",
+                "description": "사업장 규모: 5인미만/5인이상/30인이상/300인이상. 질문에 명시된 내용만. 없으면 비워 두세요.",
             },
         },
         "required": ["is_harassment_question"],
@@ -885,7 +886,7 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
                     "다음 질문을 분석하세요.\n"
                     "- 임금/수당/퇴직금 등 숫자 계산이 필요하면 wage_params 도구를 사용하세요. "
                     "일별 근로시간이 다르면 합산하여 weekly_total_hours에 넣으세요.\n"
-                    "- 직장 내 괴롭힘/갑질/폭언/따돌림/부당대우 판정이 필요하면 harassment_params 도구를 사용하세요.\n"
+                    "- 사용자가 자기 사안의 직장 내 괴롭힘/갑질/폭언/따돌림/부당대우를 서술해 판정이 필요하면 harassment_params 도구를 사용하세요. 질문에 없는 사실(기간·빈도·회사 대응 등)은 채우지 마세요.\n"
                     "- 일반 법률 상담이면 wage_params에서 needs_calculation=false로 설정하세요.\n"
                     "- 연도가 명시되지 않은 날짜는 오늘 날짜를 기준으로 가장 가까운 과거/현재 날짜로 해석하세요.\n\n"
                     f"질문: {query}"
@@ -1610,28 +1611,89 @@ def _analysis_to_extract_params(analysis) -> dict:
     return {k: v for k, v in params.items() if v is not None}
 
 
-def _run_assessor(params: dict) -> str | None:
+def _consultation_allowed(analysis, calc_result, assessment_result, assessor_info) -> bool:
+    """2-2 법률상담 경로를 돌릴지(claim-authority-and-assessor-facts D14).
+
+    판정이 있으면 판정기가 근거·절차를 대신하므로 생략한다. 판단 보류·미실행·도구 미호출이면 돌린다 —
+    판정기가 잘못 돌아 이 경로까지 건너뛰면 주제별 법령 매핑과 조문이 통째로 빠졌다. 이 셋은
+    `consultation_type`이 비어도 돌린다(분석기가 괴롭힘 질문에는 그 값을 비우라는 지시를 받는다).
+    판정기와 무관한 질문은 예전처럼 `consultation_type`이 있을 때만 돈다 — 설계 공식을 문자 그대로
+    쓰면 모든 질문이 2-2로 간다(설계 §13 X12). 성희롱은 괴롭힘 기본 조문(제76조의2·3)이 실리므로
+    생략한다 — 2-1 relevant_laws와 RAG가 맡는다.
+    """
+    if not analysis or calc_result:
+        return False
+    info = assessor_info or {}
+    mode = info.get("mode")
+    if assessment_result and mode in ("assessed", "off"):
+        return False
+    if info.get("reason") == "sexual":
+        return False
+    return bool(getattr(analysis, "consultation_type", None)) or mode in ("held", "skipped", "not_called")
+
+
+def _not_called_info(tool_type: str, query: str) -> dict:
+    """괴롭힘 키워드였지만 도구가 판정을 고르지 않았을 때의 metadata.assessor(L12).
+
+    성희롱 여부는 LLM 없이 질문에서 정해지므로 여기서도 계산한다 — 없으면 미호출 성희롱 질문에 2-2가
+    돌아 괴롭힘 기본 조문(제76조의2·3)이 실렸다(Check §3-1). tool은 wage·none(추출 실패)을 구분한다.
+    """
+    info = {"mode": "not_called", "tool": tool_type}
+    try:
+        if decide_mode(query).reason == "sexual":
+            info["reason"] = "sexual"
+    except Exception:   # 관측용 — 실패해도 상담 경로를 막지 않는다
+        logger.warning("괴롭힘 미호출 모드 계산 실패", exc_info=True)
+    return info
+
+
+def _run_assessor(params: dict, query: str) -> tuple[str | None, dict]:
+    """괴롭힘 판정 — 판정 입력을 **질문 본문에서 도출**하고 판정 여부를 정한다
+    (claim-authority-and-assessor-facts D5~D8·D15).
+
+    반환: (컨텍스트에 넣을 판정 텍스트 또는 None, metadata.assessor 기록). None이면 판정하지 않았다는
+    뜻이고, 그때는 2-2 법률상담 경로가 돈다. 도구 인자(LLM 추출)는 판정에 쓰지 않는다 — 질문에 없는
+    기간·회사 대응·행위 유형을 채웠다(실측). `query`는 첨부를 뺀 본문이다(D6).
+    킬스위치 `ASSESSOR_GROUNDING=off`면 도구 인자를 그대로 쓰는 이전 경로로 판정한다(D13).
+    """
     if not params or not params.get("is_harassment_question"):
-        return None
+        return None, {"mode": "skipped", "reason": "not_harassment"}
+    if os.getenv("ASSESSOR_GROUNDING", "on").strip().lower() == "off":
+        return _run_assessor_legacy(params), {"mode": "off"}
+    try:
+        g = ground(params, query)
+        info = {"mode": g.mode, "reason": g.reason, "dropped": g.dropped}
+        info = {k: v for k, v in info.items() if v}
+        if g.mode == "skipped":
+            return None, info
+        result = assess_harassment(g.inp) if g.mode == "assessed" else held_assessment(g.inp, g.reason)
+        return format_assessment(result), info
+    except Exception as e:   # 판정 실패는 미실행으로 흡수한다 — 오류문을 '판정 결과'로 주입하지 않는다(D15)
+        logger.warning("괴롭힘 판정 실패(미실행 처리): %s", e)
+        return None, {"mode": "skipped", "reason": "error"}
+
+
+def _run_assessor_legacy(params: dict) -> str | None:
+    """킬스위치 off 경로 — 도구 인자를 그대로 판정 입력으로 쓴다(이전 동작)."""
     inp = HarassmentInput(
         perpetrator_role=params.get("perpetrator_role", ""),
         victim_role=params.get("victim_role", ""),
         relationship_type=params.get("relationship_type", ""),
         behavior_description=params.get("behavior_description", ""),
-        behavior_types=params.get("behavior_types", []),
+        behavior_types=as_list(params.get("behavior_types")),
         frequency=params.get("frequency", ""),
         duration=params.get("duration", ""),
         witnesses=params.get("witnesses", False),
-        evidence=params.get("evidence", []),
+        evidence=as_list(params.get("evidence")),
         impact=params.get("impact", ""),
         company_response=params.get("company_response", ""),
         business_size=params.get("business_size", ""),
     )
     try:
-        result = assess_harassment(inp)
-        return format_assessment(result)
+        return format_assessment(assess_harassment(inp))
     except Exception as e:
-        return f"[괴롭힘 판정 오류: {e}]"
+        logger.warning("괴롭힘 판정 실패(이전 경로): %s", e)
+        return None
 
 
 # ── 답변 생성 ─────────────────────────────────────────────────────────────────
@@ -1664,7 +1726,8 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
      "관련 판례가 있을 수 있으나 구체적 번호는 law.go.kr에서 확인이 필요합니다"로 안내하세요.
    - 절대로 기억이나 추측으로 판례 번호를 생성하지 마세요.
 7. **괴롭힘 판정 결과가 포함된 경우**:
-   - 판정기의 3요소 판정 결과와 종합 가능성을 그대로 사용하세요.
+   - 판정기 결과는 질문에 나온 사실만으로 낸 것입니다. 3요소 판정과 근거를 설명하되, 사실관계가 더 있으면 결론이 달라질 수 있다고 함께 쓰세요.
+   - '판단 보류'면 해당 여부를 단정하지 말고 확인할 사실을 안내하세요.
    - 판정 근거, 법적 조문, 대응 절차, 주의사항을 자연스럽게 설명하세요.
    - 면책 문구(법적 효력 없는 참고 정보)를 반드시 포함하세요.
 8. 법적 조언이 아닌 정보 제공임을 명심하세요.
@@ -1842,6 +1905,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 2. 질문 분류 + 파라미터 추출
     calc_result = None
     assessment_result = None
+    assessor_info: dict | None = None   # metadata.assessor — 판정 모드·사유·버린 필드명
     params = None
 
     if use_analysis_params and analysis:
@@ -1877,10 +1941,12 @@ def process_question(query: str, session: Session, config: AppConfig,
                 if calc_result:
                     yield {"type": "meta", "calc_result": calc_result}
             elif tool_type == "harassment" and params and params.get("is_harassment_question"):
-                yield {"type": "status", "text": "괴롭힘 판정 중..."}
-                assessment_result = _run_assessor(params)
-                if assessment_result:
+                assessment_result, assessor_info = _run_assessor(params, query)
+                if assessment_result:   # 미실행이면 "판정 중" 상태도 내지 않는다(L11)
+                    yield {"type": "status", "text": "괴롭힘 판정 중..."}
                     yield {"type": "meta", "assessment_result": assessment_result}
+            if harass_likely and assessor_info is None:
+                assessor_info = _not_called_info(tool_type, query)
         # else: 순수 비계산·비괴롭힘 상담 → _extract_params 생략, RAG/상담 경로로 진행
 
     # 2-1. 법령 API 조문 조회 (선택적 — API 키 있고 relevant_laws 추출 시)
@@ -2096,16 +2162,18 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 2-2. 법률상담 전용 경로 (consultation_type 감지 시)
     consultation_context = None
     consultation_hits = []
-    if (analysis
-            and analysis.consultation_type
-            and not calc_result
-            and not assessment_result):
+    # 판정이 있으면 판정기가 근거·절차를 대신하므로 생략한다. 판단 보류·미실행·도구 미호출이면 돌리고
+    # 주제가 비면 "직장내괴롭힘"으로 넘긴다. 성희롱은 괴롭힘 기본 조문(제76조의2·3)이 실리므로 생략한다
+    # (claim-authority-and-assessor-facts D14·X12 — 조건은 _consultation_allowed가 단일 출처).
+    _assessor_ran = (assessor_info or {}).get("mode") in ("held", "skipped", "not_called")
+    if _consultation_allowed(analysis, calc_result, assessment_result, assessor_info):
         yield {"type": "status", "text": "법률 자료 검색 중..."}
         try:
             consultation_law_stats: dict = {}
             consultation_context, consultation_hits = process_consultation(
                 query=query,
-                consultation_topic=analysis.consultation_topic,
+                consultation_topic=(analysis.consultation_topic
+                                    or ("직장내괴롭힘" if _assessor_ran else None)),
                 relevant_laws=analysis.relevant_laws,
                 config=config,
                 law_api_stats=consultation_law_stats,
@@ -2235,7 +2303,12 @@ def process_question(query: str, session: Session, config: AppConfig,
     for _rf_name, _rf_block in rule_fact_blocks:
         parts.append(_rf_block)
     if assessment_result:
-        parts.append(f"괴롭힘 판정 결과 (판정기 분석 — 이 결과를 사용하세요):\n\n{assessment_result}")
+        # 옛 라벨은 판정을 그대로 쓰라고 지시해 답변 규칙("요건이 불분명하면 단정하지 말라")을 이겼다(3차 9번, D10)
+        if (assessor_info or {}).get("mode") == "held":
+            _label = "괴롭힘 판정기: 판단 보류 — 해당 여부를 단정하지 말고 아래 확인 사항과 요건을 안내하세요:"
+        else:
+            _label = "괴롭힘 판정 결과 (질문에 나온 사실만으로 판정 — 사실이 더 있으면 결론이 달라질 수 있음):"
+        parts.append(f"{_label}\n\n{assessment_result}")
     if nlrc_text:
         parts.append(f"중앙노동위원회 주요판정사례 (법제처 국가법령정보센터 조회):\n\n{_cap(nlrc_text, 4000)}")
     if legal_articles_text:
@@ -2428,6 +2501,11 @@ def process_question(query: str, session: Session, config: AppConfig,
         # 계산기가 실행되지 않는 경로(시급 미제공 등)에서 LLM이 산식을 직접 고른다.
         from app.templates.prompts import WAGE_CALC_RULES, ANSWER_ACCURACY_RULES
         system_prompt = system_prompt + WAGE_CALC_RULES + ANSWER_ACCURACY_RULES
+        # 판단 보류 지시 — 보류면 2-2가 돌아 CONSULTATION_SYSTEM_PROMPT를 쓰는데 판정기 항목(7번)은
+        # SYSTEM_PROMPT_TEMPLATE에만 있다. 같은 이유로 두 분기 공통 접미하고, 보류일 때만 붙인다(Check §3-5).
+        if (assessor_info or {}).get("mode") == "held":
+            from app.templates.prompts import HELD_ASSESSMENT_RULES
+            system_prompt = system_prompt + HELD_ASSESSMENT_RULES
         for provider, text in _stream_answer(messages, system_prompt, config, outcome):
             if not text:
                 # 전환 하트비트 — 내용 없음. 프론트 idle 타이머만 리셋한다 (FR-03).
@@ -2644,6 +2722,9 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 관측 지점이다(eflaw 장애·법령명 문제·판례 번호 오기가 여기서 드러난다).
     if any(law_api_stats.get(k) for k in ("miss", "error", "prec_rejected")):
         conv_metadata["law_api"] = dict(law_api_stats)
+    # 판정기 모드·사유·버린 필드명(값은 남기지 않는다) — 게시판 제외 사유가 아니다
+    if assessor_info:
+        conv_metadata["assessor"] = assessor_info
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
     conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
     logger.info(
