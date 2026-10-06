@@ -75,11 +75,17 @@ def _rx(pattern: str, *, exclude: str | None = None, flags: int = 0) -> Callable
 _SPOUSE = r"(배우자|아내|와이프|부인)\s*(가|이|의)?\s*"
 _FOREIGN_PERMIT = re.compile(r"(?<![A-Za-z0-9])E\s*-?\s*9(?!\d)|고용\s*허가", re.I)
 _FOREIGN = re.compile(r"외국인")
-_WORKPLACE_CHANGE = re.compile(r"(사업장|근무처)\s*(을|를)?\s*(변경|바꾸|옮기)")
+# "회사 변경"(topic30 8번)도 같은 뜻이다. '퇴사'는 넣지 않는다 — "외국인 퇴사 후 퇴직금"은 사업장 변경 질문이 아니다.
+_WORKPLACE_CHANGE = re.compile(r"(사업장|근무처|회사|직장)\s*(을|를)?\s*(변경|바꾸|옮기|이동)")
 
 
 def _foreign_workplace_change(q: str) -> bool:
-    return bool(_FOREIGN_PERMIT.search(q)) or bool(_FOREIGN.search(q) and _WORKPLACE_CHANGE.search(q))
+    """외국인 고용 신호(E-9·고용허가·외국인) **와** 사업장 변경 문맥이 함께 있을 때만.
+
+    E-9만으로 발동하면 "E-9 근로자 출국만기보험·퇴직금" 질문에 제25조(사업장 변경)가 첫 근거로 실린다
+    (CodeRabbit PR #102)."""
+    foreign = bool(_FOREIGN_PERMIT.search(q) or _FOREIGN.search(q))
+    return foreign and bool(_WORKPLACE_CHANGE.search(q))
 
 
 # 표 순서가 우선순위다(최대 3개만 남는다).

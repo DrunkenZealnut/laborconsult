@@ -151,8 +151,14 @@ def fetch_recent_law(db, window: int = LAW_WINDOW) -> list[dict]:
             .order("created_at", desc=True).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1) \
             .execute().data or []
         rows += chunk
-        found = sum(1 for r in rows if is_real_law(r) and _article_requested(law_record(r)))
-        if found >= window or len(chunk) < PAGE_SIZE:
+        # 페이지 사이에 새 행이 저장되면 경계 행이 다음 페이지에 다시 온다 — judge_law처럼 id로 중복을
+        # 빼고 세야 한다. 두 번 세면 실제 표본이 window보다 적은 채로 멈춰 분모가 모자라 판정이 보류된다
+        # (CodeRabbit PR #102).
+        seen: set = set()
+        for r in rows:
+            if is_real_law(r) and _article_requested(law_record(r)):
+                seen.add(r.get("id") or (r.get("created_at"), id(r)))
+        if len(seen) >= window or len(chunk) < PAGE_SIZE:
             break
     return rows
 

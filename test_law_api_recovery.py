@@ -587,6 +587,7 @@ class KeywordLawsTest(unittest.TestCase):
         ("출산전후휴가 90일 쓰는데 회사가 싫어해요", "근로기준법 제74조"),
         ("E-9 비자인데 사업장 변경하고 싶어요", "제25조"),
         ("외국인 근로자인데 사업장을 바꾸고 싶어요", "제25조"),
+        ("E-9비자로 3년 근무하면 회사 변경이 몇 번 가능한가요", "제25조"),
         ("불법파견이면 직접고용 의무가 있나요", "제6조의2"),
         ("고등학생 알바인데 밤 10시 넘어서 일해요", "근로기준법 제70조"),
         ("취업규칙 불이익 변경에 동의 안 했어요", "근로기준법 제94조"),
@@ -599,6 +600,8 @@ class KeywordLawsTest(unittest.TestCase):
     NEGATIVES = [
         ("아내가 임신 중인데 단축근무 되나요", "제74조"),
         ("외국인 근로자 퇴직금 계산", "제25조"),
+        ("E-9 근로자인데 출국만기보험이랑 퇴직금 차이가 뭔가요", "제25조"),   # CodeRabbit PR #102
+        ("고용허가제 외국인 근로자 최저임금 적용되나요", "제25조"),
         ("경영상 어려움으로 임금이 삭감됐어요", "제24조"),
         ("연차휴가 며칠인가요", "법률 제"),
         ("주휴수당 계산해주세요", "제"),
@@ -762,6 +765,40 @@ class MonitorTest(unittest.TestCase):
         with mock.patch("app.core.storage.make_supabase_client", return_value=Db()), \
              mock.patch("sys.argv", ["check_llm_fallback.py"]), mock.patch("builtins.print"):
             self.assertEqual(c.main(), 2)
+
+    def test_r11_fetch_counts_distinct_rows_across_pages(self):
+        """페이지 경계 행이 다음 페이지에 다시 와도(새 행 저장) 같은 행을 두 번 세지 않는다(CodeRabbit PR #102)."""
+        import check_llm_fallback as c
+        rows = [self._row(i) for i in range(12)]   # 조문 요청 행 12개, 최신순 정렬은 아래 페이지가 맡는다
+        rows.sort(key=lambda r: r["created_at"], reverse=True)
+        pages = [rows[0:3], rows[2:5], rows[5:8], rows[8:11], rows[11:12]]   # 경계 행이 겹친다
+
+        class Db:
+            def __init__(self):
+                self.calls = 0
+
+            def table(self, *_):
+                return self
+
+            def select(self, *_):
+                return self
+
+            def order(self, *_a, **_k):
+                return self
+
+            def range(self, a, b):
+                self.data = pages[self.calls] if self.calls < len(pages) else []
+                self.calls += 1
+                return self
+
+            def execute(self):
+                return self
+        db = Db()
+        with mock.patch.object(c, "PAGE_SIZE", 3):
+            got = c.fetch_recent_law(db, window=6)
+        distinct = {r["id"] for r in got}
+        self.assertGreaterEqual(len(distinct), 6, "중복을 빼고도 window개를 모을 때까지 읽는다")
+        self.assertEqual(db.calls, 3, "중복을 두 번 세면 2페이지(행 6개, 실제 5개)에서 멈춘다 — 경계가 겹치면 더 읽어야 한다")
 
     def test_r11_monitor_does_not_import_requests_stack(self):
         src = (ROOT / "check_llm_fallback.py").read_text(encoding="utf-8")
