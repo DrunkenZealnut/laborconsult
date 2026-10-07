@@ -76,6 +76,16 @@ ARTICLES = [
     ("ei_act_50",     "고용보험법",                     50,  None, []),
     # 상시 4명 이하 사업장 적용 규정(별표 1) — harassment_retaliation 블록의 미적용 문장 근거
     ("lsa_enf_7",     "근로기준법 시행령",               7,   None, []),
+    # '상시 5명 이상' 적용 조건 답변 규칙(ANSWER_RULE_ANCHORS)과 산재 시효(occupational_cardio 블록)의
+    # 근거(law-article-coverage D12). 앵커 전용이라 keys가 비어 있고, 업로더가 Pinecone에 올리지 않는다.
+    ("lsa_act_11",    "근로기준법",                     11,  None, []),
+    ("fta_act_3",     "기간제 및 단시간근로자 보호 등에 관한 법률", 3, None, []),
+    ("fta_enf_2",     "기간제 및 단시간근로자 보호 등에 관한 법률 시행령", 2, None, []),
+    ("mw_act_3",      "최저임금법",                     3,   None, []),
+    ("erb_act_3",     "근로자퇴직급여 보장법",            3,   None, []),
+    ("eeo_act_3",     "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률", 3, None, []),
+    ("eeo_enf_2",     "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률 시행령", 2, None, []),
+    ("iaci_act_112",  "산업재해보상보험법",              112, None, []),
 ]
 
 # 조문이 "고용노동부장관이 고시하는 금액"으로 **위임**하는 수치들 — 조문만으로는
@@ -98,7 +108,16 @@ ADMRULS = [
     # "보건복지부장관이 정하여 고시하는 금액"에서 끝나 근거로 쓸 수 없다.
     ("nhi_cap",     "월별 보험료액의 상한과 하한", "월별 건강보험료액의 상한과 하한에 관한 고시",
      "보건복지부", ["insurance.health_premium_max", "insurance.health_premium_min"]),
+    # 뇌혈관·심장 질병 업무관련성 인정기준(고용노동부고시 제2026-14호) — occupational_cardio 블록의 앵커 원문
+    # (law-article-coverage D11). 승인 키가 없는 앵커 전용 문서다.
+    ("cardio_notice", "뇌혈관 질병",
+     "뇌혈관 질병 또는 심장 질병 및 근골격계 질병의 업무상 질병 인정 여부 결정에 필요한 사항",
+     "고용노동부", []),
 ]
+
+# 게시판 첨부(PDF·HWPX·"…을 …로" 일부개정 형식)는 앵커 원문과 문자열이 달라질 수 있다 — 이 문서들은 법제처
+# 통합본(조문내용)으로만 받는다. 발령번호는 게시판에서 받아 헤더에 남긴다(board_find).
+ADMRUL_LAW_GO_KR_ONLY = {"cardio_notice"}
 
 
 def kst_today() -> str:
@@ -499,6 +518,11 @@ def check_updates(only: str | None = None) -> int:
         if dept not in BOARDS:
             print(f"  · {exact}: {dept} — 게시판 파서 없음, 수동 확인 필요")
             continue
+        if doc_id in ADMRUL_LAW_GO_KR_ONLY:
+            # 게시판 목록(최근 100건)에 오래된 고시가 없으면 매번 '조회 실패'로 찍힌다. 현행 대조는
+            # check_law_freshness --anchors가 법제처 현행 고시로 한다(law-article-coverage D11).
+            print(f"  · {exact}: 법제처 고정 문서 — check_law_freshness --anchors가 현행 대조")
+            continue
         checked += 1
         stored = stored_notice(doc_id)
         board = board_find(dept, exact)          # 첨부는 받지 않는다(발령번호만 본다)
@@ -627,8 +651,8 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="조회만 하고 파일을 쓰지 않는다")
     parser.add_argument("--only", help="이 기준 키에 관련된 문서만 수집")
     parser.add_argument("--doc", action="append",
-                        help="이 doc_id만 수집(반복 가능). 고시는 건너뛴다 — 기존 문서를 다시 받으면 "
-                             "본문 변화로 sha256 이 바뀌어 승인 근거가 무효가 될 수 있다")
+                        help="이 doc_id만 수집(반복 가능, 조문·고시 모두). 이미 수집한 승인 근거 문서를 "
+                             "다시 받으면 본문 변화로 sha256 이 바뀌어 승인 근거가 무효가 될 수 있다")
     parser.add_argument("--skip-url-check", action="store_true",
                         help="official_url 확인 생략(오프라인 점검용 — 운영 수집에는 쓰지 말 것)")
     parser.add_argument("--check-updates", action="store_true",
@@ -700,7 +724,7 @@ def main(argv=None) -> int:
         # ① 소관부처 게시판 우선. 법제처는 시행일에야 페이지를 열어, 발령만 된 고시를
         #    놓친다(2027년 최저임금 고시 실측). 게시판에는 발령 즉시 올라온다.
         doc, url, issuer = None, None, None
-        if BOARDS.get(dept, {}).get("body"):
+        if BOARDS.get(dept, {}).get("body") and doc_id not in ADMRUL_LAW_GO_KR_ONLY:
             try:
                 doc = fetch_board_instruction(dept, exact)
             except Exception as exc:

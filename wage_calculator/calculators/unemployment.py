@@ -144,7 +144,7 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
             is_involuntary = True
             warnings.append(
                 "노무제공자 소득 30% 이상 감소로 비자발적 이직 인정 "
-                "(고용보험법 시행규칙 제101조의5)."
+                "(고용보험법 제77조의8 제1항 제3호, 같은 법 시행령 제104조의15 제1항)."
             )
     else:
         # ① 피보험단위기간 부족 (일반 근로자)
