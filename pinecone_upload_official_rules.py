@@ -116,6 +116,30 @@ def build_vectors(doc: dict) -> list[dict]:
     return out
 
 
+def collect_docs(src_dir: str, only: str | None = None) -> tuple[list[dict], list[str], list[str]]:
+    """적재할 문서, 형식 미충족 파일, 앵커 전용 문서(doc_id)를 나눈다.
+
+    앵커 전용 문서(승인 기준 키 없음 — 규칙 블록·답변 규칙의 원문 대조용)는 올리지 않는다(law-article-coverage
+    D12). 올리면 official: True 공식 원문 전용 조회와 관리 화면 목록이 승인과 무관한 조문으로 희석되고, BM25
+    재빌드(약 3.5시간)가 따라온다. 적재 원장의 14건은 모두 keys가 있는 문서다.
+    """
+    docs, skipped, anchor_only = [], [], []
+    for name in sorted(os.listdir(src_dir)):
+        if not name.endswith(".md"):
+            continue
+        doc = parse_doc(os.path.join(src_dir, name))
+        if doc is None:
+            skipped.append(name)
+            continue
+        if only and doc["doc_id"] != only:
+            continue
+        if not doc["keys"]:
+            anchor_only.append(doc["doc_id"])
+            continue
+        docs.append(doc)
+    return docs, skipped, anchor_only
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -130,20 +154,12 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 1
 
-    docs, skipped = [], []
-    for name in sorted(os.listdir(SRC_DIR)):
-        if not name.endswith(".md"):
-            continue
-        doc = parse_doc(os.path.join(SRC_DIR, name))
-        if doc is None:
-            skipped.append(name)
-            continue
-        if args.only and doc["doc_id"] != args.only:
-            continue
-        docs.append(doc)
+    docs, skipped, anchor_only = collect_docs(SRC_DIR, args.only)
 
     if skipped:
         print(f"[경고] 헤더/본문/https 요건 미충족 {len(skipped)}건 건너뜀: {', '.join(skipped)}")
+    if anchor_only:
+        print(f"앵커 전용 문서(keys 없음) {len(anchor_only)}건은 적재하지 않음")
     if not docs:
         print("[오류] 적재할 문서가 없습니다", file=sys.stderr)
         return 1

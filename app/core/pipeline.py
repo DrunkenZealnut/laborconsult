@@ -1110,6 +1110,16 @@ _KNOWLEDGE_MODULES = [
 # wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
 _WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
 
+# 사업장 규모에 따라 결과가 달라지는 계산(상시 4명 이하면 근로기준법 시행령 별표 1에 없는 규정 — 가산임금
+# 제56조·연차 제60조·휴업수당 제46조·관공서 공휴일 제55조②·근로시간 제50~53조·보상휴가 제57조). 규모가 질문에
+# 없으면 BusinessSize.OVER_5로 계산하므로, 그 가정을 결과에 밝힌다(law-article-coverage D15 ②) — 계산 결과는
+# "이 수치를 사용하세요"로 주입돼 답변의 '5인 조건' 규칙과 어긋나면 수치가 이긴다.
+_SIZE_DEPENDENT_TARGETS = frozenset({"overtime", "annual_leave", "comprehensive", "flexible_work",
+                                     "compensatory_leave", "public_holiday", "shutdown_allowance",
+                                     "weekly_hours_check"})
+_SIZE_ASSUMED_NOTE = ("※ 사업장 규모가 질문에 없어 상시 5명 이상으로 계산했습니다. 상시 4명 이하이면 "
+                      "가산수당·연차휴가·휴업수당·관공서 공휴일 유급휴일 등은 적용되지 않습니다.")
+
 
 def _wageless_weekly_holiday(weekly_days, daily_hours) -> str | None:
     """시급 없이 주휴 **시간**만 확정한 계산 블록. 근무일수·1일 시간이 둘 다 명시돼야 한다.
@@ -1393,6 +1403,8 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             result.formulas = [f for f in result.formulas
                                if not f.startswith("[통상임금]")]
         formatted = format_result(result)
+        if not params.get("business_size") and _SIZE_DEPENDENT_TARGETS.intersection(targets):
+            formatted = f"{formatted}\n\n{_SIZE_ASSUMED_NOTE}"
         # 시급 없는 계산기와 주휴 시간을 함께 물으면 둘 다 넘긴다 — 하나라도 실행되면
         # 주휴 블록이 버려지던 경로(CodeRabbit PR #91).
         return f"{holiday_hours_block}\n\n{formatted}" if holiday_hours_block else formatted
@@ -2348,6 +2360,9 @@ def process_question(query: str, session: Session, config: AppConfig,
     if nlrc_text:
         parts.append(f"중앙노동위원회 주요판정사례 (법제처 국가법령정보센터 조회):\n\n{_cap(nlrc_text, 4000)}")
     if legal_articles_text:
+        if len(legal_articles_text) > 5000:
+            # 키워드 조문 뒤에 오는 의도분석 조문이 먼저 잘린다 — 빈도를 보려고 남긴다(law-article-coverage §3.6)
+            logger.info("2-1 조문 텍스트 %d자 → 5000자에서 절삭", len(legal_articles_text))
         parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{_cap(legal_articles_text, 5000)}")
     # 이미지 첨부는 Vision 블록으로 전달되므로 텍스트 프롬프트에서 제외 — 이중 주입 방지 (DB-5)
     non_vision_attachment_text = "\n\n".join(

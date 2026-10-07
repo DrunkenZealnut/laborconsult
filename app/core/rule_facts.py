@@ -31,6 +31,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
+from harassment_assessor.grounding import is_sexual_harassment
+
 logger = logging.getLogger(__name__)
 
 # 2차 재평가 3·7·18번은 실업급여+피보험자격 확인, 17번은 실업급여+해고예고가 동시에 필요했다.
@@ -104,6 +106,17 @@ def _dismissal_detect(q: str, a) -> bool:
     if "해고" not in q:
         return False
     return _topic(a) == "해고·징계" or bool(_SHORT_TENURE_RE.search(q))
+
+
+# 뇌혈관·심장 질병 + 산재 문맥(law-article-coverage D11). '근무'·'일하' 같은 넓은 문맥은 실업급여·병가·퇴직
+# 질문에 붙었다(코퍼스 표본). '장기요양급여'는 산재 요양급여가 아니다.
+_CARDIO_RE = re.compile(r"뇌\s*(출혈|경색|졸중|혈관\s*(질환|질병))|지주막하|심근\s*경색|협심증"
+                        r"|심장\s*(마비|질환|질병|돌연사)|급성\s*심장|대동맥\s*(박리|류)|돌연사|과로사")
+_IACI_CONTEXT_RE = re.compile(r"산재|산업\s*재해|업무상\s*(재해|질병)|(?<!장기)요양\s*(급여|신청)|근로복지공단|과로")
+
+
+def _cardio_detect(q: str, a) -> bool:
+    return bool(_CARDIO_RE.search(q)) and (bool(_IACI_CONTEXT_RE.search(q)) or _topic(a) == "산재보상")
 
 
 # 순서 = 상한(MAX_BLOCKS)을 넘칠 때의 우선순위. 실측 오류 클래스가 무거운 것부터.
@@ -190,7 +203,11 @@ RULE_FACTS: tuple[RuleFact, ...] = (
     ),
     RuleFact(
         name="harassment_retaliation",
-        detect=lambda q, a: _topic(a) == "직장내괴롭힘" or _has(q, _HARASSMENT_WORDS),
+        # 성희롱만 묻는 질문은 주제 enum에 성희롱이 없어 "직장내괴롭힘"으로 분류된다 — 그때 이 블록의
+        # "사업장 규모를 먼저 확인" 문장이 붙으면 규모와 무관한 남녀고용평등법 사안에 5인 조건을 다는
+        # 오답이 된다(topic30 4번, law-article-coverage D16). 본문에 '괴롭힘'이 있으면 그대로 붙는다.
+        detect=lambda q, a: _has(q, _HARASSMENT_WORDS) or (
+            _topic(a) == "직장내괴롭힘" and not is_sexual_harassment(q)),
         lines=(
             "사용자는 직장 내 괴롭힘 발생 사실을 신고한 근로자와 피해근로자등에게 해고나 그 밖의 "
             "불리한 처우를 해서는 안 된다(근로기준법 제76조의3 제6항). 위반하면 3년 이하의 징역 또는 "
@@ -210,6 +227,49 @@ RULE_FACTS: tuple[RuleFact, ...] = (
                  # 이미 반영한 본문을 돌려줘 "삭제"를 현행으로 오인했다(2차 외부 재평가 9번 지적).
                  ("lsa_act_109", "제76조의3제6항을 위반한 자는 3년 이하의 징역 또는 3천만원 이하의 벌금"),
                  ("lsa_enf_7", "상시 4명 이하의 근로자를 사용하는 사업 또는 사업장에 적용하는 법 규정은 별표 1과 같다")),
+    ),
+    RuleFact(
+        name="occupational_cardio",
+        detect=_cardio_detect,
+        lines=(
+            "뇌혈관·심장 질병의 업무관련성은 고용노동부고시 제2026-14호로 판단한다. 만성 과로: 발병 전 12주 동안 "
+            "업무시간이 1주 평균 60시간(발병 전 4주 동안 1주 평균 64시간)을 초과하면 관련성이 강하다. 52시간을 "
+            "초과하면 길어질수록 관련성이 증가하고, 업무부담 가중요인(근무일정 예측이 어려운 업무·교대제·휴일 부족·"
+            "유해 작업환경(한랭·온도변화·소음)·높은 육체적 강도·시차가 큰 잦은 출장·정신적 긴장)이 있으면 관련성이 "
+            "강하다. 52시간을 넘지 않아도 가중요인에 복합적으로 노출되면 관련성이 증가한다.",
+            "오후 10시부터 다음 날 6시까지의 야간근무는 주간근무의 30%를 가산(휴게시간 제외)해 업무시간을 산출한다. "
+            "근로기준법 제63조 제3호의 감시·단속적 근로로 승인받은 경우와 이와 유사한 업무는 제외한다.",
+            "단기 과로: 발병 전 1주일 이내 업무의 양이나 시간이 이전 12주(발병 전 1주일 제외)의 1주 평균보다 "
+            "30퍼센트 이상 늘었거나, 업무 강도·책임·환경이 적응하기 어려운 정도로 바뀐 경우다.",
+            "급성: 증상 발생 전 24시간 이내에 업무와 관련된 돌발적이고 예측 곤란한 사건의 발생과 급격한 업무 환경의 "
+            "변화가 있고, 그로 인해 뇌혈관·심장혈관의 병변 등이 자연경과를 넘어 급격하고 뚜렷하게 악화된 경우다.",
+            "보험급여를 받을 권리는 3년간 행사하지 않으면 시효로 소멸하고, 장해급여·유족급여·장례비·진폐보상연금·"
+            "진폐유족연금은 5년이다(산업재해보상보험법 제112조 제1항). 오래된 사건이면 시효부터 확인하고, 발병 전 "
+            "4주·12주 근무표와 출퇴근 기록을 확보하도록 안내한다.",
+        ),
+        sources="고용노동부고시 제2026-14호(뇌혈관 질병 또는 심장 질병 및 근골격계 질병의 업무상 질병 인정 여부 "
+                "결정에 필요한 사항), 산업재해보상보험법 제112조",
+        as_of="2026-10-07",
+        anchors=(
+            ("cardio_notice", "발병 전 12주 동안 업무시간이 1주 평균 60시간(발병 전 4주 동안 1주 평균 64시간)을 "
+                              "초과하는 경우에는 업무와 질병과의 관련성이 강하다고 평가한다"),
+            ("cardio_notice", "1주 평균 업무시간이 52시간을 초과하는 경우에는 업무시간이 길어질수록 업무와 질병과의 "
+                              "관련성이 증가하는 것으로 평가한다"),
+            ("cardio_notice", "① 근무일정 예측이 어려운 업무 ② 교대제 업무 ③ 휴일이 부족한 업무 ④ 유해한 작업환경 "
+                              "(한랭, 온도변화, 소음)에 노출되는 업무 ⑤ 육체적 강도가 높은 업무 ⑥ 시차가 큰 출장이 "
+                              "잦은 업무 ⑦ 정신적 긴장이 큰 업무"),
+            ("cardio_notice", "업무부담 가중요인에 복합적으로 노출되는 업무의 경우에는 업무와 질병과의 관련성이 증가한다"),
+            ("cardio_notice", "주간근무의 30%를 가산(휴게시간은 제외)하여 업무시간을 산출한다"),
+            ("cardio_notice", "감시 또는 단속적으로 근로에 종사하는 자로서 사용자가 고용노동부장관의 승인을 받은 경우와 "
+                              "이와 유사한 업무에 해당하는 경우는 제외한다"),
+            ("cardio_notice", "이전 12주(발병 전 1주일 제외)간에 1주 평균보다 30퍼센트 이상 증가되거나 업무 강도ㆍ책임 및 "
+                              "업무 환경 등이 적응하기 어려운 정도로 바뀐 경우"),
+            ("cardio_notice", "증상 발생 전 24시간 이내에 업무와 관련된 돌발적이고 예측 곤란한 사건의 발생과 급격한 업무 "
+                              "환경의 변화로 뇌혈관 또는 심장혈관의 병변 등이 그 자연경과를 넘어 급격하고 뚜렷하게 "
+                              "악화된 경우"),
+            ("iaci_act_112", "3년간 행사하지 아니하면 시효로 말미암아 소멸한다"),
+            ("iaci_act_112", "장해급여, 유족급여, 장례비, 진폐보상연금 및 진폐유족연금을 받을 권리는 5년간"),
+        ),
     ),
     RuleFact(
         name="dismissal_notice",
@@ -263,11 +323,40 @@ RULE_FACTS: tuple[RuleFact, ...] = (
 )
 
 
-# "별표에 **없다**"는 주장은 구절 앵커로 검증할 수 없다(부재 주장). 대신 현행성 점검이 별표 본문에
-# 그 표지가 나타나는지 본다 — 나타나면 블록 문장이 거짓이 된 것이다(`check_law_freshness --anchors`).
-# (블록 이름, 법령명, 별표 제목에 포함될 문구, 별표 본문에 없어야 할 문구)
-ANNEX_ABSENCE_CLAIMS: tuple[tuple[str, str, str, str], ...] = (
-    ("harassment_retaliation", "근로기준법 시행령", "4명 이하", "제6장의2"),
+@dataclass(frozen=True)
+class AnnexClaim:
+    """별표의 '적용 규정' 목록에 대한 주장 — 있음(applies=True) 또는 없음(False).
+
+    "별표에 **없다**"는 부재 주장은 구절 앵커로 검증할 수 없다. 그래서 `check_law_freshness --anchors`가 별표
+    본문을 **적용 규정 목록으로 해석**해 대조한다(`annex_listing`, law-article-coverage D9). 부분문자열 검사로
+    두면 안 된다 — 근로기준법 시행령 별표 1은 표 칸 줄바꿈으로 번호가 쪼개지고(`제 ┃ ┃ │35조부터`), 범위
+    ("제35조부터 제42조까지") 안의 조문은 문자열로 나타나지 않아, 실린 조문도 '없음'으로 보였다(거짓 안심).
+    ref가 장 단위("제6장의2")면 표 문자를 지운 본문 문자열로 본다.
+    """
+    group: str        # RuleFact.name 또는 "answer_rules"(prompts.ANSWER_ACCURACY_RULES)
+    law: str          # 별표가 있는 법령명
+    annex_title: str  # 별표 제목 부분일치
+    ref: str          # "제24조" · "제23조제1항" · "제76조의2" · "제6장의2"
+    applies: bool
+
+
+_LSA_ENF = "근로기준법 시행령"
+_FTA_ENF = "기간제 및 단시간근로자 보호 등에 관한 법률 시행령"
+_SMALL = "4명 이하"
+
+ANNEX_CLAIMS: tuple[AnnexClaim, ...] = (
+    # 괴롭힘 블록: "상시 4명 이하 사업장에는 … 괴롭힘 규정(제76조의2·제76조의3)이 적용되지 않는다"
+    AnnexClaim("harassment_retaliation", _LSA_ENF, _SMALL, "제6장의2", False),
+    AnnexClaim("harassment_retaliation", _LSA_ENF, _SMALL, "제76조의2", False),
+    AnnexClaim("harassment_retaliation", _LSA_ENF, _SMALL, "제76조의3", False),
+    # 정확성 규칙의 '5명 이상 전용'(prompts.ANSWER_ACCURACY_RULES) — 4명 이하 별표에 없어야 한다
+    *(AnnexClaim("answer_rules", _LSA_ENF, _SMALL, ref, False) for ref in (
+        "제23조제1항", "제24조", "제27조", "제28조", "제46조", "제50조", "제53조", "제55조제2항", "제56조",
+        "제60조", "제94조", "제95조")),
+    # 정확성 규칙의 '규모와 무관' — 4명 이하 별표에 있어야 한다
+    *(AnnexClaim("answer_rules", _LSA_ENF, _SMALL, ref, True) for ref in (
+        "제23조제2항", "제26조", "제55조제1항", "제74조")),
+    AnnexClaim("answer_rules", _FTA_ENF, _SMALL, "제4조", False),
 )
 
 

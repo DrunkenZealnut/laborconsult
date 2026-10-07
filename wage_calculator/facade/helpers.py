@@ -104,6 +104,10 @@ def _pop_severance(r, result):
 
 def _pop_shutdown_allowance(r, result):
     """result.summary에 휴업수당 총액·적용기준·일수 추가. 반환: 0."""
+    if not getattr(r, "is_applicable", True):
+        # 상시 4명 이하 — '0원 / 적용 기준: 평균임금 70%'로 두면 제46조가 적용되는 것처럼 읽힌다
+        result.summary["휴업수당"] = "미적용 (상시 4명 이하 사업장)"
+        return 0
     result.summary["휴업수당"] = f"{r.shutdown_allowance:,.0f}원"
     result.summary["적용 기준"] = "통상임금" if r.is_ordinary_wage_applied else "평균임금 70%"
     if r.is_partial_shutdown:

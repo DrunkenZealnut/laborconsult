@@ -596,6 +596,10 @@ class KeywordLawsTest(unittest.TestCase):
         ("임금명세서를 안 줘요", "근로기준법 제48조"),
         ("휴업수당은 얼마인가요", "근로기준법 제46조"),
         ("회식 자리에서 팀장이 성적인 농담을 해요", "제14조"),
+        # law-article-coverage — 나머지 양성·반례는 test_law_article_coverage.py AC1
+        ("징계로 감봉 3개월을 받았어요", "근로기준법 제95조"),
+        ("장사가 안된다는 이유로 갑자기 해고통보를 받았어요", "근로기준법 제24조"),
+        ("특별연장근로 인가 없이 야근시켜요", "근로기준법 시행규칙 제9조"),
     ]
     NEGATIVES = [
         ("아내가 임신 중인데 단축근무 되나요", "제74조"),
@@ -624,7 +628,7 @@ class KeywordLawsTest(unittest.TestCase):
         many = "육아휴직 · 배우자 출산휴가 · 가족돌봄휴가 · 임금명세서 · 휴업수당"
         self.assertEqual(len(keyword_laws(many)), 3)
         for rule in KEYWORD_LAWS:
-            for ref in rule.refs:
+            for ref in rule.refs + rule.extra:          # 보충 조문도 예열 대상이어야 한다(law-article-coverage D1)
                 parsed = parse_law_reference(ref)
                 self.assertIsNotNone(parsed, ref)
                 self.assertIn(_law_key(canonical_law_name(parsed["law"])), warm_law_keys(),
@@ -696,10 +700,10 @@ class MonitorTest(unittest.TestCase):
         return s
 
     @staticmethod
-    def _row(i, requested=3, ok=3, unwarmed=0, live="off", auth=0, synthetic=False):
+    def _row(i, requested=3, ok=3, unwarmed=0, live="off", auth=0, synthetic=False, deleted=0):
         meta = {"law_api": {"live": live,
                             "articles": {"requested": requested, "ok": ok, "skipped_unwarmed": unwarmed,
-                                         "auth_error": auth},
+                                         "auth_error": auth, "deleted": deleted},
                             "precedents": {"requested": 1, "skipped": 1}}}
         if synthetic:
             meta["synthetic"] = True
@@ -725,6 +729,9 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(c.judge_law(few, self._status(), self.NOW).status, "ok")
         unwarmed = [self._row(i, requested=3, ok=2, unwarmed=1) for i in range(10)]
         self.assertEqual(c.judge_law(unwarmed, self._status(), self.NOW).status, "ok", "예열 밖 법령은 분모에서 뺀다")
+        deleted = [self._row(i, requested=3, ok=2, deleted=1) for i in range(10)]
+        self.assertEqual(c.judge_law(deleted, self._status(), self.NOW).status, "ok",
+                         "삭제된 조문 요청(law-article-coverage D5)도 없는 조문 요청과 같이 분모에서 뺀다")
         noisy = low + [self._row(20 + i, ok=0, synthetic=True) for i in range(10)]
         noisy += [{"id": 99, "created_at": "2026-10-06T23:00:00Z",
                    "metadata": {"law_api": {"requested": 9, "ok": 0, "miss": 9}}}]   # 옛 평평한 구조

@@ -22,7 +22,8 @@ GitHub Actions(.github/workflows/llm-fallback-alert.yml)가 6시간마다 돌린
 프로덕션 법제처 조회는 IP 미등록으로 6주 넘게 전부 실패했는데 아무에게도 보이지 않았다.
   ① 예열 상태(`law_article_cache`의 `meta:law_warm_status`): 마지막 실행 후 36시간 초과, `laws_failed`가
      비어 있지 않음, 행 수가 직전 대비 20% 넘게 감소, 상태 행 없음 → 알림. 조회 실패는 exit 2.
-  ② 조문 성공률: 조문을 요청한 최근 실사용 10건에서 Σok / Σ(requested − skipped_unwarmed) < 0.8 → 알림.
+  ② 조문 성공률: 조문을 요청한 최근 실사용 10건에서 Σok / Σ(requested − skipped_unwarmed − deleted) < 0.8 → 알림.
+     deleted(삭제된 조문 요청, law-article-coverage D5)는 존재하지 않는 조문 요청과 같은 취급이라 분모에서 뺀다.
      분모 합이 20 미만이면 보류한다. CLAUDE.md가 금지한 것은 **대화 단위** 비율(하루 0~5건이라 1건으로
      100%가 된다)이고, 이 조건은 요청 수 합(대화당 5~10건)으로 판정한다.
   ③ 인증 오류: `live=on`인 대화에서 auth_error > 0 → 알림(고정 IP 전환 뒤에 의미가 있다).
@@ -221,7 +222,7 @@ def judge_law(rows: list[dict], warm_status: dict | None, now: datetime | None =
     picked = [law_record(r) for r in real if _article_requested(law_record(r))][:window]
     ok = sum((rec["articles"].get("ok") or 0) for rec in picked)
     denom = sum((rec["articles"].get("requested") or 0) - (rec["articles"].get("skipped_unwarmed") or 0)
-                for rec in picked)
+                - (rec["articles"].get("deleted") or 0) for rec in picked)
     rate = ok / denom if denom > 0 else None
     if denom < LAW_MIN_DENOMINATOR:
         notes.append(f"조문 성공률 판정 보류(요청 {denom} < {LAW_MIN_DENOMINATOR}, 대화 {len(picked)}건)")
