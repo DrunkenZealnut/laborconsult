@@ -369,5 +369,45 @@ class ClaimAuthorityFactsTest(unittest.TestCase):
         self.assertIn('("answer_rules", ANSWER_RULE_ANCHORS)', src)
 
 
+class EarlyReemploymentFactTest(unittest.TestCase):
+    """C18 — 조기재취업 수당 요건(고용보험법 시행령 제84조①1호).
+
+    일반 요건은 '12개월 이상 계속하여 **고용된** 경우'이고, '고용될 것으로 인정'은 이직일 당시 65세 이상인
+    사람의 6개월 특례에만 붙는다. 처음 문안이 둘을 섞어 "12개월 이상 계속 고용될 것으로 인정"이라고 적었다.
+    앵커 세 개가 그 구절을 덮지 않아 원문 대조(K6·C12)를 통과했고, 실업급여 질문마다 "반드시 따르라"는
+    블록으로 실렸다(외부 점검 2026-10-07 10번). 앵커는 구절의 **존재**만 보장하므로, 문장 속 수량이 앵커에
+    결속돼 있는지를 따로 본다(C18b).
+    """
+
+    def _early(self):
+        from app.core.rule_facts import RULE_FACTS
+        unemp = next(f for f in RULE_FACTS if f.name == "unemployment")
+        return unemp, next(ln for ln in unemp.lines if ln.startswith("조기재취업"))
+
+    def test_c18_general_case_requires_actual_twelve_months(self):
+        unemp, line = self._early()
+        norm = lambda t: re.sub(r"\s+", "", t)   # noqa: E731
+        self.assertIn("12개월이상계속하여고용된", norm(line))
+        # 일반 요건을 '고용될 예정·인정'으로 쓰면 안 된다 — 부정 문장("예정이라는 것만으로는")은 허용
+        self.assertNotRegex(line, r"12개월[^.—]{0,25}고용될\s*것으로")
+        self.assertRegex(line, r"65세[^.]{0,80}6개월[^.]{0,30}고용될\s*것으로")
+        for phrase in ("12개월 이상 계속하여 고용된 경우이거나", "6개월 이상 계속하여 고용될 것으로",
+                       "고용노동부장관이 정하여 고시하는 임금액 이상을 받는 경우",
+                       "공무원으로 채용된 경우. 다만, 가입대상 공무원으로 채용된 경우는 제외한다"):
+            self.assertIn(("ei_enf_84", phrase), unemp.anchors)
+
+    def test_c18b_quantities_in_the_line_are_anchored(self):
+        """문장 속 수량(14일·2분의 1·12개월·65세·6개월)은 시행령 제84조(ei_enf_84) 앵커 구절에 있어야 한다."""
+        unemp, line = self._early()
+        norm = lambda t: re.sub(r"\s+", "", t)   # noqa: E731
+        anchors = norm(" ".join(p for d, p in unemp.anchors if d == "ei_enf_84"))
+        # '대기기간 7일'은 14일과 섞지 말라는 대비 설명이다 — 근거는 제49조(ei_act_49 앵커 '7일간은 대기기간')
+        quantities = {norm(q) for q in re.findall(r"\d+분의\s*\d+|\d+\s*(?:개월|일|세)", line)} - {"7일"}
+        self.assertTrue({"14일", "2분의1", "12개월", "65세", "6개월"} <= quantities, quantities)
+        for q in quantities:
+            self.assertIn(q, anchors, f"앵커 없는 수량: {q}")
+        self.assertIn(("ei_act_49", "7일간은 대기기간"), unemp.anchors)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
