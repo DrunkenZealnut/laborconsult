@@ -391,7 +391,14 @@ class EarlyReemploymentFactTest(unittest.TestCase):
         # 일반 요건을 '고용될 예정·인정'으로 쓰면 안 된다 — 부정 문장("예정이라는 것만으로는")은 허용
         self.assertNotRegex(line, r"12개월[^.—]{0,25}고용될\s*것으로")
         self.assertRegex(line, r"65세[^.]{0,80}6개월[^.]{0,30}고용될\s*것으로")
+        # 제2호 자영업 경로도 같은 구조다 — 65세 이상만 '영위할 것으로' 인정(CodeRabbit PR #105)
+        self.assertRegex(line, r"12개월\s*이상\s*계속하여\s*사업을\s*영위한")
+        self.assertRegex(line, r"65세[^.]{0,40}6개월[^.]{0,30}사업을\s*영위할\s*것으로")
+        # 제외 사유는 제1호(고용) 단서다 — 문장이 그 범위를 밝혀야 한다
+        self.assertIn("제1호 단서", line)
         for phrase in ("12개월 이상 계속하여 고용된 경우이거나", "6개월 이상 계속하여 고용될 것으로",
+                       "12개월 이상 계속하여 사업을 영위한 경우", "6개월 이상 계속하여 사업을 영위할 것으로",
+                       "다만, 수급자격자가 다음 각 목의 어느 하나에 해당하는 경우는 제외한다",
                        "고용노동부장관이 정하여 고시하는 임금액 이상을 받는 경우",
                        "공무원으로 채용된 경우. 다만, 가입대상 공무원으로 채용된 경우는 제외한다"):
             self.assertIn(("ei_enf_84", phrase), unemp.anchors)
