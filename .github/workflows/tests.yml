@@ -41,7 +41,7 @@ jobs:
           LEGAL_RULE_SQL_TEST: 'true'
         run: |
           docker pull postgres:17
-          python3 -m unittest test_legal_rule_sql test_model_settings_sql -v
+          python3 -m unittest test_legal_rule_sql test_model_settings_sql test_abuse_guard_sql -v
 
       - name: 파이프라인 배선 테스트
         run: python3 test_pipeline_wiring.py
@@ -114,6 +114,10 @@ jobs:
 
       - name: 답변 조망 레이어 테스트
         run: node --test test_answer_glance.js
+
+      # 일일 횟수에 걸린 뒤에도 거절 문구가 답변처럼 그려지고 입력창이 다시 열려 정상처럼 보였다(2026-10-06).
+      - name: 채팅 이용 제한 잠금·거절 안내 테스트
+        run: node --test test_chat_lock.js
 
       - name: 공개 페이지 fetch 오류 처리 테스트
         run: node --test test_public_fetch.js

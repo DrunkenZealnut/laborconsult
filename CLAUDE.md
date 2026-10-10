@@ -90,6 +90,7 @@ python3 test_wage_golden.py       # 계산 엔진 골든 테스트
 python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-1/2/3)
 python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
 python3 test_abuse_guard.py       # 남용 가드(인젝션·스코프·쿼터·게시판 필터) 테스트
+node --test test_chat_lock.js     # 채팅 이용 제한 잠금·거절 안내(답변 말풍선 아님)
 python3 test_llm_fallback.py      # LLM 폴백(빈응답·절단·전환 하트비트·교차벤더) 테스트
 python3 test_kin_accuracy.py      # 지식iN 정확도(폐기 기준 필터·현행 규칙 블록·인용 관련성·평가 매처)
 python3 test_effective_law.py     # 기준일 판본(eflaw)·그래프 판례 원문 게이트·인용 화이트리스트
@@ -146,7 +147,7 @@ python3 sync_legal_rules.py --topic minimum_wage   # 읽기 전용 점검(저장
 python3 sync_legal_rules.py --persist              # 검토 대기 후보 저장(운영 준비 후)
 python3 -m unittest test_legal_rule_updates test_legal_rule_api  # 도메인·배선·HTTP
 node --test test_admin_legal_rules.js              # 관리 화면 렌더/요청 계약
-LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_settings_sql  # 실 PostgreSQL 17 (docker 필요)
+LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_settings_sql test_abuse_guard_sql  # 실 PostgreSQL 17 (docker 필요)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
 # 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.jsonl.gz 커밋 필수
@@ -295,6 +296,8 @@ service_role GRANT 누락과 겹쳐 게시·조회가 모두 42501이었다(메�
 2. `_check_rate_limit(store=_chat_rate)` — IP당 5회/60초. **인메모리라 Vercel 인스턴스별 베스트에포트**(총량 방어는 3의 쿼터가 담당)
 3. `check_guard()` — `chat_guard_check` RPC 1왕복(차단 조회 + 일일 쿼터 원자 증가, 기본 50/일)
 - 거절 시 `GuardRejection` → `/api/chat`은 HTTP 400/429, 스트림 2경로는 `_sse_error()`
+- **거절 계약** — `GuardRejection(status, detail, retry_after, code)`. code는 `invalid`·`rate_limited`·`blocked`·`quota`(`abuse_guard.REJECT_*`), quota의 retry_after는 다음 KST 자정까지(`seconds_until_kst_midnight`). 스트림은 `{"type":"error","text","code","retry_after"}` + `{"type":"done"}`(HTTP 200), 동기는 429 + `Retry-After`. 초기화 실패·답변 중 예외는 `code="server_error"`. 프런트(`public/index.html`)는 error를 **답변이 아니라 안내 요소**(`addNotice` → `.msg.notice`, `role=alert`)로 그리고 quota·blocked·rate_limited면 retry_after 동안 입력·전송·첨부를 잠근다(`setChatLock`, localStorage `chatLock`로 새로고침에도 유지, 풀리면 자동 해제). 지킬 것 셋 — 전부 '정상처럼 보이는' 실패다(2026-10-06 실측: 쿼터 거절 문구가 일반 답변 말풍선으로 그려지고 답변 액션 바·복사 버튼이 붙었으며, 전송 버튼이 다시 열려 자동 점검 도구가 51~54번째 요청까지 같은 거절을 '답변'으로 수집했다): ① 안내 요소에 `.msg.assistant` 클래스를 주지 말 것 — 복사·지식iN 변환·답변 수집(`data-md`)과 액션 바가 그 선택자를 쓴다 ② `doSend`의 finally에서 버튼을 무조건 열지 말 것(`applyChatLock()`) ③ 잠금 판정(`guardLockFromEvent`)은 retry_after가 없으면 잠그지 않는다(영구 잠금 방지, 최대 24시간). 회귀는 `test_abuse_guard.py`(계약)·`test_chat_lock.js`(L1~L6).
+- **쿼터 카운터는 한도에 닿은 뒤 더 오르지 않는다**(`chat_guard_check`, `supabase_abuse_guard.sql`). 거절된 재시도까지 세면 카운터가 의미 없이 커지고 그날 `DAILY_CHAT_QUOTA`를 올려도 풀리지 않았다. 쿼터는 **IP 단위(기본 50회/일)이고 같은 공인 IP의 요청이 전부 합산된다** — 프로덕션 화면으로 품질 점검을 돌리면 그날 한도가 바로 마르고(2026-10-06: 외부 점검 30 + 지식iN 점검 20), 그 대화는 실사용으로 저장돼 게시판·감시 표본까지 오염된다. 점검은 로컬 `run_eval.py --law-mode cache`로 한다. 동작 검증은 `test_abuse_guard_sql.py`(실 PostgreSQL).
 
 **2단 (파이프라인, `process_question(guard_ctx=...)`)** — `guard_ctx=None`이면 가드 전체 비활성
 (CLI·`benchmark_pipeline.py`·E2E 테스트 호출부 무변경):
