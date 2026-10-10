@@ -258,6 +258,8 @@ def _build_sources_payload(
     nlrc_text: str | None = None,
     graph_context: str | None = None,
     max_items: int = 5,
+    *,
+    issue_hits: list[dict] | None = None,
 ) -> list[dict]:
     """검색 결과를 sources SSE 이벤트용으로 정규화 (DB-2).
 
@@ -268,7 +270,8 @@ def _build_sources_payload(
     """
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
-    for origin, hits in (("consultation", consultation_hits or []),
+    for origin, hits in (("official_evidence", issue_hits or []),
+                         ("consultation", consultation_hits or []),
                          ("rag", precedent_meta or [])):
         for h in hits:
             title = h.get("title") or h.get("case_name") or ""
@@ -287,6 +290,10 @@ def _build_sources_payload(
                 "score": score,
                 "origin": origin,
             })
+            if h.get("url") or h.get("official_url"):
+                out[-1]["url"] = h.get("url") or h["official_url"]
+            if h.get("content_kind"):
+                out[-1]["content_kind"] = h["content_kind"]
     # 텍스트 블록 소스(개별 hit 구조가 없음) — 라벨 하나로 노출
     for origin, source_type, label, text in (
         ("legal_api", "law_article", "법제처 법령 조문", legal_articles_text),
@@ -303,7 +310,10 @@ def _build_sources_payload(
             "title": label, "section": "", "source_type": source_type,
             "score": 0.0, "origin": origin,
         })
-    return out[:max_items]
+    # 쟁점 근거는 실제 전달한 전체 목록을 보여준다. 기존 검색 결과만 상한을 적용한다.
+    official = [h for h in out if h['origin'] == 'official_evidence']
+    other = [h for h in out if h['origin'] != 'official_evidence']
+    return official + other[:max_items]
 
 
 def _citation_source_hits(
@@ -2236,11 +2246,18 @@ def process_question(query: str, session: Session, config: AppConfig,
         except Exception as e:
             logger.warning("GraphRAG 검색 실패 (fallback): %s", e)
 
+    # 확보했지만 검색 순위/일반 조문 상한 때문에 누락되던 세부 쟁점의 공식 근거.
+    # 질문 본문으로만 선택하고, 렌더된 자료만 출처/인용 검증에 함께 전달한다.
+    from app.core.consultation_evidence import select_evidence, question_fact_notes
+    issue_evidence = select_evidence(query)
+    fact_notes = question_fact_notes(query)
+
     # sources는 GraphRAG까지 전부 모인 뒤 발신 — 인용 화이트리스트와 동일 소스 집합 노출
     yield {"type": "sources",
            "hits": _build_sources_payload(
                precedent_meta, consultation_hits,
                legal_articles_text, nlrc_text, graph_context,
+               issue_hits=issue_evidence.hits,
            )}
 
     has_attachments = bool(attachments)  # None/[] → False (metadata에 bool로 저장)
@@ -2271,7 +2288,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     used_rule_facts = [name for name, _ in rule_fact_blocks]
 
     # 인용 가능 목록·사후 검증이 같은 원천을 쓰도록 화이트리스트 hits를 한 번 구성 (DB-4)
-    extra_citation_hits: list[dict] = []
+    extra_citation_hits: list[dict] = list(issue_evidence.hits)
     try:
         from app.core.graph import rendered_precedents
         for d in rendered_precedents(graph_context, graph_results):
@@ -2338,6 +2355,10 @@ def process_question(query: str, session: Session, config: AppConfig,
     # (kin-answer-accuracy D1). 계산은 화이트리스트 구성 전에 했다(effective-law D10).
     for _rf_name, _rf_block in rule_fact_blocks:
         parts.append(_rf_block)
+    if issue_evidence.text:
+        parts.append(issue_evidence.text)
+    if fact_notes:
+        parts.append(fact_notes)
     if assessment_result:
         # 옛 라벨은 판정을 그대로 쓰라고 지시해 답변 규칙("요건이 불분명하면 단정하지 말라")을 이겼다(3차 9번, D10)
         if (assessor_info or {}).get("mode") == "held":
@@ -2750,6 +2771,11 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 정확성 관측(kin-answer-accuracy) — 값이 있을 때만 기록. 게시판 제외 사유가 아니다.
     if used_rule_facts:
         conv_metadata["rule_facts"] = used_rule_facts
+    if issue_evidence.groups or issue_evidence.omitted:
+        conv_metadata["official_evidence"] = {
+            "groups": issue_evidence.groups, "omitted": issue_evidence.omitted,
+            "source_ids": [hit["id"] for hit in issue_evidence.hits],
+        }
     if stale_filtered:
         conv_metadata["stale_filtered"] = sorted(set(stale_filtered))
     if citation_relevance:

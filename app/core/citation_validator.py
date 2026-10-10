@@ -57,9 +57,12 @@ def _is_valid_rewrite(text: str | None, original: str) -> bool:
 # **목록을 넓히지 말 것** — 사건부호는 한글 한 글자가 매우 많다(차=독촉, 초=형사신청, 주·호 …).
 # 처음에 수량 단위까지 넣었다가 '차'(독촉사건)를 막았다(CodeRabbit PR #91).
 _NOT_CASE_CODE = "년월일"
+# 20세기 두 자리 연도는 확인 가능한 사건부호에만 허용한다.
+# 일반 한글을 허용하면 85만5000원이 85만5000 사건으로 잘못 검증된다.
+_LEGACY_CASE_CODES = "다|마|두|누|나|도|가단|가합|카단|카합|고단|고합|구단|구합|헌마|헌바|카|라"
 _PREC_PATTERN = re.compile(
-    r"(?:대법원|대법|헌법재판소|헌재)?\s*"
-    r"(\d{4})\s*"
+    r"(?<!\d)(?:대법원|대법|헌법재판소|헌재)?\s*"
+    rf"((?:19|20)\d{{2}}|[5-9]\d(?=\s*(?:{_LEGACY_CASE_CODES})\s*\d))\s*"
     rf"((?![{_NOT_CASE_CODE}])[가-힣]{{1,2}})\s*"
     r"(\d+)"
 )
@@ -97,7 +100,8 @@ def extract_precedents_from_hits(hits: list[dict]) -> dict[str, dict]:
             (case_no, "meta"),
         ]:
             for match in _PREC_PATTERN.finditer(text_field):
-                year = int(match.group(1))
+                year_text = match.group(1)
+                year = int(year_text) + (1900 if len(year_text) == 2 else 0)
                 case_type = match.group(2)
                 number = int(match.group(3))
 
@@ -105,7 +109,7 @@ def extract_precedents_from_hits(hits: list[dict]) -> dict[str, dict]:
                 if not (1950 <= year <= 2030 and number <= 999999):
                     continue
 
-                prec_key = f"{year}{case_type}{number}"
+                prec_key = f"{year_text}{case_type}{number}"
                 if prec_key not in precedents:
                     precedents[prec_key] = {
                         "year": year,
@@ -214,14 +218,15 @@ def validate_response_citations(
 
     # 판례 번호 검증
     for match in _PREC_PATTERN.finditer(response_text):
-        year = int(match.group(1))
+        year_text = match.group(1)
+        year = int(year_text) + (1900 if len(year_text) == 2 else 0)
         case_type = match.group(2)
         number = int(match.group(3))
 
         if not (1950 <= year <= 2030 and number <= 999999):
             continue
 
-        prec_key = f"{year}{case_type}{number}"
+        prec_key = f"{year_text}{case_type}{number}"
         result["total_cited"] += 1
 
         if prec_key in available_precedents:
