@@ -31,8 +31,12 @@ class EvidenceSelection:
 
 @lru_cache(maxsize=1)
 def evidence_groups() -> tuple[dict, ...]:
+    """검토 기준일을 붙여 카탈로그를 로드하고 파일 누락을 오류로 알린다."""
     groups = []
-    for path in sorted(DATA_DIR.glob('*.json')):
+    paths = sorted(DATA_DIR.glob('*.json'))
+    if not paths:
+        logger.error('상담 근거 파일 없음: %s (배포 번들 포함 여부 확인)', DATA_DIR)
+    for path in paths:
         try:
             document = json.loads(path.read_text(encoding='utf-8'))
             for group in document['groups']:
@@ -43,6 +47,7 @@ def evidence_groups() -> tuple[dict, ...]:
 
 
 def _matches(group: dict, query: str) -> bool:
+    """대안 패턴 중 하나와 필수 조건 모두를 만족하는 질문만 선택한다."""
     patterns = group.get('patterns') or []
     return (any(re.search(pattern, query) for pattern in patterns)
             and all(re.search(pattern, query) for pattern in group.get('all_patterns', [])))
