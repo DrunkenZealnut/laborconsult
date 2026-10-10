@@ -1,0 +1,480 @@
+{
+  "as_of": "2026-10-10",
+  "groups": [
+    {
+      "id": "wage_complaint_withdrawal",
+      "patterns": [
+        "처벌\\s*불원",
+        "고소(?:를)?\\s*(취하|취소)",
+        "취하\\s*서"
+      ],
+      "all_patterns": [
+        "임금|급여|퇴직금|퇴직\\s*급여|체불|대지급금|체당금"
+      ],
+      "guidance": "다른 근로자의 취하나 다수결로 본인의 고소·처벌의사가 취하되지는 않는다. 본인의 고소인 여부, 제출서면의 문구, 적법한 대리권과 제출경위부터 확인한다. 반의사불벌 사건에서 유효한 처벌희망 의사 철회 또는 고소취소가 이루어졌다면 형사소송법 제232조제2항·제3항에 따른 재고소·처벌의사 번복 제한이 문제되므로 마음이 바뀌었다는 이유만으로 되돌릴 수 있다고 안내하지 않는다. 제출서면이 유효한 처벌불원에 해당하는지와 강박 등 효력 문제는 원문·사건 단계 확인 없이 단정하지 않는다. 진정취하, 고소취소, 처벌불원과 임금채권 포기·민사합의는 구분한다. 형사상 처벌불원만으로 민사 임금·퇴직금 채권이 자동 소멸한다고 설명하지 말고 서면에 청구포기·변제·합의·수령 권한까지 있는지 확인한다. 현행 근로기준법 제107조제2항과 퇴직급여법 제43조의 반의사불벌 예외에는 명단공개 체불사업주 여부와 공개기간 중 위반 여부가 있다. 실제 위반일·적용법과 경과조치를 확인해야 하며 2026-10-08 근로기준법 또는 2026-09-18 퇴직급여법 개정 벌칙을 과거 위반에 무조건 소급하거나 구법 조문번호와 혼용하지 않는다.",
+      "sources": [
+        {
+          "id": "criminal_procedure_a232",
+          "title": "형사소송법 (2026-10-09 현재 시행판)",
+          "section": "제232조 고소의 취소",
+          "content": "제232조(고소의 취소)\n① 고소는 제1심 판결선고 전까지 취소할 수 있다.\n② 고소를 취소한 자는 다시 고소할 수 없다.\n③ 피해자의 명시한 의사에 반하여 공소를 제기할 수 없는 사건에서 처벌을 원하는 의사표시를 철회한 경우에도 제1항과 제2항을 준용한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0232&lsiSeq=290189&urlMode=lsScJoRltInfoR",
+          "effective_date": "2026-10-02",
+          "provenance": {
+            "original_path": "civil/criminal_procedure.xml",
+            "sha256": "24f86938c1710a6e689bc419d928f7fe01ed6a946ddc60f779006dd2ec5e7f47",
+            "extracted_from": "제232조 고소의 취소"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "labor_standards_20261008_a107",
+          "title": "근로기준법 (2026-10-09 현재 시행판)",
+          "section": "제107조 벌칙 ②",
+          "content": "제107조(벌칙)\n② 제36조, 제43조, 제44조, 제44조의2, 제46조, 제51조의3, 제52조제2항제2호 또는 제56조를 위반한 자에 대하여는 피해자의 명시적인 의사와 다르게 공소를 제기할 수 없다. 다만, 제43조의2에 따라 명단 공개된 체불사업주가 명단 공개 기간 중에 제36조, 제43조, 제44조, 제44조의2, 제46조, 제51조의3, 제52조제2항제2호 또는 제56조를 위반한 경우에는 그러하지 아니하다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/근로기준법/(20261008)",
+          "effective_date": "2026-10-08",
+          "provenance": {
+            "original_path": "civil/labor_standards_20261008.xml",
+            "sha256": "577b03c902edfa21f9e8fb6c0005e6ce53ba108bb8fed8c879faf38fd7e09c77",
+            "extracted_from": "제107조 벌칙 ②"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "general_law_retirement_a43",
+          "title": "근로자퇴직급여 보장법",
+          "section": "제43조 벌칙",
+          "content": "제43조(벌칙) 다음 각 호의 어느 하나에 해당하는 자는 5년 이하의 징역 또는 5천만원 이하의 벌금에 처한다. 다만, 제1호 및 제2호의 경우(「근로기준법」 제43조의2에 따라 명단 공개된 체불사업주가 명단 공개 기간 중에 제1호 또는 제2호에 해당하는 경우는 제외한다) 피해자의 명시적인 의사에 반하여 공소를 제기할 수 없다.\n1. 제9조제1항을 위반하여 퇴직금을 지급하지 아니한 자\n2. 근로자가 퇴직할 때에 제17조제2항ㆍ제3항, 제20조제5항, 제23조의7제2항 또는 제25조제3항을 위반하여 급여를 지급하지 아니하거나 부담금 또는 지연이자를 납입하지 아니한 자\n3. 제37조제6항을 위반한 자",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%EA%B7%BC%EB%A1%9C%EC%9E%90%ED%87%B4%EC%A7%81%EA%B8%89%EC%97%AC%20%EB%B3%B4%EC%9E%A5%EB%B2%95",
+          "effective_date": "2026-09-18",
+          "provenance": {
+            "original_path": "cross-topic/laws/retirement.xml",
+            "sha256": "ad07d21221d718d3ffdf9e410c02747c9e6e6a221ec28b2960b58b530f520b1c",
+            "extracted_from": "제43조 벌칙"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        }
+      ]
+    },
+    {
+      "id": "labor_civil_damage_and_response",
+      "patterns": [
+        "손해(?:를)?\\s*배상",
+        "위약금",
+        "지급\\s*명령.{0,20}(송달|이의|대응|받)",
+        "(송달|이의|대응|받).{0,20}지급\\s*명령",
+        "이행\\s*권고.{0,20}(송달|이의|대응|받)",
+        "소장.{0,15}(송달|답변\\s*서|법원|청구\\s*취지|부본)",
+        "(법원|송달).{0,15}소장"
+      ],
+      "all_patterns": [
+        "근로|퇴사|사직|임금|알바|고용|직원"
+      ],
+      "guidance": "이미 제공한 근로의 임금과 사용자가 주장하는 퇴사로 인한 손해배상은 별개의 쟁점이다. 위약금·손해배상액을 미리 정하는 계약은 근로기준법 제20조와 구분하여 검토한다. 제20조가 실제로 발생한 모든 손해배상청구까지 자동 금지하는 것은 아니다. 실제 청구에는 계약상 의무의 내용·위반 여부, 실제 손해의 존재와 금액 및 퇴사와 손해 사이 인과관계가 문제되고, 예정된 출장비나 채용의 어려움이라는 말만으로 손해·책임이 확정되지 않는다. 통상손해와 예견 가능한 특별손해를 구분하고 청구원인·증거를 확인한다. 사장의 문자와 법원 서류를 구별하고, 법원에서 소장 부본을 송달받아 청구를 다투면 원칙적으로 송달일부터 30일 내 답변서(공시송달 예외), 지급명령은 송달일부터 2주 내 이의신청, 소액사건의 이행권고결정은 결정서 등본 송달일부터 2주 내 서면 이의신청으로 구분한다. 후자의 두 기간은 불변기간이다. 실제 송달일·서류명을 확인하고 송달되지 않은 협박성 문자만으로 법정기한이 시작됐다고 설명하지 않는다. 문자 원본과 근로·퇴사 증거를 보존하며 구체적인 신변 위협이 있으면 경찰에 신고할 수 있다. 소송을 언급했다는 이유만으로 협박죄 성립이나 손해배상 승패를 단정하지 않는다.",
+      "sources": [
+        {
+          "id": "labor_standards_20261008_a20",
+          "title": "근로기준법 (2026-10-09 현재 시행판)",
+          "section": "제20조 위약 예정의 금지",
+          "content": "제20조(위약 예정의 금지) 사용자는 근로계약 불이행에 대한 위약금 또는 손해배상액을 예정하는 계약을 체결하지 못한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/근로기준법/(20261008)",
+          "effective_date": "2026-10-08",
+          "provenance": {
+            "original_path": "civil/labor_standards_20261008.xml",
+            "sha256": "577b03c902edfa21f9e8fb6c0005e6ce53ba108bb8fed8c879faf38fd7e09c77",
+            "extracted_from": "제20조 위약 예정의 금지"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_act_a390",
+          "title": "민법 (2026-10-09 현재 시행판)",
+          "section": "제390조 채무불이행과 손해배상",
+          "content": "제390조(채무불이행과 손해배상) 채무자가 채무의 내용에 좇은 이행을 하지 아니한 때에는 채권자는 손해배상을 청구할 수 있다. 그러나 채무자의 고의나 과실없이 이행할 수 없게 된 때에는 그러하지 아니하다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/민법/(20260317)",
+          "effective_date": "2026-03-17",
+          "provenance": {
+            "original_path": "civil/civil_act.xml",
+            "sha256": "1c0680c8009e2650d75a7fbe20ce2e2382c46bfa8845a2606d44c2f0a099d44e",
+            "extracted_from": "제390조 채무불이행과 손해배상"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_act_a393",
+          "title": "민법 (2026-10-09 현재 시행판)",
+          "section": "제393조 손해배상의 범위",
+          "content": "제393조(손해배상의 범위)\n①채무불이행으로 인한 손해배상은 통상의 손해를 그 한도로 한다.\n②특별한 사정으로 인한 손해는 채무자가 그 사정을 알았거나 알 수 있었을 때에 한하여 배상의 책임이 있다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0393&lsiSeq=284415&urlMode=lsScJoRltInfoR",
+          "effective_date": "2026-03-17",
+          "provenance": {
+            "original_path": "civil/civil_act.xml",
+            "sha256": "1c0680c8009e2650d75a7fbe20ce2e2382c46bfa8845a2606d44c2f0a099d44e",
+            "extracted_from": "제393조 손해배상의 범위"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_procedure_a256",
+          "title": "민사소송법 (2026-10-09 현재 시행판)",
+          "section": "제256조 답변서의 제출의무",
+          "content": "제256조(답변서의 제출의무)\n①피고가 원고의 청구를 다투는 경우에는 소장의 부본을 송달받은 날부터 30일 이내에 답변서를 제출하여야 한다. 다만, 피고가 공시송달의 방법에 따라 소장의 부본을 송달받은 경우에는 그러하지 아니하다.\n②법원은 소장의 부본을 송달할 때에 제1항의 취지를 피고에게 알려야 한다.\n③법원은 답변서의 부본을 원고에게 송달하여야 한다.\n④답변서에는 준비서면에 관한 규정을 준용한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1017625171",
+          "effective_date": "2026-10-02",
+          "provenance": {
+            "original_path": "civil/civil_procedure.xml",
+            "sha256": "9de89cbca7f921db594e7c7d57902ca24d2d9fc63f9521815054f614693b6154",
+            "extracted_from": "제256조 답변서의 제출의무"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_procedure_a470",
+          "title": "민사소송법 (2026-10-09 현재 시행판)",
+          "section": "제470조 이의신청의 효력",
+          "content": "제470조(이의신청의 효력)\n①채무자가 지급명령을 송달받은 날부터 2주 이내에 이의신청을 한 때에는 지급명령은 그 범위안에서 효력을 잃는다.\n②제1항의 기간은 불변기간으로 한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0470&lsiSeq=290113&urlMode=lsScJoRltInfoR",
+          "effective_date": "2026-10-02",
+          "provenance": {
+            "original_path": "civil/civil_procedure.xml",
+            "sha256": "9de89cbca7f921db594e7c7d57902ca24d2d9fc63f9521815054f614693b6154",
+            "extracted_from": "제470조 이의신청의 효력"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "small_claims_a5_4",
+          "title": "소액사건심판법 (2026-10-09 현재 시행판)",
+          "section": "제5조의4 이행권고결정에 대한 이의신청",
+          "content": "제5조의4(이행권고결정에 대한 이의신청)\n① 피고는 이행권고결정서의 등본을 송달받은 날부터 2주일 이내에 서면으로 이의신청을 할 수 있다. 다만, 그 등본이 송달되기 전에도 이의신청을 할 수 있다.\n② 제1항 본문의 기간은 불변기간(不變期間)으로 한다.\n③ 법원은 제1항에 따른 이의신청이 있을 때에는 지체 없이 변론기일을 지정하여야 한다.\n④ 이의신청을 한 피고는 제1심 판결이 선고되기 전까지 이의신청을 취하(取下)할 수 있다.\n⑤ 피고가 이의신청을 하였을 때에는 원고가 주장한 사실을 다툰 것으로 본다.",
+          "source_type": "law",
+          "official_url": "https://law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1018390791",
+          "effective_date": "2023-03-28",
+          "provenance": {
+            "original_path": "civil/small_claims.xml",
+            "sha256": "9f0d744be56a32858bf2279b58f9f5d840f8565bc9e82e727a8feacd3a6b3154",
+            "extracted_from": "제5조의4 이행권고결정에 대한 이의신청"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        }
+      ]
+    },
+    {
+      "id": "active_worker_wage_guarantee",
+      "patterns": [
+        "대지급금|체당금|채당금",
+        "나라에서\\s*돈.{0,10}(제도|주)",
+        "고소(?:를)?\\s*취하서"
+      ],
+      "all_patterns": [
+        "재직|다니고\\s*있|근무\\s*중|회사.{0,15}직원|모든\\s*직원"
+      ],
+      "guidance": "재직 근로자는 퇴직자 대지급금 요건을 그대로 적용하지 않는다. 소송등·진정등 제기 당시 근로계약이 계속 중인지(근로계약기간 1개월 미만 일용근로자 제외), 근로계약상 통상임금 평균을 소정근로시간으로 시급 환산해 최저임금 시급의 110% 미만인지 확인한다. 110% 이하가 아니라 미만이다. 판결등 경로는 소송등 제기 전 맨 나중 체불발생일 다음 날부터 2년 내, 확인서 경로는 진정등 제기 전 맨 나중 체불발생일 다음 날부터 1년 내 제기 요건을 확인한다. 사업주가 해당 체불발생일까지 적용사업을 6개월 이상 운영했는지(건설업 특례 별도), 판결등 또는 체불 임금등·사업주 확인서로 미지급이 확인됐는지도 필요하다. 지급범위는 법 제7조의2제2항 기준일에서 맨 나중 체불발생일부터 소급한 3개월 임금·휴업수당·출산전후휴가급여이며 단순히 질문에 3개월 체불이라 적혔다는 이유로 전액 지급을 보장하지 않는다. 같은 사업 재직 중 1회 지급이고 상한액은 별도 기준이다. 판결등일부터 1년 또는 확인서 최초 발급일부터 6개월 내 지급청구 기간은 소송·진정 제기기간과 구분한다. 고소취하서가 법정 대지급금 지급요건이라고 설명하지 않는다. 정확한 제도명·본인 사건·위임장과 권리포기 범위를 확인한 후 절차를 진행한다. 답변에서는 재직 요건과 사업주 6개월 사업 영위, 저임금 110% 기준, 진정 1년·소송 2년의 시작일, 최종 3개월 체불 범위, 재직 중 1회 지급 및 별도 지급청구 기한을 함께 확인사항으로 안내한다. 미제공 사실을 충족한 것으로 추정하지 않는다. 재직자에게 퇴직자 총 상한 1000만원을 그대로 적용하지 않는다. 고시의 재직자 지급대상과 퇴직급여 제외 비고를 함께 확인한다. 지급액을 안내할 때 재직자 임금등 상한 700만원과 퇴직급여 제외를 명시한다. 퇴직자 임금·퇴직급여 합산 총 상한 1000만원을 재직자에게 적용하지 않는다. 상한은 본인의 확정 지급액을 뜻하지 않는다.",
+      "sources": [
+        {
+          "id": "wage_guarantee_act_a7_2",
+          "title": "임금채권보장법 (2026-10-09 현재 시행판)",
+          "section": "제7조의2 재직 근로자에 대한 대지급금의 지급 ①·②·③·④",
+          "content": "제7조의2(재직 근로자에 대한 대지급금의 지급)\n① 고용노동부장관은 사업주가 제7조제1항제4호 또는 제5호에 해당하는 경우 해당 사업주와 근로계약이 종료되지 아니한 근로자(이하 \"재직 근로자\"라 한다)가 지급받지 못한 임금등의 지급을 청구하면 제3자의 변제에 관한 「민법」 제469조에도 불구하고 대지급금을 지급한다.\n② 제1항에 따라 고용노동부장관이 지급하는 대지급금의 범위는 다음 각 호와 같다.\n1. 재직 근로자가 체불 임금에 대하여 제7조제1항제4호에 따른 판결, 명령, 조정 또는 결정 등을 위한 소송 등을 제기하거나 해당 사업주에 대하여 진정ㆍ청원ㆍ탄원ㆍ고소 또는 고발 등을 제기한 날을 기준으로 맨 나중의 임금 체불이 발생한 날부터 소급하여 3개월 동안에 지급되어야 할 임금 중 지급받지 못한 임금\n2. 제1호와 같은 기간 동안에 지급되어야 할 휴업수당 중 지급받지 못한 휴업수당\n3. 제1호와 같은 기간 동안에 지급되어야 할 출산전후휴가기간 중 급여에서 지급받지 못한 급여\n③ 대지급금의 지급대상이 되는 재직 근로자와 사업주의 기준 및 대지급금의 상한액은 해당 근로자의 임금이나 소득 수준 및 그 밖의 생활 여건 등을 고려하여 대통령령으로 정한다.\n④ 재직 근로자에 대한 대지급금은 해당 근로자가 하나의 사업에 근로하는 동안 1회만 지급한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/임금채권보장법/(20260820)",
+          "effective_date": "2026-08-20",
+          "provenance": {
+            "original_path": "civil/wage_guarantee_act.xml",
+            "sha256": "384a0f29a561a7d1e8f3a6920e68c4c7a63b9ac5fff733a6df87cc2a63fe74af",
+            "extracted_from": "제7조의2 재직 근로자에 대한 대지급금의 지급 ①·②·③·④"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "wage_guarantee_decree_a7",
+          "title": "임금채권보장법 시행령 (2026-10-09 현재 시행판)",
+          "section": "제7조 대지급금 지급대상 근로자 ③",
+          "content": "제7조(대지급금 지급대상 근로자)\n③ 간이대지급금 중 법 제7조의2제1항에 따른 대지급금은 다음 각 호의 기준을 모두 충족한 재직 근로자에게 지급한다.\n1. 소송등 또는 진정등을 제기한 당시 해당 사업주와의 근로계약이 종료되지 않은 근로자(근로계약기간이 1개월 미만인 일용근로자는 제외한다)일 것\n2. 해당 사업주와 근로계약에서 정한 임금액이 고용노동부장관이 정하여 고시하는 금액 미만일 것\n3. 다음 각 목의 구분에 따른 기간 이내에 사업주에 대한 소송등이나 진정등을 제기했을 것\n가. 사업주가 법 제7조제1항제4호에 해당하는 경우: 소송등을 제기한 날 이전 맨 나중의 임금등 체불이 발생한 날의 다음 날부터 2년 이내\n나. 사업주가 법 제7조제1항제5호에 해당하는 경우: 진정등을 제기한 날 이전 맨 나중의 임금등 체불이 발생한 날의 다음 날부터 1년 이내",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1033114671",
+          "effective_date": "2026-05-12",
+          "provenance": {
+            "original_path": "civil/wage_guarantee_decree.xml",
+            "sha256": "a4352b2f0b8099f44a3803cca9cef9a1c69acfc638350147d923b35976e82199",
+            "extracted_from": "제7조 대지급금 지급대상 근로자 ③"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "wage_guarantee_decree_a8",
+          "title": "임금채권보장법 시행령 (2026-10-09 현재 시행판)",
+          "section": "제8조 사업주의 기준 ④·⑤",
+          "content": "제8조(사업주의 기준)\n④ 법 제7조의2제1항에 따른 대지급금은 다음 각 호의 기준을 모두 충족한 사업주에게 고용된 재직 근로자로 한정하여 지급한다.\n1. 법 제3조에 따라 법의 적용 대상이 되어 해당 근로자가 소송등이나 진정등을 제기한 날 이전 맨 나중의 임금등 체불이 발생한 날까지 6개월 이상 해당 사업을 했을 것\n2. 해당 근로자에게 임금등을 지급하지 못하여 판결등을 받았거나 법 제12조에 따라 고용노동부장관으로부터 발급받은 체불임금등ㆍ사업주확인서로 미지급 임금등이 확인되었을 것\n⑤ 제2항제1호, 제3항제1호 및 제4항제1호에도 불구하고 「근로기준법」 제44조의2제1항에 따른 건설업 공사도급의 하수급인(이하 이 항에서 \"건설사업자가 아닌 하수급인\"이라 한다)인 사업주가 해당 근로자의 퇴직일(재직 근로자의 경우에는 소송등이나 진정등을 제기한 날 이전 맨 나중의 임금등 체불이 발생한 날을 말한다. 이하 이 항에서 같다)까지 6개월 이상 해당 사업을 하지 않은 경우에는 건설사업자가 아닌 하수급인의 직상(直上) 수급인(직상 수급인이 「건설산업기본법」 제2조제7호의 건설사업자가 아닌 경우에는 그 상위 수급인 중에서 최하위의 같은 호에 따른 건설사업자를 말한다)이 해당 근로자의 퇴직일까지 6개월 이상 해당 사업을 한 경우로 한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/임금채권보장법 시행령/(20260512)",
+          "effective_date": "2026-05-12",
+          "provenance": {
+            "original_path": "civil/wage_guarantee_decree.xml",
+            "sha256": "a4352b2f0b8099f44a3803cca9cef9a1c69acfc638350147d923b35976e82199",
+            "extracted_from": "제8조 사업주의 기준 ④·⑤"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "wage_guarantee_decree_a9",
+          "title": "임금채권보장법 시행령 (2026-10-09 현재 시행판)",
+          "section": "제9조 대지급금의 청구와 지급 ①",
+          "content": "제9조(대지급금의 청구와 지급)\n① 대지급금을 지급받으려는 사람은 다음 각 호의 구분에 따른 기간 이내에 고용노동부장관에게 대지급금의 지급을 청구해야 한다.\n1. 도산대지급금의 경우: 파산선고등 또는 도산등사실인정이 있은 날부터 2년 이내\n2. 법 제7조제1항제4호에 따른 대지급금의 경우: 판결등이 있은 날부터 1년 이내\n3. 법 제7조제1항제5호에 따른 대지급금의 경우: 체불임금등ㆍ사업주확인서가 최초로 발급된 날부터 6개월 이내\n4. 법 제7조의2제1항에 따른 대지급금의 경우: 판결등이 있은 날부터 1년 이내 또는 체불임금등ㆍ사업주확인서가 최초로 발급된 날부터 6개월 이내",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/임금채권보장법 시행령/(20260512)",
+          "effective_date": "2026-05-12",
+          "provenance": {
+            "original_path": "civil/wage_guarantee_decree.xml",
+            "sha256": "a4352b2f0b8099f44a3803cca9cef9a1c69acfc638350147d923b35976e82199",
+            "extracted_from": "제9조 대지급금의 청구와 지급 ①"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "active_worker_wage_threshold_operative",
+          "title": "체불 임금등 대지급금 지급대상이 되는 재직 근로자의 임금액 기준",
+          "section": "Ⅰ. 재직 근로자의 임금액 기준",
+          "content": "Ⅰ. 체불 임금등 대지급금 지급대상이 되는 재직 근로자의 임금액 기준\n 「임금채권보장법 시행령」 제7조제3항제2호에서 \"해당 사업주와 근로계약에서 정한 임금액이 고용노동부장관이 정하여 고시하는 금액 미만일 것\"이란 「임금채권보장법」 제7조의2제2항 각 호에 규정된 기간 동안 근로계약에서 정한 통상임금*의 평균 금액이 최저임금(시급)의 110% 미만인 경우를 말한다. \n   * 시급으로 정한 경우가 아니라면 소정근로시간을 기준으로 시급으로 환산",
+          "source_type": "regulation",
+          "official_url": "https://www.law.go.kr/LSW/admRulInfoP.do?admRulSeq=2100000205344",
+          "effective_date": "2021-10-14",
+          "provenance": {
+            "original_path": "civil/active_worker_wage_threshold.xml",
+            "sha256": "fa2504a4595c7a45207fee30aa395058d764ff1f45fcd71dfb1c1eeee798d993",
+            "extracted_from": "Ⅰ. 재직 근로자의 임금액 기준"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "wage_payment_cap_verified_tables",
+          "title": "체불 임금등 대지급금 상한액 고시",
+          "section": "도산·간이대지급금 상한액·비고",
+          "source_type": "regulation",
+          "content_kind": "official_original",
+          "official_url": "https://www.law.go.kr/LSW/admRulInfoP.do?admRulSeq=2100000205348",
+          "effective_date": "2021-10-14",
+          "rights_basis": "저작권법 제7조제2호 고시 원문",
+          "content": "체불 임금등 대지급금 상한액 고시\n[시행 2021. 10. 14.] [고용노동부고시 제2021-81호, 2021. 10. 14., 일부개정]\n\nⅠ. 체불 임금등 대지급금(이하 \"대지급금\"이라 한다) 상한액 고시\n1. 「임금채권보장법」(이하 \"법\"이라 한다) 제7조제1항제1호부터 제3호까지의 규정에 따른 대지급금(도산대지급금)\n표 단위: 만원. 퇴직 당시 연령에 따른 상한액.\n항목 | 30세 미만 | 30세 이상 40세 미만 | 40세 이상 50세 미만 | 50세 이상 60세 미만 | 60세 이상\n임금 | 220 | 310 | 350 | 330 | 230\n퇴직급여등 | 220 | 310 | 350 | 330 | 230\n휴업수당 | 154 | 217 | 245 | 231 | 161\n출산전후휴가기간 중 급여 | 310 | 310 | 310 | 310 | 310\n※ 비고: 임금, 출산전후휴가기간 중 급여, 휴업수당은 1월분, 퇴직급여등은 1년분 기준임.\n\n2. 법 제7조제1항제4호ㆍ제5호 및 제7조의2제1항에 따른 대지급금(간이대지급금)\n표 단위: 만원.\n항목 | 상한액\n임금, 출산전후휴가기간 중 급여, 휴업수당 | 700\n퇴직급여등 | 700\n* 총 상한액은 1,000만원\n* 퇴직급여등은 법 제7조제1항제4호·제5호에 따른 퇴직 근로자에 대한 대지급금에 한하여 적용됨\n\nⅡ. 행정사항\n1. 시행일\n이 고시는 2021년 10월 14일부터 시행한다.\n2. 재검토기한\n고용노동부장관은 「훈령ㆍ예규 등의 발령 및 관리에 관한 규정」에 따라 이 고시에 대하여 시행일을 기준으로 매 3년이 되는 시점(매 3년째의 10월 13일까지를 말한다)마다 그 타당성을 검토하여 개선 등의 조치를 하여야 한다.",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/rights/cap_tables/actual_body.html",
+            "sha256": "0148851d52be76bed05d4ad1c12c7fb42bc7bc758554f0023b4846ccd56b4f74",
+            "extracted_from": "공식 고시 본문 및 참조 금액표 GIF 2개. 표를 행열로 정제; 원문 비고 포함.",
+            "transformed_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/rights/cap_tables/wage_payment_cap.clean.txt",
+            "transformed_sha256": "edf48b7419ce6f08b7cb99dfb93b2da0dc386d4202b65f7b459617cfd9a44c9f",
+            "table_originals": [
+              {
+                "url": "https://www.law.go.kr/flDownload.do?flSeq=108723487",
+                "status": 200,
+                "content_type": "image/gif;;charset=UTF-8",
+                "bytes": 12689,
+                "header": "4749463839613502fc00f700000000",
+                "sha256": "d4801ab51c2d3dfe6faab198684088a7379599a41c47d80fbf39a5500615490b",
+                "path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/rights/cap_tables/108723487.bin"
+              },
+              {
+                "url": "https://www.law.go.kr/flDownload.do?flSeq=108723489",
+                "status": 200,
+                "content_type": "image/gif;;charset=UTF-8",
+                "bytes": 7459,
+                "header": "4749463839612302ad00f700000000",
+                "sha256": "f15ef38c2861bb13915d2966fa97c57a7f3cdc74e736e7913c647af015894fcd",
+                "path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/rights/cap_tables/108723489.bin"
+              }
+            ],
+            "retrieved_at": "2026-10-10"
+          },
+          "corpus_coverage": "기존 cap_amendment_hwp에 동일 금액·비고 등록. 구조화 근거 연결이며 중복 벡터 추가 없음."
+        }
+      ]
+    },
+    {
+      "id": "wage_auction_distribution_interest",
+      "patterns": [
+        "배당\\s*요구|경매\\s*배당|배당\\s*(받|불가|가능|순위)"
+      ],
+      "all_patterns": [
+        "임금|퇴직금|체불",
+        "이자|지연\\s*손해금|지연\\s*이자|집행\\s*(력|권원)|확인서"
+      ],
+      "guidance": "임금 원금의 우선변제와 그 지연이자의 배당참가 자격·입증·배당순위를 분리한다. 민사집행법 제88조는 집행력 있는 정본 보유자, 경매개시등기 뒤 가압류채권자, 법률상 우선변제청구권자 등을 배당요구 자격으로 규정하고, 민사집행규칙 제48조는 이자 등 부대채권까지 원인·액수를 서면에 적고 정본 또는 자격소명서면을 첨부하도록 한다. 원금에 임금채권 우선권이 있다는 사정만으로 이자도 그 순위로 배당된다고 설명하지 않는다. 99마5143은 임금 지연손해금의 최우선변제권을 부정한 결정이지 모든 배당을 금지한 결정이 아니다. 집행권원이나 가압류 등 이자채권에 관한 별도 배당참가 자격, 이자채권의 원인·기산일·이율·금액, 종기 내 요구 여부를 확인해야 하며 확인서 한 장만으로 이자 일반배당까지 당연히 성립한다고 단정하지 않는다. 집행권원 없이 임금 원금 우선권으로 배당요구하는 경우에는 재민97-11의 확인서 또는 해당 확정판결과 근로자 자격에 관한 추가 소명서면을 확인한다. 배당요구 자체의 종기는 사건별 집행법원이 정하며 종기까지 요구하는 원칙과 소명자료 보완은 구별한다. 2020다299955가 배당표 확정 전까지 허용한 것은 우선권 있는 임금·퇴직금 채권자 자격의 소명자료 보완이며, 종기 후 새로운 이자채권·금액 추가나 이자 최우선권을 자동 허용하는 근거로 확대하지 않는다. 구 99마5143의 당시 근로기준법 제37조와 현행 제38조를 혼동하지 않는다.",
+      "sources": [
+        {
+          "id": "civil_execution_a88",
+          "title": "민사집행법 (2026-10-09 현재 시행판)",
+          "section": "제88조 배당요구",
+          "content": "제88조(배당요구)\n①집행력 있는 정본을 가진 채권자, 경매개시결정이 등기된 뒤에 가압류를 한 채권자, 민법ㆍ상법, 그 밖의 법률에 의하여 우선변제청구권이 있는 채권자는 배당요구를 할 수 있다.\n②배당요구에 따라 매수인이 인수하여야 할 부담이 바뀌는 경우 배당요구를 한 채권자는 배당요구의 종기가 지난 뒤에 이를 철회하지 못한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1031930591",
+          "effective_date": "2026-02-01",
+          "provenance": {
+            "original_path": "civil/civil_execution.xml",
+            "sha256": "63dbfac00d14e5d6abf9a05068576da72b05b6818c46b58681bec146bab19c02",
+            "extracted_from": "제88조 배당요구"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_execution_a84",
+          "title": "민사집행법 (2026-10-09 현재 시행판)",
+          "section": "제84조 배당요구의 종기결정 및 공고 ①·②·⑥·⑦",
+          "content": "제84조(배당요구의 종기결정 및 공고)\n①경매개시결정에 따른 압류의 효력이 생긴 때(그 경매개시결정전에 다른 경매개시결정이 있은 경우를 제외한다)에는 집행법원은 절차에 필요한 기간을 고려하여 배당요구를 할 수 있는 종기(終期)를 첫 매각기일 이전으로 정한다.\n②배당요구의 종기가 정하여진 때에는 법원은 경매개시결정을 한 취지 및 배당요구의 종기를 공고하고, 제91조제4항 단서의 전세권자 및 법원에 알려진 제88조제1항의 채권자에게 이를 고지하여야 한다.\n⑥법원은 특별히 필요하다고 인정하는 경우에는 배당요구의 종기를 연기할 수 있다.\n⑦제6항의 경우에는 제2항 및 제4항의 규정을 준용한다. 다만, 이미 배당요구 또는 채권신고를 한 사람에 대하여는 같은 항의 고지 또는 최고를 하지 아니한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/민사집행법/(20260201)",
+          "effective_date": "2026-02-01",
+          "provenance": {
+            "original_path": "civil/civil_execution.xml",
+            "sha256": "63dbfac00d14e5d6abf9a05068576da72b05b6818c46b58681bec146bab19c02",
+            "extracted_from": "제84조 배당요구의 종기결정 및 공고 ①·②·⑥·⑦"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_execution_a148",
+          "title": "민사집행법 (2026-10-09 현재 시행판)",
+          "section": "제148조 배당받을 채권자의 범위",
+          "content": "제148조(배당받을 채권자의 범위) 제147조제1항에 규정한 금액을 배당받을 채권자는 다음 각호에 규정된 사람으로 한다.\n1. 배당요구의 종기까지 경매신청을 한 압류채권자\n2. 배당요구의 종기까지 배당요구를 한 채권자\n3. 첫 경매개시결정등기전에 등기된 가압류채권자\n4. 저당권ㆍ전세권, 그 밖의 우선변제청구권으로서 첫 경매개시결정등기전에 등기되었고 매각으로 소멸하는 것을 가진 채권자",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/민사집행법/(20260201)",
+          "effective_date": "2026-02-01",
+          "provenance": {
+            "original_path": "civil/civil_execution.xml",
+            "sha256": "63dbfac00d14e5d6abf9a05068576da72b05b6818c46b58681bec146bab19c02",
+            "extracted_from": "제148조 배당받을 채권자의 범위"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_execution_rule_a48",
+          "title": "민사집행규칙 (2026-10-09 현재 시행판)",
+          "section": "제48조 배당요구의 방식",
+          "content": "제48조(배당요구의 방식)\n①법 제88조제1항의 규정에 따른 배당요구는 채권(이자, 비용, 그 밖의 부대채권을 포함한다)의 원인과 액수를 적은 서면으로 하여야 한다.\n②제1항의 배당요구서에는 집행력 있는 정본 또는 그 사본, 그 밖에 배당요구의 자격을 소명하는 서면을 붙여야 한다.",
+          "source_type": "law",
+          "official_url": "https://law.go.kr/LSW/lsLinkCommonInfo.do?lsJoLnkSeq=1028532489",
+          "effective_date": "2025-07-12",
+          "provenance": {
+            "original_path": "civil/civil_execution_rule.xml",
+            "sha256": "8ee4a86920021fa905c364e3f0d52bfb0f6cf689cd03cad13bc955b77d3d66ba",
+            "extracted_from": "제48조 배당요구의 방식"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "labor_standards_20261008_a38",
+          "title": "근로기준법 (2026-10-09 현재 시행판)",
+          "section": "제38조 임금채권의 우선변제",
+          "content": "제38조(임금채권의 우선변제)\n① 임금, 재해보상금, 그 밖에 근로 관계로 인한 채권은 사용자의 총재산에 대하여 질권(質權)ㆍ저당권 또는 「동산ㆍ채권 등의 담보에 관한 법률」에 따른 담보권에 따라 담보된 채권 외에는 조세ㆍ공과금 및 다른 채권에 우선하여 변제되어야 한다. 다만, 질권ㆍ저당권 또는 「동산ㆍ채권 등의 담보에 관한 법률」에 따른 담보권에 우선하는 조세ㆍ공과금에 대하여는 그러하지 아니하다.\n② 제1항에도 불구하고 다음 각 호의 어느 하나에 해당하는 채권은 사용자의 총재산에 대하여 질권ㆍ저당권 또는 「동산ㆍ채권 등의 담보에 관한 법률」에 따른 담보권에 따라 담보된 채권, 조세ㆍ공과금 및 다른 채권에 우선하여 변제되어야 한다.\n1. 최종 3개월분의 임금\n2. 재해보상금",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/근로기준법/(20261008)",
+          "effective_date": "2026-10-08",
+          "provenance": {
+            "original_path": "civil/labor_standards_20261008.xml",
+            "sha256": "577b03c902edfa21f9e8fb6c0005e6ce53ba108bb8fed8c879faf38fd7e09c77",
+            "extracted_from": "제38조 임금채권의 우선변제"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "jaemin97_11_operative",
+          "title": "근로자의 임금채권에 대한 배당시 유의사항(재민 97-11)",
+          "section": "1. 우선변제권에 기한 배당요구 첨부 소명자료",
+          "content": "1.  근로자의 임금채권 우선변제권에 기한 배당요구시 첨부할 소명자료\n근로자가 집행법원에 「근로기준법」제38조에서 정한 임금채권 및「근로자퇴직급여보장법」제12조에서 정한 퇴직금채권의 우선변제권에 기한 배당요구를 하는 경우에는, 판결 이유 중에 배당요구 채권이 우선변제권 있는 임금채권이라는 판단이 있는 법원의 확정판결이나 고용노동부 지방고용노동관서에서 발급한 체불 임금등ㆍ사업주 확인서 중 하나와 다음에서 열거한 서면 중 하나를 소명자료로 첨부하여야 한다.\n가. 사용자가 교부한 국민연금보험료 원천공제계산서 또는 기여금 공제내역을 알 수 있는 급여명세서 등(「국민연금법」제90조제2항 참조)\n나. 원천징수의무자인 사업자로부터 교부받은 근로소득에 대한 원천징수영수증(「소득세법」제143조 참조)\n다. 국민건강보험공단이 발급한 국민연금보험료 납부사실 확인서(「국민연금법」제88조  참조)\n라. 국민건강보험공단이 발급한 국민건강보험료납부사실 확인서(「국민건강보험법」제69조 참조)\n마. 고용노동부 지방고용노동관서가 발급한 고용보험피보험자격취득확인통지서(「고용보험법」제17조참조)\n바. 위 가.호 내지 마.호 기재 서면을 제출할 수 없는 부득이한 사정이 있는 때에는 사용자가 작성한 근로자명부(「근로기준법」제41조 참조) 또는 임금대장(「근로기준법」제48조 참조)의 사본(다만, 이 경우에는 사용자가 사업자등록을 하지 아니하는 등의 사유로 위 가.호 내지 마.호 기재 서면을 발급받을 수 없다는 사실을 소명하는 자료도 함께 제출하여야 함)",
+          "source_type": "regulation",
+          "official_url": "https://www.law.go.kr/LSW/admRulInfoP.do?admRulSeq=2200000103223",
+          "effective_date": "2017-05-26",
+          "provenance": {
+            "original_path": "civil/jaemin97_11.xml",
+            "sha256": "8d1fa6790a550b3e912eeb284ec81dbb3ffefd3652817bd7e95d4ade76561e53",
+            "extracted_from": "1. 우선변제권에 기한 배당요구 첨부 소명자료"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "precedent_99마5143_ratio",
+          "title": "부동산강제경매기각 — 대법원 99마5143",
+          "section": "판시사항·판결요지",
+          "content": "근로기준법 제37조 제2항 소정의 임금 등 채권의 최우선변제권이 그에 대한 지연손해금 채권에도 인정되는지 여부(소극)\n\n근로기준법 제37조 제2항에 의하면, 근로관계로 인한 채권 중 최종 3월분의 임금, 최종 3년간의 퇴직금, 재해보상금의 채권은 사용자의 총재산에 대하여 질권 또는 저당권에 의하여 담보된 채권, 조세·공과금 및 다른 채권에 우선하여 변제되어야 한다고 규정하고 있는바, 위와 같은 임금 등 채권의 최우선변제권은 근로자의 생활안정을 위한 사회정책적 고려에서 담보물권자 등의 희생 아래 인정되고 있는 점, 민법 제334조, 제360조 등에 의하면 공시방법이 있는 민법상의 담보물권의 경우에도 우선변제권이 있는 피담보채권에 포함되는 이자 등 부대채권 및 그 범위에 관하여 별도로 규정하고 있음에 반하여, 위 근로기준법의 규정에는 최우선변제권이 있는 채권으로 원본채권만을 열거하고 있는 점 등에 비추어 볼 때, 임금 등에 대한 지연손해금 채권에 대하여는 최우선변제권이 인정되지 않는다고 봄이 상당하다.",
+          "source_type": "precedent",
+          "official_url": "https://www.law.go.kr/LSW/precInfoP.do?precSeq=230141",
+          "effective_date": "2000-02-12",
+          "provenance": {
+            "original_path": "civil/precedent_99마5143.xml",
+            "sha256": "5b53a150d0be46f9003696896ee181e5a3ef6d3b61ec03ad392d797bd8625d54",
+            "extracted_from": "판시사항·판결요지"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now",
+          "case_no": "99마5143",
+          "date_kind": "decision_date"
+        },
+        {
+          "id": "precedent_2020다299955_ratio",
+          "title": "배당이의 — 대법원 2020다299955",
+          "section": "판시사항·판결요지",
+          "content": "근로기준법 및 근로자퇴직급여 보장법에 의하여 우선변제청구권을 갖는 임금 및 퇴직금 채권자가 배당요구를 하는 경우, 배당요구서에 그 자격을 소명하는 서면을 붙여야 하는지 여부(적극) 및 우선변제청구권이 있는 임금 및 퇴직금 채권자가 배당요구 종기까지 소명자료를 제출하지 않았으나 배당표가 확정되기 전까지 이를 보완한 경우, 우선배당을 받을 수 있는지 여부(적극)\n\n집행력 있는 정본을 가진 채권자, 경매개시결정이 등기된 뒤에 가압류를 한 채권자, 민법·상법, 그 밖의 법률에 의하여 우선변제청구권이 있는 채권자는 배당요구를 할 수 있고(민사집행법 제88조 제1항), 이에 따른 배당요구는 채권(이자, 비용, 그 밖의 부대채권을 포함한다)의 원인과 액수를 적은 서면으로 하여야 하며(민사집행규칙 제48조 제1항), 배당요구서에는 집행력 있는 정본 또는 사본, 그 밖에 배당요구의 자격을 소명하는 서면을 붙여야 한다(민사집행규칙 제48조 제2항). 이러한 민사집행법과 민사집행규칙의 규정에 의하면, 근로기준법 및 근로자퇴직급여 보장법에 의하여 우선변제청구권을 갖는 임금 및 퇴직금 채권자는 그 자격을 소명하는 서면을 붙인 배당요구서에 의하여 배당요구를 해야 한다. 다만 민사집행절차의 안정성을 보장하여야 하는 절차법적 요청과 근로자의 임금채권을 보호하여야 하는 실체법적 요청을 형량하여 보면 우선변제청구권이 있는 임금 및 퇴직금 채권자가 배당요구 종기까지 위와 같은 소명자료를 제출하지 않았다고 하더라도 배당표가 확정되기 전까지 이를 보완하였다면 우선배당을 받을 수 있다고 해석하여야 한다.",
+          "source_type": "precedent",
+          "official_url": "https://www.law.go.kr/LSW/precInfoP.do?precSeq=220869",
+          "effective_date": "2022-04-28",
+          "provenance": {
+            "original_path": "civil/precedent_2020다299955.xml",
+            "sha256": "7c45e45b368f07bc1a6141fe87802165e5f0d26b9ff4fcb431ef91903c3c8ac1",
+            "extracted_from": "판시사항·판결요지"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now",
+          "case_no": "2020다299955",
+          "date_kind": "decision_date"
+        }
+      ]
+    },
+    {
+      "id": "labor_joint_litigation",
+      "patterns": [
+        "공동\\s*소송|선정\\s*당사자"
+      ],
+      "all_patterns": [
+        "근로|임금|퇴직금|퇴사자|퇴직\\s*급여"
+      ],
+      "guidance": "같은 규정·지급관행과 사실관계를 공유하는 근로자들이 공동소송이나 선정당사자 제도를 검토할 수 있지만 인원수만으로 승소나 유리함을 보장하지 않는다. 민사소송법 제65조의 권리·원인 공통성 또는 동종성을 확인하고 각자의 근무기간·수당 지급방식·퇴직일·청구액·증거를 따로 정리한다. 단순 대표자 위임과 민사소송법 제53조에 따른 선정당사자는 구분한다.",
+      "sources": [
+        {
+          "id": "civil_procedure_a53",
+          "title": "민사소송법 (2026-10-09 현재 시행판)",
+          "section": "제53조 선정당사자",
+          "content": "제53조(선정당사자)\n①공동의 이해관계를 가진 여러 사람이 제52조의 규정에 해당되지 아니하는 경우에는, 이들은 그 가운데에서 모두를 위하여 당사자가 될 한 사람 또는 여러 사람을 선정하거나 이를 바꿀 수 있다.\n②소송이 법원에 계속된 뒤 제1항의 규정에 따라 당사자를 바꾼 때에는 그 전의 당사자는 당연히 소송에서 탈퇴한 것으로 본다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/민사소송법/(20261002)",
+          "effective_date": "2026-10-02",
+          "provenance": {
+            "original_path": "civil/civil_procedure.xml",
+            "sha256": "9de89cbca7f921db594e7c7d57902ca24d2d9fc63f9521815054f614693b6154",
+            "extracted_from": "제53조 선정당사자"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        },
+        {
+          "id": "civil_procedure_a65",
+          "title": "민사소송법 (2026-10-09 현재 시행판)",
+          "section": "제65조 공동소송의 요건",
+          "content": "제65조(공동소송의 요건) 소송목적이 되는 권리나 의무가 여러 사람에게 공통되거나 사실상 또는 법률상 같은 원인으로 말미암아 생긴 경우에는 그 여러 사람이 공동소송인으로서 당사자가 될 수 있다. 소송목적이 되는 권리나 의무가 같은 종류의 것이고, 사실상 또는 법률상 같은 종류의 원인으로 말미암은 것인 경우에도 또한 같다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/민사소송법/(20261002)",
+          "effective_date": "2026-10-02",
+          "provenance": {
+            "original_path": "civil/civil_procedure.xml",
+            "sha256": "9de89cbca7f921db594e7c7d57902ca24d2d9fc63f9521815054f614693b6154",
+            "extracted_from": "제65조 공동소송의 요건"
+          },
+          "rights_basis": "copyright_act_article7_primary; prior sourcepack rights_review use_now"
+        }
+      ]
+    }
+  ]
+}

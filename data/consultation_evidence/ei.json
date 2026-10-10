@@ -1,0 +1,293 @@
+{
+  "as_of": "2026-10-10",
+  "groups": [
+    {
+      "id": "ei_wage_arrears_resignation",
+      "patterns": [
+        "임금.{0,8}(체불|지연)",
+        "(급여|월급).{0,15}(체불|지연|실지급|늦)"
+      ],
+      "all_patterns": [
+        "실업급여|구직급여|수급자격"
+      ],
+      "guidance": "임금체불 자진퇴사 기준은 고용보험법 시행규칙 제101조제2항 및 별표2 제1호나목으로 연결한다(시행령 제101조와 혼동하지 않는다). 사용자가 적은 이미 지급된 각 월의 지연일수를 산술 합산하여 보여주되, 지급 예정분은 실제지급·확정체불과 구분하고 예정대로 지연될 때의 가정 합계도 별도 계산한다. 연도와 이직일이 없으면 추정하지 않는다. 별표의 이직 전1년 내2개월 이상과 공식상담의 전액체불 합산 기준은 구분하여 출처를 적는다. 부분체불·분할지급에 전액체불 기준을 자동확장하거나 단순 합계만으로 수급자격을 확정하지 않는다. 지급액·지연/미지급·이직시점 증빙을 확인한다.",
+      "sources": [
+        {
+          "id": "followup_ei-rule_101",
+          "title": "고용보험법 시행규칙",
+          "section": "제101조 이직 사유에 따른 수급자격의 제한 기준",
+          "content": "제101조(이직 사유에 따른 수급자격의 제한 기준)\n① 법 제58조제1호나목에서 \"고용노동부령으로 정하는 기준에 해당하는 경우\"란 별표 1의2를 말한다. <개정 2022.6.30>\n② 법 제58조제2호다목에서 \"고용노동부령으로 정하는 정당한 사유\"란 별표 2를 말한다. <개정 2022.6.30>\n③ 법 제77조의5제2항에서 준용하는 법 제58조제2호다목에서 \"고용노동부령으로 정하는 정당한 사유\"란 별표 2의2를 말한다. <신설 2022.6.30>\n④ 법 제77조의10제2항에서 준용하는 법 제58조제2호다목에서 \"고용노동부령으로 정하는 정당한 사유\"란 별표 2의3을 말한다. <신설 2022.6.30>",
+          "content_kind": "official_excerpt",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288723&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제1호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-rule.xml",
+            "sha256": "24e483160e9c829bd61ee74b398196f54f9c1ecf8bee8eb269cd9134c2fa8ae9",
+            "extracted_from": "제101조 이직 사유에 따른 수급자격의 제한 기준",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/7d6773c5f019c9dc.json"
+          }
+        },
+        {
+          "id": "followup_ei-rule-annex2-pdf_annex2_1",
+          "title": "고용보험법 시행규칙 별표2 전체",
+          "section": "별표·서식 원문",
+          "content": "■ 고용보험법 시행규칙 [별표 2] <개정 2024. 7. 1.>\n근로자의 수급자격이 제한되지 아니하는 정당한 이직 사유(제101조제2항 관련)\n1. 다음 각 목의 어느 하나에 해당하는 사유가 이직일 전 1년 이내에 2개월 이상 발생한 경\n우\n가. 실제 근로조건이 채용 시 제시된 근로조건이나 채용 후 일반적으로 적용받던 근로조건\n보다 낮아지게 된 경우\n나. 임금체불이 있는 경우\n다. 소정근로에 대하여 지급받은 임금이 「최저임금법」에 따른 최저임금에 미달하게 된 경\n우\n라. 「근로기준법」 제53조에 따른 연장 근로의 제한을 위반한 경우\n마. 사업장의 휴업으로 휴업 전 평균임금의 70퍼센트 미만을 지급받은 경우",
+          "content_kind": "official_excerpt",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288723&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제1호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-rule-annex2-pdf.pdf",
+            "sha256": "502284b2aa967c7220b2c9e9350b4bca1478f00145a30e7e03e8a3a0625cef29",
+            "extracted_from": "별표·서식 원문",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/6954a1e3bc662633.json"
+          }
+        },
+        {
+          "id": "followup_moel_1000307546_wage",
+          "title": "고용노동부 1350 모바일 상담 — 작성한 사실 요약",
+          "section": "2025-10-24 16:40 답변 중 임금 전액 체불·지연지급 합산 및 2개월분 미지급 안내",
+          "content": "고용노동부 상담은 전액 임금의 미지급과 지연지급을 포함하고, 이직 전1년 내 지연기간을 더해1개월을30일로 보는 방식을 안내한다. 10일씩6차례 늦게 지급된 예시는 총60일로 인정된다고 설명한다. 전액2개월분이 미지급된 상황은 지연기간이2개월 미만이어도 별도 인정될 수 있으므로, 지연기간과 미지급 월수는 구분해야 한다. 부분체불에 대한 일률적인 결론은 이 요약으로 확정하지 않는다.",
+          "content_kind": "authored_summary",
+          "source_type": "official_guidance",
+          "official_url": "https://1350.moel.go.kr/rtmview.do?id=1000307546",
+          "effective_date": null,
+          "rights_basis": "상담 원문 미수록; 확인한 사실관계를 작성 요약. 원문 전재·상업적 RAG 이용허락 미확인.",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/ei/1000307546.html",
+            "sha256": "8a265da11e5c4ab02f9e42399ae9478a05b907c7e0cd307aedda0b955e48b6eb",
+            "extracted_from": "2025-10-24 16:40 답변 중 임금 전액 체불·지연지급 합산 및 2개월분 미지급 안내",
+            "answered_at": "2025-10-24",
+            "retrieved_on": "2026-10-10",
+            "original_rights": {
+              "license": null,
+              "original_notice": null,
+              "status": "No explicit reuse license identified on captured page; attribution retained; internal evidence capture only; repository includes authored facts summary only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ei_repeat_recipient",
+      "patterns": [
+        "반복\\s*수급",
+        "5\\s*년.{0,15}(3|세|삼)\\s*(회|번)"
+      ],
+      "guidance": "반복수급자 분류의 공식상담 확인범위는 이번 수급자격의 이직일 기준5년, 현재신청건 포함, 서로 다른 수급자격의 실제 실업인정·급여수급 이력, 급여 미수급 취소이력 및 실업 재신고 제외까지다. 실업급여 신청일을5년 기산점으로 쓰지 않는다. 다만5년 경계에 걸친 한 수급기간을 최초/최종 지급일 또는 수급자격 인정일 중 어느 날짜로 산입하는지는 이 근거가 명시하지 않는다. 질문의 시작일·종료일만으로 경계횟수나 제외되는 퇴사 날짜를 확정하지 말고, 확인된 기준과 미확정 경계규칙을 구분하여 설명한다. 예정 이직일이 기준일 뒤라면 당시 시행규칙을 재확인해야 한다. 반복수급 분류가 곧 자동수급제한·감액이라는 추론도 하지 않는다.",
+      "sources": [
+        {
+          "id": "followup_moel_1000301819_repeat",
+          "title": "고용노동부 1350 모바일 상담 — 작성한 사실 요약",
+          "section": "2026-08-20 18:12 답변 및 2026-01-16 13:42 답변",
+          "content": "고용노동부의2026년8월 안내는 반복수급을 이번 수급자격의 이직일을 기준으로5년 동안3회 이상 수급한 이력으로 분류하며 현재 신청건도 센다고 설명한다. 실제 실업인정을 받은 이력을 세고, 급여를 받지 않은 취소 건과 실업 재신고는 제외한다.2026년1월 안내에서2025년3월31일 재취업지원 강화방안에는 구직급여액 감액이 포함되지 않았다고 답했다. 이 상담은 수급기간이5년 경계에 걸친 때의 최초/최종 지급일 선택이나2027년 적용을 확정하지 않는다.",
+          "content_kind": "authored_summary",
+          "source_type": "official_guidance",
+          "official_url": "https://1350.moel.go.kr/rtmview.do?id=1000301819",
+          "effective_date": null,
+          "rights_basis": "상담 원문 미수록; 확인한 사실관계를 작성 요약. 원문 전재·상업적 RAG 이용허락 미확인.",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/ei/1000301819.html",
+            "sha256": "a6690d7aaaa3b87e0d256750e913ae3ee776197af17e3817579057959d40b7b1",
+            "extracted_from": "2026-08-20 18:12 답변 및 2026-01-16 13:42 답변",
+            "answered_at": "2026-08-20",
+            "retrieved_on": "2026-10-10",
+            "original_rights": {
+              "license": null,
+              "original_notice": null,
+              "status": "No explicit reuse license identified on captured page; attribution retained; internal evidence capture only; repository includes authored facts summary only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ei_sickness_benefit",
+      "patterns": [
+        "상병\\s*급여",
+        "(실업급여|구직급여).{0,50}(골절|수술|다쳤|질병|부상)"
+      ],
+      "guidance": "법제63조는 실업신고 이후 질병·부상 등으로 취업이 불가능하여 실업인정을 받지 못한 날의 대체급여다. 노동제한 소견·진단서 전송·담당자 신청가능 안내가 지급확정과 같다고 쓰지 않는다. 시행령82조제1항의 청구기한은 취업할 수 없는 사유가 없어진 날부터14일, 수급기간이 취업불가능 기간 내 끝났다면 수급기간 종료 후30일, 천재지변 등 부득이한 사유가 있으면 그 사유가 없어진 날부터7일이다. 각 기한의 발동조건을 함께 적고 수술일/진단서 발행일을 일률적인 시작일로 삼지 않는다. 수술후 안정기간과 노동제한기간을 실제 취업불가능기간으로 자동대체하지 않는다. 남은 소정급여일수 한도, 휴업보상·산재휴업급여 등을 지급받을 수 있는 경우의 중복제외, 청구서와 질병·부상증명서 제출도 안내한다.",
+      "sources": [
+        {
+          "id": "followup_ei-act_63",
+          "title": "고용보험법",
+          "section": "제63조 질병 등의 특례",
+          "content": "제63조(질병 등의 특례)\n①수급자격자가 제42조에 따라 실업의 신고를 한 이후에 질병ㆍ부상 또는 출산으로 취업이 불가능하여 실업의 인정을 받지 못한 날에 대하여는 제44조제1항에도 불구하고 그 수급자격자의 청구에 의하여 제46조의 구직급여일액에 해당하는 금액(이하 \"상병급여\"라 한다)을 구직급여를 갈음하여 지급할 수 있다. 다만, 제60조제1항 및 제2항에 따라 구직급여의 지급이 정지된 기간에 대하여는 상병급여(傷病給與)를 지급하지 아니한다. <개정 2020.5.26>\n②상병급여를 지급할 수 있는 일수는 그 수급자격자에 대한 구직급여 소정급여일수에서 그 수급자격에 의하여 구직급여가 지급된 일수를 뺀 일수를 한도로 한다. 이 경우 상병급여를 지급받은 사람에 대하여 이 법의 규정(제61조 및 제62조는 제외한다)을 적용할 때에는 상병급여의 지급 일수에 상당하는 일수분의 구직급여가 지급된 것으로 본다. <개정 2020.5.26>\n③제1항에 따른 상병급여는 그 취업할 수 없는 사유가 없어진 이후에 최초로 구직급여를 지급하는 날(구직급여를 지급하는 날이 없는 경우에는 직업안정기관의 장이 정하는 날)에 지급한다. 다만, 필요하다고 인정하면 고용노동부장관이 따로 정하는 바에 따라 지급할 수 있다. <개정 2010.6.4>\n④제1항에도 불구하고 수급자격자가 「근로기준법」 제79조에 따른 휴업보상, 「산업재해보상보험법」 제52조부터 제56조까지의 규정에 따른 휴업급여, 그 밖에 이에 해당하는 급여 또는 보상으로서 대통령령으로 정하는 보상 또는 급여를 지급받을 수 있는 경우에는 상병급여를 지급하지 아니한다. <개정 2019.1.15>\n⑤ 상병급여의 지급에 관하여는 제47조, 제49조, 제57조, 제61조(제4항은 제외한다) 및 제62조를 준용한다. 이 경우 \"실업인정대상기간\"은 \"실업의 인정을 받지 못한 날\"로, \"구직급여\"는 \"상병급여\"로 본다. <개정 2019.8.27>",
+          "content_kind": "official_excerpt",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=284449&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제1호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-act.xml",
+            "sha256": "280b4bec05c376ed4fac83ab9077bcb4d164b9fb510e26d1060ac73b9a24d885",
+            "extracted_from": "제63조 질병 등의 특례",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/005afdfbf4cabfbf.json"
+          }
+        },
+        {
+          "id": "followup_ei-decree_82",
+          "title": "고용보험법 시행령",
+          "section": "제82조 상병급여의 지급 청구와 지급 제외",
+          "content": "제82조(상병급여의 지급 청구와 지급 제외)\n① 수급자격자는 법 제63조제1항에 따라 상병급여(傷病給與)의 지급을 청구하려는 경우 직접 또는 대리인을 통하여 그 취업할 수 없는 사유가 없어진 날부터 14일(법 제48조에 따른 수급기간이 그 취업할 수 없는 기간 내에 끝난 경우에는 수급기간 종료 후 30일) 이내에 신청지 관할 직업안정기관의 장에게 상병급여 청구서에 질병 또는 부상이나 출산에 관한 증명서를 첨부하여 제출하여야 한다. 다만, 천재지변이나 그 밖의 부득이한 사유가 있는 경우에는 그 사유가 없어진 날부터 7일 이내에 제출하여야 한다. <개정 2011.9.15, 2024.6.25>\n② 법 제63조제4항에서 \"대통령령으로 정하는 보상 또는 급여\"란 다음 각 호의 보상과 급여를 말한다.\n1. 「국가배상법」 제3조제2항제2호에 따른 휴업배상\n2. 「의사상자 등 예우 및 지원에 관한 법률」 제8조에 따른 보상금",
+          "content_kind": "official_excerpt",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288717&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제1호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-decree.xml",
+            "sha256": "65ec4de599490dff76b148ba1661d99cba9f6ca5881e23ab7effcf21776be2f2",
+            "extracted_from": "제82조 상병급여의 지급 청구와 지급 제외",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/a22b05ecede755d2.json"
+          }
+        },
+        {
+          "id": "followup_ei-rule_107",
+          "title": "고용보험법 시행규칙",
+          "section": "제107조 상병급여의 청구와 지급",
+          "content": "제107조(상병급여의 청구와 지급)\n① 영 제82조제1항에 따른 상병급여 청구서는 별지 제95호서식에 따른다. 다만, 출산을 이유로 상병급여를 청구하는 경우에는 별지 제96호서식에 출산에 관한 증명서를 첨부하여야 한다.\n② 영 제82조제1항에 따라 상병급여 청구서에 첨부하여야 할 질병ㆍ부상에 관한 증명서에 관하여는 제90조제1호를 준용한다.\n③ 상병급여에 관하여는 제99조, 제100조, 제103조부터 제106조까지의 규정을 준용한다. 이 경우 \"구직급여\"는 \"상병급여\"로, \"구직급여액\"은 \"상병급여액\"으로 본다.",
+          "content_kind": "official_excerpt",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288723&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제1호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-rule.xml",
+            "sha256": "24e483160e9c829bd61ee74b398196f54f9c1ecf8bee8eb269cd9134c2fa8ae9",
+            "extracted_from": "제107조 상병급여의 청구와 지급",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/7d6773c5f019c9dc.json"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ei_training_card",
+      "patterns": [
+        "내일\\s*배움\\s*카드",
+        "훈련\\s*장려금"
+      ],
+      "guidance": "국민내일배움카드 훈련비, 훈련장려금, 고용보험법65조 직업능력개발수당은 서로 다른 항목이다. 카드훈련 중 신청 가능성과 실제 구직급여 수급요건/실업인정은 구분한다. 법정 개인훈련계획서상 실업급여 수급기간에는 대기기간을 제외하고 훈련장려금이 지급되지 않으며, 대기기간이라고 자동 지급되는 것은 아니다. 직업능력개발수당은 직업안정기관 장의 지시를 받은 훈련이라는 요건을 확인하고 모든 카드수강에 자동지급한다고 하지 않는다. 동시수강은 공식상담에서 훈련시간이 겹치지 않는 범위 내 가능하다고 안내하고, 잔여지원한도·계좌유효기간·개별과정 요건과 출결을 확인한다. 과거 국민취업지원제도Ⅱ유형 참여 이력만으로 카드/구직급여를 자동제한한다고 추정하지 말고 현재 참여·지원제외 여부와 잔액을 확인한다. 카드 실물 유효기간과 계좌 유효기간을 구분한다.",
+      "sources": [
+        {
+          "id": "followup_ei-training-card-rule_16",
+          "title": "국민내일배움카드 운영규정",
+          "section": "제16조(계좌의 유효기간)",
+          "content": "제16조(계좌의 유효기간) ① 제7조에 따라 발급받은 계좌의 유효기간은 계좌발급일로부터 5년으로 한다.\n② 제1항에도 불구하고 제14조제4항에 따른 추가 지원의 경우 유효기간은 최초 수강 신청한 K-디지털 기초역량훈련(K-디지털 크레딧) 개시일로부터 1년으로 한다. 이 경우 제14조제4항에 따른 추가 지원의 유효기간 내에 지원제외 요건에 해당하여도 1년의 유효기간은 유지된다.\n③ 제1항 및 제2항에 따른 유효기간이 만료하는 경우에는 그 계좌의 잔액은 소멸한다.",
+          "content_kind": "official_excerpt",
+          "source_type": "regulation",
+          "official_url": "https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000279150",
+          "effective_date": "2026-05-11",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제2호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-training-card-rule.xml",
+            "sha256": "24b60928d1d9919e73e1a4b2d7b139f69442408be5586754030025380c071a10",
+            "extracted_from": "제16조(계좌의 유효기간)",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/a7f848a8fd46b32f.json"
+          }
+        },
+        {
+          "id": "followup_ei-training-card-rule_form9_allowance",
+          "title": "국민내일배움카드 운영규정",
+          "section": "별지 0009 개인훈련계획서",
+          "content": "※ 실업급여 수급기간(대기기간 미포함) 중에는 훈련장려금이 지급되지 않습니다.",
+          "content_kind": "official_excerpt",
+          "source_type": "regulation",
+          "official_url": "https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000279150",
+          "effective_date": "2026-05-11",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제2호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-training-card-rule.xml",
+            "sha256": "24b60928d1d9919e73e1a4b2d7b139f69442408be5586754030025380c071a10",
+            "extracted_from": "별지 0009 개인훈련계획서",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/a7f848a8fd46b32f.json"
+          }
+        },
+        {
+          "id": "followup_ei-act_65",
+          "title": "고용보험법",
+          "section": "제65조 직업능력개발 수당",
+          "content": "제65조(직업능력개발 수당)\n①직업능력개발 수당은 수급자격자가 직업안정기관의 장이 지시한 직업능력개발 훈련 등을 받는 경우에 그 직업능력개발 훈련 등을 받는 기간에 대하여 지급한다.\n②제1항에도 불구하고 제60조제1항 및 제2항에 따라 구직급여의 지급이 정지된 기간에 대하여는 직업능력개발 수당을 지급하지 아니한다.\n③직업능력개발 수당의 지급 요건 및 금액에 필요한 사항은 대통령령으로 정한다. 이 경우 인력의 수급 상황을 고려하여 고용노동부장관이 특히 필요하다고 인정하여 고시하는 직종에 관한 직업능력개발 훈련 등에 대하여는 직업능력개발 수당의 금액을 다르게 정할 수 있다. <개정 2010.6.4>",
+          "content_kind": "official_excerpt",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=284449&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제1호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-act.xml",
+            "sha256": "280b4bec05c376ed4fac83ab9077bcb4d164b9fb510e26d1060ac73b9a24d885",
+            "extracted_from": "제65조 직업능력개발 수당",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/005afdfbf4cabfbf.json"
+          }
+        },
+        {
+          "id": "followup_ei-recognition-rule_18",
+          "title": "실업인정 및 재취업지원규정",
+          "section": "제18조(직업능력개발훈련 등 수강자에 대한 실업인정)",
+          "content": "제18조(직업능력개발훈련 등 수강자에 대한 실업인정) ① 법 제44조제2항제1호에 따라 직업능력개발훈련 등을 받는 수급자격자에 대한 실업인정업무는 다음 각 호의 절차에 따라 처리하여야 한다.\n1. 실업인정신청서 및 수강증명서 등의 접수\n2. 지정된 실업인정일에 출석 여부 확인\n3. 취업 여부의 확인\n4. 근로제공 사실 및 근로소득 유무의 확인\n5. 직업능력개발훈련 등을 수강하지 않은 날 및 미수강 사유의 확인\n6. 구직급여 및 직업능력개발수당 지급액의 산정\n7. 다음 실업인정일의 지정 및 통지\n8. 실업인정신청서의 전산처리 및 종결\n② 동일한 직업훈련기관 등에 수강 중인 수급자격자가 다수인 경우(야간훈련과정 및 훈련기간 28일 미만인 훈련수강자는 제외한다)로서 규칙 제85조제5항에 따라 대리인으로 하여금 실업인정신청서 및 수강증명서를 제출토록 하는 경우에는 이들에 대한 실업인정은 매월 5일에 일괄적으로 행함을 원칙으로 한다.\n③ 제10조제2항에 따른 훈련과정을 중도탈락하지 않고 수강하는 경우에는 전체 실업인정대상기간에 대하여 실업인정한다. 다만, 직업능력개발수당의 지급은 제4항 각 호의 기준에 따른다.\n④ 중도탈락 등으로 인해 실업인정대상기간 중의 각각의 날에 대한 직업능력개발훈련 등 수강 여부를 확인한 경우 실업인정 및 법 제65조에 따른 직업능력개발수당의 지급은 다음 각 호의 기준에 따른다.\n1. 수강한 날에 대해서는 실업인정과 동시에 직업능력개발수당의 지급을 결정한다.\n2. 공휴일 또는 직업훈련기관 등의 사정이나 수급자격자의 질병ㆍ부상 등 부득이한 본인의 사정으로 수강하지 않은 날에 대해서는 실업은 인정하되 직업능력개발수당은 부지급 결정한다.\n3. 부득이한 사유 없이 수급자격자 본인의 사정으로 수강하지 않은 날에 대해서는 실업을 인정하지 아니하고 직업능력개발수당도 부지급 결정한다.\n⑤ 제4항제3호에 따른 \"수급자격자의 질병ㆍ부상 등 부득이한 본인의 사정\"이란 다음 각 호의 어느 하나와 같다.\n1. 7일 미만의 수급자격자 본인의 질병ㆍ부상\n2. 구인자와의 면접 또는 채용시험에 응시하는 경우\n3. 각종 국가시험ㆍ검정 등의 자격시험에 응시하는 경우\n4. 「병역법」 그 밖의 다른 법령에 따라 징병검사ㆍ소집ㆍ동원 등에 응하는 경우\n5. 「국가공무원 복무규정」제20조제1항 관련 별표 2에 따라 경조사별 휴가 일수의 범위에서 결혼이나 그 밖의 경조사에 참석하는 경우\n6. 그 밖에 위 각 호에 준하는 경우로서 사회통념상 직업능력개발훈련 등을 수강하지 못할 부득이한 사정이 인정되는 경우\n⑥ 직업안정기관의 장의 지시에 따라 직업능력개발훈련 등을 받는 수급자격자가 규칙 제94조제3항에 해당되는 경우 실업인정담당자는 직업능력개발훈련 지시관서에 이를 통보하여야 한다.",
+          "content_kind": "official_excerpt",
+          "source_type": "regulation",
+          "official_url": "https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000284126",
+          "effective_date": "2026-09-01",
+          "rights_basis": "공식 법령·행정규칙/법정서식 또는 재판·재결 원문으로 저작권법 제7조제2호 범위의 텍스트 사용. 기준일2026-10-09 시행 본칙/현재 유효 법리를 검색용으로 등록 가능.",
+          "provenance": {
+            "original_path": "ei/ei-recognition-rule.xml",
+            "sha256": "2854d6e840db335bc2873e0fe67929bd7a58af093744efea0333c1d0f338a2ae",
+            "extracted_from": "제18조(직업능력개발훈련 등 수강자에 대한 실업인정)",
+            "cleaned_file": "/Users/zealnutkim/DEV/laborconsult_eval/source-integration-20261009/cleaned/f3d075f5ff10c6ac.json"
+          }
+        },
+        {
+          "id": "followup_moel_1000303859_concurrent",
+          "title": "고용노동부 1350 모바일 상담 — 작성한 사실 요약",
+          "section": "2025-09-30 14:53 답변",
+          "content": "고용노동부는 다른 훈련을 함께 듣고자 할 때 국민내일배움카드 과정의 훈련시간과 겹치지 않는 범위 내에서 동시 수강할 수 있다고 안내했다. 개별 과정에 대한 세부사항은 관할 고용센터의 직업능력개발 담당자가 확인해야 한다.",
+          "content_kind": "authored_summary",
+          "source_type": "official_guidance",
+          "official_url": "https://1350.moel.go.kr/rtmview.do?id=1000303859",
+          "effective_date": null,
+          "rights_basis": "상담 원문 미수록; 확인한 사실관계를 작성 요약. 원문 전재·상업적 RAG 이용허락 미확인.",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/ei/1000303859.html",
+            "sha256": "943f6b99c9e3dc169b8e1133714fd8a93a4dd1965de46a2f40b659f78cafed3b",
+            "extracted_from": "2025-09-30 14:53 답변",
+            "answered_at": "2025-09-30",
+            "retrieved_on": "2026-10-10",
+            "original_rights": {
+              "license": null,
+              "original_notice": null,
+              "status": "No explicit reuse license identified on captured page; attribution retained; internal evidence capture only; repository includes authored facts summary only"
+            }
+          }
+        },
+        {
+          "id": "followup_moel_1000265368_concurrent_scope",
+          "title": "고용노동부 1350 모바일 상담 — 작성한 사실 요약",
+          "section": "2023-11-15 11:45 답변 중 동시수강 조건",
+          "content": "고용노동부 상담에서 카드에 남은 지원한도와 유효기간을 충족하고 훈련일정이 겹치지 않는 범위의 동시 수강을 안내한 사례가 있다. 이 과거상담의 KDT별 금액이나 특별과정 조건은 이 요약에 포함하지 않는다.",
+          "content_kind": "authored_summary",
+          "source_type": "official_guidance",
+          "official_url": "https://1350.moel.go.kr/rtmview.do?id=1000265368",
+          "effective_date": null,
+          "rights_basis": "상담 원문 미수록; 확인한 사실관계를 작성 요약. 원문 전재·상업적 RAG 이용허락 미확인.",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/ei/1000265368.html",
+            "sha256": "11b49b3585e29bec12fd09621821c91915acfa13b30897088a76198e412d4928",
+            "extracted_from": "2023-11-15 11:45 답변 중 동시수강 조건",
+            "answered_at": "2023-11-15",
+            "retrieved_on": "2026-10-10",
+            "original_rights": {
+              "license": null,
+              "original_notice": null,
+              "status": "No explicit reuse license identified on captured page; attribution retained; internal evidence capture only; repository includes authored facts summary only"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

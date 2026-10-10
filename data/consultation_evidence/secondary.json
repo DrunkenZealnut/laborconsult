@@ -1,0 +1,238 @@
+{
+  "as_of": "2026-10-10",
+  "groups": [
+    {
+      "id": "ei_health_resignation",
+      "patterns": [
+        "질병|질환|진단|발병|건강|부상|심신|아파|아픈"
+      ],
+      "all_patterns": [
+        "실업\\s*급여|구직\\s*급여",
+        "퇴사|퇴직|이직"
+      ],
+      "guidance": "질병으로 자진퇴사한 근로자의 정당한 이직 사유는 시행규칙 별표2 제9호를 직접 적용한다. 질병 등 때문에 주어진 업무를 수행하기 곤란하고 기업 사정상 업무전환이나 휴직이 허용되지 않아 이직한 사실을 의사 소견서·사업주 의견 등으로 객관적으로 확인해야 한다. 발병일 또는 진단일이 실제 출근일이어야 한다는 요건은 이 규정에 없다. 퇴사 후 진단만으로 자동 배제하거나 재직 중 최초 진단을 일률적 필수요건으로 추가하지 않는다. 퇴사 후 진단인 경우에도 퇴사 당시 질병 상태·업무 곤란 및 퇴사와의 관련성을 보여주는 당시 진료기록과 소견 등 증거가 있는지 확인한다. 이는 이직 사유와 증거의 판단이고, 현재 근로의 의사·능력과 적극적 재취업 노력 등 제40조 수급요건은 별개다. 현재 치료 때문에 취업할 수 없다면 즉시 구직급여를 받을 수 있다고 단정하지 말고 제48조 및 시행령70조의 수급기간 연장 신고를 안내한다. 12개월에 취업불가 기간을 가산하되 총4년을 넘지 않는 규정과 제48조제3항의 신고간주 조건을 구별한다. 그 조항의 3개월 이상 요양을 모든 질병 자진퇴사의 공통 필수조건으로 확대하지 않는다.",
+      "sources": [
+        {
+          "id": "secondary_ei_rule_annex2_9",
+          "title": "고용보험법 시행규칙",
+          "section": "별표 2 제9호(제101조제2항 관련)",
+          "content": "9. 체력의 부족, 심신장애, 질병, 부상, 시력·청력·촉각의 감퇴 등으로 피보험자가 주어진 업무를 수행하는 것이 곤란하고, 기업의 사정상 업무종류의 전환이나 휴직이 허용되지 않아 이직한 것이 의사의 소견서, 사업주 의견 등에 근거하여 객관적으로 인정되는 경우",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288723&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "annex_amended_date": "2024-07-01",
+          "rights_basis": "저작권법 제7조제1호: 법령 별표 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-rule-annex2-pdf.pdf",
+            "sha256": "502284b2aa967c7220b2c9e9350b4bca1478f00145a30e7e03e8a3a0625cef29",
+            "extracted_from": "별표2 PDF 1쪽 제9호 전체, 줄바꿈만 정제",
+            "reextracted_text_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/secondary-evidence/annex2-pdf.reextracted.txt",
+            "reextracted_text_sha256": "6a6c99cacf940a1d97cda7566f3ade89d4ed120458f5b7b8ea670713f31fa02c",
+            "cross_checked_xml_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-rule.xml",
+            "cross_checked_xml_sha256": "24e483160e9c829bd61ee74b398196f54f9c1ecf8bee8eb269cd9134c2fa8ae9",
+            "content_sha256": "c8000b63f3666e531332eb8ea4e78077ab6b06073e55fa29d334af4275dfcaa9"
+          }
+        },
+        {
+          "id": "secondary_ei-rule_101_p2",
+          "title": "고용보험법 시행규칙",
+          "section": "제101조 2항",
+          "content": "② 법 제58조제2호다목에서 \"고용노동부령으로 정하는 정당한 사유\"란 별표 2를 말한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288723&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-rule.xml",
+            "sha256": "24e483160e9c829bd61ee74b398196f54f9c1ecf8bee8eb269cd9134c2fa8ae9",
+            "extracted_from": "제101조 2항",
+            "content_sha256": "170dcd58d9bdeb3981a7a649cbbfce2911ee2849100a8286eb3a17c4a05ecab8",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_ei-act_40_p1",
+          "title": "고용보험법",
+          "section": "제40조 1항",
+          "content": "①구직급여는 이직한 근로자인 피보험자가 다음 각 호의 요건을 모두 갖춘 경우에 지급한다. 다만, 제5호와 제6호는 최종 이직 당시 일용근로자였던 사람만 해당한다.\n1. 제2항에 따른 기준기간(이하 \"기준기간\"이라 한다) 동안의 피보험 단위기간(제41조에 따른 피보험 단위기간을 말한다. 이하 같다)이 합산하여 180일 이상일 것\n2. 근로의 의사와 능력이 있음에도 불구하고 취업(영리를 목적으로 사업을 영위하는 경우를 포함한다. 이하 이 장 및 제5장에서 같다)하지 못한 상태에 있을 것\n3. 이직사유가 제58조에 따른 수급자격의 제한 사유에 해당하지 아니할 것\n4. 재취업을 위한 노력을 적극적으로 할 것\n5. 다음 각 목의 어느 하나에 해당할 것\n가. 제43조에 따른 수급자격 인정신청일이 속한 달의 직전 달 초일부터 수급자격 인정신청일까지의 근로일 수의 합이 같은 기간 동안의 총 일수의 3분의 1 미만일 것\n나. 건설일용근로자(일용근로자로서 이직 당시에 「통계법」 제22조제1항에 따라 국가데이터처장이 고시하는 한국표준산업분류의 대분류상 건설업에 종사한 사람을 말한다. 이하 같다)로서 수급자격 인정신청일 이전 14일간 연속하여 근로내역이 없을 것\n6. 최종 이직 당시의 기준기간 동안의 피보험 단위기간 중 다른 사업에서 제58조에 따른 수급자격의 제한 사유에 해당하는 사유로 이직한 사실이 있는 경우에는 그 피보험 단위기간 중 90일 이상을 일용근로자로 근로하였을 것",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=284449&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-act.xml",
+            "sha256": "280b4bec05c376ed4fac83ab9077bcb4d164b9fb510e26d1060ac73b9a24d885",
+            "extracted_from": "제40조 1항",
+            "content_sha256": "44f5cb1838cfa10b81bb2cfd4769135a088bb24a7f6d200c757d3f8f1aca8d94",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_ei-act_48",
+          "title": "고용보험법",
+          "section": "제48조",
+          "content": "제48조(수급기간 및 수급일수)\n①구직급여는 이 법에 따로 규정이 있는 경우 외에는 그 구직급여의 수급자격과 관련된 이직일의 다음 날부터 계산하기 시작하여 12개월 내에 제50조제1항에 따른 소정급여일수를 한도로 하여 지급한다.\n②제1항에 따른 12개월의 기간 중 임신ㆍ출산ㆍ육아, 그 밖에 대통령령으로 정하는 사유로 취업할 수 없는 사람이 그 사실을 수급기간에 직업안정기관에 신고한 경우에는 12개월의 기간에 그 취업할 수 없는 기간을 가산한 기간(4년을 넘을 때에는 4년)에 제50조제1항에 따른 소정급여일수를 한도로 하여 구직급여를 지급한다.\n③ 다음 각 호의 어느 하나에 해당하는 경우에는 해당 최초 요양일에 제2항에 따른 신고를 한 것으로 본다.\n1. 「산업재해보상보험법」 제40조에 따른 요양급여를 받는 경우\n2. 질병 또는 부상으로 3개월 이상의 요양이 필요하여 이직하였고, 이직 기간 동안 취업활동이 곤란하였던 사실이 요양기간과 부상ㆍ질병 상태를 구체적으로 밝힌 주치의사의 소견과 요양을 위하여 이직하였다는 사업주의 의견을 통하여 확인된 경우",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=284449&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-act.xml",
+            "sha256": "280b4bec05c376ed4fac83ab9077bcb4d164b9fb510e26d1060ac73b9a24d885",
+            "extracted_from": "제48조",
+            "content_sha256": "fd6269f01464ae58133f02ce36f2abc1c888c935ac22be3e789888db26974ef8",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_ei-decree_70",
+          "title": "고용보험법 시행령",
+          "section": "제70조",
+          "content": "제70조(수급기간의 연기 사유) 법 제48조제2항에서 \"그 밖에 대통령령으로 정하는 사유\"란 다음 각 호의 사유를 말한다.\n1. 본인의 질병이나 부상(법 제63조에 따라 상병급여를 받은 경우의 질병이나 부상은 제외한다)\n2. 배우자의 질병이나 부상\n3. 본인과 배우자의 직계존속 및 직계비속의 질병이나 부상\n4. 배우자의 국외발령 등에 따른 동거 목적의 거소 이전\n5. 「병역법」에 따른 의무복무\n6. 범죄혐의로 인한 구속이나 형의 집행(법 제58조제1호가목에 따라 수급자격이 없는 자는 제외한다)\n7. 제1호부터 제6호까지의 규정에 준하는 경우로서 고용노동부령으로 정하는 사유",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288717&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-decree.xml",
+            "sha256": "65ec4de599490dff76b148ba1661d99cba9f6ca5881e23ab7effcf21776be2f2",
+            "extracted_from": "제70조",
+            "content_sha256": "35ba62393d432b348d716a407ab2c148f1779d0020816b55f0584f284ab76350",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ei_short_work_recognition",
+      "patterns": [
+        "아르바이트|알바|단기\\s*(?:근로|근무)|일용|파트\\s*타임"
+      ],
+      "all_patterns": [
+        "실업\\s*급여|구직\\s*급여|실급",
+        "(?:실업\\s*급여|구직\\s*급여|실급).{0,12}(?:중|수급|기간|받)|(?:수급|받는|받고).{0,12}(?:실업\\s*급여|구직\\s*급여)"
+      ],
+      "guidance": "실업급여 수급 중 아르바이트·단기근로는 고용보험법47조와 시행규칙92조의 취업 인정기준을 직접 확인한다. 각 호 중 하나에 해당해도 취업으로 본다. 1개월간 소정근로시간60시간 이상(1주소정15시간 이상 포함), 3개월 이상 계속근로, 일용근로, 근로 대가로 받은 임금 등이 본인의 구직급여일액 이상인 경우는 각각 별도의 기준이다. 주14시간 미만·2개월이라는 조건만으로 모든 기준에서 제외된다고 판단하지 않는다. 월 소정근로시간과 실제 근무형태, 기간 연장 여부, 근로 제공에 대한 임금과 본인의 구직급여일액을 확인한다. 월 알바총액과 월 실업급여총액의 비교로 일액 기준을 대신하지 않는다. 신고해도 해당 근로가 취업으로 인정될 수 있고 해당 일·기간의 실업인정과 지급이 달라질 수 있다. 그렇다고 한 번의 단기근로로 남은 수급자격 전체가 영구 소멸한다고 단정하지 않는다. 근로일·시간·소득과 계약기간을 실업인정 신청 시 사실대로 신고하고 관할 고용센터에서 해당 일·기간 처리를 확인한다.",
+      "sources": [
+        {
+          "id": "secondary_ei-rule_92",
+          "title": "고용보험법 시행규칙",
+          "section": "제92조",
+          "content": "제92조(취업의 인정기준) 법 제47조에 따라 수급자격자가 다음 각 호의 어느 하나에 해당하는 경우에는 취업한 것으로 본다.\n1. 1개월간의 소정근로시간을 60시간 이상(1주간의 소정근로시간을 15시간 이상으로 정하는 경우를 포함한다)으로 정하고 근로를 제공하는 경우\n2. 3개월 이상 계속하여 근로를 제공하는 경우\n3. 일용근로자로서 근로를 제공하거나 단기예술인 또는 단기노무제공자로서 노무를 제공하는 경우\n4. 근로 제공의 대가로 임금 등 어떠한 명칭으로든지 법 제46조에 따른 구직급여일액 이상을 수령하는 경우\n5. 문화예술용역 관련 계약으로서 영 제104조의5제2항제1호에 따른 월평균소득이 50만원 이상인 문화예술용역 관련 계약을 새로 체결하여 노무를 제공하는 경우\n6. 노무제공계약으로서 영 제104조의11제2항제1호에 따른 월보수액이 80만원 이상인 노무제공계약을 새로 체결하여 노무를 제공하는 경우\n7. 상업ㆍ농업 등 가업에 종사(무급 가사종사자를 포함한다)하거나 다른 사람의 사업에 참여하여 근로를 제공함으로써 다른 사업에 상시 취직하기가 곤란하다고 인정되는 경우\n8. 「소득세법」, 「부가가치세법」 또는 「법인세법」에 따라 사업자등록을 한 경우(사업자등록을 한 경우라도 휴업신고를 하는 등 실제 사업을 하지 아니하였음을 증명한 경우와 부동산임대업 중 근로자를 고용하지 아니하고 임대사무실도 두지 아니한 경우는 제외한다)\n9. 그 밖에 사회통념상 취업을 하였다고 인정되는 경우",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=288723&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-rule.xml",
+            "sha256": "24e483160e9c829bd61ee74b398196f54f9c1ecf8bee8eb269cd9134c2fa8ae9",
+            "extracted_from": "제92조",
+            "content_sha256": "c38a2cc853bc6f34e21822b62a5e435403ed68158fd9444cad02b2878c663bd8",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_ei-act_47",
+          "title": "고용보험법",
+          "section": "제47조",
+          "content": "제47조(실업인정대상기간 중의 취업 등의 신고)\n①수급자격자는 실업의 인정을 받으려 하는 기간(이하 \"실업인정대상기간\"이라 한다) 중에 고용노동부령으로 정하는 기준에 해당하는 취업을 한 경우에는 그 사실을 직업안정기관의 장에게 신고하여야 한다.\n②직업안정기관의 장은 필요하다고 인정하면 수급자격자의 실업인정대상기간 중의 취업 사실에 대하여 조사할 수 있다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=284449&efYd=20260918",
+          "effective_date": "2026-09-18",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/Downloads/laborconsult-source-pack-2026-10-09/ei/ei-act.xml",
+            "sha256": "280b4bec05c376ed4fac83ab9077bcb4d164b9fb510e26d1060ac73b9a24d885",
+            "extracted_from": "제47조",
+            "content_sha256": "feb6b192e1eb1c1223916f731a194beef87461611b6ab4b20a70fc9f9d3b186f",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        }
+      ]
+    },
+    {
+      "id": "weekly_holiday_partial_attendance",
+      "patterns": [
+        "반차|반일\\s*휴가|조퇴|지각|외출|일부\\s*시간"
+      ],
+      "all_patterns": [
+        "주휴|유급\\s*주휴|소정근로일.*개근"
+      ],
+      "guidance": "주휴 개근은 소정근로일의 출근과 하루 전체 결근 여부를 살핀다. 무급반차·조퇴일에 실제로 나머지 시간의 근로를 제공했다면, 일부 시간 미근로를 하루 전체 결근과 동일하게 취급하여 주휴 전체를 부정하지 않는다. 회사 근태표의 명칭이나 승인·무승인 표시는 실제 일부근로 사실과 법적 개근 판단을 대체하지 않는다. 지정 FAQ는 지각·조퇴·외출의 합산시간만으로 결근으로 볼 수 없다고 안내하므로 이 사실에 근거해 반차일의 실제 근로 제공 여부를 확인한다. 반차일에 하루 전부 근로하지 않았거나 회사가 정한 근태표시가 실제 전일결근을 기록한 경우에는 사실관계를 별도로 확인한다. 미근로한 일부 시간의 임금 문제와 주휴수당 전부의 발생 여부를 구별한다. 주15시간 기준은 근로기준법18조제3항의 4주 평균 소정근로시간 기준이지 그 주 실제 근무시간의 단순 합계 기준이 아니다. 계약상 소정15시간인데 조퇴로 실제 시간이 줄었다는 이유만으로 15시간 미만 계약이라고 보지 않는다. 계약 자체의 변경 여부는 확인한다. 지난주와 이번주의 출근은 각각 해당 주로 나누고, 적용되는 유급공휴일에 쉰 사실을 결근으로 산입하지 않는다. 무급반차에 관한 결론은 실제 해당 소정근로일의 일부 근로 제공 및 다른 날 출근 여부 등 사실관계에 따라 판단한다. FAQ의 확인 사실요약은 법령 원문과 별개 자료이고 원문 공개복제 또는 법적 확정 판결로 취급하지 않는다.",
+      "sources": [
+        {
+          "id": "secondary_lsa_55",
+          "title": "근로기준법",
+          "section": "제55조",
+          "content": "제55조(휴일)\n① 사용자는 근로자에게 1주에 평균 1회 이상의 유급휴일을 보장하여야 한다.\n② 사용자는 근로자에게 대통령령으로 정하는 휴일을 유급으로 보장하여야 한다. 다만, 근로자대표와 서면으로 합의한 경우 특정한 근로일로 대체할 수 있다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/근로기준법/제55조",
+          "effective_date": "2026-10-08",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/dismissal/lsa.xml",
+            "sha256": "512ce9be8d74296180251914d5360b3e88e0ad7191c667b1f25541b64b249520",
+            "extracted_from": "제55조",
+            "content_sha256": "3272cf57f49b1c9abb75a49540697dc0df97ed17b5b12ca1f2fe4677aa3f52ad",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_lsa_18_p3",
+          "title": "근로기준법",
+          "section": "제18조 3항",
+          "content": "③ 4주 동안(4주 미만으로 근로하는 경우에는 그 기간)을 평균하여 1주 동안의 소정근로시간이 15시간 미만인 근로자에 대하여는 제55조와 제60조를 적용하지 아니한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/근로기준법/제18조",
+          "effective_date": "2026-10-08",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/dismissal/lsa.xml",
+            "sha256": "512ce9be8d74296180251914d5360b3e88e0ad7191c667b1f25541b64b249520",
+            "extracted_from": "제18조 3항",
+            "content_sha256": "afa572d5b4a820589fe827a9b8b0fd6d779127e162fb7b65c9ca96c2d4819dd6",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_lsa_enf_30",
+          "title": "근로기준법 시행령",
+          "section": "제30조",
+          "content": "제30조(휴일)\n① 법 제55조제1항에 따른 유급휴일은 1주 동안의 소정근로일을 개근한 자에게 주어야 한다.\n② 법 제55조제2항 본문에서 \"대통령령으로 정하는 휴일\"이란 「관공서의 공휴일에 관한 규정」 제2조 각 호(제1호는 제외한다)에 따른 공휴일 및 같은 영 제3조에 따른 대체공휴일을 말한다.",
+          "source_type": "law",
+          "official_url": "https://www.law.go.kr/법령/근로기준법시행령/제30조",
+          "effective_date": "2025-10-23",
+          "rights_basis": "저작권법 제7조제1호: 법령 원문",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/dismissal/lsa_enf.xml",
+            "sha256": "e64d562fdd252dbf17a0689e1453c2a955025fc748083e66390eb9bd48ea7695",
+            "extracted_from": "제30조",
+            "content_sha256": "c76b8d436a1240884f2e0140724661169b4e6a4eb8e7d3d6c28872eb4f9b85e9",
+            "extraction": "법령XML의 조문/항 본문 및 하위 호·목. 원문 주석 제외, 공백 정제."
+          }
+        },
+        {
+          "id": "secondary_moel_faq1231_factual_summary",
+          "title": "고용노동부 고객상담센터: 일부시간 미근로와 주휴(확인한 사실요약)",
+          "section": "FAQ1231 독자 사실요약",
+          "content": "고용노동부 고객상담센터 FAQ는 하루 중 일부 시간을 일하지 않은 것과 하루 전체 결근을 구별한다. 소정근로일에 출근하여 일부 근로를 제공했다면 지각·조퇴·외출의 시간을 합산한 수치만으로 주휴의 개근 요건을 부정하지 않는다고 안내한다. 이 내용은 작성자가 확인한 사실요약이며 FAQ 원문을 복제한 것이 아니다.",
+          "source_type": "official_guidance",
+          "content_kind": "authored_summary",
+          "official_url": "https://1350.moel.go.kr/home/hp/data/faqView.do?faq_idx=1000001231",
+          "effective_date": null,
+          "date_kind": "faq_published_date_not_law_effective_date",
+          "rights_basis": "공식FAQ 열람으로 사실관계 확인. 허락/저작권법7조 비보호 원문으로 간주하지 않음. 로컬 검증 capture만 보존하며 제품에 원문을 복제하지 않고 독자 사실요약+링크만 제공.",
+          "provenance": {
+            "original_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/secondary-evidence/faq1231.capture.html",
+            "sha256": "62dfa7c67a6f4cb7262ebd3b500562ce1904a688e88cd8e23c2e72a107c060b9",
+            "extracted_from": "2022-06-16 FAQ를 직접 열람하여 작성한 독자 사실요약. 원문 공개복제 없음.",
+            "capture_metadata_path": "/Users/zealnutkim/DEV/laborconsult_eval/source-followup-20261010/secondary-evidence/faq1231.capture.json",
+            "captured_original_private_only": true,
+            "content_sha256": "4b1c20e1143803279d5ae3d07fb32178aef19ca787533526b3258fd538d002cd"
+          },
+          "published_at": "2022-06-16"
+        }
+      ]
+    }
+  ]
+}
