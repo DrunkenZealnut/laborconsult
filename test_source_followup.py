@@ -36,6 +36,14 @@ class FollowupPipelineTest(unittest.TestCase):
         captured['events'] = events
         return captured
 
+    def test_evidence_failure_does_not_stop_the_pipeline(self):
+        """An unexpected evidence selection error must fall back to the ordinary answer path."""
+        with mock.patch('app.core.consultation_evidence.select_evidence',
+                        side_effect=RuntimeError('broken catalog')):
+            captured = self.run_question('실업급여 상병급여 청구 기한')
+        self.assertIn('상병급여 청구 기한', captured['user'])
+        self.assertNotIn('질문 쟁점의 공식 근거', captured['user'])
+
     def test_dismissal_without_size_delivers_scope_and_matching_sources(self):
         """Unknown employer size must deliver statutory scope together with its sources."""
         result = self.run_question('소장이 팀장에게 지시해서 해고했습니다. 부당해고 구제신청 가능한가요?')
@@ -239,6 +247,57 @@ class EvidenceSelectionTest(unittest.TestCase):
             self.assertIn('weekly_holiday_partial_attendance', selected.groups)
             self.assertTrue(any(h.get('content_kind')=='authored_summary' for h in selected.hits))
             self.assertIn('전일', selected.text)
+
+    def test_retirees_do_not_receive_active_worker_guarantee_requirements(self):
+        """Completed resignation must not receive the active-worker 110% and 7,000,000 KRW cap rules."""
+        from app.core.consultation_evidence import select_evidence
+        for query in ('근무 중 임금이 체불돼서 결국 퇴사했어요. 대지급금 받을 수 있나요?',
+                      '회사 직원 10명 모두 체불당하고 퇴사했습니다. 체당금 신청하려고요',
+                      '재직 중에 3개월 월급을 못 받다가 그만뒀는데 대지급금 되나요?',
+                      '회사가 폐업해서 대지급금 신청하려는데 근무 중 받지 못한 임금이 있어요'):
+            self.assertNotIn('active_worker_wage_guarantee', select_evidence(query).groups, query)
+        for query in ('지금 재직 중인데 월급이 3개월 밀렸어요. 대지급금 받을 수 있나요?',
+                      '회사 다니고 있는데 체당금 신청 가능한가요?'):
+            self.assertIn('active_worker_wage_guarantee', select_evidence(query).groups, query)
+
+    def test_short_work_eligibility_is_not_work_during_benefits(self):
+        """Day-labor eligibility questions must not receive the during-benefit employment rule."""
+        from app.core.consultation_evidence import select_evidence
+        for query in ('일용직으로 일했는데 실업급여 받을 수 있나요?',
+                      '알바만 했는데 구직급여 받을 수 있을까요?'):
+            self.assertNotIn('ei_short_work_recognition', select_evidence(query).groups, query)
+        for query in ('실업급여 수급 중에 일용직 하루 나가도 되나요?',
+                      '구직급여 받으면서 아르바이트 해도 되나요?'):
+            self.assertIn('ei_short_work_recognition', select_evidence(query).groups, query)
+
+    def test_surgery_resignation_is_not_a_sickness_benefit_claim(self):
+        """Resigning because of surgery needs annex 9 evidence, not the post-filing sickness benefit."""
+        from app.core.consultation_evidence import select_evidence
+        for query in ('수술 때문에 회사를 그만뒀어요. 실업급여 받을 수 있나요?',
+                      '실업급여 받고 싶은데 허리 수술 때문에 회사를 그만뒀습니다'):
+            selected = select_evidence(query).groups
+            self.assertIn('ei_health_resignation', selected, query)
+            self.assertNotIn('ei_sickness_benefit', selected, query)
+        self.assertIn('ei_sickness_benefit',
+                      select_evidence('실업급여 받는 중인데 골절로 실업인정일에 못 갔어요').groups)
+
+    def test_leave_benefit_delays_are_not_unpaid_wages(self):
+        """Parental or maternity leave benefit delays are not unpaid wages from the employer."""
+        from app.core.consultation_evidence import select_evidence
+        for query in ('육아휴직 급여가 늦게 나오는데 퇴사하면 실업급여 받을 수 있나요?',
+                      '출산휴가 급여 지연되면 실업급여는요?'):
+            self.assertNotIn('ei_wage_arrears_resignation', select_evidence(query).groups, query)
+
+    def test_malformed_catalog_entries_are_omitted_not_raised(self):
+        """Malformed catalog fields must omit that group instead of failing the consultation."""
+        broken_source = self.select([self.group(self.source(provenance='a' * 64))])
+        self.assertEqual(broken_source.hits, [])
+        self.assertEqual(self.select([self.group(sources='not-a-list')]).hits, [])
+        string_patterns = self.select([self.group(patterns='체불')], query='임금 체')
+        self.assertEqual(string_patterns.groups, [])
+        self.assertIn('example', string_patterns.omitted)
+        excluded = self.select([self.group(exclude_patterns=['퇴사했'])], query='임금 체불 후 퇴사했어요')
+        self.assertEqual(excluded.groups, [])
 
     def test_explicit_units_and_work_hours_do_not_become_currency_questions(self):
         """Explicit units and changes in work hours must not create currency questions."""
