@@ -19,14 +19,40 @@ from app.templates.prompts import ANALYZE_TOOL, ANALYZER_SYSTEM
 logger = logging.getLogger(__name__)
 
 
-def _correct_date_year(date_str: str | None) -> str | None:
+# 질문(또는 대화 맥락)에 연도 단서가 있으면 LLM이 정한 연도를 그대로 둔다. 보정은 "연도를 말하지 않았는데
+# LLM이 과거 연도를 지어낸" 경우만 대상이다. 단서는 셋이다 — 명시 연도(2023·2023년·23.3.2), 기간("2년"·
+# "18개월"·"3달"·"730일"·"60주 동안" — LLM이 오늘에서 거슬러 시작일을 계산한다), 상대 연도(작년·재작년·지난해).
+# 일 단위는 세 자리 이상만 본다 — 날짜의 일(1~31)은 두 자리라 "3월 2일"과 겹치지 않는다. 주 단위는
+# "주 5일"처럼 숫자가 뒤에 오는 근무형태와 구분하려고 두 자리 이상 + 기간 접미어를 요구한다.
+# 실측(2026-10-11): 보정이 조건 없이 돌아 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가
+# 2026-03-02 입사·2026-03-01 퇴사(입사보다 퇴사가 앞선 날짜)로 계산기에 들어갔다. 벤더와 무관한 후처리다.
+_YEAR_CONTEXT_RE = re.compile(
+    r"(?<!\d)(?:19|20)\d{2}(?!\d)"
+    r"|(?<!\d)\d{2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}"
+    r"|\d+(?:\.\d+)?\s*(?:년|개월|달)"
+    r"|(?<!\d)\d{3,}\s*일"
+    r"|(?<!\d)\d{2,}\s*주\s*(?:전|동안|간|째|이상|넘게|정도|근무)"
+    r"|작년|재작년|지난\s*해|전년도?|이듬해|다음\s*해"
+)
+
+
+def _has_year_context(text: str | None) -> bool:
+    return bool(text) and _YEAR_CONTEXT_RE.search(text) is not None
+
+
+def _correct_date_year(date_str: str | None, context: str | None = None) -> str | None:
     """연도가 잘못 추정된 날짜를 현재 기준으로 보정.
 
     LLM이 연도 미명시 날짜를 과거 연도로 추정하는 경우,
     오늘 기준 가장 가까운 과거/현재 날짜로 보정한다.
-    예: 오늘=2026-03-08, LLM 추출="2025-02-28" → "2026-02-28"
+    예: 오늘=2026-03-08, 질문 "2월 28일 퇴사", LLM 추출="2025-02-28" → "2026-02-28"
+
+    context: LLM이 본 질문·대화 텍스트. 연도 단서(_YEAR_CONTEXT_RE)가 있으면 보정하지 않는다.
+        None이면 판단 근거가 없으므로 예전처럼 보정한다(맥락을 넘기지 않는 호출부 호환).
     """
     if not date_str or not re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
+        return date_str
+    if _has_year_context(context):
         return date_str
 
     try:
@@ -139,19 +165,21 @@ _INFO_KEYS = {
 }
 
 
-def _build_analysis_result(inp: dict) -> AnalysisResult:
+def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:
     """도구 입력 dict → AnalysisResult.
 
     **벤더 무관** — Claude tool_use와 OpenAI function calling이 같은 스키마로
     같은 dict를 만들어 이 함수를 통과한다. 후처리를 한 곳에 모아야 두 벤더의
     추출 결과가 조용히 갈라지지 않는다 (llm-fallback-hardening FR-05).
+
+    context: LLM이 본 질문·대화 텍스트 — 날짜 연도 보정 여부를 정한다(_correct_date_year).
     """
     extracted = {k: v for k, v in inp.items() if k in _INFO_KEYS and v is not None}
 
     # 날짜 보정: LLM이 연도를 잘못 추정한 경우 현재 기준으로 수정
     for date_key in ("start_date", "end_date", "arrear_due_date"):
         if date_key in extracted:
-            extracted[date_key] = _correct_date_year(extracted[date_key])
+            extracted[date_key] = _correct_date_year(extracted[date_key], context)
 
     # 숫자 범위 검증: 비현실적 값 제거 → missing_info에 추가
     missing_from_llm = inp.get("missing_info", [])
@@ -218,6 +246,11 @@ def analyze_intent(
         attempts=2 if INTENT_FALLBACK_ENABLED else 1,
     )
 
-    result = _build_analysis_result(inp)
+    # 연도 단서는 LLM이 본 전부(요약·이전 턴·질문)에서 찾는다 — 앞 턴에서 "2023년 입사"를 말하고
+    # 후속 질문에 연도가 없어도 LLM은 앞 턴의 연도를 쓴다.
+    from app.core.llm_fallback import flatten_content
+    context = "\n".join([summary or ""] + [flatten_content(t.get("content", "")) for t in history[-8:]]
+                         + [question])
+    result = _build_analysis_result(inp, context)
     result.intent_provider = provider
     return result

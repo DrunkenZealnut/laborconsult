@@ -887,7 +887,8 @@ def _extract_params(query: str, config: AppConfig) -> tuple[str, dict | None]:
         # 날짜 보정
         for dk in ("start_date", "end_date"):
             if dk in params:
-                params[dk] = _correct_date_year(params[dk])
+                # 추출 LLM이 본 텍스트는 query(질문+첨부)뿐이다 — 연도 단서도 거기서 찾는다
+                params[dk] = _correct_date_year(params[dk], query)
         return ("wage", params)
     except Exception as e:
         # 조용한 삼킴 제거 — 계산기 미실행 원인 관측 가능하게 (CALC-7)
