@@ -98,6 +98,9 @@ def rollback(ledger: dict, index, *, document: str | None, apply: bool) -> int:
         index.delete(ids=ids[start:start + DELETE_BATCH], namespace=ns)
     print(f"{ledger['batch']} {scope}: {len(ids)}벡터 삭제 요청 완료 (ns={ns}). "
           f"verify로 반영을 확인하고 build_bm25_corpus.py를 재실행할 것")
+    if document is not None:
+        print("  문서 단위 롤백: 원장에서 그 문서를 지우고 vector_count·composition·document_count를 "
+              "갱신해 커밋할 것(그대로 두면 verify가 누락으로 보고한다)")
     return 0
 
 

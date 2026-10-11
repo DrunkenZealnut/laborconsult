@@ -47,8 +47,14 @@ def evidence_groups() -> tuple[dict, ...]:
 
 
 def _pattern_list(group: dict, key: str) -> list[str]:
-    """패턴 목록은 문자열 리스트여야 한다. 문자열 하나를 글자별로 매칭하지 않도록 거부한다."""
-    patterns = group.get(key) or []
+    """패턴 목록은 문자열 리스트여야 한다. 문자열 하나를 글자별로 매칭하지 않도록 거부한다.
+
+    키가 없을 때만 빈 목록이다. `""`·`null`을 빈 목록으로 바꾸면 `all([])`가 참이라
+    필수 조건 없이 그룹이 선택된다.
+    """
+    if key not in group:
+        return []
+    patterns = group[key]
     if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):
         raise TypeError(f'{key} must be a list of strings')
     return patterns

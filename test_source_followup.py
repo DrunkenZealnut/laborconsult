@@ -264,7 +264,8 @@ class EvidenceSelectionTest(unittest.TestCase):
         """Day-labor eligibility questions must not receive the during-benefit employment rule."""
         from app.core.consultation_evidence import select_evidence
         for query in ('일용직으로 일했는데 실업급여 받을 수 있나요?',
-                      '알바만 했는데 구직급여 받을 수 있을까요?'):
+                      '알바만 했는데 구직급여 받을 수 있을까요?',
+                      '일용직으로 일했는데 실업급여 수급자격이 되나요?'):
             self.assertNotIn('ei_short_work_recognition', select_evidence(query).groups, query)
         for query in ('실업급여 수급 중에 일용직 하루 나가도 되나요?',
                       '구직급여 받으면서 아르바이트 해도 되나요?'):
@@ -278,15 +279,22 @@ class EvidenceSelectionTest(unittest.TestCase):
             selected = select_evidence(query).groups
             self.assertIn('ei_health_resignation', selected, query)
             self.assertNotIn('ei_sickness_benefit', selected, query)
-        self.assertIn('ei_sickness_benefit',
-                      select_evidence('실업급여 받는 중인데 골절로 실업인정일에 못 갔어요').groups)
+        self.assertNotIn('ei_sickness_benefit',
+                         select_evidence('수술 후 실업급여를 신청하려는데 실업인정과 구직활동은 어떻게 하나요?').groups)
+        for query in ('실업급여 받는 중인데 골절로 실업인정일에 못 갔어요',
+                      '수술해서 실업인정일에 출석을 못 해요'):
+            self.assertIn('ei_sickness_benefit', select_evidence(query).groups, query)
 
     def test_leave_benefit_delays_are_not_unpaid_wages(self):
         """Parental or maternity leave benefit delays are not unpaid wages from the employer."""
         from app.core.consultation_evidence import select_evidence
         for query in ('육아휴직 급여가 늦게 나오는데 퇴사하면 실업급여 받을 수 있나요?',
-                      '출산휴가 급여 지연되면 실업급여는요?'):
+                      '출산휴가 급여 지연되면 실업급여는요?',
+                      '육아휴직 중 급여가 늦는데 퇴사하면 실업급여를 받을 수 있나요?',
+                      '출산휴가 중 급여가 지급이 늦어요. 그만두면 실업급여 되나요?'):
             self.assertNotIn('ei_wage_arrears_resignation', select_evidence(query).groups, query)
+        self.assertIn('ei_wage_arrears_resignation',
+                      select_evidence('급여 지급이 늦어 퇴사하면 실업급여를 받을 수 있나요?').groups)
 
     def test_malformed_catalog_entries_are_omitted_not_raised(self):
         """Malformed catalog fields must omit that group instead of failing the consultation."""
@@ -298,6 +306,10 @@ class EvidenceSelectionTest(unittest.TestCase):
         self.assertIn('example', string_patterns.omitted)
         excluded = self.select([self.group(exclude_patterns=['퇴사했'])], query='임금 체불 후 퇴사했어요')
         self.assertEqual(excluded.groups, [])
+        for empty in ('', None):
+            blank_required = self.select([self.group(all_patterns=empty)], query='체불')
+            self.assertEqual(blank_required.groups, [], repr(empty))
+        self.assertEqual(self.select([self.group(all_patterns=[])], query='체불').groups, ['example'])
 
     def test_explicit_units_and_work_hours_do_not_become_currency_questions(self):
         """Explicit units and changes in work hours must not create currency questions."""
