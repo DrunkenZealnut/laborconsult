@@ -509,8 +509,57 @@ def _stream_openai(messages: list, system: str, config: AppConfig, model: str | 
             yield chunk.choices[0].delta.content
 
 
+# Gemini SDK의 request_options timeout은 gRPC **스트림 전체 마감**이다 — 청크 사이 대기 한도가 아니다.
+# 실측(2026-10-11): 25초(읽기 20 + 연결 5)로 두어 25초를 넘는 답변이 전부 잘렸다(DeadlineExceeded,
+# 1,471자 지점). 외부 점검 50문항 중 9건(18%)이 '생성 중단'이었고 전부 Gemini 1순위 답변이었다.
+# 마감은 Vercel maxDuration(300초) 안에서 넉넉히 두고, 무응답 감지는 _iter_with_idle_timeout이 맡는다.
+GEMINI_STREAM_DEADLINE = 240.0
+
+
+def _iter_with_idle_timeout(make_iter, idle: float):
+    """make_iter()의 항목을 내보내되, 항목 사이(첫 항목 포함) idle초 동안 아무것도 오지 않으면 TimeoutError.
+
+    SDK 호출은 별도 스레드에서 돈다 — Gemini는 generate_content(stream=True) 호출 자체가 첫 청크까지
+    막히므로 호출까지 스레드 안에 있어야 한다. 소비자가 끝나면(시간 초과·폴백·close) stop을 세워
+    스레드가 다음 청크에서 순회를 멈추게 한다 — 그러지 않으면 버려진 스트림이 SDK 마감(240초)까지
+    큐에 계속 쌓인다. 청크 없이 막혀 있는 동안은 SDK 마감까지 남지만 daemon이라 요청 처리를 막지 않는다.
+    """
+    import queue
+    import threading
+
+    q: queue.Queue = queue.Queue()
+    stop = threading.Event()
+    done = object()
+
+    def run():
+        try:
+            for item in make_iter():
+                if stop.is_set():
+                    return
+                q.put(item)
+        except BaseException as e:  # noqa: BLE001 — 소비자 쪽에서 그대로 다시 올린다
+            q.put(e)
+            return
+        q.put(done)
+
+    threading.Thread(target=run, daemon=True).start()
+    try:
+        while True:
+            try:
+                item = q.get(timeout=idle)
+            except queue.Empty:
+                raise TimeoutError(f"스트림 무응답 {idle:.0f}초") from None
+            if item is done:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        stop.set()
+
+
 def _stream_gemini(messages: list, system: str, config: AppConfig, model: str | None = None):
-    """Google Gemini 스트리밍 — 3순위 폴백"""
+    """Google Gemini 스트리밍"""
     import google.generativeai as genai
     genai.configure(api_key=config.gemini_api_key)
     gm = genai.GenerativeModel(model or GEMINI_MODEL, system_instruction=system)
@@ -520,14 +569,17 @@ def _stream_gemini(messages: list, system: str, config: AppConfig, model: str | 
         role = "model" if m["role"] == "assistant" else "user"
         contents.append({"role": role, "parts": [_flatten_content(m["content"])]})
 
-    # request_options 없이는 무제한 대기 — 3순위가 함수 전체를 잡아먹는다 (FR-04).
-    response = gm.generate_content(
-        contents, stream=True,
-        request_options={"timeout": ANSWER_READ_TIMEOUT + CONNECT_TIMEOUT},
-    )
-    for chunk in response:
-        if chunk.text:
-            yield chunk.text
+    def chunks():
+        # request_options 없이는 무제한 대기 — 함수 전체를 잡아먹는다 (FR-04).
+        response = gm.generate_content(
+            contents, stream=True,
+            request_options={"timeout": GEMINI_STREAM_DEADLINE},
+        )
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+
+    yield from _iter_with_idle_timeout(chunks, ANSWER_READ_TIMEOUT + CONNECT_TIMEOUT)
 
 
 def _answer_providers(config: AppConfig) -> list[tuple[str, object]]:
