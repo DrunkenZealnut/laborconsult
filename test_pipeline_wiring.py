@@ -177,10 +177,14 @@ def main() -> None:
     assert r14 and "5,752,620원" in r14, f"W14 실패(명시 연도 보존 후 퇴직금):\n{r14}"
     old = (_d.today().replace(year=_d.today().year - 3)).isoformat()
     for ctx in ("23.3.2 입사했어요", "2년 일하고 그만뒀어요", "18개월 근무", "재작년 3월에 입사",
-                "작년 3월 입사", "1.5년 일했어요"):
+                "작년 3월 입사", "1.5년 일했어요", "730일 전에 입사해 오늘 퇴사했습니다",
+                "60주 동안 일했어요"):
         assert _correct_date_year(old, ctx) == old, f"W14 실패(연도 단서 무시): {ctx}"
     # 연도 단서가 없으면 보정한다 — 본래 목적(LLM이 지어낸 과거 연도)
     fixed = _correct_date_year(old, "3월 2일에 입사해서 지난달 퇴사했어요")
+    # 날짜의 일·근무형태의 주는 기간이 아니다
+    for ctx in ("12월 31일 입사, 3월 15일 퇴사", "주 5일, 주 40시간 근무하다 3월 2일 퇴사"):
+        assert _correct_date_year(old, ctx) != old, f"W14 실패(날짜를 기간으로 오인): {ctx}"
     assert fixed != old and int(fixed[:4]) >= _d.today().year - 1, fixed
     assert _correct_date_year(old) != old, "맥락 없는 호출부의 기존 보정이 깨짐"
     print("  ✅ W14 날짜 보정: 명시 연도·기간·상대 연도면 보존, 연도 없을 때만 보정")
