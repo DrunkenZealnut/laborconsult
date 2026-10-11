@@ -799,6 +799,46 @@ def test_citation_stage_budget() -> None:
     print("  ✅ 교정 단계 예산 소진 시 전 제공자 생략")
 
 
+def test_gemini_stream_idle_not_total_deadline() -> None:
+    """Gemini 스트림은 '전체 마감'이 아니라 '청크 사이 무응답'으로 끊는다(2026-10-11 생성 중단 18%)."""
+    import time as _t
+    from app.core import pipeline as pl
+
+    def slow(n, gap):
+        def gen():
+            for i in range(n):
+                _t.sleep(gap)
+                yield f"c{i}"
+        return gen
+
+    # 총 0.5초 > idle 0.3초여도 청크 간격(0.1초)이 짧으면 끝까지 받는다
+    assert list(pl._iter_with_idle_timeout(slow(5, 0.1), 0.3)) == [f"c{i}" for i in range(5)]
+    # 간격이 idle을 넘으면 TimeoutError — 받은 청크는 그 전까지 그대로 나간다
+    got = []
+    try:
+        for c in pl._iter_with_idle_timeout(slow(3, 0.4), 0.2):
+            got.append(c)
+        raise AssertionError("무응답인데 TimeoutError가 나지 않았다")
+    except TimeoutError:
+        pass
+    assert got == [], got
+    # SDK 예외는 그대로 올라온다(절단·폴백 판정이 예외 종류를 본다)
+    def boom():
+        yield "a"
+        raise ValueError("sdk")
+    got = []
+    try:
+        for c in pl._iter_with_idle_timeout(boom, 1.0):
+            got.append(c)
+        raise AssertionError("SDK 예외가 삼켜졌다")
+    except ValueError:
+        pass
+    assert got == ["a"], got
+    # SDK 마감은 답변 길이를 감당해야 한다 — 읽기 한도와 같은 값으로 두면 긴 답변이 전부 잘린다
+    assert pl.GEMINI_STREAM_DEADLINE >= 120, pl.GEMINI_STREAM_DEADLINE
+    print("  ✅ Gemini 스트림: 전체 마감 아닌 청크 간 무응답으로 판정")
+
+
 def main() -> None:
     test_t1_empty_first_provider_falls_back()
     test_t2_whitespace_only_not_leaked()
@@ -823,6 +863,7 @@ def main() -> None:
     test_rewrite_guard_rejects_empty_and_short()
     test_rewrite_timeout_scaling()
     test_citation_stage_budget()
+    test_gemini_stream_idle_not_total_deadline()
     print("\n✅ LLM 폴백 경화 테스트 전부 통과")
 
 
