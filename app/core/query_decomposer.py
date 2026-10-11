@@ -14,14 +14,13 @@ import logging
 import time
 from enum import Enum
 
-import anthropic
-
-from app.config import CRITICAL_MAX_RETRIES
+from app.core import llm_gateway
 
 logger = logging.getLogger(__name__)
 
-DECOMPOSE_MODEL = "claude-haiku-4-5-20251001"
-DECOMPOSE_TIMEOUT = 3.0   # 초 (Haiku 500ms 목표, 여유 포함)
+# 모델은 관리자 설정 1순위(llm_gateway). 3초는 Haiku 기준이었다 — 실측(2026-10-11) gemini-3.8-flash 4.4초,
+# gpt-6-sol 2.3초라 3초면 Gemini 1순위에서 매번 시간 초과로 분해가 생략된다.
+DECOMPOSE_TIMEOUT = 8.0
 MAX_QUERIES = 4
 MIN_QUERY_LENGTH = 15     # 이 길이 미만의 질문은 분해 건너뜀
 
@@ -159,7 +158,7 @@ def _should_decompose(query: str) -> bool:
 
 def decompose_query(
     query: str,
-    client: anthropic.Anthropic,
+    config,
     *,
     consultation_topic: str | None = None,
     question_summary: str | None = None,
@@ -169,7 +168,7 @@ def decompose_query(
 
     Args:
         query: 원본 사용자 질문
-        client: Anthropic 클라이언트
+        config: AppConfig — 모델은 설정 1순위(실패 시 분해 생략, 다음 순위로 넘기지 않음)
         consultation_topic: 분석된 상담 주제 (있으면 컨텍스트로 활용)
         question_summary: 분석된 질문 요약 (있으면 컨텍스트로 활용)
         force: True이면 _should_decompose() 판단 무시하고 반드시 분해
@@ -199,18 +198,11 @@ def decompose_query(
 
     start = time.monotonic()
     try:
-        # timeout은 시도당 적용 — max_retries를 함께 주지 않으면 SDK 기본 2회
-        # 재시도로 실효 소요가 예산의 3배가 된다 (design §3.4 L6).
-        resp = client.with_options(
-            timeout=DECOMPOSE_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
-        ).messages.create(
-            model=DECOMPOSE_MODEL,
-            max_tokens=256,
-            temperature=0.3,
-            system=DECOMPOSE_SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
+        # 1순위만 시도한다 — 분해는 recall 보강이라 실패해도 규칙 기반 쿼리로 검색이 돈다.
+        raw, _provider = llm_gateway.text(
+            config, system=DECOMPOSE_SYSTEM, user=user_msg, purpose="쿼리 분해",
+            max_tokens=256, timeout=DECOMPOSE_TIMEOUT, attempts=1,
         )
-        raw = resp.content[0].text.strip()
 
         # JSON 파싱 — 응답이 ```json ... ``` 감싸져 있을 수 있음
         text = raw
@@ -240,10 +232,6 @@ def decompose_query(
     except json.JSONDecodeError as e:
         elapsed = (time.monotonic() - start) * 1000
         logger.warning("쿼리 분해 JSON 파싱 실패 (%.0fms): %s", elapsed, e)
-        return []
-    except anthropic.APITimeoutError:
-        elapsed = (time.monotonic() - start) * 1000
-        logger.warning("쿼리 분해 타임아웃 (%.0fms)", elapsed)
         return []
     except Exception as e:
         elapsed = (time.monotonic() - start) * 1000

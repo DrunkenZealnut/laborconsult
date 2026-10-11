@@ -6,12 +6,12 @@ LLM 응답에서 환각된 판례 번호를 감지한다.
 
 from __future__ import annotations
 
-import os
 import re
 import logging
 import time
 
-from app.config import ANSWER_MAX_TOKENS, CITATION_STAGE_BUDGET, GEMINI_MODEL
+from app.config import ANSWER_MAX_TOKENS, CITATION_STAGE_BUDGET
+from app.core import llm_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,14 @@ def _rewrite_timeout(text_len: int) -> float:
     """답변 전문 재생성에 필요한 타임아웃을 입력 길이로 추정.
 
     고정 5초는 실답변에서 100% 실패한다 — 2026-08-06 실측: claude-haiku-4-5가
-    1,960자를 재생성하는 데 7.7초 걸렸다(약 250자/초). 안전계수 1.5를 적용해
-    250/1.5 ≈ 165자/초로 잡고 [12, 40]초로 클램프한다.
+    1,960자를 재생성하는 데 7.7초 걸렸다(약 250자/초). 교정 모델이 관리자 설정 모델로 바뀌며
+    (unified-model-provider) 더 느린 모델이 기준이 됐다 — 2026-10-11 실측 1,596자 재생성에
+    gemini-3.8-flash 11.1초(약 144자/초)·gpt-6-sol 6.3초. 안전계수 1.5로 100자/초를 잡고
+    [15, 40]초로 클램프한다. 상한은 단계 예산(CITATION_STAGE_BUDGET 45초) 안이다.
 
     교정이 타임아웃되면 환각 판례가 답변에 그대로 남으므로 정확성 항목이다.
     """
-    return min(40.0, max(12.0, text_len / 165))
+    return min(40.0, max(15.0, text_len / 100))
 
 
 def _remaining(deadline: float | None) -> float:
@@ -286,9 +288,7 @@ _CORRECTION_TEXT = {
 def correct_hallucinated_citations(
     response_text: str,
     hallucinated: list[str],
-    anthropic_client=None,
-    gemini_api_key: str | None = None,
-    openai_client: object | None = None,
+    config=None,
     deadline: float | None = None,
     reason: str = "hallucinated",
 ) -> str | None:
@@ -297,9 +297,10 @@ def correct_hallucinated_citations(
     reason: "hallucinated"(기본 — 기존 문구 그대로) | "low_relevance"(쟁점이 다른 판례) |
         "secondhand"(다른 글이 언급한 번호, 원문 미확인). 머리말과 1번 규칙만 달라진다.
 
-    Haiku(1순위) → Gemini(2순위) → OpenAI(3순위) 순서로 시도.
+    관리자 설정 순서(1순위 → 나머지)로 시도한다(llm_gateway). 재작성 길이 가드에 걸리면 다음 순위.
 
     Args:
+        config: AppConfig. None이면 교정하지 않는다.
         deadline: `time.monotonic()` 기준 단계 데드라인 (FR-07). 벤더 3곳이 각자
             타임아웃을 소진하면 maxDuration(300초)을 위협하므로 단계 전체를 자른다.
             None이면 CITATION_STAGE_BUDGET을 지금부터 적용한다.
@@ -307,7 +308,7 @@ def correct_hallucinated_citations(
     Returns:
         수정된 답변 텍스트. 실패 시 None.
     """
-    if not hallucinated:
+    if not hallucinated or config is None:
         return None
 
     if deadline is None:
@@ -329,88 +330,25 @@ def correct_hallucinated_citations(
         f"{response_text}"
     )
 
-    # 1순위: Claude Haiku
-    if anthropic_client and _remaining(deadline) >= 5:
-        try:
-            import httpx
-            # ⚠️ timeout은 **시도당** 적용된다. max_retries를 지정하지 않으면 SDK 기본
-            #    2회 재시도가 살아 있어 한 벤더가 단계 예산(60초)을 통째로 삼킨다
-            #    (실측: timeout=0.001에 1.37초 소요 = 3회 시도). 재시도 대신 다음
-            #    벤더로 넘기는 것이 설계 원칙 P2와도 일치한다.
-            resp = anthropic_client.with_options(
-                timeout=httpx.Timeout(min(per_call, _remaining(deadline))),
-                max_retries=0,
-            ).messages.create(
-                model="claude-haiku-4-5-20251001",
-                # 답변 전문을 교정해 되돌리므로 답변 생성 한도와 맞춘다.
-                # 부족하면 아래 0.7 길이 가드에 걸려 교정이 통째로 폐기된다.
-                max_tokens=ANSWER_MAX_TOKENS,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = resp.content[0].text.strip()
-            if _is_valid_rewrite(text, response_text):
-                logger.info(
-                    "Haiku 판례 교정 완료: %d개 환각 제거", len(hallucinated),
-                )
-                return text
-        except Exception as e:
-            logger.warning("Haiku 판례 교정 실패: %s", e)
-
-    # 2순위: Gemini
-    if gemini_api_key and _remaining(deadline) >= 5:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_api_key)
-            # 모델명은 app.config 단일 출처 — 하드코딩된 gemini-2.5-pro가 404로
-            # 죽어 있어 이 폴백 단계가 통째로 무력했다 (llm-fallback-hardening G7).
-            model = genai.GenerativeModel(GEMINI_MODEL)
-            resp = model.generate_content(
-                prompt,
-                request_options={"timeout": min(per_call, _remaining(deadline))},
-            )
-            text = (resp.text or "").strip()
-            if _is_valid_rewrite(text, response_text):
-                logger.info(
-                    "Gemini 판례 교정 완료: %d개 환각 제거", len(hallucinated),
-                )
-                return text
-        except Exception as e:
-            logger.warning("Gemini 판례 교정 실패: %s", e)
-
-    # OpenAI 폴백
-    if openai_client and _remaining(deadline) >= 5:
-        try:
-            resp = openai_client.with_options(
-                timeout=min(per_call, _remaining(deadline)), max_retries=0,
-            ).chat.completions.create(
-                # 답변 생성 모델과 동일 설정을 따라간다 (A/B 교체 시 함께 전환)
-                model=os.getenv("OPENAI_CHAT_MODEL", "o3"),
-                messages=[
-                    {"role": "developer", "content": "당신은 텍스트 교정 도우미입니다."},
-                    {"role": "user", "content": prompt},
-                ],
-                # reasoning 토큰이 이 한도를 함께 소비한다 (pipeline._stream_openai 주석 참고).
-                # 답변 전문을 교정해 되돌려야 하므로 넉넉히 잡는다.
-                max_completion_tokens=ANSWER_MAX_TOKENS,
-            )
-            text = (resp.choices[0].message.content or "").strip()
-            if _is_valid_rewrite(text, response_text):
-                logger.info(
-                    "OpenAI 판례 교정 완료: %d개 환각 제거", len(hallucinated),
-                )
-                return text
-        except Exception as e:
-            logger.warning("OpenAI 판례 교정 실패: %s", e)
-
-    if _remaining(deadline) < 5:
-        logger.warning("인용 교정 단계 예산 소진 — 남은 제공자 생략")
-    return None
+    # ⚠️ 제공자별 timeout은 **시도당**이고 재시도는 0이다 — 재시도가 살아 있으면 한 벤더가 단계
+    #    예산을 통째로 삼킨다(실측: timeout=0.001에 1.37초 = 3회 시도). 토큰 한도는 답변 생성 한도와
+    #    맞춘다 — 부족하면 0.7 길이 가드에 걸려 교정이 통째로 폐기된다.
+    try:
+        text, provider = llm_gateway.text(
+            config, system="당신은 텍스트 교정 도우미입니다.", user=prompt,
+            purpose="판례 교정", max_tokens=ANSWER_MAX_TOKENS, timeout=per_call,
+            attempts=None, deadline=deadline,
+            accept=lambda out: _is_valid_rewrite(out, response_text),
+        )
+    except llm_gateway.LLMUnavailable as e:
+        logger.warning("판례 교정 실패: %s", e)
+        return None
+    logger.info("%s 판례 교정 완료: %d개 환각 제거", provider, len(hallucinated))
+    return text
 
 
 # ── 마이크로 퇴고: 환각 교정 후 문맥 자연스러움 보정 ─────────────────────────
 
-MICRO_POLISH_MODEL = "claude-haiku-4-5-20251001"
 # 타임아웃은 _rewrite_timeout()으로 입력 길이에 비례해 계산한다 — 고정 2초는
 # 답변 전문(최대 8192토큰) 재생성에 턱없이 부족해 사실상 항상 실패했다 (FR-07).
 MICRO_POLISH_MIN_BUDGET = 15.0  # 잔여 예산이 이보다 적으면 퇴고를 건너뛴다
@@ -431,18 +369,18 @@ _MICRO_POLISH_SYSTEM = (
 def micro_polish(
     corrected_text: str,
     hallucinated_count: int,
-    anthropic_client,
+    config=None,
     deadline: float | None = None,
 ) -> str | None:
     """환각 교정 후 문맥 자연스러움 보정.
 
     환각이 MICRO_POLISH_THRESHOLD건 이상일 때만 발동한다.
-    Claude Haiku로 접속사/연결어만 수정하여 문맥을 매끄럽게 보정.
+    설정 1순위 모델로 접속사/연결어만 수정하여 문맥을 매끄럽게 보정(다음 순위로 넘기지 않음).
 
     Args:
         corrected_text: 환각 판례 제거 후 텍스트
         hallucinated_count: 제거된 환각 인용 수
-        anthropic_client: Anthropic 클라이언트
+        config: AppConfig. None이면 퇴고하지 않는다.
         deadline: 인용 교정 단계 데드라인 (FR-07). 퇴고는 정확성이 아니라 품질
             보정이므로 예산 경쟁에서 후순위 — 잔여가 부족하면 건너뛴다.
 
@@ -452,7 +390,7 @@ def micro_polish(
     if hallucinated_count < MICRO_POLISH_THRESHOLD:
         return None
 
-    if not anthropic_client:
+    if config is None:
         return None
 
     # deadline 미지정 시 예산을 지금부터 새로 부여한다 — correct_hallucinated_citations와
@@ -466,27 +404,18 @@ def micro_polish(
         return None
 
     try:
-        # 재시도 차단 이유는 correct_hallucinated_citations의 Haiku 호출 주석 참고.
-        resp = anthropic_client.with_options(
-            timeout=min(_rewrite_timeout(len(corrected_text)), budget),
-            max_retries=0,
-        ).messages.create(
-            model=MICRO_POLISH_MODEL,
-            # 답변 전문을 다듬어 되돌리므로 답변 생성 한도와 맞춘다.
+        # 재시도 차단·토큰 한도 이유는 correct_hallucinated_citations 주석 참고.
+        polished, _provider = llm_gateway.text(
+            config, system=_MICRO_POLISH_SYSTEM, purpose="마이크로 퇴고",
             max_tokens=ANSWER_MAX_TOKENS,
-            temperature=0,
-            system=_MICRO_POLISH_SYSTEM,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"{hallucinated_count}개의 판례 번호가 제거되어 "
-                    "문맥이 어색할 수 있는 텍스트입니다. "
-                    "접속사와 연결어만 수정하여 자연스럽게 다듬어주세요.\n\n"
-                    f"{corrected_text}"
-                ),
-            }],
+            timeout=min(_rewrite_timeout(len(corrected_text)), budget), attempts=1,
+            user=(
+                f"{hallucinated_count}개의 판례 번호가 제거되어 "
+                "문맥이 어색할 수 있는 텍스트입니다. "
+                "접속사와 연결어만 수정하여 자연스럽게 다듬어주세요.\n\n"
+                f"{corrected_text}"
+            ),
         )
-        polished = resp.content[0].text.strip()
         if _is_valid_rewrite(polished, corrected_text):
             logger.info(
                 "마이크로 퇴고 완료: %d건 환각 교정 후 문맥 보정",

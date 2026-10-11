@@ -103,7 +103,7 @@
       return `<label><input type="radio" name="model-primary" value="${v}"${(primary || '') === v ? ' checked' : ''}` +
         `${off ? ' disabled' : ''}> ${esc(label)}${off ? ' (키 없음)' : ''}</label>`;
     }).join(' ');
-    return '<div class="conv-header"><h2>답변 모델</h2><small>저장 후 최대 1분 안에 모든 서버에 반영됩니다</small></div>' +
+    return '<div class="conv-header"><h2>답변 모델</h2><small>1순위 모델이 답변과 의도분석·검색 보조·인용 교정을 모두 처리하고, 실패하면 다음 순서로 넘어갑니다. 저장 후 최대 1분 안에 모든 서버에 반영됩니다</small></div>' +
       (state.store_available === false ? '<p class="model-fail">설정 저장소에 연결할 수 없어 기본값으로 동작 중입니다(저장 불가).</p>' : '') +
       `<div class="model-primary"><strong>1순위</strong> ${radios} <span class="badge">${esc(SOURCES[(state.primary || {}).source] || '')}</span></div>` +
       PROVIDERS.map(p => renderProvider(p, state.providers[p], drafts[p])).join('') +

@@ -59,16 +59,14 @@ if ANSWER_EFFORT not in {"low", "medium", "high", "off"}:
 # 교정 결과가 0.7 길이 가드에 걸려 통째로 폐기되고 환각 판례가 그대로 남는다.
 ANSWER_MAX_TOKENS = 8192
 
-INTENT_TIMEOUT = 12.0           # analyze_intent (임계경로, DB-6에서 도입)
-INTENT_FALLBACK_TIMEOUT = 10.0  # OpenAI 교차벤더 폴백 (실측 2.7초)
-EXTRACT_TIMEOUT = 10.0          # _extract_params 레거시 경로
-CRITICAL_MAX_RETRIES = 0        # analyzer/extract/decomposer/self_rag 공통
+# 보조 LLM 단계(의도분석·추출·분해·Self-RAG·인용 교정)는 관리자 설정 모델을 쓴다(app/core/llm_gateway.py).
+# 재시도는 전부 0 — 같은 벤더 재시도 대신 다음 순위로 넘긴다.
+INTENT_TIMEOUT = 12.0           # analyze_intent 1순위 (임계경로, DB-6에서 도입)
+INTENT_FALLBACK_TIMEOUT = 10.0  # analyze_intent 2순위
+EXTRACT_TIMEOUT = 10.0          # _extract_params (순위별)
 
-# 의도분석 교차벤더 폴백 (FR-05). 비추론 모델을 기본값으로 둔다 — o3·gpt-5.x 계열은
-# reasoning 토큰이 max_completion_tokens를 잠식해 tool_call이 빈 채로 끊길 수 있다.
+# 의도분석 2순위 폴백 (FR-05). false면 1순위 실패 시 예외를 전파해 레거시 경로로 강등한다.
 INTENT_FALLBACK_ENABLED = os.getenv("INTENT_FALLBACK_ENABLED", "true").lower() != "false"
-INTENT_FALLBACK_MODEL = os.getenv("INTENT_FALLBACK_MODEL", "gpt-4.1")
-INTENT_FALLBACK_MAX_TOKENS = 4096
 
 # 인용 교정 단계 전체 예산 (FR-07). 벤더 3곳 × 동적 타임아웃이 누적되면
 # maxDuration을 위협하므로 단계 데드라인으로 자른다.
