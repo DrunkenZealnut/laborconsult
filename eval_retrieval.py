@@ -73,7 +73,7 @@ def freeze(fixture: dict) -> None:
             q["decomposed"] = []
             print(f"  {q['id']} SIMPLE — 분해 생략")
             continue
-        dq = decompose_query(q["query"], config.claude_client,
+        dq = decompose_query(q["query"], config,
                              force=params.get("force_decompose", False))
         q["decomposed"] = [x for x in dq if x != q["query"]]
         print(f"  {q['id']} 분해 {len(q['decomposed'])}건")

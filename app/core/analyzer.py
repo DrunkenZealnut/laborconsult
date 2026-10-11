@@ -1,4 +1,4 @@
-"""Intent Analyzer — Claude tool_use로 노동상담 질문 분석 (실패 시 OpenAI 폴백)"""
+"""Intent Analyzer — 설정 1순위 모델의 도구 호출로 노동상담 질문 분석 (실패 시 다음 순위)"""
 
 from __future__ import annotations
 
@@ -11,11 +11,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.config import AppConfig
 
-from app.config import (
-    CRITICAL_MAX_RETRIES, INTENT_FALLBACK_ENABLED, INTENT_FALLBACK_MAX_TOKENS,
-    INTENT_FALLBACK_MODEL, INTENT_FALLBACK_TIMEOUT, INTENT_TIMEOUT,
-)
-from app.core.llm_fallback import call_openai_tool
+from app.config import INTENT_FALLBACK_ENABLED, INTENT_FALLBACK_TIMEOUT, INTENT_TIMEOUT
+from app.core import llm_gateway
 from app.models.schemas import AnalysisResult
 from app.templates.prompts import ANALYZE_TOOL, ANALYZER_SYSTEM
 
@@ -196,32 +193,6 @@ def _build_messages(question: str, history: list[dict], summary: str) -> list[di
     return messages
 
 
-def _analyze_claude(messages: list[dict], system_prompt: str, config) -> dict | None:
-    """1순위 — Claude tool_use. 도구 입력 dict를 반환(미반환 시 None)."""
-    # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
-    # tool_choice 강제 + 스키마 제약으로 추출 결정성은 유지된다.
-    # 임계경로 타임아웃 (DB-6) — 항상 실행되는 호출이라 지연 시 전체가 행(hang)하던 지점
-    response = config.anthropic_client.with_options(
-        timeout=INTENT_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
-    ).messages.create(
-        model=config.analyzer_model,
-        max_tokens=1024,
-        system=system_prompt,
-        tools=[ANALYZE_TOOL],
-        tool_choice={"type": "tool", "name": "analyze_labor_question"},
-        messages=messages,
-    )
-    for block in response.content:
-        if block.type == "tool_use":
-            if not block.input:
-                break          # 빈 입력도 실패로 취급 (아래 raise)
-            return block.input
-    # tool_use 없이 종료 = 빈 응답. 예외 없이 None을 돌려주면 호출부의 except를
-    # 타지 못해 OpenAI 폴백이 통째로 생략된다 — _stream_answer의 FR-01과 같은
-    # 규약("빈 응답은 실패다")을 여기에도 적용한다.
-    raise RuntimeError("Claude 의도분석이 tool_use를 반환하지 않음(빈 응답)")
-
-
 def analyze_intent(
     question: str,
     history: list[dict],
@@ -230,37 +201,23 @@ def analyze_intent(
 ) -> AnalysisResult:
     """사용자 질문을 분석하여 계산 유형, 추출 정보, 누락 정보를 반환.
 
-    Claude(1순위) → OpenAI(2순위) 교차벤더 폴백 (FR-05). Anthropic 장애 시
+    관리자 설정 1순위 → 2순위 교차벤더 폴백 (FR-05, unified-model-provider). 1순위 장애 시
     이 함수가 실패하면 계산기 라우팅과 스코프 게이트가 함께 죽어 "숫자 없는
     일반론"이 정상 답변처럼 나가므로, 벤더 하나에 걸어두지 않는다.
     """
     messages = _build_messages(question, history, summary)
     system_prompt = ANALYZER_SYSTEM.format(today=date.today().isoformat())
-    used_fallback = False
 
-    try:
-        inp = _analyze_claude(messages, system_prompt, config)
-    except Exception as e:
-        if not INTENT_FALLBACK_ENABLED:
-            raise
-        logger.warning("의도분석 Claude 실패 — OpenAI 폴백 시도: %s", e)
-        # 폴백도 실패하면 예외를 그대로 전파한다 — 호출부(pipeline)가 이를 받아
-        # 레거시 추출 경로로 강등하는 기존 동작이 유지된다.
-        inp = call_openai_tool(
-            config.openai_client,
-            model=INTENT_FALLBACK_MODEL,
-            system=system_prompt,
-            messages=messages,
-            tool=ANALYZE_TOOL,
-            timeout=INTENT_FALLBACK_TIMEOUT,
-            max_tokens=INTENT_FALLBACK_MAX_TOKENS,
-        )
-        if not inp:
-            # 폴백도 빈 응답 — 예외로 전파해 호출부가 레거시 경로로 강등하게 한다
-            raise RuntimeError(f"OpenAI({INTENT_FALLBACK_MODEL}) 의도분석이 빈 응답 반환")
-        logger.info("의도분석 OpenAI 폴백 성공 (model=%s)", INTENT_FALLBACK_MODEL)
-        used_fallback = True
+    # 1순위 → 다음 순위(설정 순서). 둘 다 실패하면 예외를 그대로 전파한다 — 호출부(pipeline)가
+    # 레거시 추출 경로로 강등하는 기존 동작이 유지된다. 빈 tool 입력도 실패다(_stream_answer FR-01).
+    # temperature는 보내지 않는다 — Sonnet 5 이후는 거부(400). tool 강제 + 스키마로 결정성 유지.
+    provider, _name, inp = llm_gateway.tool(
+        config, system=system_prompt, messages=messages, tools=[ANALYZE_TOOL],
+        choice=ANALYZE_TOOL["name"], purpose="의도분석", max_tokens=1024,
+        timeout=(INTENT_TIMEOUT, INTENT_FALLBACK_TIMEOUT),
+        attempts=2 if INTENT_FALLBACK_ENABLED else 1,
+    )
 
     result = _build_analysis_result(inp)
-    result.intent_provider = "OpenAI" if used_fallback else "Claude"
+    result.intent_provider = provider
     return result

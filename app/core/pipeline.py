@@ -1,8 +1,6 @@
-"""질문 처리 파이프라인 — RAG 검색 + 임금계산기 + Claude 답변 생성"""
+"""질문 처리 파이프라인 — RAG 검색 + 임금계산기 + LLM 답변 생성"""
 
 from __future__ import annotations
-
-import anthropic
 
 import logging
 import os
@@ -12,12 +10,13 @@ from dataclasses import dataclass, field
 from datetime import date as _date
 
 from app.config import (
-    AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL,
+    AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL,
     ANSWER_MAX_RETRIES, ANSWER_MAX_TOKENS, ANSWER_READ_TIMEOUT, CONNECT_TIMEOUT,
-    CITATION_STAGE_BUDGET, CRITICAL_MAX_RETRIES, EXTRACT_TIMEOUT,
+    CITATION_STAGE_BUDGET, EXTRACT_TIMEOUT,
 )
 from app.core.file_parser import ParsedAttachment
 from app.core.analyzer import analyze_intent
+from app.core import llm_gateway
 from app.core.colloquial_map import map_colloquial_terms
 from app.models.schemas import AnalysisResult
 # compose_follow_up은 더 이상 파이프라인에서 사용하지 않음
@@ -420,20 +419,8 @@ class AnswerOutcome:
     model: str | None = None                                   # provider가 실제로 쓴 모델명
 
 
-_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
-
-
-def _supports_effort(model: str) -> bool:
-    """output_config.effort를 받는 모델인가 — Opus·Sonnet·Fable·Mythos 4.6 이상.
-
-    Haiku와 Sonnet 4.5 이하는 400을 낸다. 판정할 수 없는 이름은 보내지 않는다(안전 쪽) —
-    보내지 않아도 답변은 되고, 보내서 400이 나면 답변 전체가 폴백된다.
-    """
-    m = _CLAUDE_VERSION_RE.match(model or "")
-    if not m:
-        return False
-    major, minor = int(m.group(2)), int(m.group(3) or 0)
-    return (major, minor) >= (4, 6)
+# 판정 단일 출처는 llm_gateway — 보조 단계(effort=low)와 답변 경로가 같은 규칙을 쓴다.
+_supports_effort = llm_gateway.supports_effort
 
 
 THINKING_HEARTBEAT_SECONDS = 5.0   # 추론 중 하트비트 간격 — 프론트 idle(60초)보다 충분히 짧게
@@ -554,21 +541,12 @@ def _answer_providers(config: AppConfig) -> list[tuple[str, object]]:
     stream_fn(messages, system, config) 계약 불변).
     """
     from functools import partial
-    from app.core import model_settings
 
-    resolved = model_settings.resolve()
-    model_of = {p: m for p, (m, _src) in resolved.models.items()}
-    providers = [
-        ("Claude", partial(_stream_claude, model=model_of["claude"])),
-        ("OpenAI", partial(_stream_openai, model=model_of["openai"])),
-    ]
-    if config.gemini_api_key:
-        providers.append(("Gemini", partial(_stream_gemini, model=model_of["gemini"])))
-
-    primary = resolved.primary[0]
-    if primary:
-        providers.sort(key=lambda p: p[0].lower() != primary)
-    return providers
+    # 순서는 llm_gateway.provider_chain 하나가 정한다 — 보조 단계(의도분석·Self-RAG 등)와
+    # 답변이 따로 정렬하면 1순위를 바꿔도 한쪽만 바뀐다.
+    stream_of = {"claude": _stream_claude, "openai": _stream_openai, "gemini": _stream_gemini}
+    return [(llm_gateway.PROVIDER_LABEL[p], partial(stream_of[p], model=model))
+            for p, model in llm_gateway.provider_chain(config)]
 
 
 def _stream_answer(
@@ -714,8 +692,10 @@ def _llm_meta(
         meta["truncated"] = True
     if citation_fixed is not None:
         meta["citation_fixed"] = citation_fixed
-    # 의도분석이 교차벤더로 넘어갔는지 — Anthropic 장애의 조기 신호다
-    if intent_provider and intent_provider != "Claude":
+    # 의도분석이 1순위가 아닌 제공자로 넘어갔는지 — 1순위 장애의 조기 신호다. 기준은 답변의
+    # 첫 시도 제공자(= 설정 1순위, 순서 단일 출처가 같다). 1순위를 OpenAI로 두면 OpenAI가 정상이다.
+    expected = outcome.attempts[0] if outcome.attempts else "Claude"
+    if intent_provider and intent_provider != expected:
         meta["intent_provider"] = intent_provider
     return meta
 
@@ -877,21 +857,17 @@ HARASSMENT_TOOL = {
 }
 
 
-def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict | None]:
-    """질문을 분류하고 파라미터를 추출 (2-tool 방식)"""
+def _extract_params(query: str, config: AppConfig) -> tuple[str, dict | None]:
+    """질문을 분류하고 파라미터를 추출 (2-tool 방식). 모델은 설정 1순위 → 다음 순위."""
     from datetime import date as _date
     from app.core.analyzer import _correct_date_year
     today = _date.today().isoformat()
     try:
-        # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
         # 임계경로 타임아웃 (DB-6) — 지연 시 폴백 경로로 진행
-        resp = client.with_options(
-            timeout=EXTRACT_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
-        ).messages.create(
-            model=EXTRACT_MODEL,
-            max_tokens=512,
-            tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL],
-            tool_choice={"type": "any"},
+        _provider, name, params = llm_gateway.tool(
+            config, system=None, purpose="파라미터 추출",
+            tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL], max_tokens=512,
+            timeout=EXTRACT_TIMEOUT, attempts=2,
             messages=[{
                 "role": "user",
                 "content": (
@@ -906,16 +882,13 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
                 ),
             }],
         )
-        for block in resp.content:
-            if block.type == "tool_use":
-                if block.name == "harassment_params":
-                    return ("harassment", block.input)
-                # 날짜 보정
-                params = block.input
-                for dk in ("start_date", "end_date"):
-                    if dk in params:
-                        params[dk] = _correct_date_year(params[dk])
-                return ("wage", params)
+        if name == "harassment_params":
+            return ("harassment", params)
+        # 날짜 보정
+        for dk in ("start_date", "end_date"):
+            if dk in params:
+                params[dk] = _correct_date_year(params[dk])
+        return ("wage", params)
     except Exception as e:
         # 조용한 삼킴 제거 — 계산기 미실행 원인 관측 가능하게 (CALC-7)
         logger.warning("파라미터 추출 실패 (상담 경로로 진행): %s", e)
@@ -1971,13 +1944,13 @@ def process_question(query: str, session: Session, config: AppConfig,
                     session.cache_calculation(ct, analysis.extracted_info)
                 yield {"type": "meta", "calc_result": calc_result}
     else:
-        # 계산/괴롭힘 가능성이 있을 때만 _extract_params(Sonnet) 호출 — 순수 상담 트래픽의
+        # 계산/괴롭힘 가능성이 있을 때만 _extract_params(설정 모델) 호출 — 순수 상담 트래픽의
         # 불필요한 2차 LLM 호출을 회피해 지연·비용 절감(R-2a).
         analysis_calc = bool(analysis and getattr(analysis, "requires_calculation", False))
         topic = getattr(analysis, "consultation_topic", "") if analysis else ""
         harass_likely = (topic == "직장내괴롭힘") or any(kw in query for kw in _HARASS_KEYWORDS)
         if analysis is None or analysis_calc or harass_likely:
-            tool_type, params = _extract_params(combined_query, config.claude_client)
+            tool_type, params = _extract_params(combined_query, config)
 
             if tool_type == "wage" and params and params.get("needs_calculation"):
                 _ensure_minimum_wage_flag(params, query)
@@ -2087,7 +2060,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             else:
                 decomposed = decompose_query(
                     query,
-                    config.claude_client,
+                    config,
                     consultation_topic=getattr(analysis, "consultation_topic", None),
                     question_summary=getattr(analysis, "question_summary", None),
                     force=adaptive_params.get("force_decompose", False),
@@ -2124,10 +2097,10 @@ def process_question(query: str, session: Session, config: AppConfig,
                     from app.core.rag import _is_public_source
                     _before_self_rag = list(pinecone_hits)
                     pinecone_hits, needs_wider = filter_by_relevance(
-                        query, pinecone_hits, config.claude_client,
+                        query, pinecone_hits, config,
                     )
                     # Self-RAG는 T1 2단 **뒤**에 돌고, 쿼터 승격분은 rerank 하위라
-                    # 목록 말미에 있다. Haiku가 그것을 irrelevant로 판정하면 공공
+                    # 목록 말미에 있다. 판정 모델이 그것을 irrelevant로 판정하면 공공
                     # 근거가 통째로 사라지는데 재적용 지점이 없었다(외부 리뷰 A-6).
                     # 전멸했을 때만 최상위 1건을 되살린다 — 필터의 판단은 존중하되
                     # "법률 근거 0건"이라는 결과만 막는 최소 보장이다.
@@ -2637,9 +2610,7 @@ def process_question(query: str, session: Session, config: AppConfig,
         corrected = correct_hallucinated_citations(
             response_text=full_text,
             hallucinated=citation_check["hallucinated"],
-            anthropic_client=config.claude_client,
-            gemini_api_key=config.gemini_api_key,
-            openai_client=config.openai_client,
+            config=config,
             deadline=stage_deadline,
         )
         citation_fixed = bool(corrected)
@@ -2648,7 +2619,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             polished = micro_polish(
                 corrected_text=corrected,
                 hallucinated_count=len(citation_check["hallucinated"]),
-                anthropic_client=config.claude_client,
+                config=config,
                 deadline=stage_deadline,
             )
             # 교정 LLM이 말미 고지를 떨어뜨릴 수 있다 — replace로 내보내기 전에 복원
@@ -2670,9 +2641,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "ping"}
             _fixed = correct_hallucinated_citations(
                 response_text=full_text, hallucinated=_keys,
-                anthropic_client=config.claude_client,
-                gemini_api_key=config.gemini_api_key,
-                openai_client=config.openai_client,
+                config=config,
                 deadline=_rel_deadline,
                 reason=_reason,
             )
