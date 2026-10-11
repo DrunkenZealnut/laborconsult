@@ -163,6 +163,41 @@ def main() -> None:
     assert r100 and "100일" in r100, f"W13 실패(미숙아 배선 없음):\n{r100}"
     print("  ✅ W13 출산 유형 배선 → 단태아 90일 / 다태아 120일 / 미숙아 100일")
 
+    # ── W14. 날짜 연도 보정은 질문에 연도 단서가 없을 때만 ──
+    # 보정이 조건 없이 돌아 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가 2026-03-02 입사·
+    # 2026-03-01 퇴사가 되어 퇴직금 0원이 나왔다(실측 2026-10-11, 정답 5,752,620원).
+    from datetime import date as _d
+    from app.core.analyzer import _build_analysis_result, _correct_date_year
+    sev = {"requires_calculation": True, "calculation_types": ["severance"], "wage_type": "월급",
+           "wage_amount": 2_500_000, "start_date": "2023-03-02", "end_date": "2025-03-01"}
+    a14 = _build_analysis_result(dict(sev), "월급 250만원, 2023년 3월 2일 입사 2025년 3월 1일 퇴사. 퇴직금은?")
+    assert (a14.extracted_info["start_date"], a14.extracted_info["end_date"]) == \
+        ("2023-03-02", "2025-03-01"), a14.extracted_info
+    r14 = run(["severance"], a14.extracted_info)
+    assert r14 and "5,752,620원" in r14, f"W14 실패(명시 연도 보존 후 퇴직금):\n{r14}"
+    old = (_d.today().replace(year=_d.today().year - 3)).isoformat()
+    for ctx in ("23.3.2 입사했어요", "2년 일하고 그만뒀어요", "18개월 근무", "재작년 3월에 입사",
+                "작년 3월 입사", "1.5년 일했어요"):
+        assert _correct_date_year(old, ctx) == old, f"W14 실패(연도 단서 무시): {ctx}"
+    # 연도 단서가 없으면 보정한다 — 본래 목적(LLM이 지어낸 과거 연도)
+    fixed = _correct_date_year(old, "3월 2일에 입사해서 지난달 퇴사했어요")
+    assert fixed != old and int(fixed[:4]) >= _d.today().year - 1, fixed
+    assert _correct_date_year(old) != old, "맥락 없는 호출부의 기존 보정이 깨짐"
+    print("  ✅ W14 날짜 보정: 명시 연도·기간·상대 연도면 보존, 연도 없을 때만 보정")
+
+    # W14b. 후속 질문 — 연도는 앞 턴에만 있어도 LLM이 그것을 쓴다. analyze_intent는 대화 맥락 전체로 판정한다.
+    from app.core import analyzer as _an
+    real_tool = _an.llm_gateway.tool
+    _an.llm_gateway.tool = lambda *a, **kw: ("Gemini", "analyze_labor_question", dict(sev))
+    try:
+        a14b = _an.analyze_intent("그럼 퇴직금은 얼마예요?",
+                                  [{"role": "user", "content": "2023년 3월 2일 입사해서 2025년 3월 1일 퇴사했어요"},
+                                   {"role": "assistant", "content": "네, 확인했습니다."}], object())
+    finally:
+        _an.llm_gateway.tool = real_tool
+    assert a14b.extracted_info["start_date"] == "2023-03-02", a14b.extracted_info
+    print("  ✅ W14b 후속 질문: 앞 턴의 명시 연도도 보정을 막는다")
+
     # ── 파라미터 변환 계층 자체 검증 ──
     p = _analysis_to_extract_params(stub(
         ["severance", "annual_leave"],
