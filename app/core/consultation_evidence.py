@@ -46,11 +46,29 @@ def evidence_groups() -> tuple[dict, ...]:
     return tuple(groups)
 
 
+def _pattern_list(group: dict, key: str) -> list[str]:
+    """패턴 목록은 문자열 리스트여야 한다. 문자열 하나를 글자별로 매칭하지 않도록 거부한다.
+
+    키가 없을 때만 빈 목록이다. `""`·`null`을 빈 목록으로 바꾸면 `all([])`가 참이라
+    필수 조건 없이 그룹이 선택된다.
+    """
+    if key not in group:
+        return []
+    patterns = group[key]
+    if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):
+        raise TypeError(f'{key} must be a list of strings')
+    return patterns
+
+
 def _matches(group: dict, query: str) -> bool:
-    """대안 패턴 중 하나와 필수 조건 모두를 만족하는 질문만 선택한다."""
-    patterns = group.get('patterns') or []
-    return (any(re.search(pattern, query) for pattern in patterns)
-            and all(re.search(pattern, query) for pattern in group.get('all_patterns', [])))
+    """대안 패턴 하나와 필수 조건 모두를 만족하고 제외 문맥이 없는 질문만 선택한다.
+
+    제외 패턴은 같은 어휘가 반대 상황을 가리키는 경우(재직자 근거에 퇴사 완료 질문 등)에 쓴다.
+    해당 쟁점 근거가 없으면 일반 검색 경로가 답하므로, 반대 요건을 주입하는 것보다 안전하다.
+    """
+    return (any(re.search(pattern, query) for pattern in _pattern_list(group, 'patterns'))
+            and all(re.search(pattern, query) for pattern in _pattern_list(group, 'all_patterns'))
+            and not any(re.search(pattern, query) for pattern in _pattern_list(group, 'exclude_patterns')))
 
 
 def _source_hit(source: dict, today: str) -> dict | None:
@@ -61,6 +79,8 @@ def _source_hit(source: dict, today: str) -> dict | None:
     url = source.get('official_url', '')
     parsed = urlparse(url)
     provenance = source.get('provenance') or {}
+    if not isinstance(provenance, dict):
+        return None
     if (parsed.scheme != 'https' or not parsed.hostname
             or not source.get('content') or not source.get('title')
             or not source.get('id') or source.get('source_type') not in _SOURCE_TYPES
@@ -93,6 +113,8 @@ def select_evidence(query: str, *, as_of: str | None = None,
                 result.omitted.append(name)
                 continue
             sources = group.get('sources') or []
+            if not isinstance(sources, list) or not all(isinstance(x, dict) for x in sources):
+                raise TypeError('sources must be a list of objects')
             hits = [_source_hit(source, today) for source in sources]
             # 적용 설명을 뒷받침하는 자료 중 하나라도 불완전하면 그룹 전체를 생략한다.
             if not hits or any(hit is None for hit in hits):
@@ -123,7 +145,7 @@ def select_evidence(query: str, *, as_of: str | None = None,
             result.hits.extend(unique)
             result.groups.append(name)
             seen = pending
-        except (ValueError, TypeError, KeyError, re.error):
+        except (ValueError, TypeError, KeyError, AttributeError, re.error):
             logger.warning('상담 근거 그룹 처리 실패: %s', name, exc_info=True)
             result.omitted.append(name)
     result.text = '\n\n'.join(blocks)

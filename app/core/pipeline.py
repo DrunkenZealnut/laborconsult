@@ -2248,9 +2248,18 @@ def process_question(query: str, session: Session, config: AppConfig,
 
     # 확보했지만 검색 순위/일반 조문 상한 때문에 누락되던 세부 쟁점의 공식 근거.
     # 질문 본문으로만 선택하고, 렌더된 자료만 출처/인용 검증에 함께 전달한다.
-    from app.core.consultation_evidence import select_evidence, question_fact_notes
-    issue_evidence = select_evidence(query)
-    fact_notes = question_fact_notes(query)
+    from app.core.consultation_evidence import (
+        EvidenceSelection, select_evidence, question_fact_notes)
+    try:
+        issue_evidence = select_evidence(query)
+    except Exception as e:  # 카탈로그 결함이 상담 전체를 멈추지 않게 한다(폴백 원칙)
+        logger.warning("상담 근거 선택 실패 (fallback): %s", e, exc_info=True)
+        issue_evidence = EvidenceSelection()
+    try:
+        fact_notes = question_fact_notes(query)
+    except Exception as e:
+        logger.warning("질문 사실 확인 실패 (fallback): %s", e, exc_info=True)
+        fact_notes = ""
 
     # sources는 GraphRAG까지 전부 모인 뒤 발신 — 인용 화이트리스트와 동일 소스 집합 노출
     yield {"type": "sources",

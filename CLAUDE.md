@@ -155,6 +155,10 @@ LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_sett
 # gz라 커밋 diff로 내용을 볼 수 없어(크기 변화만 보임) 이 자동 검사가 유일한 방어다.
 python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.jsonl.gz
 
+# 커밋된 배치 원장(data/vector_ledgers/) — 저장소 밖 스크립트로 올린 배치의 검증·롤백 수단
+python3 source_pack_ledger.py verify   data/vector_ledgers/qpack_20261009.json  # 조회 전용
+python3 source_pack_ledger.py rollback data/vector_ledgers/qpack_20261009.json  # dry-run(--apply·--document)
+
 # 보유기간 경과 첨부파일 파기 (개인정보처리방침 제5항 — 주기 실행 필요)
 # Supabase가 storage.objects 직접 DELETE를 차단하므로 2단계 구조다:
 #   ① pg_cron이 purge_expired_data()로 DB 행 삭제 + 파일 경로를 storage_purge_queue에 적재
@@ -375,7 +379,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - 롤백은 `output_노동법교재/_uploaded_ids.json`의 ID 목록으로만 가능하다(Pinecone Serverless는 메타데이터 필터 삭제 미지원). 이 파일을 지우면 되돌릴 방법이 사실상 없다. 기록은 **upsert보다 먼저** 쓰고 기존 기록과 합집합을 취한다 — 중간에 죽으면 적재분이 추적에서 빠지고, 존재하지 않는 ID의 delete는 무해하므로 상위집합이 안전한 방향이다. **원장 구현은 `vector_ledger.py`가 단일 출처**이고 판례 코퍼스도 같은 것을 쓴다(아래).
 - **고아 벡터 정리(원장)는 `laborlaw-v2`에 쓰는 모든 스크립트에 필요하다** — 판례 쪽에는 없었다(외부감사 2026-08-23 H3). `upsert`는 덮어쓸 뿐 지우지 않으므로, 한 문서의 청크 수가 **줄면**(재수집·`enrich_court_precedents.py` 재태깅·`EMBED_SECTIONS` 조정) 이전 벡터가 프로덕션 검색 대상 NS에 남아 결과에 계속 섞인다 — 어떤 게이트에도 안 걸리는 조용한 오염이다. 구현 시 주의 셋:
   - **그룹 키는 "한 번의 실행이 항상 통째로 다루는 단위"여야 한다.** prune은 차집합을 지우므로 그룹을 넓게 잡으면 **부분 실행이 나머지를 고아로 오판한다** — court는 `--limit`이 있어 코퍼스 전체를 한 그룹으로 두면 `--limit 20`이 나머지 수천 건을 삭제 대상으로 계산한다. textbook은 `book_id`, court는 **사건번호**가 그 단위다. 회귀는 T25-c.
-  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json` / `output_법원 노동판례/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 셋 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다.
+  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json` / `output_법원 노동판례/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 셋 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다. 예외는 **배치 원장**(`data/vector_ledgers/*.json`, 커밋 대상)이다 — 2026-10-09 공식 자료팩 7,111벡터는 업로드 스크립트·원장이 저장소 밖(`laborconsult_eval/`)에만 있었고, 그 ID 목록을 문서 단위로 옮겨 `source_pack_ledger.py`가 검증·롤백한다(형식 회귀 `test_offline_units.py::test_committed_vector_ledgers`, 실행본 기록 `docs/archive/2026-10/source-pack-20261009/`). **새 배치를 저장소 밖에서 올리면 같은 형식의 원장을 여기에 커밋할 것.**
   - **대량 삭제 가드는 합계로 판정한다.** 그룹별로 걸면 청크 1개짜리 판례에서 1건만 줄어도 50%를 넘어 상시 발동하고, 경고가 일상이 되면 아무도 읽지 않는다.
   - ⚠️ **`pinecone_upload_contextual.py`에는 아직 원장이 없다**(알려진 갭). 소스별로 ID 생성 경로가 갈려(`process_source`는 `extract_post_id` 기반, `process_counsel_source`는 `ctx_counsel_{fk_hash}_{seq}` 기반) 그룹 키를 하나로 정의할 수 없기 때문이다. **청킹 규칙이나 `extract_post_id`를 바꾼 뒤 `qa`·`counsel`에 재업로드할 때는 구 ID를 사전에 명시 삭제할 것** — `--reset`은 NS 전체(49,842벡터)를 지우므로 부분 정리 수단이 아니다. 절차는 그 파일 상단 주석에 있다.
 - **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.
@@ -394,6 +398,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **`pc.delete_index()`를 쓰지 말 것.** 네임스페이스가 아니라 **인덱스 전체**가 대상이라 남의 프로덕션까지 지우고, Pinecone Serverless에는 복구 수단이 없다. `pinecone_upload.py`/`_2025`/`_imgum`의 `--reset`이 정확히 그 구현이었고 CLAUDE.md가 그것을 일상 명령으로 안내하고 있었다. 삭제는 `index.delete(delete_all=True, namespace=<자기 NS>)`로 범위를 좁힌다. 회귀는 `test_offline_units.py::test_upload_namespace_contract`.
   - **upsert에 네임스페이스를 반드시 명시할 것.** 무지정은 기본 네임스페이스 = 남의 영역이다. 봉인 전 `pinecone_upload.py`가 그랬다.
   - **프로덕션 검색이 읽는 곳은 `laborlaw-v2`/`counsel`/`qa` 뿐이다**(`rag.py::NS_GROUPS`). 다른 NS 적재는 **조용한 실패** — 임베딩 비용을 쓰고 성공 메시지·벡터 수가 정상 출력되지만 답변에 영원히 쓰이지 않는다. 사장 NS 5개(`laborlaw-v2-gemini` 9,079·`laborlaw`(v1) 6,598·`precedent` 6,540·`precedent-gemini` 6,534·`counsel-gemini` 1,244 = **29,995벡터**)는 2026-09-25에 삭제했다 — 삭제 전 ID+메타데이터(본문 포함, 임베딩 제외) 백업이 `../laborconsult_pinecone_backup_2026-09-25/`에 있다(저장소 밖·상담 원문 평문이라 취급 주의). `interpretation`/`regulation`/`legal_cases`는 인덱스에 아예 없다(훈령·예규·고시는 `laborlaw-v2` 안에 `source_type="regulation"`으로 있다). 의도적으로 사장 NS에 쓰는 스크립트는 `NS-CONTRACT: unsearched` 마커를 달아야 테스트를 통과한다.
+  - **`laborlaw-v2`는 38,209벡터다**(2026-10-09). 아래 31,098의 구성에 공식 자료팩 **`qpack_20261009_` 7,111**(law.go.kr 법령·행정규칙 `regulation` 7,006 + 판례·재결 `precedent` 105, 54문서, 전부 `official: True`)이 더해졌다 — 원장 `data/vector_ledgers/qpack_20261009.json`. 같은 조문이 `official_`(승인 근거용 큐레이션)과 `qpack_` 판본으로 **중복 수록**된 경우가 있다. 이 절의 다른 수치(공유 인덱스 시절 116,745 등)는 이전 전 기록이다.
   - **`laborlaw-v2` 31,098벡터의 구성**(ID 접두사 전량 집계, 실측 2026-09-25): `textbook_` 12,336 · `ctx_interpretation_` 6,828 · `precedent_` 6,440(법제처 보강, 사건번호 ID) · `crawlprec_` 2,403(크롤 전문) · `regulation_` 1,763(훈령·예규·고시) · `ctx_precedent_` 1,310 · `official_` 18. **`ctx_precedent_` 1,310건을 "구버전이니 정리 대상"으로 보지 말 것** — `sync_overlap_precedents.py --delete-ctx`가 지우는 것은 *법제처 재수집 성공분*뿐이고 그 정리는 이미 끝났다(2026-09-25 dry-run: 후보 128건 중 라이브 벡터 0개). 남은 것은 **재수집 실패분이라 ctx 벡터가 유일한 검색 경로인 판례들**이고, 지우면 그 판례가 검색에서 통째로 사라진다.
 - **BEST Q&A 274건은 프로덕션 코퍼스에 없다**(실측 2026-08-23: `qa` NS 조회 0/274, 일반 Q&A 9,809건과 교집합 0건 — 중복 수록이 아니라 진짜 공백). 로컬 원본 `output/`도 비어 있어 재적재하려면 `crawl_bestqna.py` 재크롤이 선행돼야 하고, 업로더는 `qa` NS에 `ctx_qa_{post_id}_c{i}` 규약으로 쓰는 것을 새로 작성해야 한다(구 `pinecone_upload.py`는 봉인).
 
@@ -548,6 +553,10 @@ wage_calculator/
     (`$exists` 미지원) `official_url` 유무로는 거를 수 없다. `PineconeEvidence.search()` 가 이
     불리언으로 **공식 전용 2차 조회**를 돌려 앞에 붙인다. 없애면 신규 공식 문서 17벡터가 기존
     수만 벡터에 묻혀 top_k 8 에 못 들고, 자동 검색이 승인 가능한 후보를 한 건도 못 만든다(실측).
+    ⚠️ **2026-10-09부터 이 2차 조회의 후보가 18건 → 7,129건이다** — 공식 자료팩 `qpack_` 7,111벡터도
+    전부 `official: True`라, 상위 4슬롯(`legal_rule_store.py` `PineconeEvidence.search`)을 고시 금액
+    문서(`official_`)와 나눠 갖는다. 금액 고시가 밀려나면 자동 검색 후보가 줄거나 같은 조문의 중복
+    후보가 생긴다. 주간 검색 결과를 보고, 필요하면 큐레이션 문서에 별도 불리언 표식을 달아 2차 조회 범위를 좁힐 것(필드 부재 검사가 없으므로 표식 추가 방식이어야 한다).
   - **고시는 소관부처 게시판을 먼저 본다**(`fetch_moel_instruction`). law.go.kr 은 행정규칙 페이지를
     **시행일에야** 열어, 발령만 된 고시를 통째로 놓친다 — 2027년 최저임금 고시(제2026–60호)가
     2026-08-05 발령인데 2026-09 기준 여전히 오류페이지였고, 그 탓에 "시행 전이라 수집 불가"로

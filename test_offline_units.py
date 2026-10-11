@@ -1327,6 +1327,30 @@ def test_safe_xml_single_choke_point() -> None:
     print("  ✅ safe_xml: prolog 전체 검사(우회 6종·UTF-16 포함)·폴백 안전·오탐 없음·단일 창구")
 
 
+def test_committed_vector_ledgers() -> None:
+    """커밋된 배치 원장이 롤백 도구가 받아들이는 형태인지 본다(source_pack_ledger.py).
+
+    원장은 프로덕션 NS의 유일한 삭제 수단이라, 손상되면 롤백할 때가 돼서야 드러난다.
+    검색 대상 NS만 가리키고 ID가 원장 자신의 패턴·개수와 일치해야 한다.
+    """
+    from pathlib import Path
+
+    from app.core import rag
+    import source_pack_ledger as spl
+
+    searched = {ns for group in rag.NS_GROUPS for ns in group}
+    paths = sorted(Path("data/vector_ledgers").glob("*.json"))
+    assert paths, "data/vector_ledgers 원장이 없다"
+    for path in paths:
+        ledger = spl.load_ledger(str(path))
+        assert ledger["namespace"] in searched, f"{path.name}: 검색 대상 밖 NS"
+        ids = spl.ledger_ids(ledger)
+        assert all(i.startswith(ledger["id_prefix"]) for i in ids), path.name
+        assert sum(ledger["composition"].values()) == len(ids), path.name
+        assert len(ledger["documents"]) == ledger["document_count"], path.name
+    print(f"  ✅ 배치 원장: {len(paths)}개 형식·개수·NS 일치")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -1351,6 +1375,7 @@ def main() -> None:
     test_ddl_no_quoted_identifiers()
     test_code_tables_defined_in_ddl()
     test_upload_namespace_contract()
+    test_committed_vector_ledgers()
     test_offline_index_not_on_request_path()
     test_bm25_interning()
     test_tokenizer_contract()
