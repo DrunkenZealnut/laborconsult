@@ -520,18 +520,22 @@ def _iter_with_idle_timeout(make_iter, idle: float):
     """make_iter()의 항목을 내보내되, 항목 사이(첫 항목 포함) idle초 동안 아무것도 오지 않으면 TimeoutError.
 
     SDK 호출은 별도 스레드에서 돈다 — Gemini는 generate_content(stream=True) 호출 자체가 첫 청크까지
-    막히므로 호출까지 스레드 안에 있어야 한다. 시간 초과 후에도 스레드는 SDK 마감까지 남지만 daemon이라
-    요청 처리를 막지 않는다.
+    막히므로 호출까지 스레드 안에 있어야 한다. 소비자가 끝나면(시간 초과·폴백·close) stop을 세워
+    스레드가 다음 청크에서 순회를 멈추게 한다 — 그러지 않으면 버려진 스트림이 SDK 마감(240초)까지
+    큐에 계속 쌓인다. 청크 없이 막혀 있는 동안은 SDK 마감까지 남지만 daemon이라 요청 처리를 막지 않는다.
     """
     import queue
     import threading
 
     q: queue.Queue = queue.Queue()
+    stop = threading.Event()
     done = object()
 
     def run():
         try:
             for item in make_iter():
+                if stop.is_set():
+                    return
                 q.put(item)
         except BaseException as e:  # noqa: BLE001 — 소비자 쪽에서 그대로 다시 올린다
             q.put(e)
@@ -539,16 +543,19 @@ def _iter_with_idle_timeout(make_iter, idle: float):
         q.put(done)
 
     threading.Thread(target=run, daemon=True).start()
-    while True:
-        try:
-            item = q.get(timeout=idle)
-        except queue.Empty:
-            raise TimeoutError(f"스트림 무응답 {idle:.0f}초") from None
-        if item is done:
-            return
-        if isinstance(item, BaseException):
-            raise item
-        yield item
+    try:
+        while True:
+            try:
+                item = q.get(timeout=idle)
+            except queue.Empty:
+                raise TimeoutError(f"스트림 무응답 {idle:.0f}초") from None
+            if item is done:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        stop.set()
 
 
 def _stream_gemini(messages: list, system: str, config: AppConfig, model: str | None = None):

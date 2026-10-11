@@ -834,6 +834,21 @@ def test_gemini_stream_idle_not_total_deadline() -> None:
     except ValueError:
         pass
     assert got == ["a"], got
+    # 소비자가 시간 초과로 떠나면 생산 스레드도 다음 청크에서 멈춘다(버려진 스트림이 마감까지 쌓이지 않게)
+    pulled = []
+    def late():
+        _t.sleep(0.3)
+        for i in range(50):
+            pulled.append(i)
+            yield f"x{i}"
+            _t.sleep(0.01)
+    try:
+        list(pl._iter_with_idle_timeout(late, 0.1))
+        raise AssertionError("무응답인데 TimeoutError가 나지 않았다")
+    except TimeoutError:
+        pass
+    _t.sleep(0.5)
+    assert len(pulled) <= 2, f"소비자 종료 후에도 {len(pulled)}청크를 더 끌어왔다"
     # SDK 마감은 답변 길이를 감당해야 한다 — 읽기 한도와 같은 값으로 두면 긴 답변이 전부 잘린다
     assert pl.GEMINI_STREAM_DEADLINE >= 120, pl.GEMINI_STREAM_DEADLINE
     print("  ✅ Gemini 스트림: 전체 마감 아닌 청크 간 무응답으로 판정")
