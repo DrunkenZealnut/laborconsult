@@ -382,7 +382,7 @@ class RuleBlockTest(unittest.TestCase):
         from app.core.rule_facts import MAX_BLOCKS, RULE_FACTS
         self.assertEqual(MAX_BLOCKS, 3)
         self.assertEqual([f.name for f in RULE_FACTS],
-                         ["unemployment", "insured_status", "harassment_retaliation",
+                         ["unemployment", "insured_status", "harassment_retaliation", "occupational_cardio",
                           "dismissal_notice", "weekly_holiday", "probation_wage"])
         self.assertEqual(self.names("알바인데 3.3% 떼고 고용보험 미가입이면 실업급여 못 받나요"),
                          ["unemployment", "insured_status"])
@@ -511,18 +511,24 @@ class HandWrittenLegalFactsTest(unittest.TestCase):
         self.assertFalse(any("상시 5명 이상" in s["description"] for s in big2.response_steps))
 
     def test_e19_annex_absence_check(self):
+        """별표 주장 — 장 단위는 표 문자를 지운 본문 문자열로 본다(law-article-coverage D9).
+
+        부분문자열 검사였을 때는 칸 줄바꿈으로 쪼개진 표기("제6장의 ┃ ┃ │2")를 '없음'으로 봤다."""
         import xml.etree.ElementTree as ET
         import check_law_freshness as c
-        from app.core.rule_facts import ANNEX_ABSENCE_CLAIMS, RULE_FACTS
+        from app.core.rule_facts import ANNEX_CLAIMS, RULE_FACTS
         xml = ("<법령><별표><별표단위><별표제목>상시 4명 이하의 근로자를 사용하는 사업 또는 사업장에 "
-               "적용하는 법 규정</별표제목><별표내용>제6장 안전과 보건 제76조</별표내용></별표단위></별표></법령>")
-        self.assertTrue(c._annex_absence(ET.fromstring(xml), "4명 이하", "제6장의2"))
-        self.assertFalse(c._annex_absence(ET.fromstring(xml.replace("제76조", "제6장의2 직장 내 괴롭힘")),
-                                          "4명 이하", "제6장의2"))
-        self.assertIsNone(c._annex_absence(ET.fromstring("<법령/>"), "4명 이하", "제6장의2"))
-        names = {f.name for f in RULE_FACTS}
-        for block, *_ in ANNEX_ABSENCE_CLAIMS:
-            self.assertIn(block, names)
+               "적용하는 법 규정</별표제목><별표내용>구분 │적용법규정 제6장 안전과 보건 │제76조</별표내용>"
+               "</별표단위></별표></법령>")
+        text = c.annex_text(ET.fromstring(xml), "4명 이하")
+        self.assertTrue(c.annex_claim_holds(c.annex_listing(text), "제6장의2", False))
+        split = xml.replace("제6장 안전과 보건 │제76조", "제6장의 ┃ ┃ │2 직장 내 괴롭힘 │제76조의2")
+        self.assertFalse(c.annex_claim_holds(c.annex_listing(c.annex_text(ET.fromstring(split), "4명 이하")),
+                                             "제6장의2", False), "쪼개진 표기도 '있음'으로 잡는다")
+        self.assertIsNone(c.annex_text(ET.fromstring("<법령/>"), "4명 이하"))
+        names = {f.name for f in RULE_FACTS} | {"answer_rules"}
+        for claim in ANNEX_CLAIMS:
+            self.assertIn(claim.group, names)
 
 
 class GapFollowupTest(unittest.TestCase):

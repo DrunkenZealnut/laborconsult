@@ -174,7 +174,11 @@ def calc_flexible_work(inp: WageInput, ow: OrdinaryWageResult) -> FlexibleWorkRe
     elif unit in ("3개월", "6개월"):
         warnings.append(f"{unit} 단위 탄력제: 근로자 대표와 서면합의 필수")
 
-    warnings.append("탄력제 적용 중에도 11시간 연속휴식 보장 의무 (근로기준법 제51조의4)")
+    # 연속 11시간 휴식은 3개월을 초과하는 탄력제의 요건이다(근로기준법 제51조의2 제2항). 옛 문구는 모든 단위에
+    # 붙고 없는 조문(제51조의4)을 인용했다 — check_law_freshness 생존 점검이 찾았다(law-article-coverage D5 ③).
+    if unit == "6개월":
+        warnings.append("3개월 초과 탄력제: 근로일 종료 후 다음 근로일 개시 전까지 연속 11시간 이상 휴식 부여 의무 "
+                        "(근로기준법 제51조의2 제2항)")
 
     # ── 주별 상세 ─────────────────────────────────────────────────────────
     weekly_detail = {f"제{i+1}주": f"{h:.1f}h" for i, h in enumerate(weekly_hours_list[:min(len(weekly_hours_list), 10)])}

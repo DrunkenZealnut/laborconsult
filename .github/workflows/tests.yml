@@ -86,6 +86,11 @@ jobs:
       - name: 법제처 조회 복구(예열 키·인증 오류·키워드 조문·감시) 테스트
         run: python3 test_law_api_recovery.py
 
+      # 근거 조문 공급(키워드 2단·구어 근접·별표 파서·삭제 조문 차단·5인 조건·휴업수당 4명 이하) — 실린 조문이
+      # 틀리거나 빠져도 답변은 "참고 자료에서 확인되지 않습니다"로 조용히 끝난다.
+      - name: 근거 조문 공급 테스트
+        run: python3 test_law_article_coverage.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 

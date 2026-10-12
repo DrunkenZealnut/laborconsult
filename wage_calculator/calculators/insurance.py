@@ -372,8 +372,8 @@ def _calc_platform_worker(
     year: int,
 ) -> InsuranceResult:
     """특수고용직(노무제공자) 보험료 — 고용보험만 + 3.3% 세금."""
-    legal.append("고용보험법 제77조의2 (노무제공자 고용보험 적용)")
-    legal.append("산업재해보상보험법 제125조 (특수형태근로종사자)")
+    legal.append("고용보험법 제77조의6 (노무제공자인 피보험자에 대한 적용)")
+    legal.append("산업재해보상보험법 제91조의15 (노무제공자 등의 정의)")
 
     # 국민연금·건강보험·장기요양: 지역가입자 (계산 제외)
     national_pension = 0
@@ -583,9 +583,9 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
         )
         warnings.append(
             f"특수고용직 산재보험료: 사업주 {employer_accident:,.0f}원 + "
-            f"노무제공자 {worker_accident:,.0f}원 (50:50 분담, 산재보험법 제126조의2)"
+            f"노무제공자 {worker_accident:,.0f}원 (50:50 분담, 보험료징수법 제48조의6 제6항)"
         )
-        legal.append("산업재해보상보험법 제126조의2 (특수형태근로종사자의 보험료)")
+        legal.append("고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률 제48조의6 (산재보험 노무제공자의 보험료)")
     else:
         employer_accident = int(gross * total_accident_rate)  # 원 미만 절사
         formulas.append(

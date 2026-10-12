@@ -6,14 +6,16 @@
 - 평균임금 70%가 통상임금 초과 → 통상임금 지급
 - 부분 휴업: 미근로 시간에 대해서만 비례 지급
 - 불가항력(천재지변 등) → 미발생
-- 5인 미만 사업장에도 적용
+- 상시 4명 이하 사업장은 미적용 — 제46조는 근로기준법 시행령 별표 1(4명 이하 적용 규정)에 없다.
+  옛 설명문은 "5인 미만 사업장에도 적용"이라고 정반대로 적혀 있었고 규모 분기도 없었다
+  (law-article-coverage D15).
 """
 
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
 from ..constants import SHUTDOWN_RATE
-from ..models import WageInput
+from ..models import BusinessSize, WageInput
 from .ordinary_wage import OrdinaryWageResult
 
 
@@ -27,6 +29,7 @@ class ShutdownAllowanceResult(BaseCalculatorResult):
     is_partial_shutdown: bool = False          # 부분 휴업 여부
     shutdown_days: int = 0                     # 휴업일수
     partial_ratio: float = 1.0                 # 부분 휴업 비율
+    is_applicable: bool = True                 # False = 상시 4명 이하(제46조 미적용)
 
 
 def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownAllowanceResult:
@@ -47,6 +50,19 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
             breakdown={"휴업수당": "휴업일수 미입력"},
             formulas=[],
             warnings=["휴업일수가 0일입니다"],
+            legal_basis=legal,
+        )
+
+    # 상시 4명 이하 → 제46조 미적용(시행령 별표 1)
+    if inp.business_size == BusinessSize.UNDER_5:
+        legal.append("근로기준법 시행령 제7조 별표 1 (상시 4명 이하 사업장 적용 규정)")
+        return ShutdownAllowanceResult(
+            shutdown_days=inp.shutdown_days,
+            is_applicable=False,
+            breakdown={"휴업수당": "미적용 (상시 4명 이하 사업장)"},
+            formulas=["상시 4명 이하 사업장 → 근기법 제46조 미적용 (시행령 별표 1)"],
+            warnings=["상시 4명 이하 사업장은 근로기준법 제46조(휴업수당)가 적용되지 않습니다"
+                      "(근로기준법 시행령 별표 1)."],
             legal_basis=legal,
         )
 
