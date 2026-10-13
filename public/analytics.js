@@ -12,6 +12,13 @@
   }
   function beforeSend(event) {
     try {
+      // Native Analytics adds the external referrer after beforeSend.
+      // Suppress a pageview rather than transmit referrer query/hash values.
+      if (event.type === 'pageview' && document.referrer) {
+        var referrerUrl = new URL(document.referrer);
+        if (referrerUrl.origin !== location.origin &&
+            (referrerUrl.search || referrerUrl.hash)) return null;
+      }
       var cleaned = Object.assign({}, event);
       if (typeof cleaned.url === 'string') cleaned.url = cleanUrl(cleaned.url);
       if (typeof cleaned.referrer === 'string' && cleaned.referrer) {
