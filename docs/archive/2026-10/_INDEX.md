@@ -7,6 +7,7 @@
 | anthropic-sdk-v1 | — (중단) ※ | 2026-10-01 | [Plan](anthropic-sdk-v1/anthropic-sdk-v1.plan.md), [Design](anthropic-sdk-v1/anthropic-sdk-v1.design.md) |
 | kin-answer-accuracy | 98% | 2026-10-05 | [Plan](kin-answer-accuracy/kin-answer-accuracy.plan.md), [Design](kin-answer-accuracy/kin-answer-accuracy.design.md), [Analysis](kin-answer-accuracy/kin-answer-accuracy.analysis.md), [Report](kin-answer-accuracy/kin-answer-accuracy.report.md) |
 | effective-law-and-graph-precedents | 98.2% | 2026-10-05 | [Plan](effective-law-and-graph-precedents/effective-law-and-graph-precedents.plan.md), [Design](effective-law-and-graph-precedents/effective-law-and-graph-precedents.design.md), [Analysis](effective-law-and-graph-precedents/effective-law-and-graph-precedents.analysis.md), [Report](effective-law-and-graph-precedents/effective-law-and-graph-precedents.report.md) |
+| audit-50-legal-accuracy | 99.7% ※※※ | 2026-10-14 | [Plan](audit-50-legal-accuracy/audit-50-legal-accuracy.plan.md), [Design](audit-50-legal-accuracy/audit-50-legal-accuracy.design.md), [Analysis](audit-50-legal-accuracy/audit-50-legal-accuracy.analysis.md), [Report](audit-50-legal-accuracy/audit-50-legal-accuracy.report.md) |
 
 ※ **Design 후 중단.** 9-27 재빌드가 anthropic SDK 1.8.0을 받아 Claude 답변이 전량 폴백된 사고의
 후속으로 SDK 1.x 대응을 설계했으나, "API만 쓰는데 SDK를 왜 올리나"라는 판단으로 중단했다 —
@@ -19,3 +20,7 @@
 8-22에 감지됐을 것), CodeRabbit 지적 2건 반영(합성 행 폭주 시 페이지 조회, 페이지 경계 중복 제거),
 머지 후 GitHub Actions 수동 실행 성공(2026-10-02, 판정 정상·exit 0). 계기가 된 실측 — 8-21~9-28
 38일간 프로덕션 실사용 답변 17/17 폴백 — 은 Plan §1에 있다.
+
+※※※ **완료 조건 2(대상 14문항 금지 주장 0)는 답변 모델 gpt-6-sol 기준이다.** Gemini 선불 크레딧 소진·Claude 사용 한도로
+답변 1순위가 OpenAI(rev 12)였던 10-14 실측(96답변, 원문 판독 실제 오답 0)이다. Act-4·5(gemini-3.8-flash)와 모델이 달라
+'주휴' 블록 결론 먼저(C52)만의 효과는 분리되지 않았다 — 1순위를 Gemini·Claude로 되돌리면 그 모델로 다시 확인한다(보고서 §9.2).
