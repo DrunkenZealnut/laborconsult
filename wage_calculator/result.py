@@ -13,12 +13,18 @@ DISCLAIMER = (
     "정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요."
 )
 
+# 카드 첫 줄 시급의 기본 이름. '통상시급'이 아닌 값(연장·야간·휴일수당이 섞인 월급 총액 ÷ 소정근로시간 등)을
+# 싣는 호출부만 바꾼다 — 통상임금은 소정근로의 대가라 그 수당을 포함하지 않는다(audit-50-legal-accuracy P0-5).
+DEFAULT_HOURLY_LABEL = "통상시급"
+
 
 @dataclass
 class WageResult:
     """통합 임금 계산 결과"""
     # 핵심 요약
     ordinary_hourly: float = 0.0          # 통상시급 (원)
+    hourly_label: str = DEFAULT_HOURLY_LABEL   # 위 시급이 카드 첫 줄에 붙는 이름
+    amount_held: list = field(default_factory=list)  # 금액만 보류한 계산 유형 키(facade `amount_hold`) — 일수·시간은 남는다
     monthly_total: float = 0.0            # 월 총 예상 수령액 (세전, 원)
     monthly_net: float = 0.0             # 월 실수령액 (세후, 원) — insurance 계산 시 채워짐
     minimum_wage_ok: bool | None = None   # None: 미실행 또는 계산 보류
@@ -80,7 +86,7 @@ def format_result(result: "WageResult") -> str:
 
     # 임금 미제공(통상시급 0원) 부분 실행 시 최저임금 판정도 무의미 — 함께 숨김
     if result.ordinary_hourly:
-        lines.append(f"통상시급: {result.ordinary_hourly:,.0f}원")
+        lines.append(f"{result.hourly_label}: {result.ordinary_hourly:,.0f}원")
         # None 은 '판정 보류'다. falsy 라고 '미달'로 찍으면 없는 위반을 만들어낸다.
         verdict = ("⏸ 판정 보류" if result.minimum_wage_ok is None
                    else "✅ 충족" if result.minimum_wage_ok else "❌ 미달")
@@ -125,7 +131,7 @@ def format_result(result: "WageResult") -> str:
 
 def format_result_json(result: "WageResult") -> dict:
     """WageResult를 JSON 직렬화 가능한 dict로 변환"""
-    return {
+    payload = {
         "ordinary_hourly": result.ordinary_hourly,
         "monthly_total": result.monthly_total,
         "minimum_wage_ok": result.minimum_wage_ok,
@@ -140,3 +146,9 @@ def format_result_json(result: "WageResult") -> dict:
         "warnings": result.warnings,
         "disclaimer": result.disclaimer,
     }
+    if result.hourly_label != DEFAULT_HOURLY_LABEL:
+        # 통상시급이 아닌 값이면 이름을 함께 싣는다. 기본값일 때는 키를 더하지 않아 기존 소비자의 출력이 그대로다.
+        payload["hourly_label"] = result.hourly_label
+    if result.amount_held:
+        payload["amount_held"] = list(result.amount_held)
+    return payload

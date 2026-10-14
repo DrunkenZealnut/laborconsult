@@ -9,6 +9,7 @@ _normalize_allowances: dict → FixedAllowance 변환 (하위 호환)
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from ..models import WageInput, BusinessSize, FixedAllowance
@@ -63,8 +64,19 @@ class AllowanceClassifier:
     - legal_hints.py (인라인 키워드 매칭)
     """
 
-    # 최저임금 비산입 (연장/야간/휴일 등)
-    EXCLUDED_KEYWORDS: list[str] = ["연장", "야간", "휴일", "특근"]
+    # 최저임금 비산입 — 연장·휴일근로 임금과 연장·야간·휴일 가산임금(최저임금법 시행규칙 제2조①1호). 시간외·잔업·포괄·초과·
+    # OT·심야·주말근무수당도 같은 임금의 다른 이름이다(의도분석 고정수당 이름 — audit-50 Act-3 리뷰 H3b·Act-4 리뷰 M2).
+    # 대조는 공백을 없애고 대문자로 바꾼 이름(`_keyword_name`)에 한다
+    EXCLUDED_KEYWORDS: list[str] = ["연장", "야간", "심야", "휴일", "특근", "시간외", "잔업", "포괄", "초과근무", "초과근로",
+                                    "초과수당", "초과시간", "OT", "오티", "주말근무", "주말근로", "주말출근"]
+    # 최저임금 비산입이지만 연장근로와 무관 — 연차 유급휴가의 미사용수당(시행규칙 제2조①2호, 공식 원문 대조 2026-10-12)
+    NON_INCLUDED_KEYWORDS: list[str] = ["연차"]
+    # 같은 글자가 다른 뜻인 이름 — '계약연장·정년연장·기간연장수당'·'근속연차수당'·'연차별'(근속 연수)은 연장근로·연차휴가와
+    # 무관하고, 영문 낱말 속 'OT'('IoT'·'PILOT')는 시간외근로가 아니다(Act-4 리뷰 M2·재검토). 대조 전에 지운다
+    _NOT_PREMIUM_RE = re.compile(r"계약연장|정년연장|기간연장|근속연차|연차별|[A-Z]+OT[A-Z]*|[A-Z]*OT[A-Z]+")
+    # 교대제 고정수당('야간교대수당'·'야간조수당')은 통상임금으로 다퉈지는 소정근로의 대가일 수 있어 통상임금에서는 이름만으로
+    # 빼지 않는다. 최저임금 산입은 그대로 비산입(야간)이다 — 어느 쪽도 없는 '충족'을 만들지 않는 방향이다
+    _SHIFT_RE = re.compile(r"야간교대|야간조")
 
     # 정기상여금 (산입범위 적용)
     BONUS_KEYWORDS: list[str] = ["상여금", "상여", "보너스", "격려금", "인센티브"]
@@ -83,8 +95,9 @@ class AllowanceClassifier:
         """
         if explicit_type in ("regular_bonus", "welfare", "excluded", "standard"):
             return explicit_type
-        for kw in cls.EXCLUDED_KEYWORDS:
-            if kw in name:
+        key = cls._keyword_name(name)
+        for kw in cls.EXCLUDED_KEYWORDS + cls.NON_INCLUDED_KEYWORDS:
+            if kw in key:
                 return "excluded"
         for kw in cls.BONUS_KEYWORDS:
             if kw in name:
@@ -95,9 +108,41 @@ class AllowanceClassifier:
         return "standard"
 
     @classmethod
+    def _keyword_name(cls, name: str) -> str:
+        """키워드 대조용 이름 — 공백을 없애고 대문자로 바꾼 뒤 같은 글자가 다른 뜻인 부분('계약연장' 등)을 지운다."""
+        return cls._NOT_PREMIUM_RE.sub("", re.sub(r"\s+", "", name or "").upper())
+
+    @classmethod
+    def is_not_ordinary_by_name(cls, name: str) -> bool:
+        """이름만으로 통상임금이 아닌 수당인가(연장·야간·휴일근로·연차수당 등).
+
+        연장·야간·휴일근로 가산임금('통상임금의 100분의 50', 근로기준법 제56조)과 연차휴가 임금('통상임금 또는 평균임금',
+        제60조 제5항)은 소정근로의 대가(시행령 제6조 제1항)가 아니고, 넣으면 통상임금이 자기 자신으로 커진다. '휴일'은 근로일
+        때만이다 — '유급휴일수당'은 기본급과 함께 월 통상임금을 이루는 주휴분일 수 있다(audit-50 Act-4).
+        """
+        key = cls._SHIFT_RE.sub("", cls._keyword_name(name))
+        if any(kw in key for kw in cls.NON_INCLUDED_KEYWORDS):
+            return True
+        if any(kw in key for kw in cls.EXCLUDED_KEYWORDS if kw != "휴일"):
+            return True
+        return bool(re.search(r"휴일(?:근로|근무|출근|특근)", key))
+
+    @classmethod
     def is_overtime_related(cls, name: str) -> bool:
         """연장/야간/휴일 관련 수당인지 판별"""
-        return any(kw in name for kw in cls.EXCLUDED_KEYWORDS)
+        key = cls._keyword_name(name)
+        return any(kw in key for kw in cls.EXCLUDED_KEYWORDS)
+
+    @classmethod
+    def excluded_kind(cls, name: str) -> str:
+        """최저임금 비산입 행의 표기 — 연차수당·주휴일 외 유급휴일 임금은 초과수당이 아니다(시행규칙 제2조 제1항 2·3호)."""
+        key = cls._keyword_name(name)
+        if any(kw in key for kw in cls.NON_INCLUDED_KEYWORDS):
+            return "연차수당"
+        if "휴일" in key and not re.search(r"휴일(?:근로|근무|출근|특근)", key) and not any(
+                kw in key for kw in cls.EXCLUDED_KEYWORDS if kw != "휴일"):
+            return "주휴일 외 유급휴일 임금 — 주휴수당이면 산입"
+        return "초과수당" if cls.is_overtime_related(name) else "명시 지정"
 
 
 # ── MultiplierContext ──────────────────────────────────────────────────────────

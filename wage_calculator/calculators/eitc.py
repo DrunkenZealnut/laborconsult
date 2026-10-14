@@ -107,10 +107,11 @@ def calc_eitc(inp: WageInput, ow: OrdinaryWageResult) -> EitcResult:
     # ── 2. 연간 총소득 결정 ───────────────────────────────────────────────
     income = max(0.0, inp.annual_total_income)
     if income == 0:
-        if inp.monthly_wage:
-            income = inp.monthly_wage * 12
+        monthly = inp.monthly_total_pay or inp.monthly_wage
+        if monthly:
+            income = monthly * 12
             warnings.append(
-                f"연간 총소득 미입력 — 월급 {inp.monthly_wage:,.0f}원 x 12 = "
+                f"연간 총소득 미입력 — {'월 임금총액' if inp.monthly_total_pay else '월급'} {monthly:,.0f}원 x 12 = "
                 f"{income:,.0f}원으로 추정합니다."
             )
         elif inp.annual_wage:

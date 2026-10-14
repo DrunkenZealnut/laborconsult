@@ -92,6 +92,13 @@ jobs:
       - name: 보완 공식 근거 전달·사실 단위·절차 회귀 테스트
         run: python3 test_source_followup.py
 
+      # 외부 점검(2026-10-11) 오답은 정답 지침이 질문 어휘에 안 닿거나(패턴 누락) 지침 사실이 원문과
+      # 대조되지 않은 데서 났다 — 둘 다 예외 없이 조용한 실패라 고정 테스트가 유일한 탐지 수단이다.
+      - name: 외부 점검 50문항 회귀(쟁점 근거 패턴·지침 앵커·감지 규칙·월급 구성 가드)
+        run: |
+          python3 test_audit50.py
+          python3 eval_consultation.py --offline --fixture data/eval_audit50_queries.json
+
       # 메모리는 사람이 기억해서 재는 값이었고, 그래서 RSS가 Vercel 한도의
       # 119%가 될 때까지 아무도 몰랐다. 초과 시 하이브리드 검색이 조용히
       # Dense-only로 떨어진다 — 경고가 아니라 실패로 둔다.

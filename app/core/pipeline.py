@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import time
@@ -27,6 +28,7 @@ from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
 from wage_calculator.result import format_result
+from wage_calculator.calculators.shared import AllowanceClassifier
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
                                  held_assessment, ground, decide_mode, as_list,
                                  is_sexual_harassment)
@@ -1049,6 +1051,7 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
 
     from wage_calculator.constants import MINIMUM_HOURLY_WAGE, MONTHLY_STANDARD_HOURS
     from wage_calculator.legal_rules import kst_today
+    from wage_calculator.utils import WEEKS_PER_MONTH
 
     # 법률 기준일은 KST다(계산기·4대보험 사실 블록과 같은 규약). UTC 런타임은 00~09시에
     # 전날/전년을 가리켜 연도 창이 한 칸 밀린다.
@@ -1057,6 +1060,7 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
     if not years:
         return None
 
+    ex = cur if cur in MINIMUM_HOURLY_WAGE else years[0]   # 209시간 안내의 예시 연도
     lines = []
     for y in years:
         hw = MINIMUM_HOURLY_WAGE[y]
@@ -1070,6 +1074,13 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
         + "\n".join(lines)
         # "표에 없음"을 "고시 안 됨"으로 바꿔 말하면 안 된다 — 표 갱신이 늦었을 뿐인데
         # 사용자에게 거짓 사실을 전한다(2027년 고시 누락 실장애 2026-09-22).
+        # 고시는 주 40시간 근무자의 월 환산액을 209시간 기준으로 적고 계산 카드는 시행령 산식(208.5714시간)을 반올림 없이
+        # 쓴다 — 그 사이 금액에서 카드 '충족'과 이 블록의 월 환산액이 한 답변 안에서 갈렸다(audit-50 Act-4 리뷰 M5)
+        + f"\n월급 환산액은 고시의 표기(주 40시간 근무, 월 {MONTHLY_STANDARD_HOURS:.0f}시간 기준)입니다. 계산 카드는 "
+          f"최저임금법 시행령 제5조 제1항 제3호의 산식(1주 48시간 × 1년 평균 주 수 ÷ 12 = 월 {48 * WEEKS_PER_MONTH:.4f}시간)을 "
+          f"반올림 없이 써서, {ex}년 기준 월 {math.ceil(MINIMUM_HOURLY_WAGE[ex] * 48 * WEEKS_PER_MONTH):,}원 이상 "
+          f"{MINIMUM_HOURLY_WAGE[ex] * MONTHLY_STANDARD_HOURS:,.0f}원 미만이면 카드는 '충족'이어도 고시 환산액보다 "
+          "적습니다 — 그 구간이면 두 기준을 함께 안내하세요."
         + "\n위 목록에 없는 연도의 금액은 이 시스템에 등록되지 않은 것입니다. 고시 여부를 단정하지 말고 "
           "금액을 추정하지도 말며, 고용노동부 고시·최저임금위원회에서 확인하도록 안내하세요."
         + "\n질문에 시급이 없어 예시 계산이 필요하면 반드시 위 목록에서 질문이 묻는 연도(정하지 않았으면 오늘 날짜가 속한 연도)의 시급을 쓰세요. "
@@ -1145,6 +1156,410 @@ _KNOWLEDGE_MODULES = [
 # 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반 + 독립 계산)
 # wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
 _WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
+
+# 월급 구성 진술(audit-50-legal-accuracy §5). 질문이 "월급에 연장·야간·휴일·연차수당이 포함"이라고 밝혔는데
+# 그 총액으로 최저임금을 판정하면 결정적 카드가 '✅ 충족'을 낸다 — 이 수당들은 최저임금 산입에서 빠진다
+# (최저임금법 제6조 제4항). 10-11 외부 점검 36번: 270만 원 ÷ 소정시간 = '통상시급 12,943원·충족'이었고
+# 본문은 기본급 기준 '월 60,610원 부족'이라 카드와 본문이 반대 판정을 냈다.
+# 구성은 도구 인자(wage_amount)가 아니라 **질문 본문**에서 읽는다 — 괴롭힘 판정기와 같은 이유(도구 인자는
+# 질문에 없는 값을 채운다).
+# '유급휴일수당'은 대개 주휴수당(산입 대상)이라 비산입 수당으로 읽지 않는다.
+_EXCLUDED_PAY_RE = re.compile(r"(?<!유급)(?<!유급\s)(?:연장|야간|휴일|초과)\s*(?:[·ㆍ,/]\s*(?:연장|야간|휴일)\s*)*"
+                              r"(?:근로|근무)?\s*수당|연차\s*(?:유급\s*휴가\s*)?수당")
+_PAY_INCLUDED_RE = re.compile(r"포함|들어\s*(?:가|있)|녹아")
+# 수당명과 '포함' 사이에 오면 그 '포함'은 이 수당의 진술이 아니다 — "연장수당은 별도", "연장수당은 따로 받고
+# 식대가 포함", "연장수당 없이 …"
+_PAY_SEPARATE_RE = re.compile(r"별도|따로|제외|빼고|미포함|불포함|없|(?<!\d),(?!\d)|;|(?:고|며|지만|는데|면서)\s")
+# '포함' 바로 뒤가 부정·의문·계산 지시면 진술이 아니다 — "포함되어 있지 않습니다", "포함되나요?",
+# "포함해서 계산해 주세요"(2026-10-12 Check 리뷰 실측: 전부 포함 진술로 읽혀 맞는 '미달'이 보류로 바뀌었다)
+_PAY_INCLUDED_DENIED_RE = re.compile(
+    r"^\s*(?:되어|돼|된|되|이|가|하)?\s*(?:있지\s*|지\s*)?(?:않|안\s*(?:되|돼|됨|된|해|했|함))"
+    r"|^\s*(?:X|×|아님|아니)"
+    r"|^\s*(?:되어|돼|된|되|이|가)?\s*(?:있|있는)?\s*(?:나요|는지|는가|냐|건가|걸까|인가|인지|일까|되나|됐나|돼요\s*\?|\?)"
+    r"|^\s*(?:해서|하여|시켜서?)\s*(?:계산|산정|알려|따져|비교)")
+# 만원 표기는 뒤의 잔액까지 읽는다("209만 6천원"·"209만6,270원" — 2번 그룹 만, 3번 잔액, 4번 '천'). 잔액을 버리면 사용자가
+# 천 원 단위까지 적은 기본급으로 없는 '미달'이 났다(Act-4 리뷰 H2)
+_BASE_PAY_RE = re.compile(r"기본급\s*(?:은|는|이|:|=)?\s*(?:월\s*)?(?:(\d{1,3}(?:,\d{3})+|\d{5,})\s*원"
+                          r"|(\d+(?:\.\d+)?)\s*만(?:\s*(\d{1,3}(?:,\d{3})+|\d{1,4})\s*(?:(천)\s*원?|원)|\s*원)?)")
+# 금액 뒤가 이러면 그 금액은 정확한 값이 아니다 — 어림("200만원대·정도·이상·넘게") — 쓰지 않는다. '초과근무수당'·'이상한'은
+# 어림이 아니다(재검토 M-B: "기본급 200만원 초과근무수당 30만원 포함"·"월급 250만원 5인 미만"을 버렸다)
+_AMOUNT_APPROX_RE = re.compile(
+    r"^(?:대(?:에|로|인|이|였|의|$|\s|[,.)])|\s*(?:정도|쯤|가량|남짓|안팎|내외|미만|이하|이상(?![한하해])|넘(?:게|는|어|은)"
+    r"|초과(?!\s*(?:근무|근로|수당|시간))))")
+# 금액이 '원'으로 끝나지 않았는데(만·천에서 멈춤) 숫자·천·백·대가 이어지면 못 읽은 잔액이다("209만 6백", "209만 9천9백원",
+# "200만 대에")
+_AMOUNT_REST_RE = re.compile(r"^\s*(?:\d|천|백|대)")
+
+
+def _inexact_amount(match, after: str) -> bool:
+    """금액이 정확한 값이 아닌가 — 어림 표현이거나, 만 단위에서 멈췄는데 잔액이 이어진다."""
+    if _AMOUNT_APPROX_RE.match(after):
+        return True
+    return not match.group(0).rstrip().endswith("원") and bool(_AMOUNT_REST_RE.match(after))
+# 기본급 '금액'이 아니라 변동분·과거 값인 언급 — "기본급이 50,000원 올랐다", "작년 기본급은 …"
+_BASE_CHANGE_AFTER_RE = re.compile(r"^\s*(?:이|가|을|를|씩|만큼|정도|가량|쯤)?\s*"
+                                   r"(?:인상|올랐|올라|오르|올려|상승|인하|내렸|내려|깎|삭감|감액|줄었|줄어|차이|늘었|늘어)")
+_BASE_PAST_BEFORE_RE = re.compile(r"(?:작년|전년|지난\s*해|재작년|이전|예전|과거|원래|종전|입사\s*(?:때|당시|시))"
+                                  r"[^.!?\n]{0,8}$")
+# 최저임금 비산입 항목(월급 총액의 '나머지') — 질문에서 수당 항목을 찾기 전에 이 범위를 지운다. 질문·의도분석에 흔한 이름까지
+# 넓힌다(시간외·잔업·특근·포괄·OT — Act-3 리뷰 H3b). '유급휴일수당'(대개 주휴)은 비산입이 아니다.
+_EXCLUDED_ITEM_RE = re.compile(
+    _EXCLUDED_PAY_RE.pattern
+    + r"|(?:시간외|잔업|특근|심야|주말\s*(?:근무|근로))\s*(?:근로|근무)?\s*수당|포괄\s*(?:임금\s*)?수당"
+    r"|고정\s*(?:OT|오티)(?:\s*수당)?|(?<![A-Za-z])(?:OT|오티)(?:\s*수당|(?=\s*\d))",
+    re.IGNORECASE)
+# 월급을 이루는 그 밖의 항목 — 이름 전체를 잡는다. 정해진 목록만 보면 목록 밖 이름(팀장·보육·현장·만근·유급휴일수당 …)을 버려
+# '총액 − 기본급'이 비산입 수당만이 아닌데 기본급으로 판정해 없는 '미달'이 나왔고(리뷰 H1), 뒷부분만 잡으면 '석식비'·'중식비'가
+# '식비' 하나로 합쳐졌다(리뷰 H2).
+_PAY_ITEM_RE = re.compile(
+    r"(?<![가-힣A-Za-z])([가-힣A-Za-z]{1,8}\s?(?:수당|보조금)|[가-힣]{0,2}(?:식대|식비)"
+    r"|(?:교통|통신|주거|숙박|차량\s*유지|보육|육아|학자)비|상여금?|보너스|성과(?:급|금)|인센티브|격려금)")
+# 금액이 있어도 판단을 미루는 항목 — 지급 주기·조건에 따라 통상임금·최저임금 산입이 갈린다
+_AMBIGUOUS_ITEM_RE = re.compile(
+    r"상여|보너스|성과|인센티브|격려|장려|가족|자녀|복리|고정|정액|기타|각종|특별|명절|당직|숙직|철야|조정|업무|약정")
+_ITEM_AMOUNT_RE = re.compile(
+    r"\s*(?:은|는|이|가|:|=)?\s*(?:월\s*)?\(?\s*(?:약\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)")
+# 금액 바로 뒤의 별도·변동 표현 — "20만원은 별도", "10만원에서 20만원으로"
+# 금액이 이름 앞에 오는 표기 — '의·짜리'로 이어질 때만 읽는다("기본급 2,000,000원 식대 포함"의 앞 금액은 식대 것이 아니다)
+_ITEM_AMOUNT_BEFORE_RE = re.compile(
+    r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)\s*(?:의|짜리)\s*$")
+# 그 금액 바로 앞이 기간·다른 임금이면 이 항목의 월액이 아니다 — "하루 8,000원짜리 식대", "연 120만원의 식대", "시급
+# 10,320원의 주휴수당", "기본급 2,000,000원의 식대"(Act-4 리뷰 H3). '월'·'매월'이거나 아무것도 없을 때만 읽는다
+_ITEM_AMOUNT_PREFIX_EXCLUDE_RE = re.compile(
+    r"(?:하루|일당|매일|일|주당|매주|주|연간|매년|연|년|시간당|시간|시급|일급|주급|연봉|기본급|월급|급여|총액|총|합계|각)\s*$")
+_ITEM_AFTER_RE = re.compile(r"^\s*(?:은|는|이|가)?\s*(?:별도|따로|제외|미포함|불포함|에서|부터|→|->)")
+# 금액 없는 수당 이름은 월급 구성을 말하는 문장에서만 판단 보류 사유다 — "주휴수당도 받을 수 있나요?" 같은 질문 문장은 아니다
+_COMPOSITION_SENTENCE_RE = re.compile(r"기본급|월급|급여|포함")
+# 질문에 숫자로 적힌 월급 총액("월급 2,700,000원", "세전 월급은 270만 원", "급여는 300만원"). 키워드 없이 '월 N원'만
+# 있으면 수당 금액("식대 월 20만원")일 수 있어 읽지 않고, '실업급여'·'육아휴직 급여' 같은 합성어도 뺀다.
+_TOTAL_PAY_RE = re.compile(
+    r"(?:(?<![가-힣])월급|월\s*급여|(?<![가-힣])급여|월\s*임금|월\s*보수|임금\s*총액)\s*(?:\(\s*세전\s*\)\s*)?(?:총액\s*)?"
+    r"(?:은|는|이|가|:|=)?\s*(?:세전\s*|총\s*)?(?:약\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)")
+# 같은 절에서 총액 키워드 앞에 오면 그 금액은 세전 월급 총액이 아니다(리뷰 M1 — '세후 월급은 240만 원'이 총액으로 읽혔다)
+_TOTAL_CONTEXT_EXCLUDE_RE = re.compile(
+    r"세후|실수령|실지급|통장|입금|최저|평균|전\s*직장|이전\s*직장|예전\s*직장|전\s*회사|이전\s*회사|육아|휴직|실업|구직|"
+    r"출산|상여|퇴직|연봉|연간|희망|목표|예상|(?<![가-힣])연\s*$")
+_TOTAL_AFTER_EXCLUDE_RE = re.compile(r"^\s*\(?\s*(?:세후|실수령|실지급|통장)")
+# 포괄임금제 언급 — 의도분석이 '포괄임금제'로 뽑아도 질문에 그 말이 있고 부정이 아닐 때만 R2 보류를 건다
+_COMPREHENSIVE_RE = re.compile(r"포괄\s*(?:임금|산정)")
+_COMPREHENSIVE_DENIED_RE = re.compile(
+    r"포괄\s*(?:임금|산정)\S*\s*(?:제)?\s*(?:가|이)?\s*(?:아니|아닌|아님|않)(?![가지까냐죠])(?![^.!?\n]{0,8}\?)")
+_MONEY_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)")
+_SENTENCE_RE = re.compile(r"(?<=[.!?。])\s+|\n+")
+# 평균임금·보수총액을 쓰는 계산 — 기본급으로 바꾸면 연장수당 등이 빠져 과소 산정된다
+_TOTAL_PAY_TARGETS = frozenset({
+    "severance", "average_wage", "unemployment", "industrial_accident", "shutdown_allowance",
+    "retirement_tax", "retirement_pension", "insurance", "employer_insurance", "eitc",
+})
+# 보류 경로 카드의 이름표. 연장·야간·휴일·연차수당이 섞인 월급 총액을 소정근로시간으로 나눈 값은 통상시급이 아니고
+# 그 총액도 기본급·통상임금이 아니다 — 통상임금은 소정근로의 대가라 그 수당을 포함하지 않는다. 카드는 LLM 컨텍스트에
+# "이 수치를 사용하세요"로 주입되므로 이름이 틀리면 표시와 근거가 둘 다 틀린다(Plan P0-5, Design §13.4 C21).
+_HELD_HOURLY_LABEL = "월급 총액 기준 시급(포함 수당 때문에 통상시급 아님)"
+_HELD_MONTHLY_LABEL = "월급 총액(포함 수당 때문에 통상임금 아님)"
+_HELD_EFFECTIVE_LABEL = "총액 기준 시급(포함 수당 때문에 실제 산입 시급보다 높음)"
+_HELD_SUMMARY_LABELS = {"통상시급": _HELD_HOURLY_LABEL, "월 통상임금": _HELD_MONTHLY_LABEL, "실질시급": _HELD_EFFECTIVE_LABEL}
+# 총액으로도 미달이라 남긴 최저임금 줄(리뷰 H5)도 총액을 '기본급'·'실질시급'이라 부른다 — 머리말만 바꾼다(재검토 M-D)
+_HELD_MINWAGE_LINE_RE = re.compile(r"^(?:기본급 월액|실질시급):")
+_HELD_MINWAGE_WARN_RE = re.compile(r"^최저임금 미달: 실질시급")
+# 보류 경로(금액이 월급 총액)에서 금액을 보류하는 계산 — 금액이 통상임금(통상시급·1일·월 통상임금)에서 나온다. 그 '통상임금'은
+# 연장·야간·휴일·연차수당이 섞인 총액이라 이 금액들이 모두 부풀려진다(재현: 총액 270만 원 + 주 10시간 연장 → 연장수당 843,634원이
+# 총액 위에 더해져 월 총액 3,543,634원, 퇴직금 17.6% 과대 — Design §13.5 R1·R6). 계산은 하고 금액만 뺀다(facade `amount_hold`).
+# 평균임금 계열은 평균임금 자체는 총액으로 맞게 나오지만 '평균임금이 통상임금보다 적으면 통상임금'(근로기준법 제2조 제2항) 하한·
+# 휴업수당 상한이 부풀린 통상임금으로 걸린다. 퇴직연금은 파이프라인이 유형을 배선하지 않아 항상 DB형(퇴직금과 같은 산식)이다.
+# 계산기가 통상임금을 새로 읽으면 이 집합이나 테스트의 유지 목록에 넣어야 한다(test_audit50 T5가 계산기 소스와 대조한다).
+_ORDINARY_BASED_TARGETS = frozenset({
+    "overtime", "weekly_holiday", "annual_leave", "dismissal", "public_holiday", "compensatory_leave",
+    "flexible_work", "parental_leave", "maternity_leave",
+    "average_wage", "severance", "shutdown_allowance", "industrial_accident", "retirement_pension",
+})
+# 그중 평균임금으로 계산하는 것(퇴직소득세는 퇴직금 결과를 쓴다) — 보류 안내가 이유를 따로 적는다
+_AVERAGE_WAGE_TARGETS = frozenset({
+    "average_wage", "severance", "shutdown_allowance", "industrial_accident", "retirement_pension", "retirement_tax",
+})
+# 금액 보류 안내의 표지. LLM 컨텍스트 머리말이 이 표지로 '보류 항목 추정 금지'를 덧붙인다.
+_AMOUNT_HOLD_MARK = "금액 보류:"
+# 보류 경고의 이름표 설명. 보류 안내와 포괄임금 '미달' 안내가 같은 문장을 쓴다.
+_HELD_TOTAL_NOTE = " 위 시급은 그 수당이 섞인 월급 총액을 소정근로시간으로 나눈 값이라 통상시급이 아닙니다."
+# 다른 계산기가 만든 줄 속 '통상시급'(소정근로시간 계산식 등)도 같은 총액 ÷ 시간이다. 이름을 부정하는 표기는 건드리지 않는다.
+_HELD_HOURLY_WORD_RE = re.compile(r"통상시급(?! 아님)(?!이 아니며)")
+_HELD_FORMULA_TAG_RE = re.compile(r"^\[통상임금\]")
+_HELD_FORMULA_BASE_RE = re.compile(r"^((?:\[시급 환산\] )?)월 기본급:")
+# 4대보험 계산기는 보수월액(= 통상임금 계산 결과)을 '(통상임금 기준)'이라 적는다 — 보류 카드에서 그 값은 월급 총액이다
+_HELD_INSURANCE_BASIS_RE = re.compile(r"^(세전 월 급여: [\d,]+원) \(통상임금 기준\)$")
+
+
+def _drop_not_ordinary_allowances(inp) -> None:
+    """금액이 월급 총액인 경로에서 의도분석이 뽑은 연장·연차수당 등(이름으로 통상임금이 아닌 고정수당)을 뺀다 — 이미 그 총액의
+    일부라 '월 총 예상 수령액'에 다시 더해졌다(재검토 M-A: 270만 원 + 고정연장수당 60만 원 → 3,300,000원)."""
+    def name(a):
+        return a.get("name", "") if isinstance(a, dict) else getattr(a, "name", "")
+    inp.fixed_allowances = [a for a in inp.fixed_allowances or [] if not AllowanceClassifier.is_not_ordinary_by_name(name(a))]
+
+
+def _has_premium_hours(inp) -> bool:
+    """연장·야간·휴일 근로시간이 하나라도 입력됐는가 — 포괄임금 역산의 근거."""
+    return any((getattr(inp.schedule, f, 0) or 0) > 0 for f in (
+        "weekly_overtime_hours", "weekly_night_hours", "weekly_holiday_hours", "weekly_holiday_overtime_hours"))
+
+
+def _states_excluded_pay_included(sentence: str) -> bool:
+    """수당명 뒤 30자 안, 같은 절에 '포함'류 서술이 부정·의문·계산 지시 없이 이어지는가.
+
+    수당명은 항목 탐지와 같은 넓은 이름(`_EXCLUDED_ITEM_RE` — 시간외·잔업·포괄·OT 등)이다. 좁은 이름만 보면 "시간외수당이
+    포함돼 있습니다"가 진술로 읽히지 않아 총액으로 '충족'을 냈다(Act-4 리뷰 M4).
+    """
+    for m in _EXCLUDED_ITEM_RE.finditer(sentence):
+        window = sentence[m.end():m.end() + 30]
+        inc = _PAY_INCLUDED_RE.search(window)
+        if not inc or _PAY_SEPARATE_RE.search(window[:inc.start()]):
+            continue
+        if not _PAY_INCLUDED_DENIED_RE.search(sentence[m.end() + inc.end():]):
+            return True
+    return False
+
+
+def _base_pay_amounts(text: str):
+    """질문에 적힌 기본급 후보 (원, 어림 단위 — '만 원'·'천 원'·None). 변동분·과거 값·정확하지 않은 금액(못 읽은 잔액·
+    어림 표현)은 뺀다 — 못 읽으면 보류가 틀린 금액보다 안전하다."""
+    text = text or ""
+    for m in _BASE_PAY_RE.finditer(text):
+        after = text[m.end():m.end() + 12]
+        if (_BASE_CHANGE_AFTER_RE.search(after) or _inexact_amount(m, after)
+                or _BASE_PAST_BEFORE_RE.search(text[max(0, m.start() - 14):m.start()])):
+            continue
+        if m.group(1):
+            yield int(m.group(1).replace(",", "")), None
+            continue
+        rest = int(m.group(3).replace(",", "")) * (1000 if m.group(4) else 1) if m.group(3) else 0
+        unit = "천 원" if m.group(4) else None if m.group(3) else "만 원"
+        yield round(float(m.group(2)) * 10000 + rest), unit
+
+
+def _stated_base_pay(text: str) -> int | None:
+    """질문에 적힌 기본급. 변동분·과거 값 언급은 빼고, 남은 금액이 하나로 정해질 때만 돌려준다."""
+    amounts = {value for value, _ in _base_pay_amounts(text)}
+    return amounts.pop() if len(amounts) == 1 else None
+
+
+def _base_rounding_unit(text: str) -> str | None:
+    """판정에 쓴 기본급이 만 원·천 원 단위로만 적혔으면 그 단위 — 근사값일 수 있어 안내에 밝힌다. 과거 값("작년 기본급 190만원")은
+    후보에서 빠지므로 안내를 붙이지 않고(Act-4 리뷰 L4), 같은 금액을 원 단위로도 적었으면("209만원(2,090,000원)") 근사가 아니다."""
+    units = [unit for _, unit in _base_pay_amounts(text)]
+    return units[0] if units and None not in units else None
+
+
+def _stated_wage_composition(query: str) -> tuple[bool, int | None]:
+    """(월급에 최저임금 비산입 수당이 포함됐다고 질문이 밝혔는가, 질문에 적힌 기본급 원).
+
+    포함 진술은 **같은 문장** 안에서 수당 명칭 바로 뒤에 '포함'류 서술이 오거나, 기본급 금액과 함께 비산입 수당이 금액과
+    나열될 때다 — 연장수당을 따로 묻는 질문("주휴수당과 연장근로수당을 각각 계산")이나 다른 항목의 '포함'("식대 포함이고
+    연장수당은 따로")을 잡지 않기 위해서다. 만원 표기 기본급도 읽는다(Act-4 — 안내에 근사값일 수 있다고 밝힌다).
+    """
+    text = query or ""
+    included = any(_states_excluded_pay_included(s) or _lists_excluded_pay_with_base(s) or _states_part_of_total(s)
+                   for s in _SENTENCE_RE.split(text))
+    return included, _stated_base_pay(text)
+
+
+# "월급 270만원 중 60만원이 고정연장수당" — 총액 '중' 일부가 비산입 수당이라는 진술(재검토 M-A). '중'은 띄어 쓴 낱말만
+_PART_OF_TOTAL_RE = re.compile(r"(?:월급|급여|임금|총액)[^.!?\n]{0,20}?\s중(?:에서|에)?\s*"
+                               r"(?:[\d,.]+\s*(?:만\s*원?|원)\s*(?:이|가|은|는|정도가)?\s*)?")
+
+
+def _states_part_of_total(sentence: str) -> bool:
+    """월급 '중' 일부가 비산입 수당이라고 말하는가 — 뒤에 따로·못 받 등이 오면 아니다."""
+    for m in _PART_OF_TOTAL_RE.finditer(sentence):
+        item = _EXCLUDED_ITEM_RE.search(sentence, m.end(), m.end() + 14)   # '고정·정액' 같은 앞말을 건너뛴다
+        if (item and item.start() - m.end() <= 3
+                and not _PAY_NOT_INCLUDED_RE.search(_CLAUSE_END_RE.split(sentence[item.end():], maxsplit=1)[0])):
+            return True
+    return False
+
+
+# 나열된 수당 금액 뒤, 같은 절 안에 오면 월급에 든 것이 아니다 — "30만원은 따로 나와요", "30만원을 못 받았어요"
+_PAY_NOT_INCLUDED_RE = re.compile(r"별도|따로|제외|빼고|미포함|불포함|못\s*받|안\s*받|받지\s*(?:못|않)|미지급|체불")
+_CLAUSE_END_RE = re.compile(r"[,;)]|(?:고|며|지만|는데|면서)\s")
+
+
+def _lists_excluded_pay_with_base(sentence: str) -> bool:
+    """기본급 금액과 같은 문장에 비산입 수당이 금액과 함께 나열돼 있는가 — '포함' 동사가 없어도 구성 진술이다.
+
+    "월급 2,700,000원(기본급 2,096,270원, 고정연장수당 603,730원)"이 포함 진술로 읽히지 않아 총액으로 '✅ 충족'을 냈다
+    (Design §13.5 R2, Act-4). 별도·따로 지급이라고 하면 아니다.
+    """
+    if next(_base_pay_amounts(sentence), None) is None:
+        return False   # 기본급 금액이 없거나 과거·변동 값뿐이면 지금 월급의 구성이 아니다(Act-4 리뷰 M3)
+    for m in _EXCLUDED_ITEM_RE.finditer(sentence):
+        amount = _ITEM_AMOUNT_RE.match(sentence, m.end())
+        if amount and not _PAY_NOT_INCLUDED_RE.search(_CLAUSE_END_RE.split(sentence[amount.end():], maxsplit=1)[0]):
+            return True
+    return False
+
+
+def _parse_won(digits: str, man: str | None) -> int:
+    return round(float(digits.replace(",", "")) * (10000 if man else 1))
+
+
+def _stated_total_pay(text: str, base: int) -> int | None:
+    """질문에 숫자로 적힌 월급 총액. 기본급보다 큰 값이 하나로 정해질 때만 돌려준다.
+
+    기본급 경로의 평균임금·보수 기준(`monthly_total_pay`)이다. 의도분석이 기본급을 임금으로 뽑으면(C8) 총액을 여기서만 알 수
+    있다 — 점검 36번은 "세전 월급은 270만 원"이라 만원 표기를 읽어야 했다. 같은 절에 세후·실수령·최저·전 직장·육아휴직 등이
+    앞서거나, 변동("A에서 B로")·과거 값이면 뺀다(리뷰 M1).
+    """
+    text = text or ""
+    amounts = set()
+    for m in _TOTAL_PAY_RE.finditer(text):
+        before = re.split(r"[,.;!?\n(]", text[max(0, m.start() - 15):m.start()])[-1]
+        after = text[m.end():m.end() + 12]
+        if (_TOTAL_CONTEXT_EXCLUDE_RE.search(before) or _ITEM_AFTER_RE.search(after) or _inexact_amount(m, after)
+                or _TOTAL_AFTER_EXCLUDE_RE.search(after) or _BASE_CHANGE_AFTER_RE.search(after)
+                or _BASE_PAST_BEFORE_RE.search(text[max(0, m.start() - 14):m.start()])):
+            continue
+        value = _parse_won(m.group(1), m.group(2))
+        if value > base + 1000:
+            amounts.add(value)
+    return amounts.pop() if len(amounts) == 1 else None
+
+
+def _money_in_text(amount: float, text: str) -> bool:
+    """의도분석 금액이 질문에 숫자로 적혀 있는가(천 원 오차 허용). 아니면 의도분석이 기본급 + 식대처럼 합산한 값일 수 있다."""
+    return any(abs(_parse_won(m.group(1), m.group(2)) - amount) <= 1000 for m in _MONEY_RE.finditer(text or ""))
+
+
+def _stated_other_pay(text: str) -> tuple[dict[str, int], bool]:
+    """(월급 구성 문장에 금액과 함께 적힌 그 밖의 항목 {이름: 원}, 판단을 미뤄야 하는가).
+
+    비산입 항목(연장·야간·휴일·연차·시간외·포괄수당 등)을 지운 뒤 남은 '○○수당'·식대·교통비 등을 이름 전체로 찾는다. 금액이 붙은
+    항목은 모든 문장에서 읽는다("식대 20만원도 받아요"를 버리면 없는 '미달'이 난다). 금액 없는 이름은 구성 문장(기본급·월급·
+    급여·포함)에 있을 때만 판단을 미루는 사유다 — 그 밖의 문장에서는 질문이다. 하나라도 구성 문장에서 금액이 없거나, 성격이 갈리는 항목(상여·성과급·가족수당·고정/정액/기타 수당 등)이거나, 별도·따로 지급이거나, 변동("10만원에서
+    20만원으로")이거나, 같은 항목에 금액이 둘이면 판단을 미룬다 — 그때 '총액 − 기본급 − 항목'이 비산입 수당만이라는 보장이 없어
+    기본급으로 판정하면 없는 '미달'이 나온다(Check 리뷰 H1, Act-3 리뷰 H1·H2).
+    """
+    items: dict[str, int] = {}
+    for sentence in _SENTENCE_RE.split(text or ""):
+        composition = bool(_COMPOSITION_SENTENCE_RE.search(sentence))
+        masked = _EXCLUDED_ITEM_RE.sub(lambda m: " " * len(m.group(0)), sentence)
+        for m in _PAY_ITEM_RE.finditer(masked):
+            name = re.sub(r"\s+", "", m.group(1))
+            amount = _ITEM_AMOUNT_RE.match(masked, m.end())
+            before = None
+            after_from = amount.end() if amount else m.end()
+            if not amount:
+                before = _ITEM_AMOUNT_BEFORE_RE.search(masked[:m.start()])
+                if before and _ITEM_AMOUNT_PREFIX_EXCLUDE_RE.search(masked[:before.start()]):
+                    before = None   # "하루 8,000원짜리 식대"·"연 120만원의 식대" — 월액이 아니다
+                amount = before   # "200,000원의 식대"(Act-4)
+            if not amount and not composition:
+                continue   # 구성 문장이 아닌 곳의 금액 없는 이름은 질문이다("주휴수당도 받을 수 있나요?")
+            # 계산기 분류(`AllowanceClassifier`)가 비산입으로 보는 이름도 미룬다 — '유급휴일수당'은 통상임금에 넣고 최저임금에서는
+            # 빼 없는 '미달'이 났다(리뷰 재현). 주휴일이 아닌 유급휴일 임금은 비산입이라(최저임금법 시행규칙 제2조 제1항 제3호) 이름만으로
+            # 갈리지 않는다 — 이 대조가 그 경우를 맡는다
+            if (_AMBIGUOUS_ITEM_RE.search(name) or not amount
+                    or AllowanceClassifier.classify_min_wage_type(name) == "excluded"):
+                return {}, True
+            value = _parse_won(amount.group(1), amount.group(2))
+            after = masked[after_from:after_from + 12]
+            # 꼬리 검사는 이름 뒤 금액에만 — 이름 앞 금액('…원의 식대')의 뒤는 이름의 뒤다
+            if (_ITEM_AFTER_RE.search(after) or _BASE_CHANGE_AFTER_RE.search(after)
+                    or (amount is not before and _inexact_amount(amount, after))
+                    or items.get(name, value) != value):
+                return {}, True
+            items[name] = value
+    return items, False
+
+
+def _apply_stated_allowances(inp, items: dict[str, int]) -> None:
+    """정확 경로의 고정수당은 질문에 금액과 함께 적힌 항목뿐이다 — 의도분석이 뽑은 고정수당은 쓰지 않는다.
+
+    의도분석 고정수당을 그대로 두면 질문에 없는 수당을 산입하거나(리뷰 H3c), 다른 이름으로 같은 수당을 두 번 넣거나(H3a),
+    비산입 수당(시간외·잔업·포괄수당)을 조건 '없음' 고정수당으로 통상임금·산입에 넣어(H3b) 없는 '충족'이 나왔다.
+    """
+    inp.fixed_allowances = [{"name": name, "amount": value, "condition": "없음"} for name, value in items.items()]
+
+
+def _exact_composition_note(base: int, items: dict[str, int], total: int | None, label: str, targets) -> str:
+    """정확 경로(기본급·총액을 나눠 계산)의 안내. 무엇을 어느 기준으로 계산했는지 밝힌다."""
+    listed = "·".join(f"{name} {value:,}원" for name, value in items.items())
+    basis = f"기본급 {base:,.0f}원" + (f"과 {listed}" if listed else "")
+    excluded = "연장·야간·휴일·연차수당은 최저임금 산입에서 제외 — 최저임금법 제6조 제4항"
+    if total:
+        note = (f"월급 {total:,.0f}원에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셔서 {basis}으로 {label}을 "
+                f"계산했습니다({excluded}).")
+    else:
+        note = f"{basis} 기준으로 {label}을 계산했습니다(월급에 포함된 {excluded})."
+    if items:
+        note += " 함께 적힌 수당은 매월 고정 지급되는 것으로 보고 통상임금과 최저임금 산입에 넣었습니다."
+    if set(targets) & _TOTAL_PAY_TARGETS:
+        if total:
+            note += f" 퇴직금·4대보험 등 평균임금·보수로 계산하는 항목은 수당을 포함한 월급 {total:,.0f}원 기준입니다."
+        else:
+            note += " 퇴직금 등 평균임금으로 계산하는 항목은 그 수당이 빠진 기본급 기준이라 실제보다 적게 나왔을 수 있습니다."
+    if "comprehensive" in targets:
+        note += " 기본급이 주어져 포괄임금 역산은 하지 않았습니다."
+    return note
+
+
+def _held_targets_note(held: list[str]) -> str:
+    """금액을 보류한 계산의 안내. 무엇을 뺐는지 밝히지 않으면 '물어본 것 중 일부가 없다'는 사실이 조용히 사라지고,
+    LLM이 빈자리를 카드의 총액 기준 시급으로 채운다.
+
+    이유는 계열마다 다르다. 통상임금 계열(시급·일급·월액 — 육아휴직·출산전후휴가는 월 통상임금)은 계산 기준 자체가 틀렸고,
+    평균임금 계열은 평균임금은 총액이 맞지만 통상임금과의 비교(하한·휴업수당 상한)를 확인할 수 없다 — 한 문장으로 묶으면
+    LLM이 "퇴직금은 통상임금 기준"으로 옮긴다(Act-2 코드 리뷰 M3·재검토 N5).
+    """
+    if not held:
+        return ""
+    def names(keys):
+        return ", ".join(CALC_TYPES.get(key, key) for key in keys)
+
+    hourly = [key for key in held if key not in _AVERAGE_WAGE_TARGETS]
+    average = [key for key in held if key in _AVERAGE_WAGE_TARGETS]
+    parts = []
+    if hourly:
+        parts.append(f"통상임금(시급·일급·월액)으로 계산하는 항목({names(hourly)})은 수당이 섞인 총액으로는 정확히 계산할 수 "
+                     "없습니다.")
+    if average:
+        parts.append(f"평균임금으로 계산하는 항목({names(average)})은 평균임금 자체는 수당을 포함한 총액이 맞지만 통상임금과의 "
+                     "비교(평균임금이 통상임금보다 적으면 통상임금으로 하는 하한, 휴업수당의 통상임금 상한)를 확인할 수 없습니다.")
+    return (f" {_AMOUNT_HOLD_MARK} " + " ".join(parts)
+            + " 이 항목들의 금액은 계산하지 않았고(일수·시간 등 금액이 아닌 결과는 그대로 둠) 추정하지 마세요.")
+
+
+def _relabel_held_formula(line: str) -> str:
+    """통상임금 계산기가 월급제 입력에 만드는 줄('[통상임금] 월 기본급: 총액')과 그 독립 계산기판('월 기본급: 총액')의
+    머리말만 바꾼다. 줄 중간의 같은 글자는 다른 계산기의 설명일 수 있어 건드리지 않는다."""
+    line = _HELD_FORMULA_TAG_RE.sub("[시급 환산]", line)
+    return _HELD_FORMULA_BASE_RE.sub(r"\1월급 총액(수당 포함, 기본급·통상임금 아님):", line)
+
+
+def _rename_held_hourly(text: str) -> str:
+    """다른 계산기가 만든 계산식 속 '통상시급'(소정근로시간의 '월급 환산 = 통상시급 × 시간')을 총액 기준 시급으로 바꾼다(보류 카드 전용).
+    실업급여의 '통상시급 기준' 줄은 월급이 없을 때만 만들어져 보류 경로(월급 있음)에서는 도달하지 않는다."""
+    return _HELD_HOURLY_WORD_RE.sub("총액 기준 시급", text)
+
+
+def _label_held_total(result) -> None:
+    """보류 카드에서 월급 총액 기반 값에 붙은 '통상시급'·'월 통상임금'·'월 기본급' 이름을 바로잡는다.
+
+    첫 줄(`hourly_label`)만이 아니다. 통상임금 계산이 함께 요청되면 항목별 결과(summary)에 같은 값이 '통상시급'·
+    '월 통상임금'으로 실리고, 계산식의 '[통상임금] 월 기본급: 총액'은 요청과 무관하게 항상 실린다. 첫 줄만 바꾸면 한 카드
+    안에서 이름이 갈려 LLM이 총액을 기본급·통상임금으로 읽는다.
+
+    **바꾸는 것은 이름뿐이다.** 통상임금 계산기(기초 계산)가 만든 줄 + 다른 계산기 줄 속 '통상시급' 단어(소정근로시간 계산식 등
+    — 어디서나 이 총액 ÷ 시간이다) + 4대보험의 '세전 월 급여: … (통상임금 기준)'. 통상임금으로 금액을 내는 계산(퇴직금의 '통상임금
+    환산' 등)은 이름이 아니라 금액이 틀리므로 계산 전에 대상에서 뺀다(`_ORDINARY_BASED_TARGETS`, Act-2). 호출 조건은 계산 금액이
+    월급 '총액'일 때뿐이다(`held_is_total`): 기본급 경로·C8 경로·미진술 경로와, 금액이 질문의 기본급과 같은 보류에서는 그 값이
+    총액이 아니다.
+    """
+    result.hourly_label = _HELD_HOURLY_LABEL
+    result.summary = {_HELD_SUMMARY_LABELS.get(key, key): value for key, value in result.summary.items()}
+    result.formulas = [_HELD_INSURANCE_BASIS_RE.sub(r"\1 (월급 총액 기준)", _rename_held_hourly(_relabel_held_formula(line)))
+                       for line in result.formulas]
+    result.formulas = [_HELD_MINWAGE_LINE_RE.sub(
+        lambda m: "월급 총액(수당 포함, 기본급 아님):" if m.group(0).startswith("기본급") else "총액 기준 시급:", line)
+        for line in result.formulas]
+    result.warnings = [_HELD_MINWAGE_WARN_RE.sub("최저임금 미달: 총액 기준 시급", w) for w in result.warnings]
 
 
 def _wageless_weekly_holiday(weekly_days, daily_hours) -> str | None:
@@ -1421,9 +1836,147 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         if "legal_hints" not in targets:
             targets.append("legal_hints")
 
+    composition_note = None
+    composition_hold = False
+    held_is_total = False      # 보류 경로에서 계산 금액이 월급 '총액'일 때만 True — 총액 이름표·경고·함께 보류의 조건
+    amount_hold = ()           # 총액 보류에서 금액만 뺄 계산(facade가 계산은 하고 금액만 뺀다)
+    hold_compliant = ()        # 총액 보류에서 '충족'만 싣지 않을 판정(총액으로도 미달이면 미달 그대로 — Act-4 리뷰 H5)
+    comprehensive_unknown_hours = comprehensive_statement = False
+    comprehensive_total = False  # 포괄임금 총액(기본급 구분 없음) + 연장시간 — 보류 경로가 아니어도 총액 이름표·금액 보류
+    composition_total = None   # 기본급 경로: 카드 총액 줄에 보일 사용자 총액(0이면 줄을 숨긴다)
+    if has_wage and inp.monthly_wage and inp.wage_type in (WageType.MONTHLY, WageType.COMPREHENSIVE):
+        includes_excluded, base = _stated_wage_composition(query)
+        # 포괄임금제는 연장·야간수당 등이 포함된 총액이다 — 약정 연장시간을 모르면 역산이 연장 0시간으로 나눠 시급을 부풀리고
+        # '충족'을 냈다(Design §13.5 R2, Act-4). 연장시간이 있으면 역산(대법원 2020다300299 방식)을 그대로 쓴다.
+        # 포괄임금제 언급은 그 자체로 '연장수당 등이 포함된 총액'이라는 구성 진술이다 — 기본급이 있으면 정확 경로, 없으면 연장
+        # 시간이 있을 때 역산(아래 `comprehensive_by_hours`), 없을 때 보류다
+        comprehensive_statement = bool(
+            not includes_excluded and inp.wage_type == WageType.COMPREHENSIVE
+            and _COMPREHENSIVE_RE.search(query or "") and not _COMPREHENSIVE_DENIED_RE.search(query or ""))
+        comprehensive_unknown_hours = comprehensive_statement and not _has_premium_hours(inp)
+        includes_excluded = includes_excluded or comprehensive_statement
+        if includes_excluded:
+            amount = inp.monthly_wage
+            items, ambiguous = _stated_other_pay(query)
+            # 총액: 질문에 숫자로 적힌 월급 총액, 없으면 의도분석 금액(기본급보다 크고 질문에 그 숫자가 있을 때 — 없으면 기본급 +
+            # 식대처럼 합산한 값일 수 있다, 리뷰 M2). 둘이 어긋나면 모르는 것으로 둔다.
+            total = None
+            if base is not None:
+                text_total = _stated_total_pay(query, base)
+                llm_total = round(amount) if amount - base > 1000 and _money_in_text(amount, query) else None
+                total = (None if text_total and llm_total and abs(text_total - llm_total) > 1000
+                         else text_total or llm_total)
+            # 기본급으로 판정해도 되는 경우(정확 경로): 기본급이 하나로 정해지고, 함께 적힌 산입 대상 수당이 모두 금액과 함께
+            # 있으며, 총액을 알면 기본급이 그 절반 이상이고 기본급 + 수당이 총액을 넘지 않을 때(총액을 모르면 기본급이 계산
+            # 금액보다 크지 않을 때 — 크면 의도분석이 뽑은 총액과 질문의 기본급이 어긋난다). 아니면 '총액 − 기본급'이 비산입
+            # 수당만이라는 보장이 없어 기본급으로 계산하면 없는 '미달'이 나온다(Check 리뷰). 총액·기본급을 질문에서 읽으면
+            # 의도분석 금액(반올림 포함)은 판정에 쓰지 않는다.
+            exact = (base is not None and not ambiguous
+                     and (base >= total * 0.5 and base + sum(items.values()) <= total + 1000 if total
+                          else base <= amount + 1000))
+            # 포괄임금제 총액에 연장시간이 있고 기본급이 없으면 '포함' 진술은 이미 아는 사실이다 — 역산이 연장시간을 반영하므로
+            # 보류하지 않고 아래 역산 경로로 보낸다(재검토: 같은 320만 원이 진술 유무로 '충족'과 '보류'로 갈렸다)
+            comprehensive_by_hours = (base is None and inp.wage_type == WageType.COMPREHENSIVE and _has_premium_hours(inp))
+            label = "통상시급·최저임금" if "minimum_wage" in targets else "통상시급"
+            if comprehensive_by_hours:
+                pass
+            elif exact:
+                # 통상임금·최저임금은 기본급(+ 고정수당), 평균임금·4대보험 보수·근로장려금은 총액으로 나눠 계산한다
+                # (`monthly_total_pay`, Act-3 R7·R8). 의도분석이 총액·기본급·천 원 반올림값 중 무엇을 뽑았든 같은 카드다 —
+                # 예전에는 기본급을 뽑으면(C8) 퇴직금이 기본급 기준(과소)이었고, 총액을 뽑고 4대보험을 물으면 보류였다.
+                inp.monthly_wage = float(base)
+                inp.wage_type = WageType.MONTHLY
+                _apply_stated_allowances(inp, items)
+                if total:
+                    inp.monthly_total_pay = float(total)
+                # 총액을 모르면 '월 총 예상 수령액' 줄을 숨긴다 — 기본급이 총액처럼 보인다
+                composition_total = total or 0
+                composition_note = _exact_composition_note(base, items, total, label, targets)
+                unit = _base_rounding_unit(query)
+                if unit:
+                    composition_note += (f" 기본급은 질문의 {unit} 단위 금액으로 계산했습니다 — 원 단위 금액이 다르면 판정이 "
+                                         "달라질 수 있습니다.")
+            else:
+                composition_hold = True
+                # 문구는 이유별로 — 연장시간을 몰라서(R2-b), 포괄임금제 총액이라서(기본급은 있으나 산입 여부가 갈리는 항목이
+                # 남음), 사용자가 포함이라고 말해서. 포괄임금제라고만 했는데 "포함돼 있다고 하셔서"라고 쓰면 진술을 지어낸다
+                composition_note = (
+                    "포괄임금제는 연장·야간·휴일수당 등이 포함된 총액이라 약정 연장시간을 모르면 최저임금 충족 여부를 판정할 수 "
+                    "없어 판정하지 않았습니다. 약정 연장시간이나 기본급을 알면 계산할 수 있습니다."
+                    if comprehensive_unknown_hours else
+                    "포괄임금제 총액에는 연장·야간·휴일수당 등이 포함돼 있어 최저임금 충족 여부는 판정하지 않았습니다. "
+                    "최저임금은 기본급 등 산입 대상 임금으로 확인해야 합니다."
+                    if comprehensive_statement else
+                    "월급에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셔서 최저임금 충족 여부는 판정하지 "
+                    "않았습니다. 최저임금은 기본급 등 산입 대상 임금으로 확인해야 합니다.")
+                # 금액이 질문의 기본급과 같거나 작으면(의도분석이 기본급을 임금으로 뽑음, 만 원 단위 반올림 포함) 그 값은 총액이
+                # 아니다 — 총액 이름표와 경고가 사용자 진술(기본급)을 뒤집는다(Act-1 코드 리뷰 재현: 금액 2,090,000 + 질문
+                # 기본급 2,096,270). 허용폭은 C8과 같다.
+                if comprehensive_unknown_hours:
+                    targets = [t for t in targets if t != "comprehensive"]
+                held_is_total = not base or amount - base > 1000
+                if held_is_total:
+                    # 총액 기준 시급으로 낸 금액은 보류한다(Act-2). 계산은 하고 금액만 뺀다 — 연차 발생일수·'퇴직금 미발생'
+                    # 같은 판정은 시급과 무관하다(코드 리뷰 M2). 퇴직소득세는 퇴직금 결과로 계산하므로 퇴직금과 함께 넘긴다.
+                    amount_hold = tuple(t for t in targets if t in _ORDINARY_BASED_TARGETS
+                                        or (t == "retirement_tax" and "severance" in targets))
+                    # 최저임금은 계산하되 '충족'만 싣지 않는다 — 비산입 수당이 섞인 총액은 시급을 부풀리기만 하므로 총액으로도
+                    # 미달이면 실제로도 미달이다. 예전에는 판정을 통째로 빼 "포괄임금제로 월 200만원"에도 '보류'였다(리뷰 H5)
+                    hold_compliant = ("minimum_wage",)
+                    _drop_not_ordinary_allowances(inp)
+                    composition_note += _HELD_TOTAL_NOTE
+                else:
+                    # 금액이 기본급이면(산입 여부가 갈리는 수당이 남음) 기본급만으로 낸 판정은 어느 쪽도 확정이 아니다
+                    targets = [t for t in targets if t != "minimum_wage"]
+
+    # 포괄임금제 + 연장·야간·휴일 시간 → 최저임금은 역산(대법원 2020다300299 방식)으로만 판정한다. 최저임금 계산기는 총액을
+    # 소정근로시간으로 나눠 '충족'을 냈다(Act-4 리뷰 H4 — 270만 원 + 주 10시간 연장: 12,945원 '충족' vs 역산 9,863원 '미달').
+    # 의도분석 라벨 '포괄임금제'가 매핑에 없어 다른 라벨이 있으면 역산이 빠졌다. 정확 경로는 월급제로 바꿔 여기 오지 않는다
+    if (inp.wage_type == WageType.COMPREHENSIVE and not composition_hold and not inp.comprehensive_breakdown
+            and has_wage and _has_premium_hours(inp)):
+        # 이 경로의 '통상임금'도 연장·야간·휴일수당이 섞인 총액이다 — 그 시급에 '통상시급' 이름을 붙이지 않고(Plan P0-5)
+        # 그 시급으로 낸 금액은 보류한다(Act-2와 같은 원칙). 역산 판정은 연장시간을 반영하므로 '충족'도 믿는다
+        comprehensive_total = held_is_total = True
+        amount_hold = tuple(t for t in targets if t in _ORDINARY_BASED_TARGETS
+                            or (t == "retirement_tax" and "severance" in targets))
+        _drop_not_ordinary_allowances(inp)
+        verdict = (" 최저임금은 연장 가산을 반영한 역산(대법원 2020다300299 방식)으로 판정했습니다."
+                   if {"minimum_wage", "comprehensive"} & set(targets) else "")
+        composition_note = "포괄임금 총액에는 연장·야간·휴일수당 등이 포함돼 있습니다." + verdict + _HELD_TOTAL_NOTE
+    if inp.wage_type == WageType.COMPREHENSIVE and "minimum_wage" in targets and _has_premium_hours(inp):
+        targets = [t for t in targets if t != "minimum_wage"]
+        if "comprehensive" not in targets:
+            targets.append("comprehensive")
+
     try:
         calc = WageCalculator()
-        result = calc.calculate(inp, targets)
+        result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant)
+        if composition_total == 0:
+            result.monthly_total = 0.0
+        elif composition_total and result.monthly_total < composition_total:
+            # 기본급으로 계산해도 카드의 '월 총 예상 수령액'은 사용자가 말한 총액이다
+            result.monthly_total = float(composition_total)
+        if (composition_hold or comprehensive_total) and held_is_total:
+            _label_held_total(result)
+        if composition_hold and result.minimum_wage_ok is not None:
+            # 보류해도 포괄임금 역산(comprehensive)이 같은 총액으로 판정을 다시 채운다. 비산입 수당은 시급을 부풀리기만
+            # 하므로 '충족'은 믿을 수 없어 보류로 내리고, '미달'은 총액으로도 미달이라 그대로 두되 안내를 바꾼다.
+            if result.minimum_wage_ok:
+                result.minimum_wage_ok = None
+                for section in (result.summary, *result.breakdown.values()):
+                    if isinstance(section, dict) and "최저임금 충족" in section:
+                        section["최저임금 충족"] = "⏸ 판정 보류"
+            else:
+                composition_note = (
+                    ("포괄임금제 총액에는 연장·야간·휴일수당 등이 포함돼 있는데, 그 총액으로 계산해도 최저임금에 미달합니다. "
+                     if comprehensive_statement else
+                     "월급에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셨는데, 그 수당이 섞인 총액으로 계산해도 "
+                     "최저임금에 미달합니다. ")
+                    + "기본급 등 산입 대상 임금만으로 보면 부족분은 이보다 클 수 있습니다."
+                    + (_HELD_TOTAL_NOTE if held_is_total else ""))
+        if composition_note:
+            # 보류 목록은 실제로 금액을 뺀 계산만 적는다 — 자격 판정으로 0인 결과(퇴직금 미발생 등)는 그대로 실렸다
+            result.warnings = [composition_note + _held_targets_note(result.amount_held), *result.warnings]
         if not has_wage:
             # 임금 미제공 부분 실행 — 0원 통상임금 계산식 노이즈 제거
             result.formulas = [f for f in result.formulas
@@ -1854,6 +2407,9 @@ def _calculation_context_heading(calc_result: str) -> str:
     """보류 결과에는 수치 사용 지시 대신 추정 금지 지시를 붙인다."""
     if calc_result.startswith("계산 보류"):
         return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
+    if _AMOUNT_HOLD_MARK in calc_result:
+        # 금액을 보류한 항목은 카드에 없다 — '이 수치를 사용하세요'만 붙이면 빈자리를 카드의 총액 기준 시급으로 채운다
+        return "임금계산기 결과 — 이 수치를 사용하세요. 금액을 보류한 항목은 추정하지 마세요"
     return "임금계산기 결과 — 이 수치를 사용하세요"
 
 

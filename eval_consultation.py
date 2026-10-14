@@ -21,7 +21,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterable
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
@@ -43,7 +43,9 @@ REQUIRED_CASE_KEYS = frozenset({
     "risk_level",
 })
 # 지식iN fixture(data/eval_kin_queries.json)가 쓰는 추적 필드. 기존 fixture에는 없다.
-OPTIONAL_CASE_KEYS = frozenset({"source_ref", "report_score"})
+# required_if·audit_id·detector_examples는 외부 점검 fixture(data/eval_audit50_queries.json)용이다.
+OPTIONAL_CASE_KEYS = frozenset({"source_ref", "report_score", "required_if", "audit_id",
+                                "detector_examples"})
 VALID_RISK_LEVELS = frozenset({"low", "medium", "high"})
 # Keep offline validation standard-library-only. Tests check these labels against
 # the production analyzer schema, including labels not yet used by the fixture.
@@ -95,6 +97,11 @@ class EvalCase:
     risk_level: str
     source_ref: str = ""
     report_score: int | None = None
+    # [{"when": claim, "require": [claim, ...]}] — 조건 문구가 있으면 범위 문구도 있어야 한다(§required_if_missing)
+    required_if: list[dict] = dataclass_field(default_factory=list)
+    audit_id: int | None = None
+    # {"positive": [...], "negative": [...]} — 감지 규칙 타당성 검사용(test_audit50 T1). 채점에는 쓰지 않는다
+    detector_examples: dict = dataclass_field(default_factory=dict)
 
 
 def load_cases(path: Path) -> list[EvalCase]:
@@ -143,6 +150,20 @@ def validate_cases(cases: list[EvalCase]) -> list[str]:
                     re.compile(claim.split(":", 1)[1])
                 except re.error:
                     errors.append(f"invalid forbidden_claims regex: {case.id}")
+        rules = case.required_if if isinstance(case.required_if, list) else [None]
+        for rule in rules:
+            if (not isinstance(rule, dict) or set(rule) != {"when", "require"}
+                    or not isinstance(rule["when"], str) or not rule["when"].strip()
+                    or not isinstance(rule["require"], list) or not rule["require"]
+                    or not all(isinstance(item, str) and item.strip() for item in rule["require"])):
+                errors.append(f"invalid required_if: {case.id}")
+                continue
+            for claim in (rule["when"], *rule["require"]):
+                if claim.startswith(("re:", "re!:")):
+                    try:
+                        re.compile(claim.split(":", 1)[1])
+                    except re.error:
+                        errors.append(f"invalid required_if regex: {case.id}")
         if not isinstance(case.expected_values, dict) or not all(
             isinstance(key, str) and type(value) in (float, int, str)
             for key, value in case.expected_values.items()
@@ -261,6 +282,11 @@ def run_case(case: EvalCase, config) -> dict:
 _NEGATION_RE = re.compile(
     r"폐지|삭제|구\s*기준|과거|이전\s*기준|예전|종전|더\s*이상|아닙니다|아니라|아닌|아님|"
     r"적용되지\s*않|요건이\s*아니|쓰지\s*않|잘못|오해|틀린")
+# 앞 절만 부정하는 형태 — "X는 아니며, Y"·"X라고 단정하기 어렵다". 일치 **뒤**, 첫 쉼표 전까지만 본다.
+# 앞에서 보면 "…중단되는 것은 아니며, [오답]"의 오답이 지워지고(a50-23 감지 예시), 쉼표 뒤까지 보면
+# 다음 절의 부정이 오답을 지운다. 근거 지침이 "…라고 단정하지 않는다"로 쓰여 답변이 이 형태로 부정한다
+# (실측 audit-50 Act-5: 이렇게 부정한 정답 6건이 오검출됐다).
+_CLAUSE_NEGATION_RE = re.compile(r"아니며|아니나|단정\S{0,3}\s*(?:수\S?\s*)?(?:어렵|어려|없)")
 _NEGATION_WINDOW = 120  # 문장 경계로 다시 자르므로 넉넉히 둔다(실측: "과거 행정해석(…, 2015.12.7.)은 … 판결을 근거로" 70자)
 # 문장 경계: 마침표·물음표·느낌표 뒤 공백, 줄바꿈, 표 칸 구분자. "제26조·제35조"의 가운뎃점이나
 # "2021. 8. 4."의 날짜 마침표에서 끊지 않도록 마침표는 뒤에 공백·끝이 올 때만 경계로 본다.
@@ -292,9 +318,56 @@ def claim_found(claim: str, answer: str) -> bool:
         # "10일 미만이어야 합니다. 과거 기준은 폐지…"처럼 다른 문장의 부정어가 단정을 지운다.
         before = _SENTENCE_BREAK_RE.split(before)[-1]
         after = _SENTENCE_BREAK_RE.split(after)[0]
-        if not (_NEGATION_RE.search(before) or _NEGATION_RE.search(after)):
+        if not (_NEGATION_RE.search(before) or _NEGATION_RE.search(after)
+                or _CLAUSE_NEGATION_RE.search(after.split(",", 1)[0])):
             return True
     return False
+
+
+# 인용 블록 줄(마크다운 ">"). 답변은 조문 원문을 인용 블록으로 싣는다.
+_QUOTE_START_RE = re.compile(r"^[ \t]*>")
+# 이모지·굵은 라벨로 시작하는 인용 블록은 답변 콜아웃이다(`> ⚠️ **주의사항**: …`). 두 답변 프롬프트가 적용
+# 예외·조건을 바로 여기에 쓰라고 지시하므로 본문으로 센다. 조문·판결 원문 인용(`> 제19조 …`, `> ① …`)만 뺀다.
+_CALLOUT_START_RE = re.compile(r"^[ \t]*>\s*(?:\*\*|[^\w\s\"'“”‘’「『(\[<])")
+
+
+def _claim_present(claim: str, text: str) -> bool:
+    """존재만 본다(부정 예외 없음). `re:`·`re!:`는 정규식, 그 밖은 리터럴."""
+    if claim.startswith(("re:", "re!:")):
+        return re.search(claim.split(":", 1)[1], text) is not None
+    return claim in text
+
+
+def _answer_body(answer: str) -> str:
+    """원문 인용 블록만 뺀 답변. 블록 종류(콜아웃·원문 인용)는 연속된 `>` 줄의 첫 줄로 정한다."""
+    kept, mode = [], None
+    for line in answer.splitlines():
+        if _QUOTE_START_RE.match(line):
+            if mode is None:
+                mode = "callout" if _CALLOUT_START_RE.match(line) else "quote"
+            if mode == "callout":
+                kept.append(line)
+        else:
+            mode = None
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def required_if_missing(rules: list[dict], answer: str) -> list[str]:
+    """조건(when)이 성립했는데 범위 문구(require)가 본문에 하나도 없는 규칙의 when을 반환한다.
+
+    조건부 사실을 무조건 사실로 쓰는 오류(조문을 적용 범위 밖까지 넓힘)는 금지 문구로는
+    잡히지 않는다 — 같은 조문을 범위 안에서 쓰는 정답도 있기 때문이다.
+    둘 다 **원문 인용 블록을 뺀 본문**에서 본다. 조문 원문 인용이 범위 문구("명시된 근로조건")를 공짜로 채우면
+    그 조문을 오용한 답도 통과하고(audit-50-legal-accuracy D6, 10-11 점검 3번 실측), 인용 속 조문 번호가
+    조건을 세우면 "적용되지 않습니다"라고 쓴 답이 위반이 된다(2026-10-12 Check). when은 claim_found(부정
+    문맥 예외 — "제19조는 적용되지 않습니다"는 조건이 아니다), require는 존재만 본다. 콜아웃(`> ⚠️ **주의사항**`)은
+    본문이다 — 답변 프롬프트가 적용 예외를 거기에 쓰라고 지시한다.
+    """
+    body = _answer_body(answer)
+    return [rule["when"] for rule in rules
+            if claim_found(rule["when"], body)
+            and not any(_claim_present(item, body) for item in rule["require"])]
 
 
 def _coverage(text: str, required: list[str]) -> float:
@@ -311,6 +384,8 @@ def score_result(case: EvalCase, observed: dict) -> dict:
         hit.get("source_type", "") for hit in observed.get("sources", [])
     }
     forbidden = [item for item in case.forbidden_claims if claim_found(item, answer)]
+    # 조건부 규칙 위반은 금지 문구 적중에 합산한다 — 점수 키 집합(관리자 화면·집계)을 바꾸지 않는다.
+    forbidden += [f"required_if:{when}" for when in required_if_missing(case.required_if, answer)]
     intent_match = (
         analysis.get("intent") == case.expected_intent
         if case.expected_intent else None

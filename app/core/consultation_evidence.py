@@ -71,6 +71,21 @@ def _matches(group: dict, query: str) -> bool:
             and not any(re.search(pattern, query) for pattern in _pattern_list(group, 'exclude_patterns')))
 
 
+_PADDING_RE = re.compile(r'[ \t　]{2,}')
+_BLANK_LINES_RE = re.compile(r'\n[ \t　]*(?:\n[ \t　]*)+')
+
+
+def _compact(text: str) -> str:
+    """표 정렬용 공백·빈 줄만 접는다. 보관본(content)은 그대로 두고 전달본에서만 줄인다.
+
+    별표1 원문 사본은 2,053자 중 873자가 정렬 공백이었고 세 그룹이 같은 사본을 싣는다 — 그대로 세면 다쟁점
+    질문에서 예산(합계 상한)을 공백이 먹어 기존 그룹이 통째로 생략됐다(2026-10-12 Check 실측). 낱말은
+    바꾸지 않으므로 앵커(공백 무시 대조)·사건번호·조문 표기는 그대로다.
+    """
+    lines = (_PADDING_RE.sub(' ', line).rstrip() for line in text.splitlines())
+    return _BLANK_LINES_RE.sub('\n', '\n'.join(lines)).strip()
+
+
 def _source_hit(source: dict, today: str) -> dict | None:
     """미래 판본·출처/원문 증거가 없는 자료는 전달하지 않는다."""
     effective = source.get('effective_date')
@@ -90,12 +105,16 @@ def _source_hit(source: dict, today: str) -> dict | None:
         if source.get('content_kind') != 'authored_summary' or not source.get('rights_basis'):
             return None
     return dict(source, source_type=_SOURCE_TYPES[source['source_type']],
-                chunk_text=source['content'], url=url, origin='official_evidence')
+                chunk_text=_compact(source['content']), url=url, origin='official_evidence')
 
 
 def select_evidence(query: str, *, as_of: str | None = None,
-                    max_chars: int = 12000, groups: tuple[dict, ...] | None = None) -> EvidenceSelection:
-    """자료/그룹을 절단하지 않고 예산 안에서 선택한다. 생략한 자료는 인용하지 않는다."""
+                    max_chars: int = 16000, groups: tuple[dict, ...] | None = None) -> EvidenceSelection:
+    """자료/그룹을 절단하지 않고 예산 안에서 선택한다. 생략한 자료는 인용하지 않는다.
+
+    상한 16,000자는 그룹 3개의 모든 조합(560개, 최대 14,478자)이 생략 없이 들어가는 값이다. 12,000자였을 때
+    지침 보강으로 커진 그룹이 다쟁점 질문에서 기존 그룹을 밀어냈다(2026-10-12 Check, 34개 조합).
+    """
     today = as_of or datetime.now(timezone(timedelta(hours=9))).date().isoformat()
     date.fromisoformat(today)
     result = EvidenceSelection()

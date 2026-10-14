@@ -36,7 +36,7 @@ def calc_prorated(inp: WageInput, ow: OrdinaryWageResult) -> ProratedResult:
     legal = ["근로기준법 제43조 (임금의 지급)"]
 
     # 기준 월급: 제공된 monthly_wage 또는 통상임금
-    monthly_wage = inp.monthly_wage or ow.monthly_ordinary_wage
+    monthly_wage = inp.monthly_total_pay or inp.monthly_wage or ow.monthly_ordinary_wage
 
     # 입사일 파싱
     join_date = parse_date(inp.join_date)

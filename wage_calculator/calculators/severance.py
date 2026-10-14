@@ -135,7 +135,7 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
         )
 
     if avg_daily_ordinary > avg_daily_3m:
-        legal.append("근로기준법 시행령 제2조 (평균임금 < 통상임금 시 통상임금 적용)")
+        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
         warnings.append(
             f"평균임금({avg_daily_3m:,.0f}원/일)이 통상임금 환산액({avg_daily_ordinary:,.0f}원/일)보다 낮아 "
             f"통상임금 기준 적용"
@@ -230,9 +230,10 @@ def _calc_avg_daily_1y(inp: WageInput, ow: OrdinaryWageResult) -> float:
         total = sum(inp.last_1y_wages)
         return total / period_days
 
-    # 1년 데이터 미제공 시 monthly_wage × 12 추정 (명시적 안내)
-    if inp.monthly_wage:
-        total = inp.monthly_wage * 12
+    # 1년 데이터 미제공 시 월 임금총액(없으면 monthly_wage) × 12 추정 (명시적 안내)
+    monthly = inp.monthly_total_pay or inp.monthly_wage
+    if monthly:
+        total = monthly * 12
         return total / period_days
 
     # 통상임금 기반 추정

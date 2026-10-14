@@ -54,7 +54,14 @@ def _calc_db(
     """DB형: 퇴직금과 동일 공식"""
     legal.append("근로자퇴직급여보장법 제15조 (확정급여형퇴직연금제도의 급여 수준)")
 
-    if severance_result and severance_result.is_eligible:
+    if severance_result is not None and not severance_result.is_eligible:
+        # 'DB형 = 퇴직금과 동일'이 이 계산의 전제다 — 퇴직금이 발생하지 않으면 DB형도 0이다. 통상시급으로 따로 추정하면
+        # 계속근로 7개월에 없는 퇴직연금 1,821,300원이 나왔다(Act-2 재검토 N2).
+        total_pension = 0
+        service_years = severance_result.service_years
+        formulas.append("DB형 퇴직연금 = 퇴직금과 동일: 퇴직금 미발생 → 0원")
+        warnings.append("퇴직금이 발생하지 않아(계속근로 1년 미만 등) 퇴직금과 같은 산식인 DB형 퇴직연금도 0원입니다.")
+    elif severance_result and severance_result.is_eligible:
         total_pension = severance_result.severance_pay
         service_years = severance_result.service_years
         formulas.append(
@@ -119,7 +126,7 @@ def _calc_dc(
                 "contribution": round(contribution, 0),
             })
     else:
-        annual_wage = (inp.monthly_wage or ow.monthly_ordinary_wage) * 12
+        annual_wage = (inp.monthly_total_pay or inp.monthly_wage or ow.monthly_ordinary_wage) * 12
         dr2 = DateRange(inp.start_date, inp.end_date)
         years = max(1, round(dr2.years)) if dr2.is_valid else 1
         for i in range(1, years + 1):
