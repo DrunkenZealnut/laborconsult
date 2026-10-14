@@ -1561,7 +1561,8 @@ class ScheduleHoursTest(unittest.TestCase):
         cases = {"1일 = 25 ÷ 3": ({"daily_work_hours": 25 / 3}, ("8.3333", "50h")),
                  "반올림 8.33": ({"daily_work_hours": 8.33}, ("8.33h", "49.98h")),
                  "반올림 8.3": ({"daily_work_hours": 8.3}, ("8.3h", "49.8h")),
-                 "주 합계를 바로 50으로": ({"weekly_total_hours": 50}, ("8.3333", "50h"))}
+                 "주 합계를 바로 50으로": ({"weekly_total_hours": 50}, ("8.3333", "50h")),
+                 "주 합계를 바로 49.8로": ({"weekly_total_hours": 49.8}, ("8.3h", "49.8h"))}
         for name, (extra, derived) in cases.items():
             with self.subTest(name):
                 info = dict({k: v for k, v in self.P40.items() if k not in ("needs_calculation", "calculation_types_kr")},
@@ -1647,14 +1648,17 @@ class ScheduleHoursTest(unittest.TestCase):
         self.assertEqual(_hours_mentions("9월 28일~30일 3일 동안 25시간 일했는데"), [(25.0, True, (3, 3))])
         self.assertEqual(ground("주 6일, 하루 8시간 근무인데 이번 주 3일 동안 25시간 일했어요", 25, 8, 6),
                          (None, 8, {"weekly_total_hours": 25}))
-        # 기간 1일 평균 × 1주 근무일수(25 ÷ 3 × 6 = 50)와 버린 1일 × 근무일수(8.3 × 6 = 49.8)도 기간 합계에서 나온 값이다
+        # 주 합계는 근무일수로 나눈 1일 값으로도 대조한다 — 기간 1일 평균 × 근무일수(25 ÷ 3 × 6 = 50), 반올림한 1일을 곱한 값(8.3 × 6
+        # = 49.8, 50에서 0.2 떨어진다)도 기간 합계에서 나온 값이다(CodeRabbit PR #114)
         span40 = "9월 28일~30일 3일 동안 25시간 일했는데 주휴수당이 안 나온대요"
-        self.assertEqual(ground(span40, 50, None, 6), (None, None, {"weekly_total_hours": 50}))
+        for weekly in (50, 49.98, 49.8):
+            self.assertEqual(ground(span40, weekly, None, 6), (None, None, {"weekly_total_hours": weekly}), weekly)
         self.assertEqual(ground(span40, 50, 25 / 3, 6), (None, None, {"weekly_total_hours": 50, "daily_work_hours": 25 / 3}))
         self.assertEqual(ground(span40, 49.8, 8.3, 6), (None, None, {"weekly_total_hours": 49.8, "daily_work_hours": 8.3}))
-        # 기간 밖 1일 시간(8시간 20분)이 뒷받침하면 같은 값이어도 쓴다
-        self.assertEqual(ground("주 6일 하루 8시간 20분 근무인데 9월 28일~30일 3일 동안 25시간 일했어요", 50, 25 / 3, 6),
-                         (50, 25 / 3, {}))
+        # 기간 밖 1일 시간(8시간 20분)이 뒷받침하면 같은 값이어도 쓴다 — 근거 쪽도 근무일수로 나눈 1일 값으로 본다
+        q820 = "주 6일 하루 8시간 20분 근무인데 9월 28일~30일 3일 동안 25시간 일했어요"
+        self.assertEqual(ground(q820, 50, 25 / 3, 6), (50, 25 / 3, {}))
+        self.assertEqual(ground(q820, 49.8, 8.3, 6), (49.8, 8.3, {}))
         # 1일을 버려도 그 곱이 아닌 주 합계(질문의 계약 48시간)는 남긴다
         self.assertEqual(ground("주 48시간 계약인데 9월 28일~30일 3일 동안 25시간 일했어요", 48, 25 / 3, 6),
                          (48, None, {"daily_work_hours": 25 / 3}))
