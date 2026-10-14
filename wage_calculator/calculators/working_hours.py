@@ -16,6 +16,7 @@ from ..constants import WEEKLY_HOLIDAY_MIN_HOURS
 from ..utils import fmt_hours
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
+from .shared import weekly_holiday_hours
 
 
 @dataclass
@@ -33,8 +34,9 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
 
     월 소정근로시간은 통상임금 계산기(ordinary_wage._get_base_hours)가 산출한
     ow.monthly_base_hours를 단일 출처로 사용한다. 과거 이 계산기는 주휴시간을
-    daily(상한 미적용)로 잡아 ordinary_wage(min(주소정/5, 8h), 대법원 2022다291153)와
-    다른 월 소정근로시간을 산출했고, 두 값이 한 답변에 함께 노출되는 불일치가 있었다.
+    daily(상한 미적용)로 잡아 통상임금 계산기와 다른 월 소정근로시간을 산출했고,
+    두 값이 한 답변에 함께 노출되는 불일치가 있었다. 주휴시간도 같은 함수
+    (shared.weekly_holiday_hours, 대법원 2022다291153)로 구한다.
     """
     daily = inp.schedule.daily_work_hours
     weekly_days = inp.schedule.weekly_work_days
@@ -45,9 +47,9 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
     # ── 주 소정근로시간 ──
     weekly_hours = daily * weekly_days
 
-    # ── 유급주휴시간 (ordinary_wage와 동일 법리: min(주소정/5, 8h), 대법원 2022다291153) ──
+    # ── 유급주휴시간 (통상임금 기준시간·주휴수당과 같은 함수, 대법원 2022다291153) ──
     if weekly_hours >= WEEKLY_HOLIDAY_MIN_HOURS:
-        paid_holiday_hours = min(weekly_hours / 5, 8.0)
+        paid_holiday_hours, _ = weekly_holiday_hours(weekly_days, daily)
         legal.append("근로기준법 제55조 (유급주휴일)")
     else:
         paid_holiday_hours = 0.0
@@ -72,9 +74,9 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
     breakdown = {
         "1일 소정근로시간": f"{daily}시간",
         "주 소정근무일수": f"{weekly_days}일",
-        "주 소정근로시간": f"{weekly_hours}시간",
-        "유급주휴시간": f"{paid_holiday_hours}시간",
-        "주 유급시간 합계": f"{weekly_paid}시간",
+        "주 소정근로시간": f"{fmt_hours(weekly_hours)}시간",
+        "유급주휴시간": f"{fmt_hours(paid_holiday_hours)}시간",
+        "주 유급시간 합계": f"{fmt_hours(weekly_paid)}시간",
         "월 소정근로시간 (주휴 포함)": f"{fmt_hours(monthly_hours)}시간",
         "연 소정근로시간 (주휴 제외)": f"{annual_contractual_hours}시간",
     }

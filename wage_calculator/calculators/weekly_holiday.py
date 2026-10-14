@@ -8,9 +8,9 @@
 - 주휴수당 = 유급주휴시간 × 통상시급
   - 주 소정근로일 ≥ 5일: min(1일 소정근로시간, 8h)
   - 주 소정근로일 < 5일: min(1주 소정근로시간 ÷ 5, 8h)
-  ※ 대법원 2025.8.14. 선고 2022다291153 판결
-     기존 "주 소정/40×8" 방식은 주 5일 미만 판단 기준;
-     주 소정근로일 수를 기준으로 산정하는 것이 타당.
+  ※ 대법원 2025.8.14. 선고 2022다291153 판결 — 1일 평균 소정근로시간(1주 소정근로시간 ÷ 1주 소정근로일 수)이
+     원칙이고, 소정근로시간만 정했으면 1주 소정근로일이 5일에 미달하는 근로자는 5일로 보아 나눈다.
+     산식은 shared.weekly_holiday_hours 단일 출처(통상임금 기준시간·소정근로시간·포괄임금 역산과 같은 값).
 
 퇴직 마지막 주 주휴수당 (고용부 2021.8.4. 행정해석 변경):
 - 기존: 다음 주 계속 근무 전제 시에만 발생
@@ -28,6 +28,7 @@ from ..constants import WEEKLY_HOLIDAY_MIN_HOURS, WEEKLY_FULL_HOURS
 from ..models import WageInput, WageType
 from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours, fmt_won, parse_date
 from .ordinary_wage import OrdinaryWageResult
+from .shared import weekly_holiday_hours  # noqa: F401 — 상담 경로(pipeline)가 이 모듈에서 가져간다
 
 _DAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -38,26 +39,6 @@ class WeeklyHolidayResult(BaseCalculatorResult):
     monthly_holiday_pay: float = 0.0   # 월 주휴수당 (원/월)
     holiday_hours: float = 0.0         # 주휴 인정 시간
     is_eligible: bool = False          # 주휴수당 발생 여부
-
-
-def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tuple[float, str]:
-    """주휴 유급시간과 산식 설명 — **시급과 무관한 부분의 단일 출처.**
-
-    calc_weekly_holiday와 시급 없는 상담 경로(pipeline._wageless_weekly_holiday)가 함께 쓴다.
-    둘이 따로 산식을 가지면 같은 질문에 시급 유무에 따라 다른 시간이 나온다.
-
-    - 주 5일 이상: min(1일 소정근로시간, 8h)
-    - 주 5일 미만: min(1주 소정근로시간 ÷ 5, 8h)
-      = 1주 소정근로시간 ÷ 40h × 8h (통상근로자 주40h·5일 기준 비례, 근로기준법 시행령 별표2)
-    """
-    weekly = weekly_work_days * daily_work_hours
-    if weekly_work_days >= 5:
-        hours = min(daily_work_hours, 8.0)
-        return hours, (f"주 소정근로일 {weekly_work_days:.0f}일 ≥ 5일 → 주휴: "
-                       f"min({daily_work_hours:g}h, 8h) = {hours:g}h")
-    hours = min(weekly / 5.0, 8.0)
-    return hours, (f"주 소정근로일 {weekly_work_days:.0f}일 < 5일 → 주휴: min({weekly:g}h ÷ 5, 8h) = "
-                   f"{hours:.2f}h (= {weekly:g}h ÷ 40h × 8h, 시행령 별표2 비례)")
 
 
 def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHolidayResult:
@@ -107,6 +88,17 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
     legal.append("대법원 2025.8.14. 선고 2022다291153 판결")
     if s.weekly_work_days < 5:
         legal.append("근로기준법 제18조 (단시간근로자 근로조건)")
+    # 주 5일을 넘게 일하는 단시간근로자는 같은 업무의 통상 근로자가 있으면 시행령 별표 2로 1일 소정근로시간을 정한다 — 통상
+    # 근로자의 소정근로일 수로 나누므로 통상 근로자가 주 5일이면 위 원칙(÷ 1주 소정근로일 수)보다 길다. 계산기는 통상 근로자의
+    # 근무 형태를 모르니 원칙으로 계산하고 다른 경우를 밝힌다(주 6일 × 4.1667h: 4.1667h vs 5h).
+    if s.weekly_work_days > 5 and weekly_scheduled < WEEKLY_FULL_HOURS:
+        warnings.append(
+            "같은 사업장에 같은 업무의 통상 근로자가 있는 단시간근로자라면 1일 소정근로시간은 4주 동안의 소정근로시간을 그 기간 "
+            "통상 근로자의 총 소정근로일 수로 나눈 시간이고 유급휴일 임금도 그 시간으로 계산합니다(근로기준법 시행령 별표 2 "
+            f"제2호나목·제4호라목) — 통상 근로자가 주 5일 근무하면 주휴 {fmt_hours(weekly_scheduled / 5)}h"
+            f"({fmt_hours(weekly_scheduled)}h ÷ 5)입니다."
+        )
+        legal.append("근로기준법 시행령 별표 2 (단시간근로자의 근로조건 결정기준)")
 
     weekly_pay = hourly * holiday_hours
     monthly_pay = weekly_pay * WEEKS_PER_MONTH
@@ -120,9 +112,9 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
 
     breakdown = {
         "통상시급": f"{hourly:,.1f}원",
-        "주 소정근로일": f"{s.weekly_work_days:.0f}일",
-        "주 소정근로시간": f"{weekly_scheduled}h",
-        "주휴 인정 시간": f"{holiday_hours}h",
+        "주 소정근로일": f"{fmt_hours(s.weekly_work_days)}일",
+        "주 소정근로시간": f"{fmt_hours(weekly_scheduled)}h",
+        "주휴 인정 시간": f"{fmt_hours(holiday_hours)}h",
         "주 주휴수당": f"{weekly_pay:,.0f}원",
         "월 주휴수당": f"{monthly_pay:,.0f}원",
     }

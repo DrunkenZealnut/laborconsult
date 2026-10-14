@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType
 from .ordinary_wage import OrdinaryWageResult
-from .shared import normalize_allowances, AllowanceClassifier
+from .shared import normalize_allowances, AllowanceClassifier, weekly_holiday_hours
 from ..legal_rules import managed
 from ..constants import get_minimum_hourly_wage
 from ..utils import WEEKS_PER_MONTH, fmt_hours
@@ -38,6 +38,8 @@ from ..constants import (
     PROBATION_MIN_CONTRACT_MONTHS,
     ELEMENTARY_OCCUPATION_CODES,
     ELEMENTARY_OCCUPATION_KEYWORDS,
+    WEEKLY_FULL_HOURS,
+    WEEKLY_HOLIDAY_MIN_HOURS,
     get_min_wage_inclusion_rates,
 )
 
@@ -50,6 +52,8 @@ class MinimumWageResult(BaseCalculatorResult):
     shortage_monthly: float = 0.0      # 부족분 월액 (충족 시 0)
     reference_year: int = 0            # 기준 연도
     monthly_hours_used: float = 0.0    # 적용된 월 근로시간
+    undetermined: bool = False         # 주휴 기준(판례 원칙 vs 시행령 별표 2)에 따라 판정이 갈려 보류
+    alternative_hourly: float = 0.0    # 별표 2 기준(통상 근로자 주 5일) 실질 시급 — undetermined일 때만
 
 
 def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResult:
@@ -155,6 +159,17 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     shortage_hourly = max(0.0, legal_minimum - effective_hourly)
     shortage_monthly = shortage_hourly * monthly_hours
 
+    # ── 5-1. 주 5일 초과 단시간근로자 — 주휴 기준에 따라 판정이 갈리면 보류 ─────────────────────────
+    # 주휴시간을 1일 평균 소정근로시간(대법원 2022다291153)으로 보면 월 기준시간이 짧고, 같은 업무 통상 근로자의 소정근로일 수
+    # (주 5일)로 나누면(근로기준법 시행령 별표 2 제2호나목) 길다. 월급제는 그 차이로 '충족'과 '미달'이 갈린다(독립 리뷰 M4:
+    # 월 190만 원, 주 6일 × 6시간 → 182.5h 충족 / 187.71h 미달). 갈리면 판정하지 않는다 — 틀린 판정보다 보류.
+    undetermined, alt_hours, alt_included, alt_effective = False, None, 0.0, 0.0
+    alt_hours = _annex_alternative_hours(inp, monthly_hours)
+    if alt_hours:
+        alt_included = (_get_base_monthly(inp, alt_hours) + std_included + bonus_included + welfare_included)
+        alt_effective = round(alt_included / alt_hours, 6)
+        undetermined = (alt_effective >= legal_minimum) != is_compliant
+
     # ── formulas ──────────────────────────────────────────────────────────────
     formulas.append(f"기본급 월액: {base_monthly:,.0f}원")
     if std_included:
@@ -200,7 +215,19 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
             f"산식(1년 평균 주 수, 월 {fmt_hours(monthly_hours)}시간)으로 한 것이라 고시 환산액 기준으로는 미달로 볼 수 "
             f"있습니다 — 고용노동부(1350)에 확인하세요."
         )
-    if not is_compliant:
+    if undetermined:
+        s_ = inp.schedule
+        weekly = s_.daily_work_hours * s_.weekly_work_days
+        formulas.append(f"실질시급(통상 근로자 주 5일 기준, 시행령 별표 2): {alt_included:,.0f}원 ÷ {fmt_hours(alt_hours)}h = "
+                        f"{alt_effective:,.2f}원")
+        warnings.append(
+            f"주 {fmt_hours(s_.weekly_work_days)}일 근무하는 단시간근로자(1주 {fmt_hours(weekly)}h)는 주휴시간을 1일 평균 "
+            f"소정근로시간({fmt_hours(weekly_holiday_hours(s_.weekly_work_days, s_.daily_work_hours)[0])}h, 대법원 2022다291153)으로 "
+            f"보면 실질시급 {effective_hourly:,.0f}원, 같은 업무 통상 근로자가 주 5일 근무해 그 소정근로일 수로 나누면"
+            f"({fmt_hours(min(weekly / 5, 8.0))}h, 근로기준법 시행령 별표 2 제2호나목) {alt_effective:,.0f}원이라 최저임금"
+            f"({legal_minimum:,.0f}원) 충족 여부가 갈립니다 — 판정하지 않았습니다. 통상 근로자의 근무 형태를 확인하세요."
+        )
+    elif not is_compliant:
         warnings.append(
             f"최저임금 미달: 실질시급 {effective_hourly:,.0f}원 < {legal_minimum:,.0f}원 "
             f"(부족분 {shortage_hourly:,.0f}원/h, 월 {shortage_monthly:,.0f}원)"
@@ -216,7 +243,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     breakdown: dict = {
         f"{year}년 법정 최저시급": f"{legal_minimum:,.0f}원",
         "실질 시급":              f"{effective_hourly:,.0f}원",
-        "충족 여부":              "✅ 충족" if is_compliant else "❌ 미달",
+        "충족 여부":              "⏸ 판정 보류" if undetermined else "✅ 충족" if is_compliant else "❌ 미달",
         "월 근로시간":            f"{fmt_hours(monthly_hours)}h",
         "기본급 월액":            f"{base_monthly:,.0f}원",
     }
@@ -251,6 +278,8 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         shortage_monthly=round(shortage_monthly, 0),
         reference_year=year,
         monthly_hours_used=monthly_hours,
+        undetermined=undetermined,
+        alternative_hourly=round(alt_effective, 0) if undetermined else 0.0,
         breakdown=breakdown,
         formulas=formulas,
         warnings=warnings,
@@ -275,6 +304,22 @@ def _is_elementary_worker(occupation_code: str | None) -> bool:
     if code.startswith("9"):
         return True
     return False
+
+
+def _annex_alternative_hours(inp: WageInput, monthly_hours: float) -> float | None:
+    """단시간근로자의 시행령 별표 2 기준(통상 근로자 주 5일) 월 기준시간. 해당하지 않으면 None.
+
+    주 5일 이하면 원칙(÷ 소정근로일 수, 5일 미만은 5일)과 같은 값이라 판정이 갈리지 않는다 — 갈리는 것은 주 5일을 넘는
+    경우뿐이다. 주 40시간 이상은 단시간근로자가 아니라 별표 2 대상이 아니다. 기준시간이 근무 형태에서 나온 경우만 본다 —
+    월 소정근로시간 직접 입력·교대제 기준시간은 이 산식이 아니다."""
+    s = inp.schedule
+    weekly = s.daily_work_hours * s.weekly_work_days
+    if not (WEEKLY_HOLIDAY_MIN_HOURS <= weekly < WEEKLY_FULL_HOURS):
+        return None
+    principle = (weekly + weekly_holiday_hours(s.weekly_work_days, s.daily_work_hours)[0]) * WEEKS_PER_MONTH
+    if abs(monthly_hours - principle) > 1e-6:
+        return None
+    return (weekly + min(weekly / 5, 8.0)) * WEEKS_PER_MONTH
 
 
 def _get_base_monthly(inp: WageInput, monthly_hours: float) -> float:

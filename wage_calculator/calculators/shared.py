@@ -4,6 +4,7 @@
 DateRange:           날짜 범위·근속 계산 (8개 모듈 통합)
 AllowanceClassifier: 수당 이름 기반 최저임금 산입유형 분류 (3곳 통합)
 MultiplierContext:   5인 미만 사업장 가산율 (5곳 통합)
+weekly_holiday_hours: 주휴 유급시간 산식 (4곳 + 상담 경로 통합)
 _normalize_allowances: dict → FixedAllowance 변환 (하위 호환)
 """
 
@@ -13,7 +14,7 @@ import re
 from datetime import date
 
 from ..models import WageInput, BusinessSize, FixedAllowance
-from ..utils import parse_date
+from ..utils import fmt_hours, parse_date
 from ..constants import OVERTIME_RATE, NIGHT_PREMIUM_RATE, HOLIDAY_RATE, HOLIDAY_OT_RATE
 
 
@@ -182,6 +183,36 @@ class MultiplierContext:
         if self.is_small:
             return "5인 미만 사업장: 연장·야간·휴일 가산수당 미적용 (근로기준법 제11조)"
         return None
+
+
+# ── 주휴 유급시간 ──────────────────────────────────────────────────────────────
+# 계산기 전체의 단일 출처 — 통상임금 기준시간(ordinary_wage)·주휴수당(weekly_holiday)·소정근로시간(working_hours)·
+# 포괄임금 역산(comprehensive)·시급 없는 상담 경로(pipeline._wageless_weekly_holiday)가 함께 쓴다. 넷이 산식을 따로
+# 갖고 있어 주 6일 × 4.1667h(주 25h) 한 카드에 기준시간은 주휴 5h(÷5), 주휴수당은 4.1667h(1일 시간)가 함께 나왔고,
+# 포괄임금 역산은 주 5일 미만에도 1일 시간을 그대로 썼다(외부 점검 40번 후속, 2026-10-14).
+
+def holiday_divisor(weekly_work_days: float) -> float:
+    """주휴시간을 구할 때 1주 소정근로시간을 나누는 일수 — 1주 소정근로일 수, 5일 미만이면 5일."""
+    return max(float(weekly_work_days), 5.0)
+
+
+def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tuple[float, str]:
+    """주휴 유급시간과 산식 설명. 1주 소정근로시간 15시간 미만(주휴 미발생) 판정은 호출부가 한다.
+
+    대법원 2025. 8. 14. 선고 2022다291153 판결: 주휴수당의 지급기준이 되는 시간 수는 특별한 사정이 없는 한 1일 평균
+    소정근로시간 수(1주간 소정근로시간 수를 1주간 소정근로일 수로 나눈 값)가 원칙이고, 근로자와 사용자가 소정근로시간에
+    관하여만 정했다면 1주간 소정근로일이 5일에 미달하는 근로자는 소정근로일 수를 5일로 보아 1주간 소정근로시간 수를
+    5일로 나눈다. 8시간 한도는 1일 소정근로시간이 법정근로시간(근로기준법 제50조 제2항) 안의 시간이라서다.
+    """
+    weekly = weekly_work_days * daily_work_hours
+    if weekly_work_days >= 5:
+        hours = min(daily_work_hours, 8.0)
+        return hours, (f"주 소정근로일 {fmt_hours(weekly_work_days)}일 ≥ 5일 → 주휴: "
+                       f"min({fmt_hours(daily_work_hours)}h, 8h) = {fmt_hours(hours)}h")
+    hours = min(weekly / holiday_divisor(weekly_work_days), 8.0)
+    # '÷ 40h × 8h' 표기는 답변 규칙(WAGE_CALC_RULES)이 쓰는 같은 값의 다른 표기다 — 카드와 답변의 산식 표기를 맞춘다
+    return hours, (f"주 소정근로일 {fmt_hours(weekly_work_days)}일 < 5일 → 주휴: min({fmt_hours(weekly)}h ÷ 5, 8h) = "
+                   f"{fmt_hours(hours)}h (= {fmt_hours(weekly)}h ÷ 40h × 8h — 1주 소정근로일을 5일로 봄)")
 
 
 # ── Allowance Normalization ────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
 from wage_calculator.result import format_result
 from wage_calculator.calculators.shared import AllowanceClassifier
+from wage_calculator.utils import fmt_hours, fmt_won
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
                                  held_assessment, ground, decide_mode, as_list,
                                  is_sexual_harassment)
@@ -1585,9 +1586,245 @@ def _wageless_weekly_holiday(weekly_days, daily_hours) -> str | None:
         return "\n".join(lines)
     hours, formula = weekly_holiday_hours(days, daily)
     lines += [f"주휴 유급시간: {formula}",
-              f"주휴수당 = 시간급 통상임금 × {hours:g}h (그 주 소정근로일 개근 + 주휴일에 근로관계 존속 시)",
+              f"주휴수당 = 시간급 통상임금 × {fmt_hours(hours)}h (그 주 소정근로일 개근 + 주휴일에 근로관계 존속 시)",
               "※ 위 시간은 계약상 소정근로일·시간 기준이다. 실제 근무시간이나 연장근로는 넣지 않는다."]
     return "\n".join(lines)
+
+
+# ── 소정근로시간 출처(외부 점검 40번 후속) ─────────────────────────────────────────
+# "9월 28일~30일 3일 동안 25시간 일했는데"의 25시간은 그 기간에 실제로 일한 시간의 합이지 근로계약상 1주 소정근로시간이
+# 아니다(근로기준법 제2조 제1항 제8호). 의도분석이 그 합계를 주 소정근로시간으로 옮겨(Act-6 18회 중 8회) 카드가
+# '4.1667h×6일 = 25h'로 주휴수당·월 환산액을 냈다. 의도분석 값이 기간 합계에서 나온 값(합계·÷ 일수·× 일수)이고 기간 밖의
+# 시간으로 뒷받침되지 않을 때만 버린다 — 기간 표지가 있다고 다른 시간까지 버리면 출퇴근 시각에서 구한 1일 8시간,
+# 첨부 계약서의 시간, '평일 4시간·주말 8시간'의 합계가 사라진다(독립 리뷰 H1·H2).
+_HOURS_MENTION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:시간|[hH](?![a-zA-Z]))(?:\s*(\d{1,2})\s*분|\s*(반))?")
+# 절 경계 — 문장부호(소수점 제외)와 연결어미 뒤. "하루 8시간 근무인데 이번 주 3일 동안 25시간"에서 8시간까지 기간 절로 묶지 않는다
+_CLAUSE_SPLIT_RE = re.compile(r"\.(?!\d)|[!?\n,;]|(?<=데)\s|(?<=지만)\s|(?<=고)\s|(?<=며)\s")
+_DAY_COUNT_WORDS = {"이틀": 2, "사흘": 3, "나흘": 4, "닷새": 5, "엿새": 6, "이레": 7}
+# 특정 기간 표지 — 이 절의 시간(1일 시간 '…씩' 포함)은 그 기간에 실제로 일한 시간이다(함정 ③ '하루 6시간씩 3일 근무했다')
+_SPECIFIC_SPAN_RE = re.compile(
+    r"(?<!주)(?<!주\s)(?<![\d.])(?P<n1>\d+)\s*일\s*(?:동안|간|에\s*걸쳐|사이)"  # 3일 동안 — '주 3일 동안'은 아님
+    r"|(?<!주)(?<!주\s)(?<![\d.])(?P<n2>\d+)\s*일\s*(?:을|를)?\s*(?:근무|일)\s*(?:했|한|하였)"  # 3일 근무했다
+    r"|(?P<w>이틀|사흘|나흘|닷새|엿새|이레)\s*(?:동안|간|에\s*걸쳐)"  # 사흘 동안
+    r"|(?:1\s*주일|일주일|한\s*주)\s*(?:동안|간)"  # 일주일 동안
+    r"|(?P<a1>\d{1,2})\s*일\s*(?:~|∼|〜|-|–|부터)\s*(?:\d{1,2}\s*월\s*)?(?P<b1>\d{1,2})\s*일"  # 28일~30일 · 28일부터 10월 1일
+    r"|\d{1,2}\s*월\s*(?P<a2>\d{1,2})\s*(?:~|∼|〜|-|–)\s*(?P<b2>\d{1,2})\s*일"  # 9월 28~30일
+    r"|(?<![\d.])\d{1,2}\s*/\s*(?P<a3>\d{1,2})\s*(?:~|∼|〜|-|–|부터)\s*(?:\d{1,2}\s*/\s*)?(?P<b3>\d{1,2})?"  # 9/28~30
+    r"|(?<![\d.])(?:1[0-2]|0?[1-9])\.\s*(?P<a4>[12]\d|3[01]|0?[1-9])\.?\s*(?:~|∼|〜|-|–|부터)\s*"
+    r"(?:(?:1[0-2]|0?[1-9])\.\s*)?(?P<b4>[12]\d|3[01]|0?[1-9])(?![\d.]|\s*시간)"  # 9.28~9.30 — '4.5~5시간'은 아님
+    r"|(?:이번|지난|저번|그|첫|마지막)\s*주(?:에는|에도|에|는|엔|도|동안|간)?(?![가-힣])"  # 이번 주에 — '그 주휴'는 아님
+    r"|어제|그날|당일")
+# 긴 기간 표지 — 합계('2주 동안 50시간')는 실근로지만 그 동안의 1일·1주 시간('3개월 동안 하루 4시간씩')은 근무 형태다
+_DURATION_SPAN_RE = re.compile(r"(?<![\d.])\d+\s*(?:주|개월|달|년)\s*(?:동안|간|에\s*걸쳐|사이)")
+# 시간 앞의 단위 — '주 15시간'은 기간 절 안에 있어도 1주 근무 형태다('1년 6개월 동안 주 15시간씩', '이번 주에 주 20시간으로
+# 계약'). '이번 주에 30시간'처럼 주 앞에 지시어가 있으면 단위가 아니라 기간이다
+_WEEKLY_UNIT_RE = re.compile(r"(?:(?<![가-힣])주|1\s*주|일주일|주당|매주)\s*(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+_WEEK_DETERMINER_RE = re.compile(r"(?:이번|지난|저번|그|첫|마지막|다음)\s*$")
+_DAILY_UNIT_RE = re.compile(r"(?:하루|1\s*일|일일|매일|평일|주말)\s*(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+# 계획된 시간 — 근무표·계약에 정한 시간은 기간 표지가 있어도 소정근로시간 근거다('15시간을 스케줄에', '근무표에 20시간
+# 배정'). 시간 바로 뒤나 바로 앞에 있을 때만 본다 — '스케줄이 바뀌어서 이번 주 3일 동안 25시간'은 실근로다(리뷰 M3)
+_PLANNED_RE = re.compile(r"스케줄|근무표|시프트|배정|편성|예정|계약|소정")
+_PLANNED_BEFORE_RE = re.compile(r"(?:스케줄|근무표|시프트|계약|소정근로시간?)\s*(?:상|대로|에는|엔|에|은|는|이|가)?\s*$")
+
+
+def _hours_mentions(query: str) -> list[tuple[float, bool, tuple]]:
+    """질문의 'N시간' 표현 → (시간, 기간 합계인지, 그 절의 기간 일수들)."""
+    found = []
+    for clause in _CLAUSE_SPLIT_RE.split(query or ""):
+        specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
+        duration = bool(_DURATION_SPAN_RE.search(clause))
+        days = []
+        for cue in specific:
+            g = cue.groupdict()
+            for key in ("n1", "n2"):
+                if g.get(key):
+                    days.append(int(g[key]))
+            if g.get("w"):
+                days.append(_DAY_COUNT_WORDS[g["w"]])
+            for a, b in (("a1", "b1"), ("a2", "b2"), ("a3", "b3"), ("a4", "b4")):
+                if g.get(a) and g.get(b) and int(g[b]) >= int(g[a]):
+                    days.append(int(g[b]) - int(g[a]) + 1)
+        for m in _HOURS_MENTION_RE.finditer(clause):
+            value = float(m.group(1)) + (int(m.group(2)) / 60 if m.group(2) else 0) + (0.5 if m.group(3) else 0)
+            left, right = clause[:m.start()], clause[m.end():m.end() + 15]
+            weekly = _WEEKLY_UNIT_RE.search(left)
+            weekly_rate = bool(weekly) and not _WEEK_DETERMINER_RE.search(left[:weekly.start()])
+            daily_rate = bool(_DAILY_UNIT_RE.search(left)) or right.lstrip().startswith("씩")
+            planned = bool(_PLANNED_RE.search(right) or _PLANNED_BEFORE_RE.search(left))
+            if weekly_rate or planned:
+                span = False
+            elif specific:
+                span = True
+            else:
+                span = duration and not daily_rate
+            found.append((value, span, tuple(days)))
+    return found
+
+
+def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted=()) -> tuple:
+    """의도분석 소정근로시간을 질문 본문과 대조한다 → (주 소정근로시간, 1일 소정근로시간, {버린 키: 값}).
+
+    값마다 기간 합계에서 나온 값(합계·÷ 기간 일수·× 기간 일수·÷ 또는 × 1주 근무일수)과 일치하고 기간 밖의 시간(그 × ÷ 근무일수
+    포함)으로 뒷받침되지 않으면 버린다(모르는 것으로 둔다). 주 합계는 1주 근무일수로 나눈 1일 값으로도 대조한다. 앞 턴 캐시에서
+    채운 값(trusted)은 그 턴의 질문으로 이미 대조했으므로 기간 밖 근거로 친다 — 이번 질문의 기간 표현 때문에 앞 턴의 정상
+    소정근로시간까지 버리게 된다."""
+    mentions = _hours_mentions(query)
+    spans = [(value, days) for value, span, days in mentions if span]
+    if not spans:
+        return weekly_total, daily, {}
+    plain = [value for value, span, _ in mentions if not span]
+    # 캐시에서 온 값은 그 자체로, 그 값에서 나온 값(1일 × 근무일수)도 근거다
+    plain += [value for key, value in (("weekly_total_hours", weekly_total), ("daily_work_hours", daily))
+              if key in trusted and value is not None]
+
+    def spread(values):
+        pool = set(values)
+        if weekly_days:
+            pool |= {v * weekly_days for v in values} | {v / weekly_days for v in values}
+        return pool
+
+    plain_pool = spread(plain)
+    span_pool = spread([h for h, _ in spans])
+    for h, days in spans:
+        span_pool |= {h / d for d in days if d} | {h * d for d in days}
+    rejected: dict = {}
+
+    def check(key, value):
+        if value is None:
+            return None
+        # 주 합계는 1주 근무일수로 나눈 1일 값으로도 본다 — '3일 동안 25시간'·주 6일에서 의도분석이 기간 1일 평균(25 ÷ 3)을 늘린
+        # 50, 반올림한 8.3을 곱한 49.8, 그리고 _analysis_to_extract_params가 1일 × 근무일수로 채운 값이 1일과 같은 허용오차로
+        # 걸러진다. 주 합계끼리만 비교하면 오차가 근무일수배로 커져 49.8이 빠져나갔다(CodeRabbit PR #114)
+        forms = [float(value)] + ([float(value) / weekly_days] if key == "weekly_total_hours" and weekly_days else [])
+        near = lambda pool: any(abs(f - c) < 0.05 for f in forms for c in pool)  # noqa: E731 — 의도분석 반올림(8.33)까지
+        if near(span_pool) and not near(plain_pool):
+            rejected[key] = value
+            return None
+        return value
+
+    return check("weekly_total_hours", weekly_total), check("daily_work_hours", daily), rejected
+
+
+def _note_rejected_hours(analysis, params) -> None:
+    """버린 소정근로시간을 확인 안내에 더하고 계산 캐시에서 뺀다 — 캐시(extracted_info)에 남으면 다음 턴이 대조 없이 그 값을
+    다시 채운다. 코드 누락 판정(_compute_missing_info)은 버리기 전 값을 보고 시간이 있다고 봤다."""
+    rejected = params.get("schedule_hours_rejected") or {}
+    if not rejected:
+        return
+    for key in rejected:
+        analysis.extracted_info.pop(key, None)
+    if "1일 소정근로시간 또는 주 소정근로시간" not in analysis.missing_info:
+        analysis.missing_info.append("1일 소정근로시간 또는 주 소정근로시간")
+
+
+# 소정근로시간을 몰라도 계산되는 것 — 그 밖의 계산은 시간을 가정해야 금액이 나온다. 법률 힌트는 남기되 미확인 모드는 1일
+# 시간을 0으로 넘겨 주간 합계(52시간·뇌심혈관 기준)가 질문에 나온 연장·휴일시간만 보게 한다
+_SCHEDULE_FREE_TARGETS = frozenset({"wage_arrears", "business_size", "legal_hints"})
+# 시급제(고정수당 없음)는 시급이 곧 통상시급이라 최저임금 판정과 연장·야간·휴일수당(시급 × 가산율 × 질문의 시간)이 남는다
+_HOURLY_SCHEDULE_FREE_TARGETS = frozenset({"minimum_wage", "overtime"})
+
+
+def _schedule_unknown(wage_type, weekly_days, daily_hours, rejected=False, has_wage=True) -> bool:
+    """소정근로시간을 모르는데 기본값으로 계산하면 가정이 확정처럼 읽히는 경우.
+
+    - 의도분석 시간을 기간 합계라 버렸으면 임금 형태와 무관하게 모른다 — 월급제 기본값(주 40시간)으로 돌아가면 '지난주
+      60시간'에 '주 52시간 준수'가 나왔다(독립 리뷰 M1).
+    - 시급·일급은 금액이 근로시간에 비례한다. 주 6일 시급제에 기본값 1일 8시간을 넣어 48시간이 소정근로시간으로 계산됐다
+      (외부 점검 40번 Act-6 18회 중 10회: 주휴수당 월 417,143원, 월 총액 2,920,000원).
+    - 임금이 없는 경로(소정근로시간 산정 등)는 임금 형태를 모르니 근무일수만 있으면 시간을 가정하지 않는다(리뷰 H3).
+    - 월급·연봉은 주 40시간 관행(월 209시간 환산)으로 계산한다 — 주 5일을 넘으면 1일 = 40 ÷ 근무일수(`_default_daily_hours`).
+      주 5일 미만은 단시간이라 그 관행이 없다.
+    """
+    if daily_hours is not None:
+        return False
+    if rejected:
+        return True
+    if not has_wage:
+        return weekly_days is not None
+    if wage_type in (WageType.HOURLY, WageType.DAILY):
+        return True
+    return weekly_days is not None and float(weekly_days) < 5
+
+
+def _default_daily_hours(weekly_days) -> float:
+    """소정근로시간이 없을 때 쓰는 1일 시간 — 주 40시간을 근무일수로 나눈다(5일 이하 8시간). 주 6일에 8시간을 넣으면 소정근로시간이
+    법정 한도(주 40시간)를 넘는 48시간이 됐다."""
+    try:
+        days = float(weekly_days)
+    except (TypeError, ValueError):
+        return 8.0
+    return 40.0 / days if days > 5 else 8.0
+
+
+# 기본값으로 계산한 카드의 [기준시간] 표시 — 가정이 확정처럼 읽히지 않게 밝힌다
+_DEFAULT_SCHEDULE_NOTE = " — 소정근로시간을 질문에서 확인하지 못해 주 40시간으로 계산"
+
+
+def _unknown_schedule_block(hourly, weekly_days, holiday: bool, held: list[str], span_hours: list) -> str | None:
+    """소정근로시간 미확인 안내 — 주휴는 산식만, 근로시간에 따라 달라지는 계산은 금액 보류. 알릴 것이 없으면 None."""
+    if not (holiday or held or span_hours):
+        return None
+    lines = ["[소정근로시간 미확인 — 근로시간에 따라 달라지는 시간·금액은 계산하지 않음]"]
+    if span_hours:
+        lines.append("질문의 " + "·".join(f"{fmt_hours(float(v))}시간" for v in span_hours)
+                     + "은 그 기간에 실제로 일한 시간이라 소정근로시간으로 쓰지 않았습니다(소정근로시간은 근로계약서·근무표에 "
+                       "정한 시간, 근로기준법 제2조 제1항 제8호).")
+    if holiday:
+        wage = f"시급 {fmt_won(hourly)}원" if hourly else "시간급 통상임금"
+        if weekly_days and float(weekly_days) >= 5:
+            rule = (f"1주 소정근로시간 ÷ 1주 소정근로일 {fmt_hours(float(weekly_days))}일(1일 평균 소정근로시간, "
+                    "8시간 한도)")
+        elif weekly_days:
+            rule = (f"1주 소정근로시간 ÷ 5(1주 소정근로일 {fmt_hours(float(weekly_days))}일 — 5일 미만은 5일로 봄, "
+                    "8시간 한도)")
+        else:
+            rule = "1주 소정근로시간 ÷ 1주 소정근로일 수(5일 미만은 5일로 봄, 8시간 한도)"
+        lines += ["주휴수당 발생 요건: 4주 평균 1주 소정근로시간 15시간 이상(근로기준법 제18조 제3항) + 그 주 소정근로일 개근"
+                  "(근로기준법 시행령 제30조 제1항)",
+                  f"주휴수당 = {wage} × 주휴시간",
+                  f"주휴시간 = {rule} — 대법원 2025. 8. 14. 선고 2022다291153 판결"]
+        if weekly_days and float(weekly_days) > 5:
+            lines.append("같은 업무의 통상 근로자가 있는 단시간근로자는 1일 소정근로시간을 4주 동안의 소정근로시간 ÷ 그 기간 "
+                         "통상 근로자의 총 소정근로일 수로 정한다(근로기준법 시행령 별표 2 제2호나목).")
+    names = (["주휴시간·주휴수당"] if holiday else []) + [CALC_TYPES.get(key, key) for key in held]
+    if names:
+        lines.append(f"{_AMOUNT_HOLD_MARK} 질문에 1일·1주 소정근로시간이 없어 다음은 계산하지 않았습니다 — {', '.join(names)}. "
+                     "가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
+    return "\n".join(lines)
+
+
+def _rejected_span_hours(query: str, params: dict) -> list:
+    """버린 시간이 있으면 안내에 적을 질문의 기간 합계 시간 — 버린 값(의도분석이 나눈 8.33h 등)은 질문에 없는 숫자다."""
+    if not params.get("schedule_hours_rejected"):
+        return []
+    return list(dict.fromkeys(value for value, span, _ in _hours_mentions(query) if span))
+
+
+# 최저임금 미달 경고의 월 부족액 — "(부족분 1,320원/h, 월 275,314원)"
+_MONTHLY_SHORTAGE_RE = re.compile(r",\s*월\s*[\d,]+원\)")
+
+
+def _drop_assumed_schedule(result, hourly_known: bool) -> None:
+    """미확인 모드 카드에서 시간을 가정해야 나오는 줄(기준시간·월액·월 부족액)을 뺀다.
+
+    남긴 계산(시급제 최저임금 판정·연장수당 등)은 시간과 무관하지만, 계산식에는 통상임금 기준시간(1일 0시간이라 법정
+    기준시간으로 대신한 값)과 그것으로 낸 월액·월 부족액이 실린다."""
+    basis = ("월 환산하지 않음(시급제 최저임금은 시급으로 비교)" if hourly_known
+             else "월 환산·통상시급은 계산하지 않음")
+    formulas = []
+    for line in result.formulas:
+        if line.startswith("[기준시간]"):
+            formulas.append(f"[기준시간] 소정근로시간 미확인 — {basis}")
+        elif line.startswith(("[통상임금]", "기본급 월액:")):
+            continue
+        elif line.startswith("실질시급:"):
+            formulas.append(f"실질시급: 시급 {fmt_won(result.ordinary_hourly)}원")
+        else:
+            formulas.append(line)
+    result.formulas = formulas
+    result.summary.pop("부족분(월)", None)
+    result.warnings = [_MONTHLY_SHORTAGE_RE.sub(")", w) for w in result.warnings]
+    result.monthly_total = 0.0
 
 
 def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[str] | None:
@@ -1693,7 +1930,12 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     has_wage = bool(amount)
 
     weekly_days = params.get("weekly_work_days")
-    weekly_total = params.get("weekly_total_hours")
+    # 의도분석 소정근로시간이 질문의 기간 합계('3일 동안 25시간')에서 왔으면 버린다 — 호출부가 확인 안내에 반영
+    weekly_total, stated_daily, rejected_hours = _ground_schedule_hours(
+        query, params.get("weekly_total_hours"), params.get("daily_work_hours"), weekly_days,
+        trusted=params.get("schedule_hours_trusted") or ())
+    if rejected_hours:
+        params["schedule_hours_rejected"] = rejected_hours
     if weekly_total and weekly_days:
         daily_hours = weekly_total / weekly_days
     elif weekly_total:
@@ -1703,12 +1945,15 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         daily_hours = weekly_total / weekly_days
         params["assumed_weekly_days"] = True
     else:
-        daily_hours = params.get("daily_work_hours")
+        daily_hours = stated_daily
 
-    # None → WorkSchedule 모델 기본값 (8.0h, 5일) 사용
-    # 핵심: LLM이 아닌 모델 레벨에서 기본값 관리
+    # None → 주 40시간 관행(1일 8시간, 주 5일 초과면 40 ÷ 근무일수)과 주 5일. 핵심: LLM이 아닌 코드에서 기본값 관리.
+    # 기본값이 가정으로 읽히는 경우(_schedule_unknown — 시급·일급, 버린 시간, 주 5일 미만 월급 등)는 아래에서 시간에 따라
+    # 달라지는 계산을 빼고 주휴는 산식만 낸다. 그 밖에 기본값을 쓴 카드는 [기준시간]에 그 사실을 밝힌다
+    schedule_unknown = _schedule_unknown(wt, params.get("weekly_work_days"), daily_hours,
+                                         bool(params.get("schedule_hours_rejected")), has_wage)
     schedule = WorkSchedule(
-        daily_work_hours=daily_hours if daily_hours is not None else 8.0,
+        daily_work_hours=daily_hours if daily_hours is not None else _default_daily_hours(weekly_days),
         weekly_work_days=weekly_days if weekly_days is not None else 5.0,
         weekly_overtime_hours=params.get("weekly_overtime_hours") or 0,
         weekly_night_hours=params.get("weekly_night_hours") or 0,
@@ -1813,6 +2058,13 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             holiday_hours_block = _wageless_weekly_holiday(
                 params.get("weekly_work_days"), daily_hours)
         wageless = [t for t in targets if t in _WAGELESS_TARGETS]
+        if schedule_unknown:
+            # 근무일수만 있고 시간이 없으면 소정근로시간 산정·52시간 체크는 기본 8시간을 넣은 값이다(주 6일 → 243시간, 리뷰 H3)
+            held = [t for t in wageless if t != "wage_arrears"]
+            wageless = [t for t in wageless if t == "wage_arrears"]
+            holiday_hours_block = _unknown_schedule_block(
+                None, params.get("weekly_work_days"), "weekly_holiday" in targets and not inp.is_platform_worker, held,
+                _rejected_span_hours(query, params))
         if not wageless:
             if holiday_hours_block:
                 logger.info("임금 정보 없음 — 주휴 시간만 산정(금액 미산정), 나머지 %s 제외", targets)
@@ -1836,6 +2088,28 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         if "legal_hints" not in targets:
             targets.append("legal_hints")
 
+    # 소정근로시간 미확인 — 시간을 가정해야 나오는 계산은 빼고(금액 보류 안내), 주휴는 산식만 낸다. 시급제는 시급이 곧
+    # 통상시급이라 최저임금 판정과 연장·야간·휴일수당은 남긴다(고정수당이 있으면 시간당 수당액이 근로시간에 달려 함께 뺀다).
+    unknown_schedule_block = None
+    hourly_known = False
+    unknown_mode = has_wage and schedule_unknown
+    if unknown_mode:
+        hourly_known = inp.wage_type == WageType.HOURLY and not inp.fixed_allowances
+        free = _SCHEDULE_FREE_TARGETS | (_HOURLY_SCHEDULE_FREE_TARGETS if hourly_known else frozenset())
+        kept = [t for t in targets if t in free]
+        held = [t for t in targets if t not in kept and t not in ("weekly_holiday", "legal_hints")]
+        unknown_schedule_block = _unknown_schedule_block(
+            # 관리 모드의 '최저시급' 질문은 시급 자리가 표지값(1)이다 — 승인 금액은 계산기가 정하므로 금액을 적지 않는다
+            inp.hourly_wage if hourly_known and not inp.use_minimum_wage else None, params.get("weekly_work_days"),
+            "weekly_holiday" in targets, held, _rejected_span_hours(query, params))
+        logger.info("소정근로시간 미확인 — 계산 %s, 보류 %s", kept, held)
+        if not [t for t in kept if t != "legal_hints"] and not inp.is_platform_worker:
+            return unknown_schedule_block or None
+        targets = kept
+        # 남는 계산의 주간 합계(52시간 경고·뇌심혈관 힌트)는 질문에 나온 연장·휴일시간만 본다 — 기본 1일 8시간을 더하지 않는다.
+        # 통상임금 기준시간은 0시간이면 법정 기준시간으로 대신하고, 그 줄은 _drop_assumed_schedule이 바꾼다
+        inp.schedule.daily_work_hours = 0.0
+
     composition_note = None
     composition_hold = False
     held_is_total = False      # 보류 경로에서 계산 금액이 월급 '총액'일 때만 True — 총액 이름표·경고·함께 보류의 조건
@@ -1844,7 +2118,8 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     comprehensive_unknown_hours = comprehensive_statement = False
     comprehensive_total = False  # 포괄임금 총액(기본급 구분 없음) + 연장시간 — 보류 경로가 아니어도 총액 이름표·금액 보류
     composition_total = None   # 기본급 경로: 카드 총액 줄에 보일 사용자 총액(0이면 줄을 숨긴다)
-    if has_wage and inp.monthly_wage and inp.wage_type in (WageType.MONTHLY, WageType.COMPREHENSIVE):
+    if (has_wage and inp.monthly_wage and inp.wage_type in (WageType.MONTHLY, WageType.COMPREHENSIVE)
+            and not unknown_mode):
         includes_excluded, base = _stated_wage_composition(query)
         # 포괄임금제는 연장·야간수당 등이 포함된 총액이다 — 약정 연장시간을 모르면 역산이 연장 0시간으로 나눠 시급을 부풀리고
         # '충족'을 냈다(Design §13.5 R2, Act-4). 연장시간이 있으면 역산(대법원 2020다300299 방식)을 그대로 쓴다.
@@ -1933,7 +2208,7 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     # 소정근로시간으로 나눠 '충족'을 냈다(Act-4 리뷰 H4 — 270만 원 + 주 10시간 연장: 12,945원 '충족' vs 역산 9,863원 '미달').
     # 의도분석 라벨 '포괄임금제'가 매핑에 없어 다른 라벨이 있으면 역산이 빠졌다. 정확 경로는 월급제로 바꿔 여기 오지 않는다
     if (inp.wage_type == WageType.COMPREHENSIVE and not composition_hold and not inp.comprehensive_breakdown
-            and has_wage and _has_premium_hours(inp)):
+            and has_wage and _has_premium_hours(inp) and not unknown_mode):
         # 이 경로의 '통상임금'도 연장·야간·휴일수당이 섞인 총액이다 — 그 시급에 '통상시급' 이름을 붙이지 않고(Plan P0-5)
         # 그 시급으로 낸 금액은 보류한다(Act-2와 같은 원칙). 역산 판정은 연장시간을 반영하므로 '충족'도 믿는다
         comprehensive_total = held_is_total = True
@@ -1981,10 +2256,18 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             # 임금 미제공 부분 실행 — 0원 통상임금 계산식 노이즈 제거
             result.formulas = [f for f in result.formulas
                                if not f.startswith("[통상임금]")]
+        if unknown_mode:
+            _drop_assumed_schedule(result, hourly_known)
+            if not hourly_known:
+                result.ordinary_hourly = 0.0   # 시간을 모르면 월급·일급의 통상시급도 모른다 — 첫 줄(통상시급·판정)을 숨긴다
+        elif daily_hours is None:
+            result.formulas = [line + _DEFAULT_SCHEDULE_NOTE if line.startswith("[기준시간] 주 소정근로:") else line
+                               for line in result.formulas]
         formatted = format_result(result)
         # 시급 없는 계산기와 주휴 시간을 함께 물으면 둘 다 넘긴다 — 하나라도 실행되면
-        # 주휴 블록이 버려지던 경로(CodeRabbit PR #91).
-        return f"{holiday_hours_block}\n\n{formatted}" if holiday_hours_block else formatted
+        # 주휴 블록이 버려지던 경로(CodeRabbit PR #91). 소정근로시간 미확인 안내도 같다.
+        lead = holiday_hours_block or unknown_schedule_block
+        return f"{lead}\n\n{formatted}" if lead else formatted
     except Exception:
         # 오류 문자열이 '정확한 계산' 헤더로 LLM에 주입되던 경로 차단 (CALC-3)
         logger.exception("계산기 실행 실패 — 계산 없이 상담 경로로 진행 (targets=%s)", targets)
@@ -2403,9 +2686,13 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
 """
 
 
+# 계산기 요청 단위 보류(format_result) — 소정근로시간 미확인·시급 없는 주휴 안내가 앞에 붙어도 찾는다
+_BLOCKED_RESULT_RE = re.compile(r"(?m)^계산 보류(?: \(|:)")
+
+
 def _calculation_context_heading(calc_result: str) -> str:
     """보류 결과에는 수치 사용 지시 대신 추정 금지 지시를 붙인다."""
-    if calc_result.startswith("계산 보류"):
+    if _BLOCKED_RESULT_RE.search(calc_result):
         return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
     if _AMOUNT_HOLD_MARK in calc_result:
         # 금액을 보류한 항목은 카드에 없다 — '이 수치를 사용하세요'만 붙이면 빈자리를 카드의 총액 기준 시급으로 채운다
@@ -2544,7 +2831,11 @@ def process_question(query: str, session: Session, config: AppConfig,
             if _normalize_wage_units(params):
                 analysis.missing_info.append("임금액 단위(만원으로 해석함) 확인")
             yield {"type": "status", "text": "임금계산기 실행 중..."}
+            # 앞 턴 캐시에서 채운 소정근로시간은 그 턴에서 대조를 거쳤다 — 이번 질문으로 다시 대조하지 않는다
+            params["schedule_hours_trusted"] = [k for k in prefilled_keys
+                                                if k in ("weekly_total_hours", "daily_work_hours")]
             calc_result = _run_calculator(params, query)
+            _note_rejected_hours(analysis, params)
             if calc_result:
                 if params.get("assumed_weekly_days"):
                     analysis.missing_info.append("주 근무일수 (5일로 가정하고 계산함)")
