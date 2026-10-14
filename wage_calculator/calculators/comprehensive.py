@@ -27,8 +27,8 @@ from dataclasses import dataclass, field
 from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType, WorkType
 from .ordinary_wage import OrdinaryWageResult
-from .shared import MultiplierContext
-from ..constants import MINIMUM_HOURLY_WAGE, get_minimum_hourly_wage
+from .shared import MultiplierContext, weekly_holiday_hours
+from ..constants import MINIMUM_HOURLY_WAGE, WEEKLY_HOLIDAY_MIN_HOURS, get_minimum_hourly_wage
 from ..legal_rules import managed
 from ..utils import WEEKS_PER_MONTH, fmt_hours  # 주→월 환산 계수 (중복 정의 제거, 단일 소스)
 
@@ -298,9 +298,11 @@ def _calc_coefficient_hours(inp: WageInput) -> tuple[float, dict]:
     mc = MultiplierContext(inp)
     wpm = WEEKS_PER_MONTH
 
-    # 기본시간 = (소정근로 + 주휴) × 주→월 환산
+    # 기본시간 = (소정근로 + 주휴) × 주→월 환산. 주휴시간은 통상임금 기준시간·주휴수당과 같은 함수다 — 1일 시간을 그대로 쓰던
+    # 때 주 5일 미만(주 3일 × 8h → 8h, 맞는 값 4.8h)과 1일 8시간 초과에서 역산 시급이 달랐다(외부 점검 40번 후속)
     weekly_paid = s.daily_work_hours * s.weekly_work_days
-    weekly_holiday_paid = s.daily_work_hours if weekly_paid >= 15 else 0
+    weekly_holiday_paid = (weekly_holiday_hours(s.weekly_work_days, s.daily_work_hours)[0]
+                           if weekly_paid >= WEEKLY_HOLIDAY_MIN_HOURS else 0)
     base_hours = (weekly_paid + weekly_holiday_paid) * wpm
 
     # 가산율 결정 (MultiplierContext: 가산분만 반환, 기본 1.0은 여기서 추가)

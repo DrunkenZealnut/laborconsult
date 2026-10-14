@@ -482,7 +482,8 @@ function calc() {
   document.getElementById('holOtOut').textContent = holOt + '시간';
 
   var dailyH = weekly / days;
-  var weeklyHoliday = weekly >= 15 ? Math.min(weekly / 5, 8) : 0;
+  // 주휴시간: 1주 소정근로시간 ÷ 1주 소정근로일 수(5일 미만은 5일), 8시간 한도 — 계산기와 같은 산식
+  var weeklyHoliday = weekly >= 15 ? Math.min(weekly / Math.max(days, 5), 8) : 0;
 
   var cBase = (weekly + weeklyHoliday) * WPM;
   var cOt = ot * 1.5 * WPM;

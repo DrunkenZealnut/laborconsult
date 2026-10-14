@@ -1473,5 +1473,331 @@ class MonthlyHoursTest(unittest.TestCase):
         self.assertEqual(fmt_hours(19.2 * 365 / 7 / 12), "83.4286")
         self.assertEqual(fmt_hours(273.75), "273.75")
 
+
+class ScheduleHoursTest(unittest.TestCase):
+    """T10 — 외부 점검 40번 후속(계산 카드). 질문은 '주 6일, 시급 12,000원, 9월 28일~30일 3일 동안 25시간'뿐인데 카드가
+    소정근로시간을 지어냈다 — Act-6 18회 중 10회는 기본값 1일 8시간으로 '8h×6일 = 48h'(주휴수당 월 417,143원·월 총액
+    2,920,000원), 8회는 의도분석이 실근로 합계 25시간을 주 소정근로시간으로 옮겨 '4.1667h×6일 = 25h'였고, 그 카드에는
+    기준시간 주휴 5h(통상임금 계산기 ÷5)와 주휴수당 4.1667h(주휴수당 계산기)가 함께 실렸다. 주휴시간 산식이 계산기 네 곳에
+    따로 있었다(포괄임금 역산은 주 5일 미만에도 1일 시간)."""
+
+    Q40 = ("주 6일, 시급 12,000원으로 일합니다. 9월 28일~30일 3일 동안 25시간 일했는데, 앞 주에 주휴수당이 나갔다고 "
+           "3일치는 주휴가 나올 수 없다고 합니다. 10월 1일부터도 계속 출근하고 있습니다. 맞는 건가요?")
+    P40 = {"needs_calculation": True, "calculation_types_kr": ["주휴수당"], "wage_type": "시급", "wage_amount": 12000,
+           "weekly_work_days": 6, "reference_year": 2026}
+    ASSUMED = ("8h×6일", "48h", "4.1667h×6일", "417,143", "2,920,000", "217,262", "1,564,286", "50,000원/주",
+               "월 총 예상 수령액", "주휴수당(월)")
+
+    def test_t10_one_holiday_formula_across_calculators(self):
+        """통상임금 기준시간·주휴수당·소정근로시간·포괄임금 역산이 같은 주휴시간을 쓴다."""
+        from wage_calculator import WageInput, WageType
+        from wage_calculator.calculators.comprehensive import _calc_coefficient_hours
+        from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
+        from wage_calculator.calculators.shared import weekly_holiday_hours
+        from wage_calculator.calculators.weekly_holiday import calc_weekly_holiday
+        from wage_calculator.calculators.working_hours import calc_working_hours
+        from wage_calculator.models import BusinessSize, WorkSchedule
+        from wage_calculator.utils import WEEKS_PER_MONTH
+        checked = 0
+        for days in (1, 2, 3, 4, 5, 5.5, 6, 7):
+            for quarter in range(2, 49):
+                daily = quarter / 4
+                weekly = days * daily
+                if weekly < 15:
+                    continue
+                inp = WageInput(wage_type=WageType.HOURLY, hourly_wage=12000, business_size=BusinessSize.OVER_5,
+                                schedule=WorkSchedule(daily_work_hours=daily, weekly_work_days=days))
+                hours = weekly_holiday_hours(days, daily)[0]
+                ow = calc_ordinary_wage(inp)
+                case = (days, daily)
+                self.assertAlmostEqual(ow.monthly_base_hours, (weekly + hours) * WEEKS_PER_MONTH, places=6, msg=case)
+                self.assertAlmostEqual(calc_weekly_holiday(inp, ow).holiday_hours, hours, places=9, msg=case)
+                self.assertAlmostEqual(calc_working_hours(inp, ow).weekly_paid_hours, weekly + hours, places=9, msg=case)
+                self.assertAlmostEqual(_calc_coefficient_hours(inp)[1]["기본시간"], (weekly + hours) * WEEKS_PER_MONTH,
+                                       places=6, msg=case)
+                checked += 1
+        self.assertGreater(checked, 200)
+        # 포괄임금 흐름도(브라우저 계산)도 같은 산식 — 예전에는 '÷5'만 써서 계산기(1일 시간)와도 달랐다
+        for html in ("public/calculator_flow/comprehensive_wage_reverse_calc.html",
+                     "wage_calculator/calculator_flow/comprehensive_wage_reverse_calc.html"):
+            src = (ROOT / html).read_text(encoding="utf-8")
+            self.assertIn("Math.min(weekly / Math.max(days, 5), 8)", src, html)
+            self.assertNotIn("Math.min(weekly / 5, 8)", src, html)
+
+    def test_t10_holiday_hours_follow_the_supreme_court_rule(self):
+        """대법원 2022다291153: 1일 평균 소정근로시간(1주 소정 ÷ 1주 소정근로일 수)이 원칙, 5일 미만은 5일로 보아 나눈다."""
+        from wage_calculator.calculators.shared import weekly_holiday_hours
+        for (days, daily), hours in {(6, 25 / 6): 25 / 6, (6, 6): 6, (6, 40 / 6): 40 / 6, (6, 8): 8, (5, 8): 8,
+                                     (5, 3.25): 3.25, (3, 6): 3.6, (2, 8): 3.2, (4, 10): 8, (7, 4): 4, (5, 9): 8, (6, 10): 8}.items():
+            self.assertAlmostEqual(weekly_holiday_hours(days, daily)[0], hours, places=9, msg=(days, daily))
+        self.assertEqual(weekly_holiday_hours(6, 25 / 6)[1], "주 소정근로일 6일 ≥ 5일 → 주휴: min(4.1667h, 8h) = 4.1667h")
+        self.assertEqual(weekly_holiday_hours(3, 6)[1], "주 소정근로일 3일 < 5일 → 주휴: min(18h ÷ 5, 8h) = 3.6h (= 18h ÷ 40h × 8h — 1주 소정근로일을 5일로 봄)")
+
+    def test_t10_card_for_question_40_assumes_no_hours(self):
+        from app.core.pipeline import _calculation_context_heading, _run_calculator
+        for name, extra in {"근무일수만": {}, "실근로 합계를 주 소정으로": {"weekly_total_hours": 25},
+                            "실근로 합계를 1일로 나눔": {"daily_work_hours": 25 / 3}}.items():
+            with self.subTest(name):
+                params = dict(self.P40, **extra)
+                out = _run_calculator(params, self.Q40)
+                for text in self.ASSUMED:
+                    self.assertNotIn(text, out)
+                for text in ("최저임금 충족: ✅ 충족", "주휴수당 = 시급 12,000원 × 주휴시간",
+                             "주휴시간 = 1주 소정근로시간 ÷ 1주 소정근로일 6일(1일 평균 소정근로시간, 8시간 한도)",
+                             "4주 평균 1주 소정근로시간 15시간 이상", "근로기준법 시행령 별표 2 제2호나목",
+                             "금액 보류: 질문에 1일·1주 소정근로시간이 없어 다음은 계산하지 않았습니다 — 주휴시간·주휴수당.",
+                             "[기준시간] 소정근로시간 미확인", "실질시급: 시급 12,000원"):
+                    self.assertIn(text, out)
+                self.assertIn("추정하지 마세요", _calculation_context_heading(out))
+                self.assertEqual(bool(extra), "질문의 25시간은 그 기간에 실제로 일한 시간이라 소정근로시간으로 쓰지 않았습니다" in out)
+                self.assertNotIn("8.3333", out)
+                self.assertEqual(params.get("schedule_hours_rejected"), extra or None)
+
+    def test_t10_span_totals_are_not_scheduled_hours(self):
+        """기간 표지('N일 동안'·'28일~30일'·'이번 주'·'어제'·'N일 근무했다')와 같은 절의 시간은 소정근로시간 근거가 아니다."""
+        from app.core.pipeline import _ground_schedule_hours as ground
+        rejected = {
+            "9월 28일~30일 3일 동안 25시간 일했는데 주휴수당이 안 나온대요": (25, None, 6),
+            "3일 동안 25시간 일했어요": (None, 25 / 3, None),
+            "28일부터 30일까지 총 25시간 일했습니다": (25, None, None),
+            "이번 주에 30시간 일했어요. 주휴수당 받나요?": (30, None, None),
+            "지난주 42시간 근무했는데 연장수당 나오나요?": (42, None, 5),
+            "어제 10시간 일했어요": (None, 10, None),
+            "2주 동안 50시간 일했어요": (50, None, None),
+            "하루 6시간씩 3일 근무했다": (18, 6, 3),         # CLAUDE.md 함정 ③ — 실제 근무
+            "9/28~30 25시간 일했어요": (25, None, 6),        # 날짜 범위 표기 셋
+            "9월 28~30일 25시간 일했어요": (25, None, 6),
+            "9/28부터 9/30까지 25시간 일했는데요": (25, None, 6),
+            "11시간씩 6일 근무했어요": (66, 11, 6),          # 1일 소정근로시간은 8시간을 넘지 못한다 — 실근무 서술
+            # 독립 리뷰 M3 — 월을 넘는 범위, 계획어가 앞에 있는 실근로, 고유어 일수, 'h' 단위, 점 표기
+            "9월 28일부터 10월 1일까지 30시간 일했어요": (30, None, 6),
+            "스케줄이 바뀌어서 이번 주 3일 동안 25시간 일했어요": (25, None, 6),
+            "1주일 동안 25시간 일했어요": (25, None, 6),
+            "사흘 동안 25시간 일했어요": (25, None, 6),
+            "3일 동안 25h 일했어요": (25, None, 6),
+            "9.28~9.30 25시간 일했어요": (25, None, 6),
+        }
+        for query, (weekly, daily, days) in rejected.items():
+            with self.subTest(query):
+                self.assertEqual(ground(query, weekly, daily, days),
+                                 (None, None, {k: v for k, v in (("weekly_total_hours", weekly),
+                                                                 ("daily_work_hours", daily)) if v is not None}))
+        kept = {
+            "주 25시간 일해요": (25, None, 6),
+            "하루 8시간씩 주 6일 근무합니다": (48, 8, 6),
+            "주 6일, 하루 8시간 근무인데 이번 주 3일 동안 25시간 일했어요": (48, 8, 6),
+            "주 3일 하루 6시간씩 근무했어요": (18, 6, 3),
+            "주 3일 동안 하루 4시간 30분 일해요": (13.5, 4.5, 3),
+            "평일 9시부터 18시까지 주 5일 근무": (40, 8, 5),     # 'N시간' 표현이 없으면 대조하지 않는다
+            "주 25시간 일하는데 이번 주는 30시간 일했어요": (25, None, None),
+            "그 주휴수당은 하루 8시간 기준인가요? 3일 동안 쉬었어요": (None, 8, 5),
+            "이번주에 15시간을 스케줄에 넣어뒀는데 주휴 받을 수 있나요": (15, None, None),   # 근무표의 계획 시간
+            "이번 주 근무표에 20시간 배정됐어요": (20, None, None),
+            "주휴시간을 3.2시간으로 산정하셨습니다. 하루 8시간 주 2일입니다": (16, 8, 2),     # 소수점에서 절을 끊지 않는다
+            "주 3~4일 하루 5시간씩 일해요": (None, 5, None),
+            "하루 4.5시간씩 주 4일 일해요": (18, 4.5, 4),
+            # 독립 리뷰 H1 — 출퇴근 시각에서 구한 1일 8시간, 기간 동안의 1주 근무 형태, 평일·주말 합계
+            "9시부터 18시까지(점심 1시간), 주 5일 근무합니다. 지난주 연장근로 10시간 했는데 수당은?": (40, 8, 5),
+            "1년 6개월 동안 주 15시간씩 일했는데 퇴직금 받나요?": (15, None, None),
+            "4주 동안 평균 주 16시간 일했어요": (16, None, None),
+            "이번 주에 주 20시간으로 계약했어요": (20, None, None),
+            "평일 4시간, 주말 8시간 일하는데 지난주 28시간 일했어요": (36, None, 7),
+            "3개월 동안 하루 4시간씩 주 5일 일했어요": (20, 4, 5),
+            "근로계약서상 하루 8시간인데 지난주 52시간 일했어요": (40, 8, 5),
+            # 기간 합계와 같은 값이어도 기간 밖의 시간(그 × 근무일수 포함)이 뒷받침하면 쓴다
+            "주 25시간 계약인데 이번 주 3일 동안도 25시간 일했어요": (25, None, 6),
+            "하루 5시간씩 주 5일 일하는데 이번 주 3일 동안 25시간 일했어요": (25, 5, 5),
+            "이번 주는 계약상 30시간이에요": (30, None, None),       # 계획어가 시간 앞에 있다
+        }
+        for query, (weekly, daily, days) in kept.items():
+            with self.subTest(query):
+                self.assertEqual(ground(query, weekly, daily, days), (weekly, daily, {}))
+        # 값마다 따로 본다 — 의도분석이 기간 합계(30)를 주 소정으로 골랐으면 그것만 버리고 질문의 1일 시간은 남긴다
+        self.assertEqual(ground("주 25시간 일하는데 이번 주는 30시간 일했어요", 30, None, None),
+                         (None, None, {"weekly_total_hours": 30}))
+        # 소수점 절 분리 결함 — '3.2시간'이 '3' | '2시간'으로 갈려 '2시간'이 '4주간' 절의 기간 합계로 잡혔다
+        from app.core.pipeline import _hours_mentions
+        self.assertEqual(_hours_mentions("주휴시간을 3.2시간으로 산정하셨습니다 이에 따라 4주간 총 12.8시간입니다"),
+                         [(3.2, True, ()), (12.8, True, ())])
+        self.assertEqual(_hours_mentions("하루 4시간 30분, 주 3일 2시간 반"), [(4.5, False, ()), (2.5, False, ())])
+        # 기간 일수 — 의도분석이 합계를 그 일수로 나눈 1일 시간(25 ÷ 3)도 기간 합계에서 나온 값이다
+        self.assertEqual(_hours_mentions("9월 28일~30일 3일 동안 25시간 일했는데"), [(25.0, True, (3, 3))])
+        self.assertEqual(ground("주 6일, 하루 8시간 근무인데 이번 주 3일 동안 25시간 일했어요", 25, 8, 6),
+                         (None, 8, {"weekly_total_hours": 25}))
+        # 앞 턴 캐시에서 채운 값은 이번 질문의 기간 표현으로 버리지 않는다(그 턴에서 대조했다) — 1일 × 근무일수도 같다
+        self.assertEqual(ground("이번 주 3일 동안 25시간 일했는데 주휴수당 나오나요?", 40, 8, 5, trusted=("daily_work_hours",)),
+                         (40, 8, {}))
+        self.assertEqual(ground("이번 주 3일 동안 25시간 일했는데 주휴수당 나오나요?", 25, 8, 5, trusted=("daily_work_hours",)),
+                         (None, 8, {"weekly_total_hours": 25}))
+        # 캐시 값이 기간 합계에서 나온 값(25 ÷ 5일)과 우연히 같아도 버리지 않는다 — 캐시 값과 그 × 근무일수가 근거다
+        self.assertEqual(ground("이번 주 5일 동안 25시간 일했어요", 25, 5, 5, trusted=("daily_work_hours",)), (25, 5, {}))
+        self.assertEqual(ground("이번 주 5일 동안 25시간 일했어요", 25, 5, 5),
+                         (None, None, {"weekly_total_hours": 25, "daily_work_hours": 5}))
+
+    def test_t10_rejected_hours_leave_the_cache_and_are_asked_for(self):
+        """버린 값은 계산 캐시(extracted_info)에서 빠진다 — 남으면 다음 턴 프리필이 대조 없이 그 값을 다시 채운다."""
+        from types import SimpleNamespace
+        from app.core.pipeline import _note_rejected_hours, _run_calculator
+        params = dict(self.P40, weekly_total_hours=25)
+        analysis = SimpleNamespace(extracted_info={"wage_amount": 12000, "weekly_work_days": 6, "weekly_total_hours": 25},
+                                   missing_info=[])
+        _run_calculator(params, self.Q40)
+        _note_rejected_hours(analysis, params)
+        self.assertEqual(analysis.extracted_info, {"wage_amount": 12000, "weekly_work_days": 6})
+        self.assertEqual(analysis.missing_info, ["1일 소정근로시간 또는 주 소정근로시간"])
+        _note_rejected_hours(analysis, params)      # 두 번 불러도 안내는 하나
+        self.assertEqual(analysis.missing_info, ["1일 소정근로시간 또는 주 소정근로시간"])
+        untouched = SimpleNamespace(extracted_info={"daily_work_hours": 8}, missing_info=[])
+        _note_rejected_hours(untouched, {"weekly_work_days": 5})
+        self.assertEqual((untouched.extracted_info, untouched.missing_info), ({"daily_work_hours": 8}, []))
+
+    def test_t10_unknown_hours_scope(self):
+        """시급·일급과 주 5일이 아닌 근무일수는 시간을 가정하지 않는다. 월급제 기본값(주 40시간)은 그대로다."""
+        from app.core.pipeline import _run_calculator
+        hourly = {"needs_calculation": True, "wage_type": "시급", "reference_year": 2026, "business_size": "5인이상"}
+        monthly = dict(hourly, wage_type="월급", wage_amount=2500000, calculation_types_kr=["최저임금"])
+        q = "임금 계산해 주세요"
+        # 시급만: 판정은 남고 주휴는 산식만, 5일 미만은 5일로 본다
+        out = _run_calculator(dict(hourly, wage_amount=12000, calculation_types_kr=["주휴수당"]), q)
+        self.assertIn("1주 소정근로시간 ÷ 1주 소정근로일 수(5일 미만은 5일로 봄, 8시간 한도)", out)
+        self.assertIn("최저임금 충족: ✅ 충족", out)
+        self.assertNotIn("208.5714", out)
+        out = _run_calculator(dict(hourly, wage_amount=12000, weekly_work_days=3, calculation_types_kr=["주휴수당"]), q)
+        self.assertIn("1주 소정근로시간 ÷ 5(1주 소정근로일 3일 — 5일 미만은 5일로 봄, 8시간 한도)", out)
+        self.assertNotIn("별표 2", out)
+        # 미달도 시급으로 판정하고 월 부족액(가정한 시간 × 부족분)은 싣지 않는다
+        out = _run_calculator(dict(hourly, wage_amount=9000, calculation_types_kr=["최저임금"]), q)
+        self.assertIn("최저임금 충족: ❌ 미달", out)
+        self.assertIn("(부족분 1,320원/h)", out)
+        self.assertNotIn("부족분(월)", out)
+        self.assertNotIn(", 월 ", out)
+        # 시간에 따라 달라지는 계산은 보류 목록에 이름을 남긴다. 시급제 연장수당(시급 × 가산율 × 질문의 시간)은 남는다(리뷰 M2)
+        out = _run_calculator(dict(hourly, wage_amount=12000, calculation_types_kr=["퇴직금", "연장수당"], weekly_work_days=6,
+                                   weekly_overtime_hours=5, start_date="2023-01-01", end_date="2026-01-01"), q)
+        self.assertIn("다음은 계산하지 않았습니다 — 퇴직금.", out)
+        self.assertNotIn("퇴직금: ", out)
+        self.assertIn("연장수당: 12,000.0원 × 5h × 1.5 = 90,000원/주", out)
+        # 52시간 경고는 가정한 1일 시간 × 6일 + 연장시간이 아니라 질문의 시간만 본다(가정이면 40 + 13 = 53시간 '초과')
+        out = _run_calculator(dict(hourly, wage_amount=12000, calculation_types_kr=["연장수당"], weekly_work_days=6,
+                                   weekly_overtime_hours=13), q)
+        self.assertIn("연장수당: 12,000.0원 × 13h × 1.5 = 234,000원/주", out)
+        self.assertNotIn("52h 초과", out)
+        # 고정수당이 있는 시급·일급은 최저임금 판정도 시간에 달린다
+        out = _run_calculator(dict(hourly, wage_amount=12000, calculation_types_kr=["최저임금"],
+                                   fixed_allowances=[{"name": "식대", "amount": 200000, "condition": "없음"}]), q)
+        self.assertIn("다음은 계산하지 않았습니다 — 최저임금 검증.", out)
+        self.assertNotIn("최저임금 충족:", out)
+        out = _run_calculator(dict(hourly, wage_type="일급", wage_amount=100000, calculation_types_kr=["최저임금"]), q)
+        self.assertIn("다음은 계산하지 않았습니다 — 최저임금 검증.", out)
+        # 임금체불 지연이자는 시간과 무관하다
+        out = _run_calculator(dict(hourly, wage_amount=12000, calculation_types_kr=["임금체불"],
+                                   arrear_amount=1000000, arrear_due_date="2026-01-10"), q)
+        self.assertIn("임금체불 지연이자", out)
+        # 월급: 근무일수가 없거나 주 5일 이상이면 주 40시간 관행(주 6일은 1일 40 ÷ 6시간 — 예전 기본값은 48시간이었다), 그 사실을
+        # [기준시간]에 밝힌다. 주 5일 미만(단시간)은 관행이 없어 보류
+        for extra, hours in (({}, "208.5714h"), ({"weekly_work_days": 5}, "208.5714h"), ({"weekly_work_days": 6}, "202.7778h")):
+            out = _run_calculator(dict(monthly, **extra), q)
+            self.assertIn(f"= {hours} — 소정근로시간을 질문에서 확인하지 못해 주 40시간으로 계산", out)
+            self.assertNotIn("소정근로시간 미확인", out)
+            self.assertNotIn("48h", out)
+        out = _run_calculator(dict(monthly, weekly_work_days=3), q)
+        self.assertIn("다음은 계산하지 않았습니다 — 최저임금 검증.", out)
+        self.assertNotIn("통상시급:", out)
+        # 시간과 무관한 계산(임금체불)이 남아도 월급·일급의 통상시급(가정한 시간으로 나눈 값)은 싣지 않는다(리뷰 L1)
+        for extra in ({"weekly_work_days": 3}, {"wage_type": "일급", "wage_amount": 90000}):
+            out = _run_calculator(dict(monthly, calculation_types_kr=["임금체불", "최저임금"], arrear_amount=1000000,
+                                       arrear_due_date="2026-01-10", **extra), q)
+            self.assertIn("임금체불 지연이자", out)
+            self.assertNotIn("통상시급:", out)
+            self.assertNotIn("11,250", out)
+            self.assertIn("[기준시간] 소정근로시간 미확인 — 월 환산·통상시급은 계산하지 않음", out)
+            self.assertNotIn("시급제 최저임금은", out)
+        # 시간을 밝힌 카드에는 기본값 표시가 없다
+        out = _run_calculator(dict(monthly, weekly_work_days=5, daily_work_hours=8), q)
+        self.assertNotIn("질문에서 확인하지 못해", out)
+        # 소정근로시간이 있으면 예전 카드 그대로다
+        out = _run_calculator(dict(hourly, wage_amount=12000, weekly_work_days=6, daily_work_hours=4,
+                                   calculation_types_kr=["주휴수당"]), q)
+        self.assertNotIn("소정근로시간 미확인", out)
+        self.assertIn("주휴수당: 12,000원 × 4h = 48,000원/주", out)
+
+    def test_t10_review_regressions(self):
+        """독립 리뷰 M1·H3·M4·M2 — 버린 뒤 월급 기본값으로 돌아가 '52시간 준수'를 내지 않고, 임금 없는 경로도 근무일수만으로 시간을
+        가정하지 않으며, 주 6일 단시간 월급제는 주휴 기준(판례 원칙 vs 시행령 별표 2)에 따라 판정이 갈리면 보류한다."""
+        from app.core.pipeline import _run_calculator
+        # M1 — 주 60시간 실근로를 주 소정근로시간으로 옮긴 값을 버리면 월급제도 시간을 모른다(예전: '주 총 근로시간 40.0h, 준수')
+        out = _run_calculator({"needs_calculation": True, "calculation_types_kr": ["주52시간"], "wage_type": "월급",
+                               "wage_amount": 3000000, "weekly_total_hours": 60, "business_size": "5인이상"},
+                              "월급 300만원 받는데 지난주 60시간 일했어요. 52시간 위반인가요?")
+        self.assertIn("질문의 60시간은 그 기간에 실제로 일한 시간이라", out)
+        self.assertIn("주 52시간 준수 여부 체크", out)
+        self.assertNotIn("✅ 준수", out)
+        self.assertNotIn("40.0h", out)
+        # H3 — 임금 없이 근무일수만 있으면 소정근로시간 산정을 하지 않는다(예전: 8h × 6일 → 243.3333시간)
+        out = _run_calculator({"needs_calculation": True, "calculation_types_kr": ["근로시간산정"], "weekly_work_days": 6},
+                              "주 6일 근무하는데 월 소정근로시간이 몇 시간인가요?")
+        self.assertIn("다음은 계산하지 않았습니다 — 소정근로시간 산출.", out)
+        self.assertNotIn("243.3333", out)
+        out = _run_calculator({"needs_calculation": True, "calculation_types_kr": ["근로시간산정"]}, "월 소정근로시간이 몇 시간인가요?")
+        self.assertIn("= 208.5714h — 소정근로시간을 질문에서 확인하지 못해 주 40시간으로 계산", out)
+        # M4 — 월 190만 원, 주 6일 × 6시간: 1일 평균(6h) 182.5h 충족 / 통상 근로자 주 5일(7.2h) 187.71h 미달 → 보류
+        monthly = {"needs_calculation": True, "calculation_types_kr": ["최저임금"], "wage_type": "월급",
+                   "weekly_work_days": 6, "daily_work_hours": 6, "reference_year": 2026}
+        out = _run_calculator(dict(monthly, wage_amount=1900000), "월급 190만원, 주 6일 하루 6시간")
+        self.assertIn("최저임금 충족: ⏸ 판정 보류", out)
+        self.assertIn("실질시급: 10,411원 또는 10,122원", out)
+        self.assertIn("근로기준법 시행령 별표 2 제2호나목) 10,122원이라 최저임금(10,320원) 충족 여부가 갈립니다", out)
+        self.assertNotIn("✅ 충족", out)
+        self.assertNotIn("❌ 미달", out)
+        out = _run_calculator(dict(monthly, wage_amount=2500000), "월급 250만원, 주 6일 하루 6시간")   # 둘 다 충족이면 판정
+        self.assertIn("최저임금 충족: ✅ 충족", out)
+        self.assertNotIn("갈립니다", out)
+        out = _run_calculator(dict(monthly, wage_type="시급", wage_amount=10320), "시급 10,320원, 주 6일 하루 6시간")  # 시급제는 같다
+        self.assertIn("최저임금 충족: ✅ 충족", out)
+        # 주 40시간 이상(주 6일 × 7시간)은 단시간근로자가 아니라 별표 2 대안이 없다 — 원칙(7h) 212.92h 충족 / 대안(8h)이면 미달인 금액
+        out = _run_calculator(dict(monthly, daily_work_hours=7, wage_amount=2220000), "월급 222만원, 주 6일 하루 7시간")
+        self.assertIn("최저임금 충족: ✅ 충족", out)
+        self.assertNotIn("갈립니다", out)
+        # M2 — 특수고용직은 시간을 몰라도 법률 힌트(산재 특례 등)가 남는다
+        out = _run_calculator({"needs_calculation": True, "calculation_types_kr": ["최저임금"], "wage_type": "시급",
+                               "wage_amount": 12000, "is_platform_worker": True, "weekly_work_days": 6},
+                              "배달 라이더인데 시급 12,000원으로 주 6일 일해요")
+        self.assertIn("특수고용직(노무제공자) 산재 적용", out)
+        self.assertIn("다음은 계산하지 않았습니다 — 4대보험·소득세", out)
+
+    def test_t10_managed_minimum_wage_marker_and_blocked_result(self):
+        """관리 모드 '최저시급' 질문은 시급 자리가 표지값(1)이라 금액을 적지 않는다. 안내가 앞에 붙어도 요청 단위 '계산 보류'는
+        LLM 머리말에서 보류로 읽힌다(예전 판정은 문자열 맨 앞만 봤다)."""
+        from unittest import mock
+        from app.core.pipeline import _calculation_context_heading, _run_calculator
+        params = {"needs_calculation": True, "calculation_types_kr": ["주휴수당"], "wage_type": "시급",
+                  "use_minimum_wage": True, "weekly_work_days": 3, "reference_year": 2026}
+        with mock.patch("app.core.legal_rule_store.rules_enabled", return_value=True), \
+                mock.patch("app.core.legal_rule_store.configured_store", return_value=None):
+            out = _run_calculator(params, "최저시급 받고 주 3일 일해요. 주휴수당 나오나요?")
+        self.assertIn("주휴수당 = 시간급 통상임금 × 주휴시간", out)
+        self.assertNotIn("시급 1원", out)
+        self.assertIn("\n계산 보류", out)
+        self.assertIn("금액 추정 금지", _calculation_context_heading(out))
+        self.assertIn("금액 추정 금지", _calculation_context_heading("계산 보류: 승인 기준 없음"))
+        self.assertEqual(_calculation_context_heading("📊 임금 계산 결과\n보류된 계산 (승인 기준 없음 — 아래 결과에 포함되지 않음):"),
+                         "임금계산기 결과 — 이 수치를 사용하세요")
+
+    def test_t10_part_timer_working_more_than_five_days_gets_the_annex_alternative(self):
+        """주 5일을 넘게 일하는 단시간근로자 — 원칙(÷ 소정근로일 수)으로 계산하되 통상 근로자 기준(시행령 별표 2)을 함께 밝힌다."""
+        from wage_calculator import WageCalculator, WageInput, WageType
+        from wage_calculator.models import WorkSchedule
+
+        def warnings(days, daily):
+            inp = WageInput(wage_type=WageType.HOURLY, hourly_wage=12000,
+                            schedule=WorkSchedule(daily_work_hours=daily, weekly_work_days=days))
+            return " ".join(WageCalculator().calculate(inp, ["weekly_holiday"]).warnings)
+
+        self.assertIn("근로기준법 시행령 별표 2 제2호나목·제4호라목) — 통상 근로자가 주 5일 근무하면 주휴 4.8h(24h ÷ 5)입니다.",
+                      warnings(6, 4))
+        for days, daily in ((5, 4), (6, 8), (4, 6)):
+            self.assertNotIn("별표 2", warnings(days, daily), (days, daily))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
