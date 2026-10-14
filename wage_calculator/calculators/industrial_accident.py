@@ -136,12 +136,13 @@ def calc_industrial_accident(
 
     # ── 1. 평균임금 결정 ──────────────────────────────────────────────────
     avg_daily = ow.daily_ordinary_wage  # 기본: 통상임금 환산일급
-    if inp.monthly_wage:
-        est = inp.monthly_wage / 30
+    monthly = inp.monthly_total_pay or inp.monthly_wage
+    if monthly:
+        est = monthly / 30
         if est > avg_daily:
             avg_daily = est
             formulas.append(
-                f"평균임금(추정): {inp.monthly_wage:,.0f}원 ÷ 30일 = {avg_daily:,.0f}원/일"
+                f"평균임금(추정): {monthly:,.0f}원 ÷ 30일 = {avg_daily:,.0f}원/일"
             )
         else:
             formulas.append(f"평균임금: 통상임금 환산일급 {avg_daily:,.0f}원/일 적용")

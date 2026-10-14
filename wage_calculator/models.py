@@ -196,6 +196,10 @@ class WageInput:
     hourly_wage: Optional[float] = None    # 시급 (원)
     daily_wage: Optional[float] = None     # 일급 (원)
     monthly_wage: Optional[float] = None   # 월 기본급 또는 포괄임금 총액 (원)
+    # 월 임금총액(연장·야간·휴일·연차수당 등 포함, 원) — 평균임금·4대보험 보수월액·근로장려금 소득·DC형 적립의 기준.
+    # None이면 monthly_wage·통상임금으로 추정한다(기존 동작). monthly_wage가 기본급이고 그 수당이 따로 있으면 그 추정은
+    # 과소다 — 통상임금(기본급)과 평균임금(총액)의 기준이 갈리는 질문을 한 번에 계산하려고 둔다(audit-50 Act-3).
+    monthly_total_pay: Optional[float] = None
     annual_wage: Optional[float] = None    # 연봉 (원)
 
     # ── 사업장/근무 정보 ─────────────────────────────────────────────────────

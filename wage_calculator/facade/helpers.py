@@ -3,6 +3,10 @@
 
 facade.py 에서 분리 (Phase D)
 """
+import re
+
+from ..result import WageResult
+from ..utils import fmt_hours
 
 
 def _merge(result, section, calc_result, all_warnings, all_legal):
@@ -12,6 +16,64 @@ def _merge(result, section, calc_result, all_warnings, all_legal):
         result.formulas.extend(calc_result.formulas)
     all_warnings.extend(calc_result.warnings)
     all_legal.extend(calc_result.legal_basis)
+
+
+# 금액 보류(`calculate(..., amount_hold=)`) — pipeline 월급 구성 가드가 넘긴다. 그 경로의 통상임금은 연장·야간·휴일·연차수당이
+# 섞인 월급 총액이라 그 값으로 낸 금액이 부풀려진다. 계산은 그대로 하고 금액만 뺀다 — 대상을 통째로 빼면 연차 발생일수·
+# '퇴직금 미발생' 같은 시급과 무관한 판정까지 사라진다(Act-2 코드 리뷰 M2).
+_WON_AMOUNT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*원")
+_WON_ANY_RE = re.compile(r"\d\s*원")
+_QUANTITY_RE = re.compile(r"\d[\d,.]*\s*(?:일|h|시간|개월|년|주)")
+
+
+def _has_amount(text) -> bool:
+    """0이 아닌 원화 금액이 들어 있는가."""
+    return any(float(m.group(1).replace(",", "")) for m in _WON_AMOUNT_RE.finditer(str(text)))
+
+
+def _basis_free(text) -> bool:
+    """금액(0원 포함)도 통상임금 비교('적용 기준: 통상임금')도 없는 줄 — 부풀린 통상임금과 무관하다. 0원 줄도 빼는 것은
+    '과세표준: 2,865,414 - 2,865,414 = 0원'처럼 결론만 0이고 중간값은 부풀린 줄이 있어서다(Act-2 재검토 N4)."""
+    text = str(text)
+    return not _WON_ANY_RE.search(text) and "통상" not in text
+
+
+def _ineligible(calc_result) -> bool:
+    """계산기가 자격 판정으로 0을 냈는가(퇴직금 미발생·주휴 미발생·해고예고 면제·공휴일 미적용)."""
+    return (getattr(calc_result, "is_eligible", None) is False
+            or getattr(calc_result, "eligible", None) is False
+            or getattr(calc_result, "is_exempt", None) is True)
+
+
+def _merge_amount_held(result, key, section, calc_result, populate, all_warnings, all_legal,
+                       ineligible=None) -> bool:
+    """계산기 결과에서 금액만 빼고 병합한다. 자격 판정으로 금액이 0이면 False — 호출부가 그대로 병합한다.
+
+    0원을 통과시키는 것은 자격 판정(`ineligible`, 없으면 결과의 자격 플래그)일 때뿐이다. 입력이 없어 0인 결과(연장시간·입사일
+    미기재)를 통과시키면 사용자가 '포함돼 있다'고 한 수당에 '0원'과 '이 수치를 사용하세요'가 붙는다(Act-2 재검토 N1).
+
+    남기는 것: 요약은 수량 사실(연차 발생일수·계속근로일수·보상휴가 시간 등)만, 계산식·안내·법적 근거는 금액과 통상임금
+    비교가 없는 줄만('평균임금이 통상임금보다 적으면 통상임금' 근거는 보류한 금액의 근거라 뺀다). 요약의 비교 결과('적용 기준:
+    통상임금'·'평균임금 70%')도 부풀린 통상임금과 비교해 나온 것이라 수량이 아니면 버린다. 금액은 monthly_total에 더하지
+    않는다(호출부).
+    """
+    probe = WageResult()
+    populate(calc_result, probe)
+    formulas = getattr(calc_result, "formulas", [])
+    if ineligible is None:
+        ineligible = _ineligible(calc_result)
+    texts = (*probe.summary.values(), *formulas, *calc_result.warnings)
+    if ineligible and not any(_has_amount(text) for text in texts):
+        return False
+    result.amount_held.append(key)
+    result.summary.update({k: v for k, v in probe.summary.items()
+                           if _basis_free(f"{k} {v}") and _QUANTITY_RE.search(str(v))})
+    result.formulas.extend(f for f in formulas if _basis_free(f))
+    all_warnings.extend(w for w in calc_result.warnings if _basis_free(w))
+    all_legal.extend(line for line in calc_result.legal_basis if _basis_free(line))
+    breakdown = calc_result.breakdown if isinstance(calc_result.breakdown, dict) else {}
+    result.breakdown[section] = {k: v for k, v in breakdown.items() if _basis_free(f"{k} {v}")}
+    return True
 
 
 # ── populate 함수: 각 계산기의 summary/특수필드 설정 ──────────────────────────
@@ -63,7 +125,7 @@ def _pop_dismissal(r, result):
 def _pop_comprehensive(r, result):
     """result.summary에 포괄임금 역산 시급·계수시간·최저임금 충족 추가. 반환: 0."""
     result.summary["포괄임금 역산 시급"] = f"{r.effective_hourly:,.0f}원"
-    result.summary["총계수시간(월)"] = f"{r.total_coefficient_hours:.1f}h"
+    result.summary["총계수시간(월)"] = f"{fmt_hours(r.total_coefficient_hours)}h"
     result.summary["최저임금 충족"] = "✅" if r.is_minimum_wage_ok else "❌"
     if not r.is_valid_comprehensive:
         result.summary["포괄임금 유효성"] = "⚠️ 문제 있음"
@@ -233,7 +295,7 @@ def _pop_ordinary_wage(r, result):
 
 def _pop_working_hours(r, result):
     """result.summary에 월 소정근로시간·시급·월급 환산 추가. 반환: 0."""
-    result.summary["월 소정근로시간"] = f"{r.monthly_hours}시간"
+    result.summary["월 소정근로시간"] = f"{fmt_hours(r.monthly_hours)}시간"
     if r.hourly_wage:
         result.summary["시급"] = f"{r.hourly_wage:,.0f}원"
     if r.monthly_wage:
@@ -243,7 +305,8 @@ def _pop_working_hours(r, result):
 
 def _pop_industrial_accident(r, result):
     """result.summary에 평균임금·휴업/장해/유족/장례비·산재합계 추가. 반환: 0."""
-    result.summary["적용 평균임금"] = f"{r.avg_daily_wage:,.0f}원/일"
+    # 퇴직금 요약과 같은 키를 쓰면 함께 물었을 때 퇴직금 옆에 산재 값이 찍힌다(Act-3 리뷰 L2)
+    result.summary["산재 적용 평균임금"] = f"{r.avg_daily_wage:,.0f}원/일"
     if r.sick_leave_total > 0:
         result.summary["휴업급여"] = f"{r.sick_leave_total:,.0f}원 ({r.sick_leave_days}일)"
     if r.illness_pension_annual > 0:

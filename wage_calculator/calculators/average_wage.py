@@ -50,7 +50,7 @@ def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResu
     formulas = []
     legal = [
         "근로기준법 제2조 제1항 (평균임금 정의)",
-        "근로기준법 시행령 제2조 (평균임금 < 통상임금 시 통상임금 적용)",
+        "근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)",
     ]
 
     # ── 1. 산정기간 일수 (제외 기간 반영) ──────────────────────────────────────
@@ -97,11 +97,11 @@ def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResu
     if avg_daily_ordinary > avg_daily_3m:
         used_basis = "통상임금"
         avg_daily_wage = avg_daily_ordinary
-        legal.append("근로기준법 시행령 제2조 (평균임금 < 통상임금 시 통상임금 적용)")
+        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
         warnings.append(
             f"평균임금({avg_daily_3m:,.0f}원/일)이 "
             f"통상임금({avg_daily_ordinary:,.0f}원/일)보다 낮아 통상임금 적용 "
-            f"(근기법 시행령 제2조)"
+            f"(근로기준법 제2조 제2항)"
         )
         formulas.append(
             f"통상임금 환산일급: {avg_daily_ordinary:,.0f}원/일 > 평균임금 → 통상임금 적용"
@@ -186,6 +186,9 @@ def _calc_wage_total(inp: WageInput, ow: OrdinaryWageResult) -> tuple[float, str
             else:
                 total += float(item)
         return total, ""
+
+    if inp.monthly_total_pay:
+        return inp.monthly_total_pay * 3, " (월 임금총액 × 3 추정)"
 
     if inp.monthly_wage:
         return inp.monthly_wage * 3, " (월급 × 3 추정)"

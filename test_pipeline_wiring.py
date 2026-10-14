@@ -165,7 +165,8 @@ def main() -> None:
 
     # ── W14. 날짜 연도 보정은 질문에 연도 단서가 없을 때만 ──
     # 보정이 조건 없이 돌아 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가 2026-03-02 입사·
-    # 2026-03-01 퇴사가 되어 퇴직금 0원이 나왔다(실측 2026-10-11, 정답 5,752,620원).
+    # 2026-03-01 퇴사가 되어 퇴직금 0원이 나왔다(실측 2026-10-11 — 당시 월 기준시간 208.6h로 5,752,620원, 반올림 없는
+    # 208.5714h(최저임금법 시행령 제5조①3호)로 5,753,400원 — audit-50 Act-4).
     from datetime import date as _d
     from app.core.analyzer import _build_analysis_result, _correct_date_year
     sev = {"requires_calculation": True, "calculation_types": ["severance"], "wage_type": "월급",
@@ -174,7 +175,7 @@ def main() -> None:
     assert (a14.extracted_info["start_date"], a14.extracted_info["end_date"]) == \
         ("2023-03-02", "2025-03-01"), a14.extracted_info
     r14 = run(["severance"], a14.extracted_info)
-    assert r14 and "5,752,620원" in r14, f"W14 실패(명시 연도 보존 후 퇴직금):\n{r14}"
+    assert r14 and "5,753,400원" in r14, f"W14 실패(명시 연도 보존 후 퇴직금):\n{r14}"
     old = (_d.today().replace(year=_d.today().year - 3)).isoformat()
     for ctx in ("23.3.2 입사했어요", "2년 일하고 그만뒀어요", "18개월 근무", "재작년 3월에 입사",
                 "작년 3월 입사", "1.5년 일했어요", "730일 전에 입사해 오늘 퇴사했습니다",

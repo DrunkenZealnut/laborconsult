@@ -76,6 +76,11 @@ ARTICLES = [
     ("ei_act_50",     "고용보험법",                     50,  None, []),
     # 상시 4명 이하 사업장 적용 규정(별표 1) — harassment_retaliation 블록의 미적용 문장 근거
     ("lsa_enf_7",     "근로기준법 시행령",               7,   None, []),
+    # 소정근로시간 정의(제2조 제1항 제8호)·근로조건 최저기준(제3조)·피보험 단위기간(제41조) —
+    # weekly_holiday·unemployment 블록과 ANSWER_RULE_ANCHORS의 근거(audit-50-legal-accuracy)
+    ("lsa_act_2",     "근로기준법",                     2,   None, []),
+    ("lsa_act_3",     "근로기준법",                     3,   None, []),
+    ("ei_act_41",     "고용보험법",                     41,  None, []),
 ]
 
 # 조문이 "고용노동부장관이 고시하는 금액"으로 **위임**하는 수치들 — 조문만으로는

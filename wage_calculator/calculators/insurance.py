@@ -67,6 +67,12 @@ WORKER_JUDGMENT_CRITERIA = [
 ]
 
 
+def _floor_won(amount: float) -> int:
+    """원 미만 절사. 요율 곱셈·나눗셈의 부동소수 오차를 먼저 걷어낸다 — 2,700,000 × 0.009가 24,299.999…가 되어
+    int()가 1원을 깎았다(Act-2 델타 리뷰). 소수 6자리 반올림은 원 미만 절사 결과를 바꾸지 않는다."""
+    return int(round(amount, 6))
+
+
 @dataclass
 class InsuranceResult(BaseCalculatorResult):
     # 세전·세후
@@ -99,9 +105,14 @@ def calc_insurance(inp: WageInput, ow: OrdinaryWageResult) -> InsuranceResult:
     legal = []
 
     # ── 세전 월 급여 산정 ────────────────────────────────────────────────────
-    # 통상임금 기준 월 급여 (고정수당 포함)
-    gross = ow.monthly_ordinary_wage
-    formulas.append(f"세전 월 급여: {gross:,.0f}원 (통상임금 기준)")
+    # 보수월액 — 월 임금총액이 주어지면 그 값(연장·야간수당 등 포함), 없으면 통상임금 기준 월 급여(고정수당 포함)
+    if inp.monthly_total_pay:
+        gross = inp.monthly_total_pay
+        formulas.append(f"세전 월 급여: {gross:,.0f}원 (월 임금총액 기준)")
+    else:
+        # 통상임금 기준 월 급여 (고정수당 포함)
+        gross = ow.monthly_ordinary_wage
+        formulas.append(f"세전 월 급여: {gross:,.0f}원 (통상임금 기준)")
 
     if getattr(inp, "is_platform_worker", False):
         return _calc_platform_worker(inp, gross, warnings, formulas, legal, inp.reference_year)
@@ -141,7 +152,7 @@ def _calc_employee(
     # ── 국민연금 ─────────────────────────────────────────────────────────────
     pension_base = max(pension_min, min(gross, pension_max))
     pension_base = (pension_base // 1000) * 1000  # 기준소득월액 1,000원 미만 절사
-    national_pension = int(pension_base * pension_rate)  # 원 미만 절사
+    national_pension = _floor_won(pension_base * pension_rate)  # 원 미만 절사
     if gross > pension_max:
         warnings.append(
             f"국민연금: 기준소득월액 상한({pension_max:,}원) 적용"
@@ -151,7 +162,7 @@ def _calc_employee(
     )
 
     # ── 건강보험 ─────────────────────────────────────────────────────────────
-    health_insurance = int(gross * health_rate)  # 원 미만 절사
+    health_insurance = _floor_won(gross * health_rate)  # 원 미만 절사
     health_insurance = max(health_premium_min, min(health_insurance, health_premium_max))
     if health_insurance >= health_premium_max:
         warnings.append(
@@ -162,13 +173,13 @@ def _calc_employee(
     )
 
     # ── 장기요양보험 (건강보험료 기준) ──────────────────────────────────────
-    long_term_care = int(health_insurance * ltc_rate)  # 원 미만 절사
+    long_term_care = _floor_won(health_insurance * ltc_rate)  # 원 미만 절사
     formulas.append(
         f"장기요양: {health_insurance:,.0f}원 × {ltc_rate*100:.2f}% = {long_term_care:,.0f}원 ({year}년)"
     )
 
     # ── 고용보험 ─────────────────────────────────────────────────────────────
-    employment_insurance = int(gross * emp_rate)  # 원 미만 절사
+    employment_insurance = _floor_won(gross * emp_rate)  # 원 미만 절사
     formulas.append(
         f"고용보험: {gross:,.0f}원 × {emp_rate*100:.1f}% = {employment_insurance:,.0f}원 ({year}년)"
     )
@@ -202,7 +213,7 @@ def _calc_employee(
         assessed_tax = _calc_income_tax(taxable_income)
         earned_credit = _calc_earned_income_tax_credit(assessed_tax, base_annual)
         annual_tax_at_10m = max(0.0, assessed_tax - earned_credit)
-        base_tax = (int(annual_tax_at_10m / 12) // 10) * 10
+        base_tax = (_floor_won(annual_tax_at_10m / 12) // 10) * 10
 
         # ② 초과분 가산세액
         surcharge = _calc_high_income_surcharge(taxable_monthly)
@@ -233,7 +244,7 @@ def _calc_employee(
         # ⑧ 연간 결정세액
         annual_income_tax = max(0.0, assessed_tax - earned_tax_credit)
         # ⑨ 월 근로소득세 (10원 미만 절사)
-        income_tax = (int(annual_income_tax / 12) // 10) * 10
+        income_tax = (_floor_won(annual_income_tax / 12) // 10) * 10
 
         formulas.append(
             f"근로소득세(간이세액표): 연 과세표준 {taxable_income:,.0f}원"
@@ -250,7 +261,7 @@ def _calc_employee(
             f"자녀세액공제: {inp.num_children_8_to_20}명 → 월 {child_credit:,.0f}원 공제 ({year}년)"
         )
 
-    local_income_tax = int(income_tax * 0.1)  # 원 미만 절사
+    local_income_tax = _floor_won(income_tax * 0.1)  # 원 미만 절사
     formulas.append(f"지방소득세: {income_tax:,.0f}원 × 10% = {local_income_tax:,.0f}원")
 
     total_tax = income_tax + local_income_tax
@@ -386,7 +397,7 @@ def _calc_platform_worker(
     # 고용보험 (월 보수 최소 기준 이상 시 가입)
     pw_income = getattr(inp, "platform_monthly_income", None) or gross
     if pw_income >= PLATFORM_MIN_MONTHLY_INCOME:
-        employment_insurance = int(pw_income * pw_rate)
+        employment_insurance = _floor_won(pw_income * pw_rate)
         formulas.append(
             f"고용보험(노무제공자): {pw_income:,.0f}원 × {pw_rate:.1%} "
             f"= {employment_insurance:,.0f}원 ({year}년)"
@@ -401,8 +412,8 @@ def _calc_platform_worker(
     total_insurance = employment_insurance
 
     # 소득세: 사업소득 3.3% 원천징수 (pw_income 기준)
-    income_tax = int(pw_income * 0.03)
-    local_income_tax = int(pw_income * 0.003)
+    income_tax = _floor_won(pw_income * 0.03)
+    local_income_tax = _floor_won(pw_income * 0.003)
     total_tax = income_tax + local_income_tax
 
     formulas.append(f"사업소득세: {pw_income:,.0f}원 × 3.0% = {income_tax:,.0f}원")
@@ -501,7 +512,7 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
 
     year = inp.reference_year
     rates = get_insurance_rates(year, getattr(inp, "reference_date", None))
-    gross = ow.monthly_ordinary_wage
+    gross = inp.monthly_total_pay or ow.monthly_ordinary_wage
 
     # 사업장 규모 카테고리
     size_cat = getattr(inp, "company_size_category", "under_150") or "under_150"
@@ -518,7 +529,7 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     pension_rate = rates["national_pension"]
     pension_base = max(rates["pension_income_min"], min(gross, rates["pension_income_max"]))
     pension_base = (pension_base // 1000) * 1000  # 기준소득월액 1,000원 미만 절사
-    employer_pension = int(pension_base * pension_rate)  # 원 미만 절사
+    employer_pension = _floor_won(pension_base * pension_rate)  # 원 미만 절사
     formulas.append(
         f"국민연금(사업주): {pension_base:,.0f}원(1천원절사) × {pension_rate*100:.2f}% = {employer_pension:,.0f}원"
     )
@@ -527,7 +538,7 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
     health_rate = rates["health_insurance"]
     health_premium_max = rates.get("health_premium_max", float("inf"))
     health_premium_min = rates.get("health_premium_min", 0)
-    employer_health = int(gross * health_rate)  # 원 미만 절사
+    employer_health = _floor_won(gross * health_rate)  # 원 미만 절사
     employer_health = max(health_premium_min, min(employer_health, health_premium_max))
     formulas.append(
         f"건강보험(사업주): {gross:,.0f}원 × {health_rate*100:.3f}% = {employer_health:,.0f}원"
@@ -535,21 +546,21 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
 
     # ── 장기요양 (건강보험료 기준) ──────────────────────────────────────
     ltc_rate = rates["long_term_care"]
-    employer_ltc = int(employer_health * ltc_rate)  # 원 미만 절사
+    employer_ltc = _floor_won(employer_health * ltc_rate)  # 원 미만 절사
     formulas.append(
         f"장기요양(사업주): {employer_health:,.0f}원 × {ltc_rate*100:.2f}% = {employer_ltc:,.0f}원"
     )
 
     # ── 고용보험 실업급여 (사업주 = 근로자와 동일) ─────────────────────
     emp_rate = rates["employment_insurance"]
-    employer_employment = int(gross * emp_rate)  # 원 미만 절사
+    employer_employment = _floor_won(gross * emp_rate)  # 원 미만 절사
     formulas.append(
         f"고용보험 실업급여(사업주): {gross:,.0f}원 × {emp_rate*100:.1f}% = {employer_employment:,.0f}원"
     )
 
     # ── 직업능력개발부담금 (사업주만 부담, 규모별 차등) ──────────────────
     voc_rate = VOCATIONAL_TRAINING_RATES[size_cat]
-    employer_vocational = int(gross * voc_rate)  # 원 미만 절사
+    employer_vocational = _floor_won(gross * voc_rate)  # 원 미만 절사
     size_label = {"under_150": "150인 미만", "150_999": "150~999인", "over_1000": "1000인 이상"}.get(size_cat, size_cat)
     formulas.append(
         f"직업능력개발({size_label}): {gross:,.0f}원 × {voc_rate*100:.2f}% = {employer_vocational:,.0f}원"
@@ -568,14 +579,14 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
         employer_health = 0
         employer_ltc = 0
         employer_vocational = 0
-        employer_employment = int(gross * pw_biz_rate)
+        employer_employment = _floor_won(gross * pw_biz_rate)
         formulas.append(
             f"고용보험(노무제공자-사업주): {gross:,.0f}원 × {pw_biz_rate:.1%} "
             f"= {employer_employment:,.0f}원 ({year}년)"
         )
         employer_share = 1 - PLATFORM_INDUSTRIAL_SPLIT
-        employer_accident = int(gross * total_accident_rate * employer_share)
-        worker_accident = int(gross * total_accident_rate * PLATFORM_INDUSTRIAL_SPLIT)
+        employer_accident = _floor_won(gross * total_accident_rate * employer_share)
+        worker_accident = _floor_won(gross * total_accident_rate * PLATFORM_INDUSTRIAL_SPLIT)
         formulas.append(
             f"산재보험(노무제공자): 총 {total_accident_rate*100:.2f}% "
             f"× 사업주 {employer_share:.0%} = {employer_accident:,.0f}원 "
@@ -587,7 +598,7 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
         )
         legal.append("산업재해보상보험법 제126조의2 (특수형태근로종사자의 보험료)")
     else:
-        employer_accident = int(gross * total_accident_rate)  # 원 미만 절사
+        employer_accident = _floor_won(gross * total_accident_rate)  # 원 미만 절사
         formulas.append(
             f"산재보험: 업종({industry_rate*100:.2f}%) + 출퇴근({commute_rate*100:.1f}%) "
             f"+ 임금채권({wage_claim_rate*100:.1f}%) + 석면({asbestos_rate*100:.2f}%) "
@@ -863,9 +874,9 @@ def _calc_high_income_surcharge(monthly_salary: float) -> int:
         if monthly_salary <= upper:
             excess = monthly_salary - threshold
             if apply_98:
-                return int(base_add + excess * 0.98 * rate)
+                return _floor_won(base_add + excess * 0.98 * rate)
             else:
-                return int(base_add + excess * rate)
+                return _floor_won(base_add + excess * rate)
     return 0
 
 

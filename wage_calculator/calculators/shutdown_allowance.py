@@ -78,14 +78,15 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
         f"1일 통상임금: {hourly:,.0f}원 × {daily_hours}h = {ordinary_daily:,.0f}원"
     )
 
-    # 근기법 제46조 제2항: 70%가 통상임금 초과 시 통상임금 적용
+    # 근로기준법 제46조 제1항 단서: 평균임금 70%가 통상임금을 넘으면 통상임금을 휴업수당으로 지급할 수 있다
+    # (제2항은 노동위원회 승인 시 기준 미달 지급 — 공식 원문 대조 2026-10-12)
     if avg_70 > ordinary_daily:
         daily_allowance = ordinary_daily
         is_ordinary_applied = True
         formulas.append(
             f"평균임금 70%({avg_70:,.0f}원) > 통상임금({ordinary_daily:,.0f}원) → 통상임금 적용"
         )
-        legal.append("근로기준법 제46조 제2항 (통상임금 적용 기준)")
+        legal.append("근로기준법 제46조 제1항 단서 (평균임금 70%가 통상임금 초과 시 통상임금)")
     else:
         daily_allowance = avg_70
         is_ordinary_applied = False
@@ -153,9 +154,10 @@ def _calc_avg_daily_wage(inp: WageInput, hourly: float, daily_hours: float) -> f
         days_3m = inp.last_3m_days or 92
         return total_3m / days_3m
 
-    # monthly_wage 기반 추정
-    if inp.monthly_wage:
-        return (inp.monthly_wage * 3) / 92
+    # 월 임금총액(없으면 monthly_wage) 기반 추정
+    monthly = inp.monthly_total_pay or inp.monthly_wage
+    if monthly:
+        return (monthly * 3) / 92
 
     # hourly 기반 추정
     monthly_est = hourly * daily_hours * inp.schedule.weekly_work_days * (52 / 12)

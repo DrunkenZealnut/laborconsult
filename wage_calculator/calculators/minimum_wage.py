@@ -30,6 +30,7 @@ from .ordinary_wage import OrdinaryWageResult
 from .shared import normalize_allowances, AllowanceClassifier
 from ..legal_rules import managed
 from ..constants import get_minimum_hourly_wage
+from ..utils import WEEKS_PER_MONTH, fmt_hours
 from ..constants import (
     MINIMUM_HOURLY_WAGE,
     MONTHLY_STANDARD_HOURS,
@@ -69,6 +70,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         year = max(MINIMUM_HOURLY_WAGE.keys())
         warnings.append(f"{inp.reference_year}년 최저임금 미확정 — {year}년 기준 적용")
     legal_minimum = float(get_minimum_hourly_wage(year))
+    statutory_minimum = legal_minimum      # 수습 감액 전 — 고시 월 환산액 비교용
 
     # ── 수습기간 특례 (최저임금법 제5조 제2항) ─────────────────────────────────
     # 조건: ① 1년 이상 근로계약 ② 수습 3개월 이내 ③ 단순노무종사자 아닐 것
@@ -124,7 +126,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         name        = a.name
 
         if mwt == "excluded":
-            allowance_rows.append((name, monthly_amt, "비산입(초과수당)"))
+            allowance_rows.append((name, monthly_amt, f"비산입({AllowanceClassifier.excluded_kind(name)})"))
         elif mwt == "regular_bonus":
             bonus_total += monthly_amt
             allowance_rows.append((name, monthly_amt, "정기상여금"))
@@ -145,7 +147,9 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
 
     # ── 5. 총 산입 월 임금 및 실질 시급 ──────────────────────────────────────
     included_monthly = base_monthly + std_included + bonus_included + welfare_included
-    effective_hourly = included_monthly / monthly_hours if monthly_hours else 0.0
+    # 소수 6자리에서 부동소수 오차를 걷어낸다 — 시급제는 (시급 × h) ÷ h라, h를 반올림하지 않게 되자 시급이 최저임금과
+    # 같은데 10,319.999…로 '미달, 부족분 0원'이 났다(audit-50 Act-4 리뷰 H1: 2025년 주 6일 × 8시간 등)
+    effective_hourly = round(included_monthly / monthly_hours, 6) if monthly_hours else 0.0
 
     is_compliant    = effective_hourly >= legal_minimum
     shortage_hourly = max(0.0, legal_minimum - effective_hourly)
@@ -179,10 +183,23 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
             formulas.append(f"복리후생비 전액산입 ({year}년~): {welfare_total:,.0f}원")
 
     formulas.append(
-        f"실질시급: {included_monthly:,.0f}원 ÷ {monthly_hours}h = {effective_hourly:,.2f}원"
+        f"실질시급: {included_monthly:,.0f}원 ÷ {fmt_hours(monthly_hours)}h = {effective_hourly:,.2f}원"
     )
     formulas.append(f"{year}년 최저임금: {legal_minimum:,.0f}원/h")
 
+    # 고시의 월 환산액은 주 40시간 근무자를 209시간 기준으로 적는다(고시 본문 '월 환산 기준시간 수 209시간'). 계산은
+    # 시행령 산식(1주 48시간 × 365/7 ÷ 12 = 208.5714시간)이라 그 사이 금액은 시간급으로는 충족이지만 고시 환산액에는
+    # 못 미친다 — 판정만 내면 사실 블록의 209시간 환산액과 한 답변 안에서 갈린다(Act-4 리뷰 M5)
+    notice_monthly = legal_minimum * MONTHLY_STANDARD_HOURS
+    if (is_compliant and legal_minimum == statutory_minimum
+            and inp.wage_type in (WageType.MONTHLY, WageType.ANNUAL, WageType.COMPREHENSIVE)
+            and abs(monthly_hours - 48 * WEEKS_PER_MONTH) < 1e-6 and included_monthly < notice_monthly):
+        warnings.append(
+            f"산입 월 임금 {included_monthly:,.0f}원은 최저임금 고시의 월 환산액 {notice_monthly:,.0f}원(주 40시간, "
+            f"월 {MONTHLY_STANDARD_HOURS:.0f}시간 기준)보다 적습니다. 위 판정은 최저임금법 시행령 제5조 제1항 제3호의 "
+            f"산식(1년 평균 주 수, 월 {fmt_hours(monthly_hours)}시간)으로 한 것이라 고시 환산액 기준으로는 미달로 볼 수 "
+            f"있습니다 — 고용노동부(1350)에 확인하세요."
+        )
     if not is_compliant:
         warnings.append(
             f"최저임금 미달: 실질시급 {effective_hourly:,.0f}원 < {legal_minimum:,.0f}원 "
@@ -200,7 +217,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         f"{year}년 법정 최저시급": f"{legal_minimum:,.0f}원",
         "실질 시급":              f"{effective_hourly:,.0f}원",
         "충족 여부":              "✅ 충족" if is_compliant else "❌ 미달",
-        "월 근로시간":            f"{monthly_hours}h",
+        "월 근로시간":            f"{fmt_hours(monthly_hours)}h",
         "기본급 월액":            f"{base_monthly:,.0f}원",
     }
     if std_included:

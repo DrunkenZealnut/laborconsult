@@ -213,12 +213,13 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
             + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
             + f") ÷ {inp.last_3m_days}일 = {avg_daily:,.1f}원"
         )
-    elif inp.monthly_wage:
-        base_3m   = inp.monthly_wage * 3
+    elif inp.monthly_total_pay or inp.monthly_wage:
+        monthly   = inp.monthly_total_pay or inp.monthly_wage
+        base_3m   = monthly * 3
         total_3m  = base_3m + extra_3m
         avg_daily = total_3m / 92
         formulas.append(
-            f"평균임금 일액(추정): ({inp.monthly_wage:,.0f}원 × 3"
+            f"평균임금 일액(추정): ({monthly:,.0f}원 × 3"
             + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
             + f") ÷ 92일 = {avg_daily:,.1f}원"
         )

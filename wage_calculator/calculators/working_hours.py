@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
 from ..constants import WEEKLY_HOLIDAY_MIN_HOURS
+from ..utils import fmt_hours
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 
@@ -58,14 +59,15 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
     # 산출 근거(ow.base_hours_detail)는 facade가 "[기준시간]" 계산식으로 이미 노출하므로
     # 여기서는 결과값만 명시해 중복을 피한다.
     monthly_hours = ow.monthly_base_hours
-    formulas.append(f"월 소정근로시간(주휴 포함) = {monthly_hours}시간")
+    formulas.append(f"월 소정근로시간(주휴 포함) = {fmt_hours(monthly_hours)}시간")
 
     # ── 연 소정근로시간 (주휴 제외, 순수 근로시간) ──
     annual_contractual_hours = round(weekly_hours * 52, 1)
 
     # ── 통상시급 ↔ 월급 환산 ──
     hourly = ow.hourly_ordinary_wage
-    monthly_from_hourly = round(hourly * monthly_hours) if hourly else 0
+    # 통상시급은 소수 둘째 자리로 저장돼 시급 × 시간으로 되돌리면 1원 어긋난다(2,700,001원) — 월 통상임금을 그대로 쓴다
+    monthly_from_hourly = round(ow.monthly_ordinary_wage) if hourly else 0
 
     breakdown = {
         "1일 소정근로시간": f"{daily}시간",
@@ -73,7 +75,7 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
         "주 소정근로시간": f"{weekly_hours}시간",
         "유급주휴시간": f"{paid_holiday_hours}시간",
         "주 유급시간 합계": f"{weekly_paid}시간",
-        "월 소정근로시간 (주휴 포함)": f"{monthly_hours}시간",
+        "월 소정근로시간 (주휴 포함)": f"{fmt_hours(monthly_hours)}시간",
         "연 소정근로시간 (주휴 제외)": f"{annual_contractual_hours}시간",
     }
 
@@ -81,7 +83,7 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
         breakdown["통상시급"] = f"{hourly:,.0f}원"
         breakdown["통상시급 기준 월급 환산"] = f"{monthly_from_hourly:,.0f}원"
         formulas.append(
-            f"월급 환산 = 통상시급 {hourly:,.0f} × {monthly_hours}h = {monthly_from_hourly:,.0f}원"
+            f"월급 환산 = 통상시급 {hourly:,.2f} × {fmt_hours(monthly_hours)}h = {monthly_from_hourly:,.0f}원"
         )
 
     return WorkingHoursResult(

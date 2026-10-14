@@ -30,7 +30,7 @@ from .ordinary_wage import OrdinaryWageResult
 from .shared import MultiplierContext
 from ..constants import MINIMUM_HOURLY_WAGE, get_minimum_hourly_wage
 from ..legal_rules import managed
-from ..utils import WEEKS_PER_MONTH  # 주→월 환산 계수 (중복 정의 제거, 단일 소스)
+from ..utils import WEEKS_PER_MONTH, fmt_hours  # 주→월 환산 계수 (중복 정의 제거, 단일 소스)
 
 
 @dataclass
@@ -79,10 +79,10 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
 
     # ── 2. 총계수시간 산출 ─────────────────────────────────────────────────────
     total_coeff, coeff_detail = _calc_coefficient_hours(inp)
-    formulas.append(f"총계수시간(월): {total_coeff:.1f}h")
+    formulas.append(f"총계수시간(월): {fmt_hours(total_coeff)}h")
     for k, v in coeff_detail.items():
         if v > 0:
-            formulas.append(f"  {k}: {v:.1f}h")
+            formulas.append(f"  {k}: {fmt_hours(v)}h")
 
     # ── 3. 역산 대상 총액 산출 ─────────────────────────────────────────────────
     bd = inp.comprehensive_breakdown
@@ -133,7 +133,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
         # 역산 기본시급: 총액 ÷ 총계수시간
         effective_hourly = total_given / max(total_coeff, 1)
         formulas.append(
-            f"역산 기본시급: {total_given:,.0f}원 ÷ {total_coeff:.1f}h = {effective_hourly:,.0f}원"
+            f"역산 기본시급: {total_given:,.0f}원 ÷ {fmt_hours(total_coeff)}h = {effective_hourly:,.0f}원"
         )
 
         # 수당별 적정액 비교
@@ -154,7 +154,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
         total_given = inp.monthly_wage or ow.monthly_ordinary_wage
         effective_hourly = total_given / max(total_coeff, 1)
         formulas.append(
-            f"역산 기본시급: {total_given:,.0f}원 ÷ {total_coeff:.1f}h = {effective_hourly:,.0f}원"
+            f"역산 기본시급: {total_given:,.0f}원 ÷ {fmt_hours(total_coeff)}h = {effective_hourly:,.0f}원"
         )
         included_allowances["포괄임금 총액"] = f"{total_given:,.0f}원"
         warnings.append(
@@ -205,7 +205,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
     # ── breakdown 조립 ─────────────────────────────────────────────────────────
     breakdown = {
         "역산 통상시급": f"{effective_hourly:,.0f}원",
-        "총계수시간(월)": f"{total_coeff:.1f}h",
+        "총계수시간(월)": f"{fmt_hours(total_coeff)}h",
         f"{year}년 최저임금": f"{legal_minimum:,.0f}원",
         "최저임금 충족": "✅" if is_ok else "❌",
         "월 부족분": f"{shortage:,.0f}원" if shortage > 0 else "-",
@@ -218,7 +218,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
     coeff_strs = {}
     for k, v in coeff_detail.items():
         if v > 0:
-            coeff_strs[k] = f"{v:.1f}h"
+            coeff_strs[k] = f"{fmt_hours(v)}h"
     if coeff_strs:
         breakdown["계수시간 상세"] = coeff_strs
 
@@ -242,7 +242,7 @@ def calc_comprehensive(inp: WageInput, ow: OrdinaryWageResult) -> ComprehensiveR
         is_minimum_wage_ok=is_ok,
         legal_minimum=legal_minimum,
         shortage=round(shortage, 0),
-        total_coefficient_hours=round(total_coeff, 1),
+        total_coefficient_hours=total_coeff,
         allowance_comparison=allowance_comparison,
         is_valid_comprehensive=is_valid,
         validity_issues=validity_issues,
@@ -316,14 +316,16 @@ def _calc_coefficient_hours(inp: WageInput) -> tuple[float, dict]:
 
     total = base_hours + ot_coeff + night_coeff + hol_coeff + hol_ot_coeff
 
+    # 반올림하지 않는다 — 역산 시급이 반올림한 계수시간으로 나뉘면 중간 반올림이 된다(외부 점검 #45와 같은 결함, Act-4).
+    # 표시는 fmt_hours가 줄인다
     detail = {
-        "기본시간": round(base_hours, 1),
-        "연장계수": round(ot_coeff, 1),
-        "야간계수": round(night_coeff, 1),
-        "휴일계수": round(hol_coeff, 1),
-        "휴일OT계수": round(hol_ot_coeff, 1),
+        "기본시간": base_hours,
+        "연장계수": ot_coeff,
+        "야간계수": night_coeff,
+        "휴일계수": hol_coeff,
+        "휴일OT계수": hol_ot_coeff,
     }
-    return round(total, 1), detail
+    return total, detail
 
 
 def _calc_allowance_comparison(

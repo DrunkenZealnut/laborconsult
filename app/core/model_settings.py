@@ -84,23 +84,48 @@ def _read_client():
     return _client
 
 
-def _fetch() -> tuple[dict, int | None, bool]:
-    global _warned
+def _is_retryable(exc: Exception) -> bool:
+    """끊긴 연결 같은 전송 오류만 재시도한다 — 타임아웃은 같은 장애를 2초 더 기다릴 뿐이다."""
     try:
-        client = _read_client()
-        if client is None:
-            raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY 미설정")
-        rows = client.table(TABLE).select("settings,revision").eq("id", 1).execute().data or []
-        if not rows:
-            raise RuntimeError("설정 행 없음(DDL 미적용?)")
-        settings = rows[0].get("settings") or {}
-        _warned = False
-        return (settings if isinstance(settings, dict) else {}), rows[0].get("revision"), True
-    except Exception as e:  # noqa: BLE001 — fail-open: 어떤 실패도 기본값으로
-        (logger.debug if _warned else logger.warning)(
-            "답변 모델 설정 읽기 실패 — 코드 기본값 사용: %s", e)
-        _warned = True
-        return {}, None, False
+        import httpx
+    except ImportError:   # pragma: no cover — supabase가 httpx에 의존한다
+        return False
+    return isinstance(exc, httpx.TransportError) and not isinstance(exc, httpx.TimeoutException)
+
+
+def _fetch() -> tuple[dict, int | None, bool]:
+    """저장된 설정을 읽는다. 실패하면 코드 기본값(fail-open).
+
+    전송 오류(타임아웃 제외)는 1회 재시도한다 — 쉬었던 HTTP/2 연결을 재사용하다 서버가 끊으면 'Server disconnected'로
+    즉시 실패하는데, 그 실패가 60초 캐시돼 그동안 모든 답변이 코드 기본값(Claude)으로 갔다(audit-50 Do 실측: Anthropic 한도
+    중 o3 폴백 3건). 법제처 L2 캐시 조회(`legal_api._l2_cache_get`)와 같은 규칙이다.
+    """
+    global _warned
+    last: Exception | None = None
+    for _attempt in range(2):
+        try:
+            client = _read_client()
+            if client is None:
+                raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY 미설정")
+            query = client.table(TABLE).select("settings,revision").eq("id", 1)
+            # postgrest(2.x)는 GET이 503·520이면 1·2·4초를 쉬며 3번 더 보낸다 — 답변 경로가 7초 넘게 멈춘다(Act-4 리뷰 L9).
+            # 재시도는 여기서 끊긴 연결에 한 번만 한다. 그 메서드가 없는 판(구버전)은 그대로 둔다
+            if hasattr(query, "retry"):
+                query = query.retry(False)
+            rows = query.execute().data or []
+            if not rows:
+                raise RuntimeError("설정 행 없음(DDL 미적용?)")
+            settings = rows[0].get("settings") or {}
+            _warned = False
+            return (settings if isinstance(settings, dict) else {}), rows[0].get("revision"), True
+        except Exception as e:  # noqa: BLE001 — fail-open: 어떤 실패도 기본값으로
+            last = e
+            if not _is_retryable(e):
+                break
+    (logger.debug if _warned else logger.warning)(
+        "답변 모델 설정 읽기 실패 — 코드 기본값 사용: %s", last)
+    _warned = True
+    return {}, None, False
 
 
 def load(force: bool = False) -> tuple[dict, int | None, bool]:

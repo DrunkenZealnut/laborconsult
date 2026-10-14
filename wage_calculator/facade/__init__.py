@@ -16,9 +16,10 @@ from ..calculators.wage_arrears import calc_wage_arrears
 from ..legal_hints import generate_legal_hints, format_hints, LegalHint
 from ..models import WageInput, WageType, BusinessSize
 from ..result import WageResult, format_result, format_result_json
+from ..utils import fmt_hours
 
 from .conversion import _guess_start_date
-from .helpers import _merge, _pop_retirement_tax, _pop_retirement_pension
+from .helpers import _merge, _merge_amount_held, _pop_retirement_tax, _pop_retirement_pension
 from .registry import (
     CALC_TYPES, CALC_TYPE_MAP, _STANDARD_CALCS, resolve_calc_type,
 )
@@ -26,7 +27,7 @@ from .registry import (
 
 def _clamp_negative_inputs(inp: WageInput) -> None:
     """음수 임금/근로시간 입력을 0으로 보정 — 비현실적 결과·계산오류 방지."""
-    for field in ("hourly_wage", "daily_wage", "monthly_wage", "annual_wage"):
+    for field in ("hourly_wage", "daily_wage", "monthly_wage", "annual_wage", "monthly_total_pay"):
         v = getattr(inp, field, None)
         if v is not None and v < 0:
             setattr(inp, field, 0.0)
@@ -45,8 +46,11 @@ class WageCalculator:
         self.rule_store = rule_store
 
     def calculate(
-        self, inp: WageInput, targets: list[str] | None = None,
+        self, inp: WageInput, targets: list[str] | None = None, *, amount_hold=(), hold_compliant=(),
     ) -> WageResult:
+        """amount_hold: 계산은 하되 금액만 빼고 실을 계산 유형(통상임금이 총액이라 금액이 부풀려지는 경우 — pipeline이 넘긴다).
+        hold_compliant: 계산은 하되 '충족' 판정이면 싣지 않을 판정 유형(현재 minimum_wage — 수당이 섞인 총액은 시급을
+        부풀리기만 하므로 미달만 확정이다)."""
         from copy import deepcopy
         from ..legal_rules import (
             RuleSnapshot, RuleUnavailable, resolve_reference_date, rule_scope,
@@ -56,7 +60,7 @@ class WageCalculator:
         # A snapshot belongs to one call, not a process-global mutable constants table.
         if self.rule_store is None and not rules_enabled():
             with rule_scope(None):
-                return self._calculate(inp, targets)
+                return self._calculate(inp, targets, amount_hold, hold_compliant)
         reference_date = None
         try:
             # Resolve (and validate) before the store round trip: an unusable date
@@ -74,7 +78,7 @@ class WageCalculator:
                 managed_input.wage_type = WageType.HOURLY
                 managed_input.hourly_wage = snapshot.get("minimum_hourly_wage")
             with rule_scope(snapshot):
-                result = self._calculate(managed_input, targets)
+                result = self._calculate(managed_input, targets, amount_hold, hold_compliant)
             # 시도한 계산이 **전부** 보류면 부분 결과가 아니라 보류다. 통상임금만 남은
             # 껍데기를 정상 결과로 내보내면 '계산 보류' 신호가 사라진다.
             if result.legal_rule_attempted and len(result.legal_rule_blocked) == result.legal_rule_attempted:
@@ -100,6 +104,8 @@ class WageCalculator:
         self,
         inp: WageInput,
         targets: list[str] | None = None,
+        amount_hold=(),
+        hold_compliant=(),
     ) -> WageResult:
         """
         지정된 계산 유형에 대해 통합 계산 수행
@@ -125,16 +131,17 @@ class WageCalculator:
             "통상시급": f"{ow.hourly_ordinary_wage:,.0f}원",
             "1일 통상임금": f"{ow.daily_ordinary_wage:,.0f}원",
             "월 통상임금": f"{ow.monthly_ordinary_wage:,.0f}원",
-            "기준시간": f"{ow.monthly_base_hours}h",
+            "기준시간": f"{fmt_hours(ow.monthly_base_hours)}h",
             "기준시간 산출": ow.base_hours_detail,
         }
 
-        monthly_total = ow.monthly_ordinary_wage
+        # 이름으로 통상임금에서 뺀 고정수당(연장·연차수당 등)도 매월 받는 돈이다 — 빼면 '월 총 예상 수령액'에서 사라졌다
+        monthly_total = ow.monthly_ordinary_wage + ow.not_ordinary_fixed_total
         all_w, all_l = [], ["근로기준법 (통상임금)"]
 
         # 승인 기준 누락은 **그 섹션만** 제외한다. 기반 단계(통상임금·사업장 규모)는
         # 뒤따르는 모든 계산의 입력이라 여기서 감싸지 않는다 — 그쪽 실패는 요청 전체 보류다.
-        from ..legal_rules import RuleUnavailable, used_scope
+        from ..legal_rules import RuleUnavailable, forget_used_since, used_mark, used_scope
         blocked: list = []
         blocked_targets: set = set()
 
@@ -164,11 +171,21 @@ class WageCalculator:
                 continue
             if precondition and not precondition(inp):
                 continue
+            mark = used_mark()
             r = guarded(key, section, lambda: func(inp, ow))
             if r is None:
                 continue
             if key == "severance":
                 _severance_cache = r
+            # 금액 보류 대상은 금액만 빼고 싣는다(자격 판정으로 0이면 그대로 — 미발생·면제는 통상임금과 무관하다).
+            # 버린 금액이 읽은 승인 기준은 적용 버전으로 보고하지 않는다.
+            if key in amount_hold and _merge_amount_held(result, key, section, r, populate, all_w, all_l):
+                forget_used_since(mark)
+                continue
+            # 믿을 수 없는 '충족'은 싣지 않는다 — 판정은 None(보류)으로 남고, 읽은 승인 기준도 적용 버전으로 보고하지 않는다
+            if key in hold_compliant and getattr(r, "is_compliant", False):
+                forget_used_since(mark)
+                continue
             monthly_total += populate(r, result)
             _merge(result, section, r, all_w, all_l)
 
@@ -211,8 +228,15 @@ class WageCalculator:
                                 "reason": "퇴직금 계산이 보류되어 함께 보류합니다"})
                 blocked_targets.add(key)
                 continue
+            mark = used_mark()
             r = guarded(key, section, lambda f=func: f(inp, ow, _severance_cache))
             if r is None:
+                continue
+            # 이 둘의 자격은 퇴직금 결과가 정한다(결과에 자격 플래그가 없다)
+            severance_ineligible = _severance_cache is not None and not _severance_cache.is_eligible
+            if key in amount_hold and _merge_amount_held(result, key, section, r, populate, all_w, all_l,
+                                                         ineligible=severance_ineligible):
+                forget_used_since(mark)
                 continue
             populate(r, result)
             _merge(result, section, r, all_w, all_l)
@@ -223,7 +247,8 @@ class WageCalculator:
             for a in inp.fixed_allowances
         )
         if {"minimum_wage", "comprehensive"} & blocked_targets:
-            # 기본값 True 를 그대로 두면 '최저임금 충족 ✅'라는 없는 판정이 나간다.
+            # 보류된 계산은 판정을 남기지 않는다 — 값이 남아 있으면 '최저임금 충족 ✅'라는 없는 판정이 나간다
+            # (필드 기본값은 None).
             result.minimum_wage_ok = None
         if "legal_hints" in targets or has_conditions:
             # 판정 보류(None)를 falsy 로 넘기면 '미달' 힌트가 생긴다 — 모르는 것을

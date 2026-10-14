@@ -18,7 +18,7 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
-from ..utils import WEEKS_PER_MONTH
+from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
 from .shared import MultiplierContext
@@ -116,7 +116,7 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
         "연장수당(주)": f"{overtime_pay:,.0f}원",
         "야간수당(주)": f"{night_pay:,.0f}원",
         "휴일수당(주)": f"{holiday_pay:,.0f}원",
-        "월 환산 계수": f"× {WEEKS_PER_MONTH:.3f}주",
+        "월 환산 계수": f"× ({WEEKS_PER_MONTH_LABEL})주",
         "월 합계": f"{monthly:,.0f}원",
     }
 

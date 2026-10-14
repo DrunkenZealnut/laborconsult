@@ -28,6 +28,7 @@ from ..calculators.unemployment import calc_unemployment
 from ..calculators.working_hours import calc_working_hours
 from ..calculators.ordinary_wage import calc_ordinary_wage as _calc_ow_raw, OrdinaryWageResult
 from ..base import BaseCalculatorResult
+from ..utils import fmt_hours
 from ..models import WageType
 from .helpers import (
     _pop_overtime, _pop_minimum_wage, _pop_weekly_holiday, _pop_annual_leave,
@@ -46,7 +47,7 @@ def _calc_ordinary_wage_standalone(inp, ow: OrdinaryWageResult) -> BaseCalculato
         "통상시급": f"{ow.hourly_ordinary_wage:,.0f}원",
         "1일 통상임금": f"{ow.daily_ordinary_wage:,.0f}원",
         "월 통상임금": f"{ow.monthly_ordinary_wage:,.0f}원",
-        "월 기준시간": f"{ow.monthly_base_hours}시간 ({ow.base_hours_detail})",
+        "월 기준시간": f"{fmt_hours(ow.monthly_base_hours)}시간 ({ow.base_hours_detail})",
     }
     if ow.included_items:
         breakdown["포함 항목"] = ", ".join(ow.included_items)
@@ -111,6 +112,10 @@ CALC_TYPE_MAP = {
     "임금체불":   ["wage_arrears"],
     "보상휴가":   ["compensatory_leave", "overtime"],
     "탄력근무":   ["flexible_work"],
+    # 의도분석 유형 comprehensive의 라벨(pipeline REVERSE_CALC_MAP) — 없어서 다른 라벨이 함께 오면 역산이 빠졌다(Act-4 리뷰 H4).
+    # 역산 계산기는 임금 형태가 포괄임금제일 때만 돈다(precondition) — 그 밖이면 최저임금 검증이 맡는다. 연장시간이 있는
+    # 포괄임금제는 pipeline이 최저임금 검증을 빼고 역산으로만 판정한다
+    "포괄임금제": ["comprehensive", "minimum_wage"],
     "사업장규모": ["business_size"],
     "근로장려금": ["eitc"],
     "4대보험":    ["insurance"],

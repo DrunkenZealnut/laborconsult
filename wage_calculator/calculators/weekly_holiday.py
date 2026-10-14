@@ -26,7 +26,7 @@ from datetime import date as _date, timedelta
 from ..base import BaseCalculatorResult
 from ..constants import WEEKLY_HOLIDAY_MIN_HOURS, WEEKLY_FULL_HOURS
 from ..models import WageInput, WageType
-from ..utils import WEEKS_PER_MONTH, parse_date
+from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours, fmt_won, parse_date
 from .ordinary_wage import OrdinaryWageResult
 
 _DAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
@@ -112,10 +112,10 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
     monthly_pay = weekly_pay * WEEKS_PER_MONTH
 
     formulas.append(
-        f"주휴수당: {hourly:,.1f}원 × {holiday_hours}h = {weekly_pay:,.0f}원/주"
+        f"주휴수당: {fmt_won(hourly)}원 × {fmt_hours(holiday_hours)}h = {fmt_won(weekly_pay)}원/주"
     )
     formulas.append(
-        f"월 주휴수당: {weekly_pay:,.0f}원 × {WEEKS_PER_MONTH:.3f} = {monthly_pay:,.0f}원"
+        f"월 주휴수당: {fmt_won(weekly_pay)}원 × ({WEEKS_PER_MONTH_LABEL}) = {monthly_pay:,.0f}원"
     )
 
     breakdown = {
