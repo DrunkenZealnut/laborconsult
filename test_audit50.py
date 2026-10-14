@@ -1553,6 +1553,29 @@ class ScheduleHoursTest(unittest.TestCase):
                 self.assertNotIn("8.3333", out)
                 self.assertEqual(params.get("schedule_hours_rejected"), extra or None)
 
+    def test_t10_card_via_analysis_conversion_drops_derived_weekly_total(self):
+        """의도분석 → params 변환(_analysis_to_extract_params)은 주 합계가 없으면 1일 × 근무일수로 채운다. 1일(25 ÷ 3)을 버려도 그
+        곱(50)이 남아 카드가 '8.3333h×6일 = 50h'로 계산했다(CodeRabbit PR #114). 의도분석이 반올림한 1일(8.3)은 곱의 오차가 커진다."""
+        from types import SimpleNamespace
+        from app.core.pipeline import _analysis_to_extract_params, _run_calculator
+        cases = {"1일 = 25 ÷ 3": ({"daily_work_hours": 25 / 3}, ("8.3333", "50h")),
+                 "반올림 8.33": ({"daily_work_hours": 8.33}, ("8.33h", "49.98h")),
+                 "반올림 8.3": ({"daily_work_hours": 8.3}, ("8.3h", "49.8h")),
+                 "주 합계를 바로 50으로": ({"weekly_total_hours": 50}, ("8.3333", "50h"))}
+        for name, (extra, derived) in cases.items():
+            with self.subTest(name):
+                info = dict({k: v for k, v in self.P40.items() if k not in ("needs_calculation", "calculation_types_kr")},
+                            **extra)
+                params = _analysis_to_extract_params(SimpleNamespace(
+                    extracted_info=info, requires_calculation=True, calculation_types=["weekly_holiday"]))
+                out = _run_calculator(params, self.Q40)
+                for text in self.ASSUMED + derived:
+                    self.assertNotIn(text, out)
+                for text in ("[기준시간] 소정근로시간 미확인",
+                             "질문의 25시간은 그 기간에 실제로 일한 시간이라 소정근로시간으로 쓰지 않았습니다"):
+                    self.assertIn(text, out)
+                self.assertEqual(set(params["schedule_hours_rejected"]), {"weekly_total_hours", *extra})
+
     def test_t10_span_totals_are_not_scheduled_hours(self):
         """기간 표지('N일 동안'·'28일~30일'·'이번 주'·'어제'·'N일 근무했다')와 같은 절의 시간은 소정근로시간 근거가 아니다."""
         from app.core.pipeline import _ground_schedule_hours as ground
@@ -1624,6 +1647,17 @@ class ScheduleHoursTest(unittest.TestCase):
         self.assertEqual(_hours_mentions("9월 28일~30일 3일 동안 25시간 일했는데"), [(25.0, True, (3, 3))])
         self.assertEqual(ground("주 6일, 하루 8시간 근무인데 이번 주 3일 동안 25시간 일했어요", 25, 8, 6),
                          (None, 8, {"weekly_total_hours": 25}))
+        # 기간 1일 평균 × 1주 근무일수(25 ÷ 3 × 6 = 50)와 버린 1일 × 근무일수(8.3 × 6 = 49.8)도 기간 합계에서 나온 값이다
+        span40 = "9월 28일~30일 3일 동안 25시간 일했는데 주휴수당이 안 나온대요"
+        self.assertEqual(ground(span40, 50, None, 6), (None, None, {"weekly_total_hours": 50}))
+        self.assertEqual(ground(span40, 50, 25 / 3, 6), (None, None, {"weekly_total_hours": 50, "daily_work_hours": 25 / 3}))
+        self.assertEqual(ground(span40, 49.8, 8.3, 6), (None, None, {"weekly_total_hours": 49.8, "daily_work_hours": 8.3}))
+        # 기간 밖 1일 시간(8시간 20분)이 뒷받침하면 같은 값이어도 쓴다
+        self.assertEqual(ground("주 6일 하루 8시간 20분 근무인데 9월 28일~30일 3일 동안 25시간 일했어요", 50, 25 / 3, 6),
+                         (50, 25 / 3, {}))
+        # 1일을 버려도 그 곱이 아닌 주 합계(질문의 계약 48시간)는 남긴다
+        self.assertEqual(ground("주 48시간 계약인데 9월 28일~30일 3일 동안 25시간 일했어요", 48, 25 / 3, 6),
+                         (48, None, {"daily_work_hours": 25 / 3}))
         # 앞 턴 캐시에서 채운 값은 이번 질문의 기간 표현으로 버리지 않는다(그 턴에서 대조했다) — 1일 × 근무일수도 같다
         self.assertEqual(ground("이번 주 3일 동안 25시간 일했는데 주휴수당 나오나요?", 40, 8, 5, trusted=("daily_work_hours",)),
                          (40, 8, {}))

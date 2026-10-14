@@ -1664,9 +1664,10 @@ def _hours_mentions(query: str) -> list[tuple[float, bool, tuple]]:
 def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted=()) -> tuple:
     """의도분석 소정근로시간을 질문 본문과 대조한다 → (주 소정근로시간, 1일 소정근로시간, {버린 키: 값}).
 
-    값마다 기간 합계에서 나온 값(합계·÷ 기간 일수·× 기간 일수·÷ 또는 × 1주 근무일수)과 일치하고 기간 밖의 시간(그 × ÷ 근무일수
-    포함)으로 뒷받침되지 않으면 버린다(모르는 것으로 둔다). 앞 턴 캐시에서 채운 값(trusted)은 그 턴의 질문으로 이미 대조했으므로
-    기간 밖 근거로 친다 — 이번 질문의 기간 표현 때문에 앞 턴의 정상 소정근로시간까지 버리게 된다."""
+    값마다 기간 합계에서 나온 값(합계·÷ 기간 일수·× 기간 일수·÷ 또는 × 1주 근무일수·기간 1일 평균 × 1주 근무일수)과 일치하고
+    기간 밖의 시간(그 × ÷ 근무일수 포함)으로 뒷받침되지 않으면 버린다(모르는 것으로 둔다). 버린 1일 시간 × 1주 근무일수인 주 합계도
+    버린다. 앞 턴 캐시에서 채운 값(trusted)은 그 턴의 질문으로 이미 대조했으므로 기간 밖 근거로 친다 — 이번 질문의 기간 표현
+    때문에 앞 턴의 정상 소정근로시간까지 버리게 된다."""
     mentions = _hours_mentions(query)
     spans = [(value, days) for value, span, days in mentions if span]
     if not spans:
@@ -1685,7 +1686,11 @@ def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted
     plain_pool = spread(plain)
     span_pool = spread([h for h, _ in spans])
     for h, days in spans:
-        span_pool |= {h / d for d in days if d} | {h * d for d in days}
+        per_day = {h / d for d in days if d}
+        span_pool |= per_day | {h * d for d in days}
+        if weekly_days:
+            # 기간 1일 평균을 1주 근무일수로 늘린 주 합계 — '3일 동안 25시간'·주 6일 → 25 ÷ 3 × 6 = 50
+            span_pool |= {v * weekly_days for v in per_day}
     rejected: dict = {}
 
     def check(key, value):
@@ -1697,7 +1702,14 @@ def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted
             return None
         return value
 
-    return check("weekly_total_hours", weekly_total), check("daily_work_hours", daily), rejected
+    weekly_out, daily_out = check("weekly_total_hours", weekly_total), check("daily_work_hours", daily)
+    # _analysis_to_extract_params는 주 합계가 없으면 1일 × 근무일수로 채운다. 1일을 버렸으면 그 곱도 버린다 — 반올림한 1일(8.3)에
+    # 근무일수를 곱하면 오차가 커져(49.8) 위 대조를 빠져나가 카드가 '8.3h×6일'로 계산했다(CodeRabbit PR #114)
+    if (weekly_out is not None and "daily_work_hours" in rejected and weekly_days
+            and abs(float(weekly_out) - float(daily) * float(weekly_days)) < 0.05):
+        rejected["weekly_total_hours"] = weekly_out
+        weekly_out = None
+    return weekly_out, daily_out, rejected
 
 
 def _note_rejected_hours(analysis, params) -> None:
