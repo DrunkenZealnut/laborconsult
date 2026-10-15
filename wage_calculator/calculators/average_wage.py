@@ -17,6 +17,7 @@ from datetime import date
 from ..base import BaseCalculatorResult
 from ..models import WageInput
 from ..utils import parse_date
+from .shared import monthly_pay_estimate, premium_monthly_note
 from ..constants import AVG_WAGE_PERIOD_DAYS
 from .ordinary_wage import OrdinaryWageResult
 
@@ -190,10 +191,13 @@ def _calc_wage_total(inp: WageInput, ow: OrdinaryWageResult) -> tuple[float, str
     if inp.monthly_total_pay:
         return inp.monthly_total_pay * 3, " (월 임금총액 × 3 추정)"
 
+    # 연장·야간·휴일 근로가 있으면 그 임금도 평균임금에 들어간다 — 카드의 '월 총 예상 수령액'과 같은 산식(shared, F6)
+    hourly = ow.hourly_ordinary_wage
+    note = premium_monthly_note(inp, hourly)
     if inp.monthly_wage:
-        return inp.monthly_wage * 3, " (월급 × 3 추정)"
+        return monthly_pay_estimate(inp, hourly, inp.monthly_wage) * 3, f" (월급{note} × 3 추정)"
 
-    return ow.monthly_ordinary_wage * 3, " (통상임금 × 3 추정)"
+    return monthly_pay_estimate(inp, hourly, ow.monthly_ordinary_wage) * 3, f" (통상임금{note} × 3 추정)"
 
 
 def _calc_excluded(inp: WageInput) -> tuple[int, float]:

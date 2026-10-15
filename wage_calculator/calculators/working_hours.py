@@ -16,7 +16,7 @@ from ..constants import WEEKLY_HOLIDAY_MIN_HOURS
 from ..utils import fmt_hours
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
-from .shared import weekly_holiday_hours
+from .shared import split_note, weekly_holiday_hours
 
 
 @dataclass
@@ -62,6 +62,12 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
     # 여기서는 결과값만 명시해 중복을 피한다.
     monthly_hours = ow.monthly_base_hours
     formulas.append(f"월 소정근로시간(주휴 포함) = {fmt_hours(monthly_hours)}시간")
+    # 1일 8시간·1주 40시간을 넘는 시간은 소정근로가 아니다(근로기준법 제2조 제1항 제8호·제50조) — 따로 밝힌다
+    split = getattr(inp, "hour_split", None)
+    overtime_hours = split.excess if split is not None and split.mode == "applied" else 0.0
+    if overtime_hours:
+        formulas.append(f"1주 연장근로 {fmt_hours(overtime_hours)}시간 — 소정근로 아님({split_note(split)})")
+        legal.append("근로기준법 제50조 (근로시간)")
 
     # ── 연 소정근로시간 (주휴 제외, 순수 근로시간) ──
     annual_contractual_hours = round(weekly_hours * 52, 1)
@@ -72,14 +78,16 @@ def calc_working_hours(inp: WageInput, ow: OrdinaryWageResult) -> WorkingHoursRe
     monthly_from_hourly = round(ow.monthly_ordinary_wage) if hourly else 0
 
     breakdown = {
-        "1일 소정근로시간": f"{daily}시간",
-        "주 소정근무일수": f"{weekly_days}일",
+        "1일 소정근로시간": f"{fmt_hours(daily)}시간",
+        "주 소정근무일수": f"{fmt_hours(weekly_days)}일",
         "주 소정근로시간": f"{fmt_hours(weekly_hours)}시간",
         "유급주휴시간": f"{fmt_hours(paid_holiday_hours)}시간",
         "주 유급시간 합계": f"{fmt_hours(weekly_paid)}시간",
         "월 소정근로시간 (주휴 포함)": f"{fmt_hours(monthly_hours)}시간",
         "연 소정근로시간 (주휴 제외)": f"{annual_contractual_hours}시간",
     }
+    if overtime_hours:
+        breakdown["주 연장근로시간 (소정근로 아님)"] = f"{fmt_hours(overtime_hours)}시간"
 
     if hourly:
         breakdown["통상시급"] = f"{hourly:,.0f}원"

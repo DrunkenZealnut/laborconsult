@@ -99,6 +99,13 @@ jobs:
           python3 test_audit50.py
           python3 eval_consultation.py --offline --fixture data/eval_audit50_queries.json
 
+      # 계산 카드는 "이 수치를 사용하세요"로 LLM에 들어가 답변 금액이 된다. 소정·연장 분리, 1일 소정근로시간, 평균임금·보수의
+      # 연장수당, 최저임금 두 구성 판정이 돌아오면 예외 없이 틀린 금액이 나간다(calc-card-followups).
+      - name: 계산 카드 후속 회귀(소정·연장 분리·1일 소정근로시간·평균임금 연장수당·최저임금 두 구성)
+        run: |
+          python3 test_calc_card_followups.py
+          python3 eval_consultation.py --offline --fixture data/eval_calc_card_queries.json
+
       # 메모리는 사람이 기억해서 재는 값이었고, 그래서 RSS가 Vercel 한도의
       # 119%가 될 때까지 아무도 몰랐다. 초과 시 하이브리드 검색이 조용히
       # Dense-only로 떨어진다 — 경고가 아니라 실패로 둔다.

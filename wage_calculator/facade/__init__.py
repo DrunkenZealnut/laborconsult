@@ -9,6 +9,7 @@ Phase D 분리: registry.py (유형·매핑), helpers.py (_pop_*), conversion.py
 
 from ..calculators.business_size import calc_business_size
 from ..calculators.ordinary_wage import calc_ordinary_wage
+from ..calculators.shared import apply_hour_split, fixed_overtime_monthly
 from ..calculators.overtime import check_weekly_hours_compliance
 from ..calculators.retirement_pension import calc_retirement_pension
 from ..calculators.retirement_tax import calc_retirement_tax
@@ -117,7 +118,15 @@ class WageCalculator:
         Returns:
             WageResult: 통합 계산 결과
         """
+        # 아직 나누지 않은 입력(CLI·직접 호출)은 사본에서 계산한다 — 호출자의 일정을 바꾸지 않고, 같은 입력을 일정만 고쳐 다시 넘기면
+        # 새로 나눈다(apply_hour_split은 이미 나눈 입력을 그대로 돌려준다, CodeRabbit PR #115). 파이프라인처럼 먼저 나눈 입력은 그대로 쓴다
+        if inp.hour_split is None:
+            from copy import deepcopy
+            inp = deepcopy(inp)
         _clamp_negative_inputs(inp)
+        # 1일 8시간·1주 40시간을 넘는 시간은 연장근로로 나눈다(calc-card-followups D9). 파이프라인이 먼저 나눴으면 그대로다 —
+        # 모든 계산기가 정규화된 같은 일정을 읽는다. 자동 대상 결정(연장 유무)보다 앞이어야 한다
+        apply_hour_split(inp)
         if targets is None:
             targets = self._auto_detect_targets(inp)
 
@@ -166,6 +175,7 @@ class WageCalculator:
 
         # ── 표준 계산기 디스패처 ─────────────────────────────────────────────
         _severance_cache = None
+        overtime_monthly = 0.0
         for key, func, section, populate, precondition in _STANDARD_CALCS:
             if key not in targets:
                 continue
@@ -185,9 +195,23 @@ class WageCalculator:
             # 믿을 수 없는 '충족'은 싣지 않는다 — 판정은 None(보류)으로 남고, 읽은 승인 기준도 적용 버전으로 보고하지 않는다
             if key in hold_compliant and getattr(r, "is_compliant", False):
                 forget_used_since(mark)
+                result.minimum_wage_state = "held"
                 continue
-            monthly_total += populate(r, result)
+            added = populate(r, result)
+            if key == "overtime":
+                overtime_monthly = added
+            monthly_total += added
             _merge(result, section, r, all_w, all_l)
+
+        # 고정연장수당(통상임금에서 빼고 월 총액에 넣은 고정수당)과 계산한 연장·야간·휴일 근로 임금은 같은 근로의 대가다 — 둘 다
+        # 더하면 같은 근로를 두 번 센다(독립 리뷰 M2). 큰 쪽만 남긴다 — 평균임금·보수 추정(shared.premium_monthly_with_fixed)과 같다
+        fixed_ot = fixed_overtime_monthly(inp) if overtime_monthly > 0.5 else 0.0
+        if fixed_ot:
+            monthly_total -= min(fixed_ot, overtime_monthly)
+            gap = (f" 계산한 금액이 고정연장수당보다 월 {overtime_monthly - fixed_ot:,.0f}원 많습니다."
+                   if overtime_monthly > fixed_ot + 0.5 else "")
+            all_w.append(f"고정연장수당 등 월 {fixed_ot:,.0f}원과 계산한 연장·야간·휴일 근로 임금 월 {overtime_monthly:,.0f}원(매주 "
+                         f"같은 시간으로 봄)은 같은 근로의 대가라 합치지 않았습니다.{gap}")
 
         # ── 특수 계산기: 임금체불 (독립 함수, WageInput 미사용) ───────────────
         if "wage_arrears" in targets and inp.arrear_amount > 0 and inp.arrear_due_date:
@@ -250,6 +274,7 @@ class WageCalculator:
             # 보류된 계산은 판정을 남기지 않는다 — 값이 남아 있으면 '최저임금 충족 ✅'라는 없는 판정이 나간다
             # (필드 기본값은 None).
             result.minimum_wage_ok = None
+            result.minimum_wage_state = "held"
         if "legal_hints" in targets or has_conditions:
             # 판정 보류(None)를 falsy 로 넘기면 '미달' 힌트가 생긴다 — 모르는 것을
             # 위반으로 단정하게 되므로 보류일 때는 위반 힌트를 만들지 않는다.

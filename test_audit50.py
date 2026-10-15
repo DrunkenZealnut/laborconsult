@@ -569,7 +569,9 @@ class WageCompositionTest(unittest.TestCase):
                       schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5, weekly_overtime_hours=5),
                       start_date="2023-03-01", end_date="2026-10-01", join_date="2026-09-10", pension_type="DC")
         dual = WageInput(monthly_wage=2096270, monthly_total_pay=2700000, **copy.deepcopy(common))
-        total_only = WageInput(monthly_wage=2700000, **copy.deepcopy(common))
+        # '월급 = 총액'은 임금 구성이 정해진 입력이다 — 구성을 모르면 월급이 소정근로의 대가라 보고 연장수당을 따로 더한다
+        # (calc-card-followups D4·F6). 그 경로는 test_calc_card_followups가 본다
+        total_only = WageInput(monthly_wage=2700000, wage_composition_known=True, **copy.deepcopy(common))
         base_only = WageInput(monthly_wage=2096270, **copy.deepcopy(common))
         calcs = {key: (func, populate) for key, func, _, populate, _ in _STANDARD_CALCS}
 
@@ -1071,7 +1073,10 @@ class WageCompositionTest(unittest.TestCase):
         "comprehensive": "월급 총액(inp.monthly_wage)으로 역산하는 계산이다 — 판정은 따로 내린다",
         "prorated": "월급 총액으로 일할계산한다(통상임금은 월급이 없을 때만 읽는다)",
         "insurance": "보수월액은 수당을 포함한 총액이 맞다 — 계산식의 이름만 바꾼다(사업주 부담분도 같은 모듈)",
-        "unemployment": "월급이 있으면 평균임금을 월급 총액으로 추정한다(통상시급은 월급이 없을 때만 읽는다)",
+        "unemployment": ("월급이 있으면 평균임금을 월급 총액으로 추정한다(통상시급은 월급이 없을 때만 읽는다). 기초일액의 통상임금 "
+                         "비교(고용보험법 제45조 제2항)는 총액 경로에서 하지 않는다(shared.ordinary_wage_from_total)"),
+        "eitc": ("소득은 월급(총액)으로 추정한다 — 통상시급은 연장 등 근로 임금을 더할 때만 읽고, 구성이 정해진 총액(보류 경로)에는 "
+                 "더하지 않는다(shared.monthly_pay_estimate, calc-card-followups F6)"),
         "working_hours": "시간을 계산한다 — 계산식의 시급 단어만 바꾼다",
     }
 
@@ -1102,8 +1107,10 @@ class WageCompositionTest(unittest.TestCase):
         from wage_calculator.facade.registry import _STANDARD_CALCS
         from wage_calculator.models import BusinessSize, WageInput, WageType, WorkSchedule
         from wage_calculator.result import WageResult
+        # 보류 카드의 조건 — 월급이 수당이 섞인 총액으로 정해진 경로다(wage_composition_known). 그 밖의 경로에서는 실업급여가 1일
+        # 통상임금과 기초일액을 비교한다(고용보험법 제45조 제2항, calc-card-followups F5)
         inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=2700000, business_size=BusinessSize.OVER_5,
-                        schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5),
+                        schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5), wage_composition_known=True,
                         reference_year=2026, start_date="2023-03-01", end_date="2026-10-01")
         ow = calc_ordinary_wage(inp)
         bumped = dataclasses.replace(ow, hourly_ordinary_wage=ow.hourly_ordinary_wage * 2,
@@ -1370,11 +1377,16 @@ class CalculatorFactTest(unittest.TestCase):
         hourly = WageCalculator().calculate(WageInput(wage_type=WageType.HOURLY, hourly_wage=10320, reference_year=2026),
                                             ["minimum_wage"])
         self.assertFalse(any("고시의 월 환산액" in w for w in hourly.warnings))
-        # 수습 감액(90%)이면 고시 환산액과 비교하지 않는다 — 고시 금액은 감액 전 금액이다
+        # 수습 감액(90%)이면 고시 환산액과 비교하지 않는다 — 고시 금액은 감액 전 금액이다. 감액은 요건 셋을 확인했을 때만이라
+        # (calc-card-followups D5) 기간의 정함이 없는 계약·사무직을 입력에 넣는다. 요건을 모르면 9,288원/10,320원으로 갈려 보류다
         probation = WageCalculator().calculate(WageInput(wage_type=WageType.MONTHLY, monthly_wage=1940000, reference_year=2026,
-                                                         is_probation=True, probation_months=3), ["minimum_wage"])
+                                                         is_probation=True, probation_months=3, contract_open_ended=True,
+                                                         occupation_code="3"), ["minimum_wage"])
         self.assertIs(probation.minimum_wage_ok, True)          # 1,940,000 ÷ 208.5714h = 9,301원 ≥ 9,288원
         self.assertFalse(any("고시의 월 환산액" in w for w in probation.warnings))
+        unknown = WageCalculator().calculate(WageInput(wage_type=WageType.MONTHLY, monthly_wage=1940000, reference_year=2026,
+                                                       is_probation=True, probation_months=3), ["minimum_wage"])
+        self.assertIsNone(unknown.minimum_wage_ok)
         # 사실 블록도 같은 사정을 밝힌다(카드 판정과 209시간 환산액이 한 답변 안에서 갈리지 않게)
         from app.core.pipeline import _build_minwage_facts
         analysis = type("A", (), {"calculation_types": ["minimum_wage"], "relevant_laws": [], "extracted_info": {},
@@ -1792,10 +1804,13 @@ class ScheduleHoursTest(unittest.TestCase):
         self.assertNotIn("갈립니다", out)
         out = _run_calculator(dict(monthly, wage_type="시급", wage_amount=10320), "시급 10,320원, 주 6일 하루 6시간")  # 시급제는 같다
         self.assertIn("최저임금 충족: ✅ 충족", out)
-        # 주 40시간 이상(주 6일 × 7시간)은 단시간근로자가 아니라 별표 2 대안이 없다 — 원칙(7h) 212.92h 충족 / 대안(8h)이면 미달인 금액
+        # 주 6일 × 7시간 = 42시간은 단시간근로자가 아니라 별표 2 대안이 없다. 대신 주 40시간을 넘는 2시간이 연장근로라
+        # (calc-card-followups D1) 소정 기준시간은 202.78h이고, 월급에 그 연장분이 포함됐는지에 따라 10,948원 충족 / 역산 10,287원
+        # 미달로 갈려 보류한다(D4)
         out = _run_calculator(dict(monthly, daily_work_hours=7, wage_amount=2220000), "월급 222만원, 주 6일 하루 7시간")
-        self.assertIn("최저임금 충족: ✅ 충족", out)
-        self.assertNotIn("갈립니다", out)
+        self.assertIn("최저임금 충족: ⏸ 판정 보류", out)
+        self.assertIn("실질시급: 10,948원 또는 10,287원", out)
+        self.assertNotIn("시행령 별표 2 제2호나목", out)
         # M2 — 특수고용직은 시간을 몰라도 법률 힌트(산재 특례 등)가 남는다
         out = _run_calculator({"needs_calculation": True, "calculation_types_kr": ["최저임금"], "wage_type": "시급",
                                "wage_amount": 12000, "is_platform_worker": True, "weekly_work_days": 6},

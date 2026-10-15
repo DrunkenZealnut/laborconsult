@@ -13,6 +13,7 @@ from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from .severance import SeveranceResult
 from .shared import DateRange
+from .shared import monthly_pay_estimate
 
 
 @dataclass
@@ -68,7 +69,9 @@ def _calc_db(
             f"DB형 퇴직연금 = 퇴직금과 동일: {total_pension:,.0f}원"
         )
     else:
-        avg_daily = ow.hourly_ordinary_wage * 8
+        # 퇴직금 결과가 없을 때의 대체값 — 1일 통상임금(시간급 × 1일 소정근로시간, 평균임금의 하한). 예전 '통상시급 × 8'은
+        # 단시간근로자에게 과대였다(calc-card-followups F2)
+        avg_daily = ow.hourly_ordinary_wage * ow.daily_hours_used
         dr = DateRange(inp.start_date, inp.end_date)
         service_days = dr.days
         service_years = round(dr.years, 2)
@@ -126,7 +129,8 @@ def _calc_dc(
                 "contribution": round(contribution, 0),
             })
     else:
-        annual_wage = (inp.monthly_total_pay or inp.monthly_wage or ow.monthly_ordinary_wage) * 12
+        annual_wage = monthly_pay_estimate(inp, ow.hourly_ordinary_wage,
+                                           inp.monthly_wage or ow.monthly_ordinary_wage) * 12   # 연장 등 포함(F6)
         dr2 = DateRange(inp.start_date, inp.end_date)
         years = max(1, round(dr2.years)) if dr2.is_valid else 1
         for i in range(1, years + 1):

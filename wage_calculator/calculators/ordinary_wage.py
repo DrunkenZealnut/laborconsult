@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from ..models import WageInput, WageType, WorkType
 from ..constants import MONTHLY_STANDARD_HOURS, SHIFT_MONTHLY_HOURS, WEEKLY_HOLIDAY_MIN_HOURS
 from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours
-from .shared import AllowanceClassifier, holiday_divisor, normalize_allowances
+from .shared import AllowanceClassifier, holiday_divisor, normalize_allowances, split_note
 from .shared import weekly_holiday_hours as paid_weekly_holiday_hours
 
 
@@ -30,6 +30,8 @@ class OrdinaryWageResult:
     # 이름으로 통상임금에서 뺀 고정수당(연장·연차수당 등)의 월액 합계 — 통상임금은 아니어도 매월 받는 돈이라 카드의
     # '월 총 예상 수령액'에는 넣는다(Act-4 리뷰 L8)
     not_ordinary_fixed_total: float = 0.0
+    # 1일 통상임금에 곱한 1일 소정근로시간(시행령 제6조 제3항) — 퇴직금 '통상임금 환산' 표기가 같은 값을 쓴다(F2)
+    daily_hours_used: float = 8.0
 
 
 def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
@@ -63,7 +65,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         daily_hours = inp.schedule.daily_work_hours or 8.0
         hourly = daily / daily_hours
         monthly_base = hourly * base_hours
-        formula = (f"일급 {daily:,.0f}원 ÷ {daily_hours}h = 시급 {hourly:,.0f}원"
+        formula = (f"일급 {daily:,.0f}원 ÷ {fmt_hours(daily_hours)}h = 시급 {hourly:,.0f}원"
                    f" × {fmt_hours(base_hours)}h = {monthly_base:,.0f}원")
         included_items.append(f"기본 일급: {daily:,.0f}원")
 
@@ -146,6 +148,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         daily_ordinary_wage=round(daily_ordinary, 0),
         monthly_ordinary_wage=round(monthly_ordinary, 0),
         monthly_base_hours=base_hours,
+        daily_hours_used=daily_work_hours,
         base_hours_detail=base_hours_detail,
         included_items=included_items,
         excluded_items=excluded_items,
@@ -253,8 +256,12 @@ def _get_base_hours(inp: WageInput) -> tuple[float, str]:
     # 소수 첫째 자리로 반올림해 계산하면 단시간 근로자 월 환산액이 달라졌다(83.4286h → 83.4h: 860,983원 → 860,688원, 외부 점검 #45)
     monthly_hours = total_weekly * WEEKS_PER_MONTH
 
+    # 1일 8시간·1주 40시간을 넘는 시간은 이미 연장근로로 나눴다(apply_hour_split) — 원래 시간과 나눈 결과를 함께 밝힌다
+    note = split_note(getattr(inp, "hour_split", None))
+    lead = (note if note else
+            f"주 소정근로: {fmt_hours(s.daily_work_hours)}h×{fmt_hours(s.weekly_work_days)}일 = {fmt_hours(weekly_work_hours)}h")
     detail = (
-        f"주 소정근로: {fmt_hours(s.daily_work_hours)}h×{fmt_hours(s.weekly_work_days)}일 = {fmt_hours(weekly_work_hours)}h, "
+        f"{lead}, "
         f"주휴시간: {holiday_detail}, "
         f"월 환산: ({fmt_hours(weekly_work_hours)}h+{fmt_hours(weekly_holiday_hours)}h)×{WEEKS_PER_MONTH_LABEL} = "
         f"{fmt_hours(monthly_hours)}h"
