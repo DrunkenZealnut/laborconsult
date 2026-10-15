@@ -18,10 +18,10 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
-from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL
+from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
-from .shared import MultiplierContext
+from .shared import MultiplierContext, premium_weekly
 from ..constants import OVERTIME_RATE, NIGHT_PREMIUM_RATE, HOLIDAY_RATE, HOLIDAY_OT_RATE
 
 # 주 52시간 제한 시행일 (사업장 규모별)
@@ -66,18 +66,25 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
     else:
         legal.append("근로기준법 제56조 (연장·야간·휴일 근로)")
 
+    # 금액은 평균임금·보수월액 추정(monthly_pay_estimate)과 같은 산식이다 — 한 카드에서 월 총액과 평균임금이 갈리지 않게
+    pw = premium_weekly(inp, hourly)
+
     # ── 연장수당 ──────────────────────────────────────────────────────────────
     ot_hours = s.weekly_overtime_hours
-    overtime_pay = hourly * ot_hours * (1 + overtime_multiplier)
+    overtime_pay = pw.overtime
     if ot_hours > 0:
         rate = 1 + overtime_multiplier
         formulas.append(
-            f"연장수당: {hourly:,.1f}원 × {ot_hours}h × {rate} = {overtime_pay:,.0f}원/주"
+            f"연장수당: {hourly:,.1f}원 × {fmt_hours(ot_hours)}h × {rate} = {overtime_pay:,.0f}원/주"
+            + _derived_overtime_label(inp)
         )
+        conflict = _overtime_conflict_note(inp)
+        if conflict:
+            warnings.append(conflict)
 
     # ── 야간수당 (22~06시, 연장/휴일과 중복 가산) ────────────────────────────
     night_hours = s.weekly_night_hours
-    night_pay = hourly * night_hours * night_multiplier
+    night_pay = pw.night
     if night_hours > 0 and not mc.is_small:
         formulas.append(
             f"야간수당: {hourly:,.1f}원 × {night_hours}h × 0.5 = {night_pay:,.0f}원/주 (중복 가산)"
@@ -87,10 +94,7 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
     hol_hours = s.weekly_holiday_hours
     hol_ot_hours = s.weekly_holiday_overtime_hours
 
-    holiday_pay = (
-        hourly * hol_hours * (1 + holiday_multiplier)
-        + hourly * hol_ot_hours * (1 + holiday_multiplier + holiday_ot_multiplier)
-    )
+    holiday_pay = pw.holiday
 
     if hol_hours > 0:
         rate_normal = 1 + holiday_multiplier
@@ -143,6 +147,29 @@ class WeeklyHoursComplianceResult:
     breakdown: dict
     warnings: list
     legal_basis: list
+
+
+def _derived_overtime_label(inp: WageInput) -> str:
+    """연장시간이 1일 8시간·1주 40시간 초과분에서 나왔으면 그 출처를 붙인다(calc-card-followups F1)."""
+    split = getattr(inp, "hour_split", None)
+    if split is None or split.mode != "applied" or split.excess <= 0:
+        return ""
+    source = f"1일 8시간·주 40시간 초과분 {fmt_hours(split.excess)}h"
+    if split.stated_overtime > 0:
+        source += f", 질문의 연장 {fmt_hours(split.stated_overtime)}h"
+    return f" ({source})"
+
+
+def _overtime_conflict_note(inp: WageInput) -> str | None:
+    """질문의 연장시간과 1일 초과분이 다르면 큰 값으로 계산했다는 사실과 별개일 때의 합계(D8)."""
+    split = getattr(inp, "hour_split", None)
+    if split is None or split.mode != "applied" or split.stated_overtime <= 0:
+        return None
+    if abs(split.stated_overtime - split.excess) <= 0.5:
+        return None
+    return (f"질문의 연장 {fmt_hours(split.stated_overtime)}시간과 하루 8시간·주 40시간을 넘는 {fmt_hours(split.excess)}시간이 "
+            f"같은 시간인지 알 수 없어 큰 값({fmt_hours(split.overtime)}시간)으로 계산했습니다 — 둘이 별개라면 주 "
+            f"{fmt_hours(split.stated_overtime + split.excess)}시간입니다.")
 
 
 def check_weekly_hours_compliance(inp: WageInput) -> WeeklyHoursComplianceResult:
@@ -210,7 +237,7 @@ def check_weekly_hours_compliance(inp: WageInput) -> WeeklyHoursComplianceResult
         )
 
     breakdown = {
-        "소정근로시간": f"{scheduled:.1f}h/주 ({s.daily_work_hours}h × {s.weekly_work_days}일)",
+        "소정근로시간": f"{scheduled:.1f}h/주 ({fmt_hours(s.daily_work_hours)}h × {fmt_hours(s.weekly_work_days)}일)",
         "연장근로시간": f"{overtime:.1f}h/주",
         "휴일근로시간": f"{holiday:.1f}h/주",
         "주 총 근로시간": f"{total_weekly:.1f}h",

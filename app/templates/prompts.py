@@ -208,8 +208,10 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 3. 추출 불가능하지만 계산에 필수인 정보는 missing_info에 추가
 4. 관련 법조문을 relevant_laws에 키워드로 추출 (예: "근로기준법 제56조")
 5. 숫자 추론 금지: 사용자가 명시적으로 말한 숫자만 추출하세요.
-   - "하루 10시간 주5일" → daily_work_hours와 weekly_overtime_hours를 추출하지 마세요.
-     missing_info에 "1일 소정근로시간", "주당 연장근로시간" 추가.
+   - "하루 10시간 주5일" → daily_work_hours=10, weekly_work_days=5 (질문의 숫자 그대로 — 1일 8시간·주 40시간을 넘는
+     시간은 계산기가 연장근로로 나눕니다). weekly_overtime_hours는 질문이 연장시간을 따로 말했을 때만 넣으세요.
+   - 근로계약·근무표로 정해 매일 반복하는 하루 근로시간만 daily_work_hours에 넣으세요. "어제 12시간", "지난주 3일 동안
+     25시간"처럼 특정 날·기간에 실제로 일한 시간은 넣지 말고 missing_info에 "1일 소정근로시간"을 추가하세요.
    - "소정근로 8시간, 연장 2시간" → daily_work_hours=8, weekly_overtime_hours=2×근무일수 (명시적 → OK)
    - "월급 250만원" → wage_amount=2500000 (명시적 → OK)
    - "주 3일 근무" → weekly_work_days=3 (명시적 → OK)

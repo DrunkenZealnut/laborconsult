@@ -7,7 +7,7 @@
 - 1년 미만: 매월 개근 시 1일 발생 (최대 11일)
 - 1년 이상: 15일 기본 + 매 2년마다 1일 추가 (최대 25일)
 - 2년차 차감: 1년 미만 사용분을 15일에서 공제 (제60조③)
-- 연차수당 = 통상시급 × 8h × 미사용 연차일수
+- 연차수당 = 1일 통상임금(통상시급 × 1일 소정근로시간) × 미사용 연차일수
 - 5인 미만 사업장: 연차휴가 미적용 (근로기준법 제11조)
 - 단시간근로자: 비례 연차 (근기법 제18조③)
 - 회계기준일(1.1) 기준 계산 지원
@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..base import BaseCalculatorResult
-from ..utils import parse_date
+from ..utils import parse_date, fmt_hours
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
 from .shared import DateRange
@@ -139,14 +139,18 @@ def calc_annual_leave(inp: WageInput, ow: OrdinaryWageResult) -> AnnualLeaveResu
         legal.append("근로기준법 제18조 제3항 (단시간근로자 연차)")
         formulas.append(
             f"단시간 비례: {original_accrued:.1f}일 × "
-            f"({weekly_hours:.0f}h/40h) × (8h/{inp.schedule.daily_work_hours:.0f}h) "
+            f"({fmt_hours(weekly_hours)}h/40h) × (8h/{fmt_hours(inp.schedule.daily_work_hours)}h) "
             f"= {accrued:.1f}일"
         )
 
     # 연차수당 계산
     used = inp.annual_leave_used
     remaining = max(0.0, accrued - used)
-    daily_wage = hourly * 8
+    # 1일 통상임금 = 시간급 × 1일 소정근로시간(시행령 제6조 제3항). 단시간 비례 일수는 이미 '그 근로자의 1일'(위 8h/1일 소정
+    # 환산) 단위라 8시간을 곱하면 2배다 — 주 5일 × 4h가 1,200,000원, 별표 2 제4호(15일 × 20h/40h × 8시간 = 60시간)로는
+    # 600,000원이었다(calc-card-followups F2)
+    daily_hours = ow.daily_hours_used
+    daily_wage = hourly * daily_hours      # 원 단위로 반올림한 1일 통상임금이 아니라 시급 × 시간 — 중간 반올림을 더하지 않는다
 
     # 사용촉진제도 실시 여부 확인 (근로기준법 제61조)
     promotion_applied = getattr(inp, "leave_use_promotion", False)
@@ -169,7 +173,7 @@ def calc_annual_leave(inp: WageInput, ow: OrdinaryWageResult) -> AnnualLeaveResu
             legal.append("근로기준법 제61조 (연차 유급휴가의 사용 촉진)")
 
     formulas.append(
-        f"미사용 연차수당: {hourly:,.0f}원 × 8h × {remaining:.1f}일 = {leave_pay:,.0f}원"
+        f"미사용 연차수당: {hourly:,.0f}원 × {fmt_hours(daily_hours)}h × {remaining:.1f}일 = {leave_pay:,.0f}원"
         + (" (사용촉진으로 면제)" if promotion_applied and remaining > 0 else "")
     )
 

@@ -15,6 +15,7 @@ from ..base import BaseCalculatorResult
 from ..models import WageInput, WorkType
 from .ordinary_wage import OrdinaryWageResult
 from ..constants import DISMISSAL_NOTICE_DAYS
+from ..utils import fmt_hours
 
 
 @dataclass
@@ -107,7 +108,7 @@ def calc_dismissal(inp: WageInput, ow: OrdinaryWageResult) -> DismissalResult:
         formulas.append(f"예고일수 {notice_given}일 ≥ 30일 → 해고예고수당 없음")
 
     breakdown = {
-        "1일 통상임금": f"{daily_pay:,.0f}원 ({hourly:,.0f}원 × {daily_hours}h)",
+        "1일 통상임금": f"{daily_pay:,.0f}원 ({hourly:,.0f}원 × {fmt_hours(daily_hours)}h)",
         "필요 예고일수": f"{DISMISSAL_NOTICE_DAYS}일",
         "실제 예고일수": f"{notice_given}일",
         "수당 지급일수": f"{payable_days}일",

@@ -89,9 +89,12 @@ def _pop_overtime(r, result):
 def _pop_minimum_wage(r, result):
     """result.summary에 최저임금 충족 여부·실질시급·부족분 추가. 반환: 0."""
     if getattr(r, "undetermined", False):
-        # 주휴 기준(판례 원칙 vs 시행령 별표 2)에 따라 판정이 갈린다 — 판정은 보류(None), 두 실질시급을 함께 싣는다
+        # 기준(주휴 판례 원칙 vs 시행령 별표 2, 연장 별도 vs 연장 포함 역산)에 따라 판정이 갈린다 — 판정은 보류(None),
+        # 실질시급을 함께 싣는다
+        alternatives = getattr(r, "alternative_hourlies", ()) or (r.alternative_hourly,)
+        values = list(dict.fromkeys([r.effective_hourly, *alternatives]))
         result.summary["최저임금 충족"] = "⏸ 판정 보류"
-        result.summary["실질시급"] = f"{r.effective_hourly:,.0f}원 또는 {r.alternative_hourly:,.0f}원"
+        result.summary["실질시급"] = " 또는 ".join(f"{v:,.0f}원" for v in values)
         result.minimum_wage_ok = None
         return 0
     result.summary["최저임금 충족"] = "✅ 충족" if r.is_compliant else "❌ 미달"

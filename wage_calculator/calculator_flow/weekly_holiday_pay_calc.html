@@ -448,15 +448,24 @@ function calc(){
   document.getElementById('daysOut').textContent=days+'일';
   document.getElementById('dailyOut').textContent=fmtD(daily)+'시간';
 
-  var weeklyH=days*daily;
+  // 1일 8시간·1주 40시간을 넘는 시간은 소정근로가 아니라 연장근로 — 계산기(shared.split_hours)와 같은 규칙.
+  // 주 40시간을 넘으면 근무일 순서대로 쌓아 소정근로일을 정한다(주 6일 × 8h → 소정 8h × 5일 + 연장 8h)
+  var sDaily=Math.min(daily,8), sDays=days;
+  if(sDaily*days>40+1e-9){
+    var full=Math.floor(40/sDaily+1e-9), rest=40-full*sDaily;
+    sDays=Math.min(full+(rest>1e-9?1:0),days);
+    sDaily=40/sDays;
+  }
+  var weeklyH=sDaily*sDays;
+  var otH=days*daily-weeklyH;
   var cond15=weeklyH>=15;
   var condAll=cond15&&attend;
 
   // 주휴시간 산정
   var holH=0;
   if(condAll){
-    if(days>=5){
-      holH=Math.min(daily,8);
+    if(sDays>=5){
+      holH=Math.min(sDaily,8);
     } else {
       holH=Math.min(weeklyH/5,8);
     }
@@ -498,10 +507,14 @@ function calc(){
 
   // 산식
   var fl=['<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>'];
-  fl.push('<p style="margin:2px 0">주 소정근로 = '+days+'일 × '+fmtD(daily)+'h = '+fmtD(weeklyH)+'h</p>');
+  if(otH>1e-9){
+    fl.push('<p style="margin:2px 0">주 근로 = '+days+'일 × '+fmtD(daily)+'h = '+fmtD(days*daily)+'h → 소정근로 '+fmtD(sDaily)+'h × '+sDays+'일 = '+fmtD(weeklyH)+'h + 연장 '+fmtD(otH)+'h (1일 8시간·주 40시간 초과분 — 근로기준법 제50조)</p>');
+  } else {
+    fl.push('<p style="margin:2px 0">주 소정근로 = '+days+'일 × '+fmtD(daily)+'h = '+fmtD(weeklyH)+'h</p>');
+  }
   if(condAll){
-    if(days>=5){
-      fl.push('<p style="margin:2px 0">주휴시간 = min('+fmtD(daily)+', 8) = '+fmtD(holH)+'h (주 5일 이상)</p>');
+    if(sDays>=5){
+      fl.push('<p style="margin:2px 0">주휴시간 = min('+fmtD(sDaily)+', 8) = '+fmtD(holH)+'h (주 5일 이상)</p>');
     } else {
       fl.push('<p style="margin:2px 0">주휴시간 = min('+fmtD(weeklyH)+'÷5, 8) = min('+fmtD(weeklyH/5)+', 8) = '+fmtD(holH)+'h (주 5일 미만)</p>');
     }

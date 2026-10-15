@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType
 from .ordinary_wage import OrdinaryWageResult
-from .shared import normalize_allowances, AllowanceClassifier, weekly_holiday_hours
+from .shared import normalize_allowances, AllowanceClassifier, MultiplierContext, weekly_holiday_hours
 from ..legal_rules import managed
 from ..constants import get_minimum_hourly_wage
 from ..utils import WEEKS_PER_MONTH, fmt_hours
@@ -52,8 +52,9 @@ class MinimumWageResult(BaseCalculatorResult):
     shortage_monthly: float = 0.0      # 부족분 월액 (충족 시 0)
     reference_year: int = 0            # 기준 연도
     monthly_hours_used: float = 0.0    # 적용된 월 근로시간
-    undetermined: bool = False         # 주휴 기준(판례 원칙 vs 시행령 별표 2)에 따라 판정이 갈려 보류
-    alternative_hourly: float = 0.0    # 별표 2 기준(통상 근로자 주 5일) 실질 시급 — undetermined일 때만
+    undetermined: bool = False         # 다른 기준으로 보면 판정이 갈려 보류(별표 2 주휴·연장분 포함 역산 — 아래 대안)
+    alternative_hourly: float = 0.0    # 판정이 갈린 첫 대안의 실질 시급 — undetermined일 때만(하위 호환)
+    alternative_hourlies: tuple = ()   # 판정이 갈린 대안 실질 시급 전부(표기용)
 
 
 def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResult:
@@ -163,12 +164,24 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     # 주휴시간을 1일 평균 소정근로시간(대법원 2022다291153)으로 보면 월 기준시간이 짧고, 같은 업무 통상 근로자의 소정근로일 수
     # (주 5일)로 나누면(근로기준법 시행령 별표 2 제2호나목) 길다. 월급제는 그 차이로 '충족'과 '미달'이 갈린다(독립 리뷰 M4:
     # 월 190만 원, 주 6일 × 6시간 → 182.5h 충족 / 187.71h 미달). 갈리면 판정하지 않는다 — 틀린 판정보다 보류.
-    undetermined, alt_hours, alt_included, alt_effective = False, None, 0.0, 0.0
+    annex_split, alt_hours, alt_included, alt_effective = False, None, 0.0, 0.0
     alt_hours = _annex_alternative_hours(inp, monthly_hours)
     if alt_hours:
         alt_included = (_get_base_monthly(inp, alt_hours) + std_included + bonus_included + welfare_included)
         alt_effective = round(alt_included / alt_hours, 6)
-        undetermined = (alt_effective >= legal_minimum) != is_compliant
+        annex_split = (alt_effective >= legal_minimum) != is_compliant
+
+    # ── 5-2. 일급·월급·연봉 + 연장·야간·휴일 근로 + 임금 구성 미상 — 그 금액에 연장분이 들어 있다고 보는 역산(D4) ────────
+    # 포괄 약정이 없으면 연장 임금은 따로 주는 것이 원칙이라 위 판정(금액 ÷ 소정 기준시간)이 기준이다. 그러나 연장분을 금액에
+    # 넣는 약정이 흔하고, 그 경우 최저임금 산입에서 연장 임금이 빠진다(최저임금법 제6조 제4항 제1호) — 월급 270만 원·주 5일 ×
+    # 10시간이면 12,945원 '충족'과 역산 9,863원 '미달'로 갈린다(calc-card-followups R6). 갈리면 판정하지 않는다.
+    ot_split, ot_included_monthly, ot_effective = False, 0.0, 0.0
+    ratio = _ot_included_ratio(inp, monthly_hours)
+    if ratio is not None:
+        ot_included_monthly = base_monthly * ratio + (included_monthly - base_monthly)
+        ot_effective = round(ot_included_monthly / monthly_hours, 6) if monthly_hours else 0.0
+        ot_split = (ot_effective >= legal_minimum) != is_compliant
+    undetermined = annex_split or ot_split
 
     # ── formulas ──────────────────────────────────────────────────────────────
     formulas.append(f"기본급 월액: {base_monthly:,.0f}원")
@@ -215,7 +228,18 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
             f"산식(1년 평균 주 수, 월 {fmt_hours(monthly_hours)}시간)으로 한 것이라 고시 환산액 기준으로는 미달로 볼 수 "
             f"있습니다 — 고용노동부(1350)에 확인하세요."
         )
-    if undetermined:
+    unit = {WageType.DAILY: "일급", WageType.ANNUAL: "연봉"}.get(inp.wage_type, "월급")
+    if ratio is not None:
+        formulas.append(f"실질시급(연장·야간·휴일 근로 임금이 {unit}에 포함된 경우, 역산): {ot_included_monthly:,.0f}원 ÷ "
+                        f"{fmt_hours(monthly_hours)}h = {ot_effective:,.2f}원")
+        if ot_split:
+            warnings.append(
+                f"{unit}에 연장·야간·휴일 근로 임금이 포함된다는 약정(포괄임금·고정연장수당)이 있으면 그 임금은 최저임금에 "
+                f"산입하지 않아(최저임금법 제6조 제4항 제1호) 역산 실질시급이 {ot_effective:,.0f}원이므로 최저임금"
+                f"({legal_minimum:,.0f}원) 충족 여부가 갈립니다 — 판정하지 않았습니다. 근로계약서의 임금 구성을 확인하세요."
+            )
+            legal.append("최저임금법 제6조제4항 제1호 (소정근로 외 임금 불산입)")
+    if annex_split:
         s_ = inp.schedule
         weekly = s_.daily_work_hours * s_.weekly_work_days
         formulas.append(f"실질시급(통상 근로자 주 5일 기준, 시행령 별표 2): {alt_included:,.0f}원 ÷ {fmt_hours(alt_hours)}h = "
@@ -227,13 +251,13 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
             f"({fmt_hours(min(weekly / 5, 8.0))}h, 근로기준법 시행령 별표 2 제2호나목) {alt_effective:,.0f}원이라 최저임금"
             f"({legal_minimum:,.0f}원) 충족 여부가 갈립니다 — 판정하지 않았습니다. 통상 근로자의 근무 형태를 확인하세요."
         )
-    elif not is_compliant:
+    if not undetermined and not is_compliant:
         warnings.append(
             f"최저임금 미달: 실질시급 {effective_hourly:,.0f}원 < {legal_minimum:,.0f}원 "
             f"(부족분 {shortage_hourly:,.0f}원/h, 월 {shortage_monthly:,.0f}원)"
         )
         legal.append("최저임금법 제6조제1항 위반 가능성 — 노동청 신고 가능")
-    else:
+    elif not undetermined:
         formulas.append(
             f"충족: {effective_hourly:,.0f}원 ≥ {legal_minimum:,.0f}원 "
             f"(초과 {effective_hourly - legal_minimum:,.0f}원/h)"
@@ -279,7 +303,9 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         reference_year=year,
         monthly_hours_used=monthly_hours,
         undetermined=undetermined,
-        alternative_hourly=round(alt_effective, 0) if undetermined else 0.0,
+        alternative_hourly=(round(alt_effective, 0) if annex_split else round(ot_effective, 0) if ot_split else 0.0),
+        alternative_hourlies=tuple(round(v, 0) for v, split in ((alt_effective, annex_split), (ot_effective, ot_split))
+                                   if split),
         breakdown=breakdown,
         formulas=formulas,
         warnings=warnings,
@@ -320,6 +346,32 @@ def _annex_alternative_hours(inp: WageInput, monthly_hours: float) -> float | No
     if abs(monthly_hours - principle) > 1e-6:
         return None
     return (weekly + min(weekly / 5, 8.0)) * WEEKS_PER_MONTH
+
+
+def _ot_included_ratio(inp: WageInput, monthly_hours: float) -> float | None:
+    """일급·월급·연봉에 연장·야간·휴일 근로 임금이 들어 있다고 볼 때 기본 임금 중 소정근로(+주휴) 몫의 비율. 해당 없으면 None.
+
+    계수는 포괄임금 역산(comprehensive._calc_coefficient_hours, 대법원 2020다300299 방식)과 같다 — 연장·휴일은 (1 + 가산),
+    야간은 가산분만. 일급은 그날의 소정근로 대가라 주휴를 빼고, 월급·연봉은 주휴를 포함한 1주 시간으로 나눈다.
+    임금 구성을 질문으로 확인한 경로(pipeline — 구성 진술·포괄임금제)와 포괄임금 명세가 있으면 쓰지 않는다."""
+    # 연장 등을 따로 받는다고 했으면 구성이 정해졌다(리뷰 M1). 노무제공자는 연장 가산이 적용되는 근로자가 아니다(리뷰 M3)
+    if (inp.wage_composition_known or inp.comprehensive_breakdown or inp.premium_paid_separately
+            or inp.is_platform_worker):
+        return None
+    if inp.wage_type not in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL):
+        return None
+    s = inp.schedule
+    mc = MultiplierContext(inp)
+    coeff = (s.weekly_overtime_hours * (1 + mc.overtime) + s.weekly_night_hours * mc.night
+             + s.weekly_holiday_hours * (1 + mc.holiday)
+             + s.weekly_holiday_overtime_hours * (1 + mc.holiday + mc.holiday_ot))
+    if coeff <= 0:
+        return None
+    if inp.wage_type == WageType.DAILY:
+        base = (s.daily_work_hours or 8.0) * (s.weekly_work_days or 5.0)
+    else:
+        base = monthly_hours / WEEKS_PER_MONTH
+    return base / (base + coeff) if base > 0 else None
 
 
 def _get_base_monthly(inp: WageInput, monthly_hours: float) -> float:

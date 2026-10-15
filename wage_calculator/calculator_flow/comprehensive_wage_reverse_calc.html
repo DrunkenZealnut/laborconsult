@@ -397,7 +397,7 @@ function fmtD(n) { return n.toFixed(2); }
 
 function calc() {
   var total = parseInt(document.getElementById('total').value);
-  var weekly = parseInt(document.getElementById('weekly').value);
+  var weeklyIn = parseInt(document.getElementById('weekly').value);
   var days = parseInt(document.getElementById('days').value);
   var ot = parseInt(document.getElementById('ot').value);
   var night = parseInt(document.getElementById('night').value);
@@ -405,19 +405,25 @@ function calc() {
   var holOt = parseInt(document.getElementById('holOt').value);
 
   document.getElementById('totalOut').textContent = total + '만원';
-  document.getElementById('weeklyOut').textContent = weekly + '시간';
+  document.getElementById('weeklyOut').textContent = weeklyIn + '시간';
   document.getElementById('daysOut').textContent = days + '일';
   document.getElementById('otOut').textContent = ot + '시간';
   document.getElementById('nightOut').textContent = night + '시간';
   document.getElementById('holOut').textContent = hol + '시간';
   document.getElementById('holOtOut').textContent = holOt + '시간';
 
-  var dailyH = weekly / days;
+  var dailyH = weeklyIn / days;
+  // 1일 8시간을 넘는 시간은 소정근로가 아니라 연장근로 — 계산기(shared.split_hours)와 같은 규칙. 입력 상한이 주 40시간이라
+  // 주 한도는 걸리지 않는다. 질문의 연장시간과 겹치면 큰 값을 쓴다(계산기 reconcile_overtime과 같다)
+  var weekly = Math.min(dailyH, 8) * days;
+  var excess = weeklyIn - weekly;
+  var otUsed = ot;
+  if (excess > 1e-9) otUsed = ot <= 0 ? excess : (Math.abs(ot - excess) <= 0.5 ? ot : Math.max(ot, excess));
   // 주휴시간: 1주 소정근로시간 ÷ 1주 소정근로일 수(5일 미만은 5일), 8시간 한도 — 계산기와 같은 산식
   var weeklyHoliday = weekly >= 15 ? Math.min(weekly / Math.max(days, 5), 8) : 0;
 
   var cBase = (weekly + weeklyHoliday) * WPM;
-  var cOt = ot * 1.5 * WPM;
+  var cOt = otUsed * 1.5 * WPM;
   var cNight = night * 0.5 * WPM;
   var cHol = hol * 1.5 * WPM;
   var cHolOt = holOt * 2.0 * WPM;
@@ -430,9 +436,10 @@ function calc() {
   document.getElementById('revWage').textContent = fmt(revWage) + '원';
 
   var lines = [
-    '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>기본: (' + weekly + 'h + 주휴' + fmtD(weeklyHoliday) + 'h) x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cBase) + 'h</span></div>',
+    '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>기본: (' + fmtD(weekly) + 'h + 주휴' + fmtD(weeklyHoliday) + 'h) x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cBase) + 'h</span></div>',
   ];
-  if (ot > 0) lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>연장: ' + ot + 'h x 1.5 x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cOt) + 'h</span></div>');
+  if (excess > 1e-9) lines.push('<div style="padding:2px 0;font-size:12px">1일 8시간을 넘는 ' + fmtD(excess) + 'h는 소정근로가 아니라 연장근로로 계산(근로기준법 제50조)</div>');
+  if (otUsed > 0) lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>연장: ' + fmtD(otUsed) + 'h x 1.5 x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cOt) + 'h</span></div>');
   if (night > 0) lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>야간: ' + night + 'h x 0.5 x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cNight) + 'h</span></div>');
   if (hol > 0) lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>휴일: ' + hol + 'h x 1.5 x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cHol) + 'h</span></div>');
   if (holOt > 0) lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>휴일초과: ' + holOt + 'h x 2.0 x ' + WPM + '</span><span style="font-weight:500">' + fmtD(cHolOt) + 'h</span></div>');

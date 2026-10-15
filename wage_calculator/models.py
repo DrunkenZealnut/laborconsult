@@ -180,6 +180,34 @@ class WorkSchedule:
     # 교대근무 전용
     shift_monthly_hours: Optional[float] = None  # 교대근무 월 실근로시간 (None이면 자동 조회)
 
+    # 1일 시간을 '주 N시간'에서 나눠 구했는가 — 실업급여 하한의 1일 소정근로시간 산정 방식이 갈린다
+    # (고용보험법 시행규칙 제91조의2 제1항 제1호 일 단위 / 제2호 주 단위)
+    weekly_defined: bool = False
+
+
+@dataclass(frozen=True)
+class HourSplit:
+    """1일 8시간·1주 40시간을 넘는 시간을 소정근로와 연장근로로 나눈 결과(calc-card-followups D1·D9).
+
+    소정근로시간은 법정근로시간(근로기준법 제50조) 범위에서 정한 시간이라(제2조 제1항 제8호) 넘는 부분은 연장근로다
+    (대법원 2025. 8. 14. 선고 2022다291153 판결 [2]① — 격일제도 같다). 계산은 `shared.split_hours`, 적용은
+    `shared.apply_hour_split`이 한다. 적용하면 `WageInput.schedule`이 소정 기준으로 바뀌고 원래 값은 여기 남는다.
+    """
+    raw_daily: float            # 질문(입력)의 1일 근로시간
+    raw_days: float             # 질문(입력)의 주 근무일수
+    daily: float                # 1일 평균 소정근로시간(≤ 8)
+    days: float                 # 1주 소정근로일 수
+    excess: float = 0.0         # 1주 연장근로시간(1일·1주 한도 초과분)
+    mode: str = "none"          # none(초과 없음) | applied(나눔) | skipped(나누지 않는 입력) | held(제도 확인 필요)
+    reason: str = ""            # skipped·held 사유
+    stated_overtime: float = 0.0  # 질문에 따로 적힌 주 연장시간
+    overtime: float = 0.0       # 나눈 뒤 쓰는 주 연장시간(D8 — 따로 적힌 값과 초과분의 조정 결과)
+
+    @property
+    def weekly(self) -> float:
+        """1주 소정근로시간."""
+        return self.daily * self.days
+
 
 @dataclass
 class WageInput:
@@ -212,6 +240,14 @@ class WageInput:
 
     # ── 근무 스케줄 ──────────────────────────────────────────────────────────
     schedule: WorkSchedule = field(default_factory=WorkSchedule)
+    # 소정·연장 분리 결과 — 파이프라인 또는 facade가 계산 전에 한 번 채운다(shared.apply_hour_split). None이면 아직 안 나눴다
+    hour_split: Optional[HourSplit] = None
+    # 임금 구성(월급에 연장수당 등이 들어 있는지)을 확인했는가 — 파이프라인이 구성 진술·포괄임금제 경로에서 True로 둔다.
+    # False면 일급·월급·연봉에 연장 등이 있을 때 최저임금을 '연장 별도'와 '연장 포함 역산' 둘로 본다(D4)
+    wage_composition_known: bool = False
+    # 질문이 연장·야간·휴일 근로 임금을 따로 받는다고 밝혔다 — 구성이 'A(연장 별도)'로 정해져 D4의 두 구성을 보지 않는다(독립 리뷰
+    # M1: "연장수당은 별도로 받아요"에도 보류했다). wage_composition_known(금액에 들어 있음)과 뜻이 반대라 따로 둔다
+    premium_paid_separately: bool = False
 
     # ── 통상임금 포함 고정수당 목록 ──────────────────────────────────────────
     # 예: [{"name": "직책수당", "amount": 100000, "is_ordinary": True},
@@ -240,6 +276,9 @@ class WageInput:
 
     # 일용직 월 근무일수 (퇴직금 자격 판단용)
     daily_worker_monthly_days: Optional[int] = None  # 월 평균 근무일수 (4~15일 이상 시 퇴직금 인정)
+    # 질문이 일용근로자라고 밝혔다 — 실업급여 기초일액을 통상임금과 비교하지 않는다(고용보험법 제45조 제2항 단서, 리뷰 L2).
+    # work_type을 DAILY_WORKER로 두지 않는 것은 퇴직금 계산기의 일용직 갈래(판례 문구 원문 미확인)까지 켜지기 때문이다
+    is_daily_worker: bool = False
 
     # ── 연차 계산용 ──────────────────────────────────────────────────────────
     annual_leave_used: float = 0.0         # 사용한 연차 일수

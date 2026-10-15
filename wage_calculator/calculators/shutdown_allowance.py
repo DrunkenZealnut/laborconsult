@@ -14,7 +14,9 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..constants import SHUTDOWN_RATE
 from ..models import WageInput
+from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
+from .shared import monthly_pay_estimate
 
 
 @dataclass
@@ -75,7 +77,7 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
         f"평균임금 70%: {avg_daily_wage:,.0f}원 × {SHUTDOWN_RATE} = {avg_70:,.0f}원"
     )
     formulas.append(
-        f"1일 통상임금: {hourly:,.0f}원 × {daily_hours}h = {ordinary_daily:,.0f}원"
+        f"1일 통상임금: {hourly:,.0f}원 × {fmt_hours(daily_hours)}h = {ordinary_daily:,.0f}원"
     )
 
     # 근로기준법 제46조 제1항 단서: 평균임금 70%가 통상임금을 넘으면 통상임금을 휴업수당으로 지급할 수 있다
@@ -103,12 +105,12 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
             is_partial = True
             daily_allowance = daily_allowance * partial_ratio
             formulas.append(
-                f"부분 휴업: {inp.shutdown_hours_per_day}h / {daily_hours}h = {partial_ratio:.1%} "
+                f"부분 휴업: {fmt_hours(inp.shutdown_hours_per_day)}h / {fmt_hours(daily_hours)}h = {partial_ratio:.1%} "
                 f"→ 1일 휴업수당 {daily_allowance:,.0f}원"
             )
             warnings.append(
-                f"부분 휴업: 1일 {inp.shutdown_hours_per_day}h 미근로 / "
-                f"{daily_hours}h 소정근로 ({partial_ratio:.0%})"
+                f"부분 휴업: 1일 {fmt_hours(inp.shutdown_hours_per_day)}h 미근로 / "
+                f"{fmt_hours(daily_hours)}h 소정근로 ({partial_ratio:.0%})"
             )
 
     # 총액
@@ -128,7 +130,7 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
     }
     if is_partial:
         breakdown["부분 휴업"] = (
-            f"1일 {inp.shutdown_hours_per_day}h / {daily_hours}h = {partial_ratio:.0%}"
+            f"1일 {fmt_hours(inp.shutdown_hours_per_day)}h / {fmt_hours(daily_hours)}h = {partial_ratio:.0%}"
         )
 
     return ShutdownAllowanceResult(
@@ -154,11 +156,11 @@ def _calc_avg_daily_wage(inp: WageInput, hourly: float, daily_hours: float) -> f
         days_3m = inp.last_3m_days or 92
         return total_3m / days_3m
 
-    # 월 임금총액(없으면 monthly_wage) 기반 추정
-    monthly = inp.monthly_total_pay or inp.monthly_wage
+    # 월 임금총액(없으면 monthly_wage) 기반 추정 — 연장 등의 임금 포함(shared, F6)
+    monthly = monthly_pay_estimate(inp, hourly, inp.monthly_wage)
     if monthly:
         return (monthly * 3) / 92
 
     # hourly 기반 추정
-    monthly_est = hourly * daily_hours * inp.schedule.weekly_work_days * (52 / 12)
+    monthly_est = monthly_pay_estimate(inp, hourly, hourly * daily_hours * inp.schedule.weekly_work_days * (52 / 12))
     return (monthly_est * 3) / 92

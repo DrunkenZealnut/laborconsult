@@ -1,0 +1,422 @@
+[
+ {
+  "id": "calc-01",
+  "category": "계산카드·시간축",
+  "question": "시급 12,000원을 받고 주 5일, 하루 10시간씩(휴게시간 제외) 일하기로 근로계약을 했습니다. 직원은 10명입니다. 주휴수당과 한 달 급여는 얼마가 맞나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:소정\\s*근로(?:시간)?\\s*(?:은|는|이|:)?\\s*(?:주\\s*)?50\\s*(?:시간|h)",
+   "re:소정\\s*근로:?\\s*10\\s*h?\\s*[×x*]\\s*5\\s*일",
+   "3,024,286"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "주 소정근로시간은 50시간이므로 월 기준시간은 252시간입니다.",
+    "한 달 급여는 약 3,024,286원입니다."
+   ],
+   "negative": [
+    "하루 10시간 중 8시간까지가 소정근로이고 나머지 2시간씩, 주 10시간은 연장근로입니다.",
+    "연장 가산을 포함한 한 달 급여는 약 3,285,000원입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-02",
+  "category": "계산카드·시간축",
+  "question": "시급 12,000원, 주 4일 하루 10시간(휴게시간 제외) 근무 계약입니다. 직원 10명인 회사인데 주휴수당은 몇 시간분을 받아야 하나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:주휴(?:수당|시간)?\\s*(?:은|는|이|:)?\\s*(?:1주\\s*)?8\\s*시간\\s*(?:분|입니다|이에요|이고|으로|을)",
+   "417,143"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "주휴수당은 8시간분으로 96,000원입니다.",
+    "월 주휴수당은 417,143원입니다."
+   ],
+   "negative": [
+    "1주 소정근로시간은 하루 8시간 한도로 4일, 32시간이라 주휴시간은 32 ÷ 5 = 6.4시간입니다.",
+    "하루 8시간을 넘는 2시간은 연장근로라 주휴 계산에 넣지 않습니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-03",
+  "category": "계산카드·시간축",
+  "question": "공장에서 격일제로 근무합니다. 하루 16시간(휴게시간 제외) 일하고 다음 날은 쉬어서 평균 주 3.5일 근무합니다. 시급 12,000원이고 직원은 20명입니다. 주휴수당과 월급이 제대로 계산된 건지 알고 싶어요.",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "3,337,143",
+   "re:소정\\s*근로(?:시간)?\\s*(?:은|는|이|:)?\\s*(?:주\\s*)?56\\s*(?:시간|h)",
+   "417,143"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "격일제라도 주 소정근로시간은 56시간이고 주휴는 8시간입니다.",
+    "월급은 3,337,143원이 맞습니다."
+   ],
+   "negative": [
+    "하루 16시간 중 8시간까지만 소정근로라 주 소정근로시간은 28시간, 주휴시간은 28 ÷ 5 = 5.6시간입니다.",
+    "8시간을 넘는 주 28시간은 연장근로로 50% 가산 대상입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-04",
+  "category": "계산카드·시간축",
+  "question": "시급 12,000원, 주 6일 하루 8시간(휴게시간 제외) 근무 계약이고 직원은 10명입니다. 월급과 주휴수당은 얼마가 맞나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:소정\\s*근로(?:시간)?\\s*(?:은|는|이|:)?\\s*(?:주\\s*)?48\\s*(?:시간|h)",
+   "2,920,000"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "주 소정근로시간 48시간에 주휴 8시간을 더해 월 243.33시간입니다.",
+    "월급은 2,920,000원입니다."
+   ],
+   "negative": [
+    "주 40시간까지가 소정근로이고 토요일 8시간은 연장근로라 1.5배로 계산합니다.",
+    "연장 가산을 포함한 월급은 3,128,571원입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-05",
+  "category": "계산카드·시간축",
+  "question": "월급 270만 원을 받고 주 5일, 하루 10시간(휴게시간 제외) 일합니다. 직원은 10명이고 연장수당을 따로 받은 적은 없습니다. 최저임금 위반인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "10,713",
+   "re:252(?:\\.\\d+)?\\s*(?:시간|h)"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "월급 270만 원을 252시간으로 나누면 시급 10,713원이라 최저임금을 충족합니다."
+   ],
+   "negative": [
+    "월급이 소정근로의 대가라면 시급은 12,945원이지만, 연장수당이 포함된 약정이라면 역산 시급이 9,863원으로 최저임금에 미달합니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-06",
+  "category": "계산카드·1일소정",
+  "question": "편의점에서 시급 10,320원을 받고 주 5일 하루 4시간씩 일하다가 권고사직으로 2026년 9월 30일에 그만뒀습니다. 고용보험은 2년 가입했고 만 30세입니다. 실업급여를 하루 얼마씩 받나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "9,907,200",
+   "re:(?:하루|1일|일)\\s*(?:에\\s*)?66,048\\s*원(?:씩|을)?\\s*(?:받|지급)"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "하루 66,048원씩 받게 됩니다.",
+    "총 9,907,200원을 받을 수 있습니다."
+   ],
+   "negative": [
+    "1일 소정근로시간이 4시간이라 하한액은 10,320원 × 4시간 × 80% = 33,024원입니다.",
+    "150일분 총액은 4,953,600원입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-07",
+  "category": "계산카드·적용요건",
+  "question": "카페에서 수습 기간이라 시급 9,300원을 받고 주 5일 하루 8시간 일합니다. 최저임금 위반 아닌가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:(?:2026년\\s*)?최저임금(?:은|이|:)\\s*(?:시간당\\s*)?9,288\\s*원",
+   "re!:(?:^|[.!?\n])(?![^.!?\\n]*(?:라면|경우|요건|까지만|이내))[^.!?\\n]*9,288\\s*원\\s*이상(?:이므로|이라서|이니)"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "2026년 최저임금은 9,288원입니다.",
+    "9,288원 이상이므로 최저임금 위반이 아닙니다."
+   ],
+   "negative": [
+    "수습 감액 요건(1년 이상 계약, 수습 시작 후 3개월 이내, 단순노무 직종 아님)을 모두 갖췄다면 수습 감액 최저임금 9,288원 이상이므로 위반이 아닙니다.",
+    "요건 중 하나라도 빠지면 2026년 최저임금 10,320원이 기준이라 미달입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-08",
+  "category": "계산카드·적용요건",
+  "question": "정규직으로 입사해 수습 기간 6개월 중 5개월째인데 아직 시급 9,300원을 받고 있습니다. 주 5일 하루 8시간 일합니다. 최저임금 위반인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re!:(?:^|[.!?\n])(?![^.!?\\n]*(?:라면|경우|요건|까지만|이내))[^.!?\\n]*9,288\\s*원\\s*(?:이상|보다\\s*많)",
+   "re:수습\\s*기간\\s*(?:중|동안)(?:에는|이므로|이라서?)\\s*(?:최저임금의\\s*)?90\\s*%"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "9,288원 이상이라 최저임금 위반이 아닙니다.",
+    "수습 기간 중이므로 최저임금의 90%만 받아도 됩니다."
+   ],
+   "negative": [
+    "수습 감액은 수습을 시작한 날부터 3개월까지만 가능해 5개월째에는 2026년 최저임금 10,320원이 기준입니다.",
+    "9,300원은 10,320원보다 1,020원 적어 최저임금에 미달합니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-09",
+  "category": "계산카드·적용요건",
+  "question": "배달 라이더(노무제공자)로 일하는데 시간당 9,000원 정도 법니다. 주 5일 하루 8시간 일해요. 최저임금 위반 아닌가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "275,314",
+   "re:3년\\s*이하의?\\s*징역",
+   "re:최저임금법\\s*(?:제6조\\s*)?위반(?:입니다|에\\s*해당합니다|이\\s*맞습니다)"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "부족분은 월 275,314원입니다.",
+    "위반 시 3년 이하 징역 또는 2천만 원 이하 벌금입니다.",
+    "이는 최저임금법 위반입니다."
+   ],
+   "negative": [
+    "배달 라이더는 노무제공자라 원칙적으로 최저임금법이 적용되지 않습니다.",
+    "실제로 업무 지시와 근무시간 통제를 받아 근로자로 인정되면 최저임금 10,320원이 적용됩니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-10",
+  "category": "계산카드·적용요건",
+  "question": "수습으로 2026년 5월 15일에 입사해 월급 250만 원을 받았는데, 10월 15일에 내일부터 나오지 말라는 해고 통보를 받았습니다. 직원 10명이고 예고는 전혀 없었습니다. 해고예고수당을 받을 수 있나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:수습[^.!?\\n|]{0,40}(?:면제(?:됩니다|된다|돼|대상|입니다)|예외(?:에\\s*해당|입니다))",
+   "re:해고\\s*예고\\s*수당[^.!?\\n|]{0,10}(?<![\\d,])0\\s*원"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "수습 기간 중이라 해고예고 의무가 면제됩니다.",
+    "해고예고수당은 0원입니다."
+   ],
+   "negative": [
+    "2019년 개정 이후 수습이라는 이유만으로 해고예고가 면제되지 않고, 계속근로 3개월 이상이면 30일분 통상임금 약 2,876,712원을 받을 수 있습니다.",
+    "• 해고예고수당: 95,890원/일 × 30일 = 2,876,712원"
+   ]
+  }
+ },
+ {
+  "id": "calc-11",
+  "category": "계산카드·적용요건",
+  "question": "정규직으로 2026년 8월 15일에 입사해 월급 250만 원을 받고 있는데 10월 15일에 갑자기 해고 통보를 받았습니다. 직원 10명이고 예고는 없었습니다. 해고예고수당을 받을 수 있나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "2,876,712",
+   "re:30\\s*일분(?:의)?\\s*통상\\s*임금(?:을|이)?\\s*(?:받을\\s*수\\s*있|지급\\s*(?:받|해야))"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-followups",
+  "detector_examples": {
+   "positive": [
+    "해고예고수당 2,876,712원을 받을 수 있습니다.",
+    "30일분 통상임금을 받을 수 있습니다."
+   ],
+   "negative": [
+    "계속근로기간이 3개월 미만이라 해고예고 의무가 없습니다(근로기준법 제26조 단서 제1호).",
+    "다만 해고의 정당한 이유가 없다면 부당해고 구제신청을 검토할 수 있습니다."
+   ]
+  }
+ }
+]

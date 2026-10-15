@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
+from .shared import monthly_pay_estimate
 from ..constants import (
     get_eitc_params,
     EITC_ASSET_UPPER,
@@ -107,7 +108,7 @@ def calc_eitc(inp: WageInput, ow: OrdinaryWageResult) -> EitcResult:
     # ── 2. 연간 총소득 결정 ───────────────────────────────────────────────
     income = max(0.0, inp.annual_total_income)
     if income == 0:
-        monthly = inp.monthly_total_pay or inp.monthly_wage
+        monthly = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, inp.monthly_wage)   # 연장 등 포함(F6)
         if monthly:
             income = monthly * 12
             warnings.append(

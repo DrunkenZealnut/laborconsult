@@ -10,11 +10,13 @@ _normalize_allowances: dict → FixedAllowance 변환 (하위 호환)
 
 from __future__ import annotations
 
+import math
 import re
+from dataclasses import dataclass, replace
 from datetime import date
 
-from ..models import WageInput, BusinessSize, FixedAllowance
-from ..utils import fmt_hours, parse_date
+from ..models import WageInput, BusinessSize, FixedAllowance, HourSplit, WageType, WorkType
+from ..utils import WEEKS_PER_MONTH, fmt_hours, parse_date
 from ..constants import OVERTIME_RATE, NIGHT_PREMIUM_RATE, HOLIDAY_RATE, HOLIDAY_OT_RATE
 
 
@@ -213,6 +215,209 @@ def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tu
     # '÷ 40h × 8h' 표기는 답변 규칙(WAGE_CALC_RULES)이 쓰는 같은 값의 다른 표기다 — 카드와 답변의 산식 표기를 맞춘다
     return hours, (f"주 소정근로일 {fmt_hours(weekly_work_days)}일 < 5일 → 주휴: min({fmt_hours(weekly)}h ÷ 5, 8h) = "
                    f"{fmt_hours(hours)}h (= {fmt_hours(weekly)}h ÷ 40h × 8h — 1주 소정근로일을 5일로 봄)")
+
+
+# ── 소정·연장 분리 ─────────────────────────────────────────────────────────────
+# 소정근로시간은 1일 8시간·1주 40시간(근로기준법 제50조) 범위에서 정한 시간이다(제2조 제1항 제8호). 예전 카드는 1일 시간 ×
+# 근무일수를 그대로 '주 소정근로'라 불러 연장 가산을 빠뜨리고(주 5일 × 10h: 월 260,714원) 주 5일 미만 주휴를 부풀렸다
+# (주 4일 × 10h: 8h, 맞는 값 6.4h — calc-card-followups R1·R2). 상시 4명 이하도 같다(근로기준정책과-2668·-5106) — 가산만
+# 없다(MultiplierContext). 계산 전에 일정을 한 번 정규화하고 모든 계산기가 그 값을 읽는다(D9) — 계산기 안에서 1일 시간 ×
+# 근무일수를 다시 '소정'이라 부르지 말 것. 주휴 함수(weekly_holiday_hours)의 입력도 이렇게 나눈 소정근로시간이다.
+LEGAL_DAILY_HOURS = 8.0
+LEGAL_WEEKLY_HOURS = 40.0
+_SHIFT_TABLE_TYPES = frozenset({WorkType.SHIFT_4_2, WorkType.SHIFT_3_2, WorkType.SHIFT_3, WorkType.SHIFT_2})
+_EPS = 1e-9
+
+
+def split_hours(raw_daily, raw_days, *, daily_cap: float = LEGAL_DAILY_HOURS,
+                weekly_cap: float = LEGAL_WEEKLY_HOURS) -> HourSplit:
+    """1일 근로시간·주 근무일수를 소정근로와 연장근로로 나눈다(D1).
+
+    1일 소정은 1일 한도까지다. 그 합이 1주 한도를 넘으면 근무일 순서대로 쌓아 1주 한도에 닿은 뒤의 시간이 연장이고,
+    소정근로일은 소정 시간이 하루라도 있는 날 수다 — 주 6일 × 8h는 소정 8h × 5일 + 연장 8h(주휴 8h), 주 6일 × 7h는
+    소정 40h를 6일에(1일 평균 6.67h) + 연장 2h. 고르게 나누면(40 ÷ 6) 6일째 8시간이 전부 연장인데도 하루 6.67시간
+    소정으로 읽힌다. 근무일수가 평균(5.8일 등)이라 그 소정근로일이 근무일수를 넘으면 근무일수로 둔다.
+    """
+    try:
+        daily_in, days_in = float(raw_daily), float(raw_days)
+    except (TypeError, ValueError):
+        return HourSplit(0.0, 0.0, 0.0, 0.0, mode="skipped", reason="unknown")
+    if daily_in <= 0 or days_in <= 0:
+        return HourSplit(daily_in, days_in, daily_in, days_in, mode="skipped", reason="unknown")
+    capped = min(daily_in, daily_cap)
+    if capped * days_in <= weekly_cap + _EPS:
+        daily, days = capped, days_in
+    else:
+        full = math.floor(weekly_cap / capped + _EPS)            # 소정 시간을 꽉 채운 날
+        rest = weekly_cap - full * capped
+        days = min(full + (1 if rest > _EPS else 0), days_in)
+        daily = weekly_cap / days
+    excess = daily_in * days_in - daily * days
+    if excess <= _EPS:
+        return HourSplit(daily_in, days_in, daily_in, days_in)
+    return HourSplit(daily_in, days_in, daily, days, excess=excess, mode="applied", overtime=excess)
+
+
+def reconcile_overtime(stated: float, derived: float) -> float:
+    """질문에 따로 적힌 주 연장시간과 1일·1주 한도 초과분을 하나로(D8).
+
+    같은 2시간을 두 필드에 함께 적는 추출이 흔해 더하면 이중 계산이다. 값이 다르면 큰 값을 쓰고, 별개일 가능성은
+    연장수당 계산식에 안내한다(calc_overtime)."""
+    if stated <= _EPS:
+        return derived
+    if derived <= _EPS or abs(stated - derived) <= 0.5:
+        return stated
+    return max(stated, derived)
+
+
+def _split_skip_reason(inp: WageInput) -> str:
+    s = inp.schedule
+    if inp.is_platform_worker:
+        return "platform"            # 근로시간 규정이 적용되지 않는다
+    if s.monthly_scheduled_hours is not None or s.shift_monthly_hours is not None:
+        return "direct_hours"        # 기준시간을 직접 정한 입력
+    if inp.work_type in _SHIFT_TABLE_TYPES:
+        return "shift_table"         # 교대제 표 기준시간(SHIFT_MONTHLY_HOURS)의 성격은 별도 점검 대상
+    if getattr(inp, "flexible_work_unit", ""):
+        return "flexible"            # 탄력적 근로시간제 계산 입력
+    return ""
+
+
+def apply_hour_split(inp: WageInput) -> HourSplit:
+    """inp.schedule을 소정근로 기준으로 정규화하고 결과를 inp.hour_split에 둔다. 이미 나눴으면 그 결과를 돌려준다.
+
+    파이프라인이 먼저(구성 판정 전) 부르고 facade가 다시 부른다 — 두 번째는 아무 일도 하지 않는다."""
+    if inp.hour_split is not None:
+        return inp.hour_split
+    s = inp.schedule
+    reason = _split_skip_reason(inp)
+    if reason:
+        split = HourSplit(s.daily_work_hours, s.weekly_work_days, s.daily_work_hours, s.weekly_work_days,
+                          mode="skipped", reason=reason)
+    else:
+        split = split_hours(s.daily_work_hours, s.weekly_work_days)
+        if split.mode == "applied":
+            stated = float(s.weekly_overtime_hours or 0.0)
+            split = replace(split, stated_overtime=stated, overtime=reconcile_overtime(stated, split.excess))
+            s.daily_work_hours, s.weekly_work_days = split.daily, split.days
+            s.weekly_overtime_hours = split.overtime
+    inp.hour_split = split
+    return split
+
+
+def split_note(split: HourSplit | None) -> str:
+    """나눈 결과 설명 — [기준시간]·소정근로시간·시급 없는 주휴 블록이 같은 문장을 쓴다."""
+    if split is None or split.mode != "applied":
+        return ""
+    raw_weekly = split.raw_daily * split.raw_days
+    parts = [f"주 근로 {fmt_hours(split.raw_daily)}h×{fmt_hours(split.raw_days)}일 = {fmt_hours(raw_weekly)}h → 소정근로 "
+             f"{fmt_hours(split.daily)}h×{fmt_hours(split.days)}일 = {fmt_hours(split.weekly)}h + 연장 {fmt_hours(split.excess)}h"
+             "(1일 8시간·주 40시간 초과분 — 근로기준법 제50조, 대법원 2022다291153)"]
+    if split.days < split.raw_days - _EPS:
+        parts.append(f"주 40시간을 넘는 {fmt_hours(split.raw_days - split.days)}일분은 연장근로일로 보아 소정근로일 "
+                     f"{fmt_hours(split.days)}일")
+    elif split.daily < min(split.raw_daily, LEGAL_DAILY_HOURS) - _EPS:
+        parts.append(f"주 40시간 한도라 1일 평균 소정근로 {fmt_hours(split.daily)}h")
+    if split.raw_daily > 12 + _EPS:
+        parts.append(f"휴게·수면시간은 근로시간에서 뺍니다(근로기준법 제54조) — {fmt_hours(split.raw_daily)}시간에 휴게가 "
+                     "들어 있으면 소정·연장 시간이 달라집니다")
+    return ", ".join(parts)
+
+
+# ── 연장·야간·휴일 근로 임금 ─────────────────────────────────────────────────────
+# 연장수당 계산기(calc_overtime)와 평균임금·보수월액 추정(monthly_pay_estimate)이 같은 산식을 쓴다. 예전에는 카드의 '월 총 예상
+# 수령액'(통상임금 + 연장수당 3,285,000원)과 퇴직금 평균임금·4대보험 보수(통상임금만 2,502,857원 기준)가 한 카드에서 갈렸다
+# (calc-card-followups R15).
+
+@dataclass(frozen=True)
+class PremiumWeekly:
+    overtime: float = 0.0     # 연장근로 임금(가산 포함)
+    night: float = 0.0        # 야간 가산분
+    holiday: float = 0.0      # 휴일근로 임금(가산 포함)
+
+    @property
+    def total(self) -> float:
+        return self.overtime + self.night + self.holiday
+
+
+def premium_weekly(inp: WageInput, hourly: float) -> PremiumWeekly:
+    """주당 연장·야간·휴일 근로 임금(5인 미만은 가산 없이 — MultiplierContext)."""
+    s = inp.schedule
+    mc = MultiplierContext(inp)
+    return PremiumWeekly(
+        overtime=hourly * s.weekly_overtime_hours * (1 + mc.overtime),
+        night=hourly * s.weekly_night_hours * mc.night,
+        holiday=(hourly * s.weekly_holiday_hours * (1 + mc.holiday)
+                 + hourly * s.weekly_holiday_overtime_hours * (1 + mc.holiday + mc.holiday_ot)),
+    )
+
+
+def _premium_included(inp: WageInput) -> bool:
+    """그 금액에 연장·야간·휴일 근로 임금이 이미 들어 있는가 — 포괄임금제 총액, 또는 파이프라인이 질문의 구성 진술로 정한
+    총액(wage_composition_known — 정확 경로는 monthly_total_pay가 따로 있어 여기 오지 않는다)."""
+    return inp.wage_type == WageType.COMPREHENSIVE or inp.wage_composition_known
+
+
+def _adds_premium(inp: WageInput) -> bool:
+    """월 임금총액 추정에 연장·야간·휴일 근로 임금을 더하는가 — 이미 들어 있는 총액이면 더하지 않는다. 노무제공자는 근로기준법의
+    연장 가산(제56조)을 받는 근로자가 아니라 더하지 않는다(독립 리뷰 M3: 특고 보수월액에 연장분 월 937,500원을 더했다)."""
+    return not (_premium_included(inp) or inp.is_platform_worker)
+
+
+def fixed_overtime_monthly(inp: WageInput) -> float:
+    """고정수당 중 연장·야간·휴일 근로의 대가(고정연장수당·시간외수당·포괄수당 등)의 월액. 통상임금 계산기가 이름으로 통상임금에서
+    빼는 수당과 같은 판정이다(명시적으로 통상임금에 넣은 것·성과조건·연차수당은 제외)."""
+    total = 0.0
+    for a in normalize_allowances(inp.fixed_allowances):
+        if a.is_ordinary is True or a.condition == "성과조건":
+            continue
+        name = a.name or ""
+        if (AllowanceClassifier.is_not_ordinary_by_name(name) and AllowanceClassifier.is_overtime_related(name)
+                and not any(kw in AllowanceClassifier._keyword_name(name) for kw in AllowanceClassifier.NON_INCLUDED_KEYWORDS)):
+            total += a.amount / 12 if a.annual else a.amount
+    return total
+
+
+def premium_monthly_with_fixed(inp: WageInput, hourly: float) -> tuple[float, float, float]:
+    """(월 총액에 넣을 연장 등 임금, 계산한 연장 등 월액, 고정연장수당 월액). 고정연장수당은 연장·야간·휴일 근로의 대가라 계산한
+    금액과 같은 몫이다 — 둘 다 있으면 큰 쪽만 센다(독립 리뷰 M2: 월 총액 3,785,000원 = 통상임금 + 고정연장수당 + 계산한 연장수당)."""
+    derived = premium_weekly(inp, hourly).total * WEEKS_PER_MONTH
+    fixed = fixed_overtime_monthly(inp) if derived > 0.5 else 0.0
+    return max(derived, fixed), derived, fixed
+
+
+def ordinary_wage_from_total(inp: WageInput) -> bool:
+    """통상임금 계산 결과가 실제 통상임금이 아니라 수당이 섞인 총액에서 나왔는가 — 포괄임금제 총액(명세 없음), 또는 파이프라인이
+    질문의 구성 진술로 정한 총액 경로(보류 카드 — 정확 경로는 기본급과 monthly_total_pay가 따로 있다). 이때는 통상임금과
+    비교하는 하한(실업급여 기초일액 — 고용보험법 제45조 제2항)을 쓰지 않는다. 부풀린 값으로 하한이 걸린다."""
+    if inp.wage_type == WageType.COMPREHENSIVE:
+        return not inp.comprehensive_breakdown
+    return inp.wage_composition_known and not inp.monthly_total_pay
+
+
+def monthly_pay_estimate(inp: WageInput, hourly: float, base: float | None) -> float | None:
+    """평균임금·보수월액·소득 추정에 쓰는 월 임금총액 — 주어진 총액(monthly_total_pay)이 있으면 그 값, 없으면 base에 연장·
+    야간·휴일 근로 임금 월액을 더한다. 그 임금이 이미 들어 있는 총액이면 더하지 않는다. 연장 등이 없으면 base 그대로다."""
+    if inp.monthly_total_pay:
+        return inp.monthly_total_pay
+    if base is None:
+        return None
+    if not _adds_premium(inp):
+        return base
+    return base + premium_monthly_with_fixed(inp, hourly)[0]
+
+
+def premium_monthly_note(inp: WageInput, hourly: float) -> str:
+    """monthly_pay_estimate가 더한 금액의 표기 — 더하지 않았으면 빈 문자열."""
+    if inp.monthly_total_pay or not _adds_premium(inp):
+        return ""
+    added, derived, fixed = premium_monthly_with_fixed(inp, hourly)
+    if added <= 0.5:
+        return ""
+    if fixed:
+        return (f" + 연장·야간·휴일 근로 임금 월 {added:,.0f}원(고정연장수당 {fixed:,.0f}원과 계산한 금액 {derived:,.0f}원 중 "
+                "큰 쪽, 매주 같은 시간으로 봄)")
+    return f" + 연장·야간·휴일 근로 임금 월 {added:,.0f}원(매주 같은 시간으로 봄)"
 
 
 # ── Allowance Normalization ────────────────────────────────────────────────────
