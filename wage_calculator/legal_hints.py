@@ -147,12 +147,12 @@ def _hints_minimum_wage(inp: WageInput, minimum_wage_ok: bool) -> list[LegalHint
     if inp.is_probation:
         hints.append(LegalHint(
             category="최저임금",
-            condition="수습기간 최저임금 90% 특례 적용 중",
+            condition="수습 감액 요건 확인",
             hint=(
-                "수습 사용 후 3개월 이내이면 최저임금의 90%를 적용할 수 있습니다. "
-                "단, 고용노동부 고시 단순노무직은 특례 미적용."
+                "수습 중 최저임금 감액(최대 10%)은 1년 이상의 기간을 정한 근로계약이고, 수습을 시작한 날부터 3개월 이내이며, "
+                "단순노무업무로 고용노동부장관이 고시한 직종이 아닐 때만 가능합니다. 하나라도 빠지면 최저임금 전액을 지급해야 합니다."
             ),
-            basis="최저임금법 제5조 제2항",
+            basis="최저임금법 제5조 제2항, 같은 법 시행령 제3조",
             priority=2,
         ))
 

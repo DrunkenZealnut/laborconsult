@@ -1377,11 +1377,16 @@ class CalculatorFactTest(unittest.TestCase):
         hourly = WageCalculator().calculate(WageInput(wage_type=WageType.HOURLY, hourly_wage=10320, reference_year=2026),
                                             ["minimum_wage"])
         self.assertFalse(any("고시의 월 환산액" in w for w in hourly.warnings))
-        # 수습 감액(90%)이면 고시 환산액과 비교하지 않는다 — 고시 금액은 감액 전 금액이다
+        # 수습 감액(90%)이면 고시 환산액과 비교하지 않는다 — 고시 금액은 감액 전 금액이다. 감액은 요건 셋을 확인했을 때만이라
+        # (calc-card-followups D5) 기간의 정함이 없는 계약·사무직을 입력에 넣는다. 요건을 모르면 9,288원/10,320원으로 갈려 보류다
         probation = WageCalculator().calculate(WageInput(wage_type=WageType.MONTHLY, monthly_wage=1940000, reference_year=2026,
-                                                         is_probation=True, probation_months=3), ["minimum_wage"])
+                                                         is_probation=True, probation_months=3, contract_open_ended=True,
+                                                         occupation_code="3"), ["minimum_wage"])
         self.assertIs(probation.minimum_wage_ok, True)          # 1,940,000 ÷ 208.5714h = 9,301원 ≥ 9,288원
         self.assertFalse(any("고시의 월 환산액" in w for w in probation.warnings))
+        unknown = WageCalculator().calculate(WageInput(wage_type=WageType.MONTHLY, monthly_wage=1940000, reference_year=2026,
+                                                       is_probation=True, probation_months=3), ["minimum_wage"])
+        self.assertIsNone(unknown.minimum_wage_ok)
         # 사실 블록도 같은 사정을 밝힌다(카드 판정과 209시간 환산액이 한 답변 안에서 갈리지 않게)
         from app.core.pipeline import _build_minwage_facts
         analysis = type("A", (), {"calculation_types": ["minimum_wage"], "relevant_laws": [], "extracted_info": {},

@@ -88,15 +88,29 @@ def _pop_overtime(r, result):
 
 def _pop_minimum_wage(r, result):
     """result.summary에 최저임금 충족 여부·실질시급·부족분 추가. 반환: 0."""
+    from ..result import MW_COMPLIANT, MW_HELD, MW_NOT_APPLICABLE, MW_VIOLATION
+    if getattr(r, "not_applicable", False):
+        # 노무제공자는 원칙적으로 최저임금법의 근로자가 아니다(제2조) — 판정하지 않고 근로자로 인정될 때의 참고값만 둔다(F4)
+        result.summary["최저임금 충족"] = "➖ 해당 없음(노무제공자)"
+        result.summary["실질시급"] = f"{r.effective_hourly:,.0f}원(근로자로 인정될 때 참고)"
+        result.minimum_wage_ok = None
+        result.minimum_wage_state = MW_NOT_APPLICABLE
+        return 0
     if getattr(r, "undetermined", False):
-        # 기준(주휴 판례 원칙 vs 시행령 별표 2, 연장 별도 vs 연장 포함 역산)에 따라 판정이 갈린다 — 판정은 보류(None),
-        # 실질시급을 함께 싣는다
-        alternatives = getattr(r, "alternative_hourlies", ()) or (r.alternative_hourly,)
+        # 기준(주휴 판례 원칙 vs 시행령 별표 2, 연장 별도 vs 연장 포함 역산, 수습 감액 여부)에 따라 판정이 갈린다 — 판정은
+        # 보류(None), 실질시급을 함께 싣는다. 수습 감액 여부만 갈리면 실질시급은 하나고 최저임금 기준이 둘이다
+        alternatives = getattr(r, "alternative_hourlies", ()) or ((r.alternative_hourly,) if r.alternative_hourly else ())
         values = list(dict.fromkeys([r.effective_hourly, *alternatives]))
         result.summary["최저임금 충족"] = "⏸ 판정 보류"
         result.summary["실질시급"] = " 또는 ".join(f"{v:,.0f}원" for v in values)
+        if getattr(r, "alternative_minimum", 0):
+            # 고시 금액을 먼저 둔다 — 감액값이 라벨 없이 '최저임금: 9,288원'처럼 읽히면 답변이 그대로 옮긴다
+            result.summary["최저임금 기준"] = (f"{r.legal_minimum:,.0f}원 또는 수습 감액 {r.alternative_minimum:,.0f}원"
+                                          "(요건을 모두 갖춘 경우)")
         result.minimum_wage_ok = None
+        result.minimum_wage_state = MW_HELD
         return 0
+    result.minimum_wage_state = MW_COMPLIANT if r.is_compliant else MW_VIOLATION
     result.summary["최저임금 충족"] = "✅ 충족" if r.is_compliant else "❌ 미달"
     result.summary["실질시급"] = f"{r.effective_hourly:,.0f}원"
     if not r.is_compliant:
@@ -136,6 +150,7 @@ def _pop_comprehensive(r, result):
     result.summary["포괄임금 역산 시급"] = f"{r.effective_hourly:,.0f}원"
     result.summary["총계수시간(월)"] = f"{fmt_hours(r.total_coefficient_hours)}h"
     result.summary["최저임금 충족"] = "✅" if r.is_minimum_wage_ok else "❌"
+    result.minimum_wage_state = "compliant" if r.is_minimum_wage_ok else "violation"
     if not r.is_valid_comprehensive:
         result.summary["포괄임금 유효성"] = "⚠️ 문제 있음"
     result.minimum_wage_ok = r.is_minimum_wage_ok

@@ -304,8 +304,12 @@ class WageInput:
 
     # ── 수습기간 여부 ─────────────────────────────────────────────────────────
     is_probation: bool = False             # 수습기간 여부 (최저임금 90% 특례)
-    probation_months: int = 3              # 수습기간 (개월)
-    contract_months: Optional[int] = None  # 근로계약기간 (개월). None=기간 정함 없음(=1년 이상으로 간주)
+    # 수습 감액 요건(최저임금법 제5조 제2항)은 질문에서 확인된 것만 충족으로 본다(calc-card-followups D5) — None은 '모름'이다.
+    # 예전 기본값(수습 3개월, 계약기간 없음 = 1년 이상)은 수습 6개월 중 5개월째에도 90%로 '충족'을 냈다
+    probation_months: Optional[int] = None          # 수습기간 길이(개월)
+    probation_elapsed_months: Optional[int] = None  # 수습을 시작한 뒤 몇 개월째인가
+    contract_months: Optional[int] = None  # 근로계약기간 (개월). None=모름 — 기간의 정함이 없는 계약은 contract_open_ended
+    contract_open_ended: Optional[bool] = None      # 정규직·무기계약 등 기간의 정함이 없는 계약이면 True(1년 이상으로 본다)
     occupation_code: Optional[str] = None  # 한국표준직업분류 코드 (예: "91", "9100"). 대분류 "9"=단순노무종사자
 
     # ── 특수고용직(노무제공자) ────────────────────────────────────────────────

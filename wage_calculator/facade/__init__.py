@@ -190,6 +190,7 @@ class WageCalculator:
             # 믿을 수 없는 '충족'은 싣지 않는다 — 판정은 None(보류)으로 남고, 읽은 승인 기준도 적용 버전으로 보고하지 않는다
             if key in hold_compliant and getattr(r, "is_compliant", False):
                 forget_used_since(mark)
+                result.minimum_wage_state = "held"
                 continue
             added = populate(r, result)
             if key == "overtime":
@@ -268,6 +269,7 @@ class WageCalculator:
             # 보류된 계산은 판정을 남기지 않는다 — 값이 남아 있으면 '최저임금 충족 ✅'라는 없는 판정이 나간다
             # (필드 기본값은 None).
             result.minimum_wage_ok = None
+            result.minimum_wage_state = "held"
         if "legal_hints" in targets or has_conditions:
             # 판정 보류(None)를 falsy 로 넘기면 '미달' 힌트가 생긴다 — 모르는 것을
             # 위반으로 단정하게 되므로 보류일 때는 위반 힌트를 만들지 않는다.

@@ -141,7 +141,7 @@ TEST_CASES = [
     },
     {
         "id": 8,
-        "desc": "수습기간 — 최저임금 90% 특례",
+        "desc": "수습기간 — 최저임금 90% 특례(1년 이상 계약·3개월 이내·단순노무 아님)",
         "input": WageInput(
             wage_type=WageType.HOURLY,
             hourly_wage=9030,    # 최저임금 90% 수준
@@ -149,6 +149,8 @@ TEST_CASES = [
             reference_year=2025,
             is_probation=True,
             probation_months=3,
+            contract_open_ended=True,   # 감액 요건은 확인된 것만 충족으로 본다(calc-card-followups D5)
+            occupation_code="3",
         ),
         "targets": ["minimum_wage"],
     },

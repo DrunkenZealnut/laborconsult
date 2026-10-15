@@ -28,6 +28,9 @@ class WageResult:
     monthly_total: float = 0.0            # 월 총 예상 수령액 (세전, 원)
     monthly_net: float = 0.0             # 월 실수령액 (세후, 원) — insurance 계산 시 채워짐
     minimum_wage_ok: bool | None = None   # None: 미실행 또는 계산 보류
+    # 표시용 상태(calc-card-followups D6) — ""(미실행)·compliant·violation·held(보류)·not_applicable(노무제공자). None인
+    # minimum_wage_ok를 판정 값으로 쓰는 곳(법률 힌트·JSON·단언)은 그대로 두고, 헤더만 이 값으로 가른다
+    minimum_wage_state: str = ""
     # legacy(내장표) / managed_parameters(승인 기준 소비함) /
     # managed_no_parameters(관리 모드지만 이 계산엔 해당 기준 없음) / blocked(보류)
     legal_rule_status: str = "legacy"
@@ -87,10 +90,10 @@ def format_result(result: "WageResult") -> str:
     # 임금 미제공(통상시급 0원) 부분 실행 시 최저임금 판정도 무의미 — 함께 숨김
     if result.ordinary_hourly:
         lines.append(f"{result.hourly_label}: {result.ordinary_hourly:,.0f}원")
-        # None 은 '판정 보류'다. falsy 라고 '미달'로 찍으면 없는 위반을 만들어낸다.
-        verdict = ("⏸ 판정 보류" if result.minimum_wage_ok is None
-                   else "✅ 충족" if result.minimum_wage_ok else "❌ 미달")
-        lines.append(f"최저임금 충족: {verdict}")
+        # 보류를 falsy 라고 '미달'로 찍으면 없는 위반을 만들어낸다. 계산하지 않았으면 줄을 내지 않는다 — 보류가 아니다(F4b)
+        verdict = minimum_wage_verdict(result)
+        if verdict:
+            lines.append(f"최저임금 충족: {verdict}")
     lines.append("")
 
     if result.summary:
@@ -129,12 +132,28 @@ def format_result(result: "WageResult") -> str:
     return "\n".join(lines)
 
 
+MW_COMPLIANT, MW_VIOLATION, MW_HELD, MW_NOT_APPLICABLE = "compliant", "violation", "held", "not_applicable"
+
+
+def minimum_wage_verdict(result: "WageResult") -> str | None:
+    """헤더의 최저임금 판정 표기 — 계산하지 않았으면 None."""
+    state = result.minimum_wage_state
+    if state == MW_NOT_APPLICABLE:
+        return "➖ 해당 없음 — 노무제공자(근로자성이 인정되면 적용)"
+    if state == MW_HELD:
+        return "⏸ 판정 보류"
+    if result.minimum_wage_ok is not None:
+        return "✅ 충족" if result.minimum_wage_ok else "❌ 미달"
+    return None
+
+
 def format_result_json(result: "WageResult") -> dict:
     """WageResult를 JSON 직렬화 가능한 dict로 변환"""
     payload = {
         "ordinary_hourly": result.ordinary_hourly,
         "monthly_total": result.monthly_total,
         "minimum_wage_ok": result.minimum_wage_ok,
+        "minimum_wage_state": result.minimum_wage_state,
         "legal_rule_status": result.legal_rule_status,
         "legal_rule_versions": result.legal_rule_versions,
         "legal_rule_blocked": result.legal_rule_blocked,

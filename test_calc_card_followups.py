@@ -12,6 +12,10 @@
 - T8 1일 통상임금 표기·연차수당(F2)
 - T9 실업급여(F5)
 - T10 평균임금·보수(F6)
+- T11 수습 감액 요건(F3)
+- T12 노무제공자 최저임금(F4)
+- T13 최저임금 상태·헤더(D6·F4b)
+- T14 해고예고 예외(F7)
 - T15 원문 앵커·고정 8시간 구조 검사
 - T16 흐름도 JS
 - T17 PR A 독립 리뷰 지적 회귀(H1~H4·M1~M4·L1~L4)
@@ -432,6 +436,15 @@ class StructureTest(unittest.TestCase):
         ("lsa_act_63", "감시(監視) 또는 단속적(斷續的)으로 근로에 종사하는 사람으로서 사용자가 고용노동부장관의 승인을 받은 사람"),
         ("lsa_act_69", "15세 이상 18세 미만인 사람의 근로시간은 1일에 7시간, 1주에 35시간을 초과하지 못한다"),
         ("ei_act_45", "마지막 사업에서 이직 당시 일용근로자였던 사람의 경우에는 그러하지 아니하다"),
+        # PR B — 수습 감액 요건(F3), 노무제공자(F4), 해고예고 예외(F7)
+        ("mw_act_5", "1년 이상의 기간을 정하여 근로계약을 체결하고 수습 중에 있는 근로자로서 수습을 시작한 날부터 3개월 이내인 사람"),
+        ("mw_act_5", "단순노무업무로 고용노동부장관이 정하여 고시한 직종에 종사하는 근로자는 제외한다"),
+        ("mw_enf_3", "시간급 최저임금액(최저임금으로 정한 금액을 말한다. 이하 같다)에서 100분의 10을 뺀 금액"),
+        ("mw_act_2", "「근로기준법」 제2조에 따른 근로자, 사용자 및 임금을 말한다"),
+        ("lsa_act_26", "근로자가 계속 근로한 기간이 3개월 미만인 경우"),
+        ("lsa_act_26", "천재ㆍ사변, 그 밖의 부득이한 사유로 사업을 계속하는 것이 불가능한 경우"),
+        ("lsa_act_26", "근로자가 고의로 사업에 막대한 지장을 초래하거나 재산상 손해를 끼친 경우로서 고용노동부령으로 정하는 사유"),
+        ("civ_act_160", "최종의 월에 해당일이 없는 때에는 그 월의 말일로 기간이 만료한다"),
     )
 
     def test_t15_fixed_eight_hours_are_justified(self):
@@ -724,6 +737,233 @@ class ReviewRegressionTest(unittest.TestCase):
         self.assertIn("주휴: min(28h ÷ 5, 8h) = 5.6h", out)
         assumed = card(dict(HOURLY, calculation_types_kr=["주휴수당"], daily_work_hours=8), "시급 12,000원, 하루 8시간 일해요. 주휴수당은요?")
         self.assertIn("근무일수를 질문에서 확인하지 못해 주 5일로 계산", assumed)
+
+
+class ProbationTest(unittest.TestCase):
+    """T11 — 수습 감액은 요건 셋을 질문에서 확인했을 때만(최저임금법 제5조 제2항·시행령 제3조, D5). main e76ab02는 요건 미상을
+    충족으로 보고 수습 기간 기본값 3개월을 써서, 수습 6개월 중 5개월째에도 90% 기준으로 '충족'을 냈다(R11)."""
+
+    BASE = {"calculation_types_kr": ["최저임금"], "wage_type": "시급", "wage_amount": 9300, "is_probation": True,
+            "weekly_work_days": 5, "daily_work_hours": 8, "business_size": "5인이상"}
+
+    def test_t11_r10_unknown_requirements_hold(self):
+        out = card(self.BASE, "카페에서 수습 기간이라 시급 9,300원을 받고 주 5일 하루 8시간 일합니다. 최저임금 위반 아닌가요?")
+        self.assertIn("최저임금 충족: ⏸ 판정 보류", out)
+        self.assertIn("최저임금 기준: 10,320원 또는 수습 감액 9,288원(요건을 모두 갖춘 경우)", out)
+        self.assertIn("실질시급: 9,300원\n", out)                      # 실질시급은 하나다 — '또는 0원'이 붙지 않는다
+        for label in ("1년 이상의 기간을 정한 근로계약", "수습을 시작한 날부터 3개월 이내", "단순노무업무로 고시한 직종이 아님"):
+            self.assertIn(label, out)
+        self.assertIn("2026년 최저임금: 10,320원/h", out)
+        self.assertNotRegex(out, r"최저임금(?:은|이|:)\s*9,288원")    # 감액값을 '최저임금'이라 부르지 않는다
+
+    def test_t11_r11_three_months_passed(self):
+        out = card(self.BASE, "정규직으로 입사해 수습 기간 6개월 중 5개월째인데 아직 시급 9,300원을 받고 있습니다. 주 5일 하루 8시간 일합니다.")
+        self.assertIn("최저임금 충족: ❌ 미달", out)
+        self.assertIn("부족분(월): 212,743원", out)
+        self.assertIn("수습을 시작한 날부터 3개월이 지나 최저임금을 감액할 수 없습니다", out)
+
+    def test_t11_all_requirements_met(self):
+        out = card(dict(self.BASE, contract_months=12, occupation_code="3"), "1년 계약으로 입사해 수습 2개월째, 사무직입니다.")
+        self.assertIn("최저임금 충족: ✅ 충족", out)
+        self.assertIn("수습 감액 최저임금: 10,320원 × 90% = 9,288원/h", out)
+        self.assertIn("충족: 9,300원 ≥ 9,288원(수습 감액 최저임금)", out)
+        self.assertIn("2026년 최저임금: 10,320원/h", out)                  # 고시 금액은 그대로 — 감액값은 따로 적는다
+        self.assertNotRegex(out, r"최저임금(?:은|이|:)\s*9,288원")
+
+    def test_t11_requirement_failures(self):
+        cases = (({"contract_months": 12, "occupation_code": "9"}, "1년 계약 수습 2개월째, 청소 업무입니다.",
+                  "단순노무업무로 고용노동부장관이 고시한 직종(한국표준직업분류 대분류 9)은 수습이어도"),
+                 ({"contract_months": 6, "occupation_code": "3"}, "6개월 계약 수습 2개월째, 사무직입니다.",
+                  "근로계약기간이 6개월로 1년 미만이라"),
+                 ({"contract_months": 6}, "정규직 전환 전 6개월 계약직이고 수습 2개월째입니다.", "근로계약기간이 6개월로 1년 미만이라"))
+        for extra, query, reason in cases:
+            with self.subTest(query):
+                out = card(dict(self.BASE, **extra), query)
+                self.assertIn("최저임금 충족: ❌ 미달", out)
+                self.assertIn(reason, out)
+                self.assertNotIn("수습 감액 최저임금: ", out)
+
+    def test_t11_eighty_percent_is_a_violation_even_with_the_reduction(self):
+        out = card(dict(self.BASE, wage_amount=8256, contract_months=12, occupation_code="3"),
+                   "1년 계약 수습 2개월째, 최저임금의 80%인 시급 8,256원을 받습니다.")
+        self.assertIn("최저임금 충족: ❌ 미달", out)
+        self.assertIn("최저임금 미달: 실질시급 8,256원 < 9,288원(수습 감액 최저임금)", out)
+
+    def test_t11_reduced_minimum_is_labeled_in_split_warnings(self):
+        """감액 기준이 판정 기준이면 갈림 안내에도 라벨을 단다(2차 리뷰 L5) — 월급 230만 원·하루 10시간이면 연장 별도 11,027원,
+        연장 포함 역산 8,402원이라 수습 감액 최저임금 9,288원을 사이에 두고 갈린다."""
+        out = card({"wage_type": "월급", "wage_amount": 2300000, "is_probation": True, "contract_months": 12,
+                    "occupation_code": "3", "weekly_work_days": 5, "daily_work_hours": 10, "business_size": "5인이상",
+                    "calculation_types_kr": ["최저임금"]}, "1년 계약 수습 2개월째, 월급 230만원, 하루 10시간 주 5일 사무직입니다.")
+        self.assertIn("이므로 수습 감액 최저임금(9,288원) 충족 여부가 갈립니다", out)
+        self.assertNotRegex(out, r"최저임금(?:은|이|:)\s*9,288원")
+
+    def test_t11_unknown_requirements_same_verdict_both_ways(self):
+        """요건을 몰라도 감액 기준·고시 기준의 판정이 같으면 판정한다(보류는 갈릴 때만)."""
+        ok = card(dict(self.BASE, wage_amount=11000), "수습 중이고 시급 11,000원입니다.")
+        self.assertIn("최저임금 충족: ✅ 충족", ok)
+        low = card(dict(self.BASE, wage_amount=8000), "수습 중이고 시급 8,000원입니다.")
+        self.assertIn("최저임금 충족: ❌ 미달", low)
+        self.assertIn("요건을 모두 갖추면 부족분은 월", low)
+
+    def test_t11_legal_hint_lists_three_requirements(self):
+        from wage_calculator import WageCalculator, WageInput, WageType
+        r = WageCalculator().calculate(WageInput(wage_type=WageType.HOURLY, hourly_wage=9300, reference_year=2026,
+                                                 is_probation=True), ["minimum_wage", "legal_hints"])
+        text = " ".join(r.breakdown["법률 검토 포인트"].values())
+        for phrase in ("1년 이상의 기간을 정한 근로계약", "수습을 시작한 날부터 3개월 이내", "단순노무업무로 고용노동부장관이 고시한 직종"):
+            self.assertIn(phrase, text)
+
+    def test_t11_requirement_boundaries(self):
+        """요건 경계 — 계약 12개월, 수습 시작일부터 3개월, 한국표준직업분류 대분류 9. 계약기간 숫자가 '정규직'보다 먼저다."""
+        from wage_calculator import WageInput, WageType
+        from wage_calculator.calculators.minimum_wage import _probation_requirements
+        mk = lambda **k: WageInput(wage_type=WageType.HOURLY, hourly_wage=9300, is_probation=True, **k)  # noqa: E731
+        cases = (({"contract_months": 12}, "contract", True), ({"contract_months": 11}, "contract", False),
+                 ({"contract_open_ended": True}, "contract", True),
+                 ({"contract_open_ended": True, "contract_months": 6}, "contract", False), ({}, "contract", None),
+                 ({"probation_elapsed_months": 3}, "within", True), ({"probation_elapsed_months": 4}, "within", False),
+                 ({"probation_months": 3}, "within", True), ({"probation_months": 6}, "within", None),
+                 ({"occupation_code": "3"}, "occupation", True), ({"occupation_code": "91"}, "occupation", False),
+                 ({}, "occupation", None))
+        for kwargs, key, expected in cases:
+            with self.subTest(kwargs=kwargs, key=key):
+                self.assertIs(_probation_requirements(mk(**kwargs))[key], expected)
+
+    def test_t11_question_terms(self):
+        from app.core.pipeline import _probation_terms
+        self.assertEqual(_probation_terms("정규직으로 입사해 수습 기간 6개월 중 5개월째입니다"),
+                         {"open_ended": True, "length": 6, "elapsed": 5})
+        self.assertEqual(_probation_terms("무기계약으로 입사한 지 2개월 된 수습입니다"),
+                         {"open_ended": True, "length": None, "elapsed": 2})
+        self.assertEqual(_probation_terms("비정규직 수습 중입니다")["open_ended"], False)
+        self.assertEqual(_probation_terms("수습 3개월이고 시급 9,300원")["length"], 3)
+        # 지금의 계약 형태가 아닌 '정규직'(2차 리뷰 M4)과 '일한 지 N개월'(L4)
+        for q in ("정규직 전환을 약속받고 계약직 수습 2개월째입니다", "정규직이 아니라 계약직이고 수습 1개월째예요",
+                  "무기계약직 전환 전 수습 기간입니다", "비 정규직 수습입니다"):
+            self.assertFalse(_probation_terms(q)["open_ended"], q)
+        self.assertEqual(_probation_terms("수습 3개월인데 일한 지 5개월이 됐어요")["elapsed"], 5)
+
+
+class PlatformWorkerTest(unittest.TestCase):
+    """T12 — 노무제공자는 최저임금법의 근로자가 아니어서 판정하지 않는다(최저임금법 제2조, F4). main은 '❌ 미달·노동청 신고·
+    3년 이하 징역'을 단정했다(R13)."""
+
+    BASE = {"calculation_types_kr": ["최저임금"], "wage_type": "시급", "is_platform_worker": True, "weekly_work_days": 5,
+            "daily_work_hours": 8}
+
+    def test_t12_r12_r13(self):
+        for wage, sign, verdict in ((12000, "≥", "충족"), (9000, "<", "미달")):
+            with self.subTest(wage=wage):
+                out = card(dict(self.BASE, wage_amount=wage), f"배달 라이더(노무제공자)로 시간당 {wage:,}원 법니다. 최저임금 위반인가요?")
+                self.assertIn("최저임금 충족: ➖ 해당 없음 — 노무제공자(근로자성이 인정되면 적용)", out)
+                self.assertIn(f"실질시급 {wage:,}원 {sign} 10,320원({verdict})입니다", out)
+                self.assertIn("최저임금법 제2조", out)
+                for banned in ("노동청 신고", "징역", "❌ 미달", "✅ 충족"):
+                    self.assertNotIn(banned, out)
+
+
+class MinimumWageStateTest(unittest.TestCase):
+    """T13 — 최저임금 상태(D6)와 헤더(F4b). 계산하지 않았으면 헤더 줄이 없다 — 보류가 아니다.
+
+    보류 네 경로 중 승인 기준 보류(facade blocked)는 test_legal_rule_updates, 구성 진술 보류(파이프라인)는 test_audit50의
+    '최저임금 충족: ⏸ 판정 보류' 단언이 지킨다 — 상태를 'held'로 두지 않으면 헤더 줄이 사라져 그 단언이 실패한다."""
+
+    def test_t13_r14_no_header_without_the_check(self):
+        out = card({"calculation_types_kr": ["연차수당"], "wage_type": "시급", "wage_amount": 12000, "weekly_work_days": 5,
+                    "daily_work_hours": 8, "start_date": "2024-01-01", "business_size": "5인이상"}, "연차수당은 얼마인가요?")
+        self.assertTrue(out)
+        self.assertNotIn("최저임금 충족", out)
+
+    def test_t13_held_paths_keep_the_header(self):
+        from wage_calculator import WageCalculator, WageInput, WageType
+        from wage_calculator.result import format_result, format_result_json
+        # ① 기준에 따라 판정이 갈림(수습 요건 미상)
+        held = WageCalculator().calculate(WageInput(wage_type=WageType.HOURLY, hourly_wage=9300, reference_year=2026,
+                                                    is_probation=True), ["minimum_wage"])
+        self.assertEqual(held.minimum_wage_state, "held")
+        self.assertIn("최저임금 충족: ⏸ 판정 보류", format_result(held))
+        # ② 소정근로시간 미확인 — '충족'을 싣지 않는다(PR #114 hold_compliant)
+        unknown = WageCalculator().calculate(WageInput(wage_type=WageType.MONTHLY, monthly_wage=3000000, reference_year=2026),
+                                             ["minimum_wage"], hold_compliant=("minimum_wage",))
+        self.assertEqual(unknown.minimum_wage_state, "held")
+        self.assertIn("최저임금 충족: ⏸ 판정 보류", format_result(unknown))
+        # ③ JSON
+        self.assertEqual(format_result_json(held)["minimum_wage_state"], "held")
+        ok = WageCalculator().calculate(WageInput(wage_type=WageType.HOURLY, hourly_wage=12000, reference_year=2026),
+                                        ["minimum_wage"])
+        self.assertEqual((ok.minimum_wage_state, format_result_json(ok)["minimum_wage_state"]), ("compliant", "compliant"))
+
+
+class DismissalNoticeTest(unittest.TestCase):
+    """T14 — 해고예고 예외는 현행 근로기준법 제26조 단서 세 호뿐이다(F7). main은 조문에 없는 수습·일용·계절 면제를 적용했다."""
+
+    BASE = {"calculation_types_kr": ["해고예고수당"], "wage_type": "월급", "wage_amount": 2500000}
+
+    def test_t14_r16_probation_is_not_exempt(self):
+        out = card(dict(self.BASE, is_probation=True, start_date="2026-05-15", end_date="2026-10-15"),
+                   "수습으로 2026년 5월 15일에 입사해 월급 250만 원을 받았는데, 10월 15일에 해고 통보를 받았습니다.")
+        self.assertIn("해고예고수당: 2,876,712원", out)
+        self.assertIn("수습이라는 사정만으로는 해고예고 의무가 면제되지 않습니다", out)
+        self.assertNotIn("면제", out.split("수습이라는 사정만으로는")[0])
+
+    def test_t14_r17_under_three_months_is_exempt(self):
+        out = card(dict(self.BASE, start_date="2026-08-15", end_date="2026-10-15"),
+                   "정규직으로 2026년 8월 15일에 입사해 월급 250만 원을 받고 있는데 10월 15일에 해고 통보를 받았습니다.")
+        self.assertIn("해고예고수당: 0원", out)
+        self.assertIn("근로기준법 제26조 단서 제1호", out)
+
+    def test_t14_three_month_boundary(self):
+        from wage_calculator.calculators.dismissal import _tenure_under_three_months
+        from wage_calculator import WageInput, WageType
+        mk = lambda **k: WageInput(wage_type=WageType.MONTHLY, monthly_wage=2500000, **k)  # noqa: E731
+        self.assertTrue(_tenure_under_three_months(mk(start_date="2026-07-16", end_date="2026-10-15")))
+        self.assertFalse(_tenure_under_three_months(mk(start_date="2026-07-15", end_date="2026-10-15")))
+        # 그달에 같은 날이 없으면 다음 달 1일이 경계다(민법 제160조 제3항 — 종료일은 마지막 근무일 다음 날)
+        for start, end, under in (("2025-11-30", "2026-02-28", True), ("2025-11-30", "2026-03-01", False),
+                                  ("2026-01-31", "2026-04-30", True), ("2026-01-31", "2026-05-01", False),
+                                  ("2026-02-01", "2026-04-30", True), ("2026-02-01", "2026-05-01", False)):
+            self.assertIs(_tenure_under_three_months(mk(start_date=start, end_date=end)), under, (start, end))
+        self.assertTrue(_tenure_under_three_months(mk(tenure_months=2)))
+        self.assertIsNone(_tenure_under_three_months(mk()))
+
+    def test_t14_start_date_without_end_date(self):
+        """종료일이 없으면 오늘(KST)로 본다 — kst_today()가 문자열이라 비교에서 TypeError가 나 카드 전체가 사라졌다(2차 리뷰 H1)."""
+        from unittest import mock
+        with mock.patch("wage_calculator.calculators.dismissal.kst_today", return_value="2026-10-15"):
+            five = card(dict(self.BASE, start_date="2026-05-15"), "5월 15일 입사했는데 오늘 해고 통보를 받았어요.")
+            two = card(dict(self.BASE, start_date="2026-08-15", calculation_types_kr=["해고예고수당", "퇴직금", "연차수당"]),
+                       "8월 15일 입사했는데 오늘 해고 통보를 받았어요.")
+        self.assertIn("해고예고수당: 2,876,712원", five)
+        self.assertIn("해고예고수당: 0원", two)
+        self.assertIn("근로기준법 제26조 단서 제1호", two)
+
+    def test_t14_period_phrase_is_counted_in_months(self):
+        """'입사 3개월'은 날짜로 바꾸지 않고 개월 수로 센다 — 30일 × 3으로 바꾸면 3개월 미만(면제)이 됐다."""
+        three = card(dict(self.BASE, start_date="3개월"), "입사한 지 3개월 됐는데 오늘 해고 통보를 받았어요.")
+        two = card(dict(self.BASE, start_date="2개월"), "입사한 지 2개월 됐는데 오늘 해고 통보를 받았어요.")
+        self.assertIn("해고예고수당: 2,876,712원", three)
+        self.assertIn("해고예고수당: 0원", two)
+        from app.core.pipeline import _period_months
+        self.assertEqual((_period_months("1년 2개월"), _period_months("3개월"), _period_months("2024년 3월")), (14, 3, None))
+
+    def test_t14_unknown_start_date(self):
+        out = card(dict(self.BASE), "월급 250만 원인데 오늘 갑자기 해고 통보를 받았습니다. 해고예고수당은?")
+        self.assertIn("입사일을 몰라 계속근로기간을 확인하지 못했습니다", out)
+        self.assertIn("해고예고수당: 2,876,712원", out)
+
+    def test_t14_other_exemptions(self):
+        from wage_calculator import WageCalculator, WageInput, WageType
+        from wage_calculator.models import WorkType
+        base = dict(wage_type=WageType.MONTHLY, monthly_wage=2500000, reference_year=2026, tenure_months=6)
+        force = WageCalculator().calculate(WageInput(**base, is_force_majeure=True), ["dismissal"])
+        self.assertIn("근로기준법 제26조 단서 제2호·제3호", force.legal_basis)
+        for extra in ({"is_seasonal_worker": True}, {"work_type": WorkType.DAILY_WORKER}, {"is_probation": True}):
+            with self.subTest(extra):
+                r = WageCalculator().calculate(WageInput(**base, **extra), ["dismissal"])
+                self.assertEqual(r.summary.get("해고예고수당"), "2,876,712원")
+                self.assertFalse(any("단서 4호" in b or "수습 3개월" in b or "1개월 미만" in b for b in r.legal_basis))
+                self.assertTrue(any("사정만으로는 해고예고 의무가 면제되지 않습니다" in w for w in r.warnings))
 
 
 if __name__ == "__main__":

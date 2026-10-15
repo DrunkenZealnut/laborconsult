@@ -1907,6 +1907,37 @@ _MINOR_LABEL = "연소자(만 18세 미만)"
 _MINOR_CAPS = (7.0, 35.0)
 
 
+# 수습 감액 요건(최저임금법 제5조 제2항)의 질문 표현 — 계약 형태·수습 기간·경과 월(D5). '비정규직'은 기간제라 빼야 한다
+_OPEN_ENDED_RE = re.compile(r"정규직|무기\s*계약|기간의?\s*정함이?\s*없|정함\s*없는\s*(?:근로)?\s*계약")
+# 같은 문장에 오면 지금의 계약 형태가 아니다 — 전환 약속·부정·계약직·기간제(2차 리뷰 M4: "정규직 전환을 약속받고 계약직 수습",
+# "정규직이 아니라 계약직"을 기간의 정함이 없는 계약으로 읽어 감액 요건을 '모두 확인'했다)
+_OPEN_ENDED_DENY_RE = re.compile(r"비\s*정규직|계약직|기간제|전환|아니|아닌|약속|예정|희망|채용\s*전|되면|될\s*때")
+_PROBATION_LEN_RE = re.compile(r"수습\s*(?:기간)?\s*(?:은|이|을|도|이고|만)?\s*(\d{1,2})\s*개월")
+_PROBATION_ELAPSED_RE = re.compile(r"(\d{1,2})\s*개월\s*(?:째|차)"
+                                   r"|(?:입사|일|근무|수습(?:을)?\s*시작)(?:한\s*지|\s*후|하고\s*나서)\s*(\d{1,2})\s*개월")
+
+
+_PERIOD_RE = re.compile(r"^\s*(?:(\d{1,2})\s*년)?\s*(?:(\d{1,3})\s*개월)?\s*(?:째|차|정도|쯤|가량)?\s*$")
+
+
+def _period_months(text: str) -> int | None:
+    """'3개월'·'1년 2개월' 같은 기간 표현의 개월 수. 날짜('2024년 3월')나 다른 표현이면 None."""
+    m = _PERIOD_RE.match(text or "")
+    if not m or not (m.group(1) or m.group(2)):
+        return None
+    return int(m.group(1) or 0) * 12 + int(m.group(2) or 0)
+
+
+def _probation_terms(query: str) -> dict:
+    """질문의 수습 감액 요건 표현 — 기간의 정함이 없는 계약인가, 수습 기간(개월), 수습 시작 뒤 몇 개월째인가."""
+    q = query or ""
+    length = _PROBATION_LEN_RE.search(q)
+    elapsed = _PROBATION_ELAPSED_RE.search(q)
+    return {"open_ended": any(_OPEN_ENDED_RE.search(s) and not _OPEN_ENDED_DENY_RE.search(s) for s in _SENTENCE_RE.split(q)),
+            "length": int(length.group(1)) if length else None,
+            "elapsed": int(next(g for g in elapsed.groups() if g)) if elapsed else None}
+
+
 def _hour_regime_signal(query: str) -> str | None:
     """질문에 소정·연장 구분이 달라지는 근로시간 제도 신호가 있으면 그 이름."""
     for label, pattern in _HOUR_REGIME_SIGNALS:
@@ -2240,6 +2271,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         if any(c in start for c in "년개월"):
             from wage_calculator.facade import _guess_start_date
             inp.start_date = _guess_start_date(start)
+            # '3개월'처럼 기간으로 말했으면 개월 수 그대로가 계속근로기간이다 — 날짜로 바꾸면 1개월을 30일로 세어 '입사 3개월'이
+            # '3개월 미만'(해고예고 면제)이 됐다(2차 리뷰 H1)
+            if (months := _period_months(start)) is not None:
+                inp.tenure_months = months
         else:
             inp.start_date = start
     if params.get("end_date"):
@@ -2256,6 +2291,12 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     # 수습·계약기간·직종 — 최저임금 수습 감액 판정에 소비 (CALC-1)
     if params.get("is_probation"):
         inp.is_probation = True
+        # 수습 감액 요건은 질문 본문에서 읽는다(calc-card-followups D5) — 의도분석은 '정규직'이면 contract_months를 비워 두라는
+        # 지시를 받아 '기간 정함 없음'과 '미기재'가 구분되지 않는다. 모르는 요건은 모름(None)으로 둔다
+        terms = _probation_terms(query)
+        inp.contract_open_ended = True if terms["open_ended"] else None
+        inp.probation_months = terms["length"]
+        inp.probation_elapsed_months = terms["elapsed"]
     # 출산 유형은 휴가 일수를 바꾼다(90 / 미숙아 100 / 다태아 120). 배선이 없으면 상담이
     # 다태아·미숙아 질문에도 90일로 답한다 — 계산기와 흐름도만 지원하던 공백이었다.
     if params.get("is_multiple_birth"):
@@ -2555,11 +2596,16 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
                         f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
         if (composition_hold or comprehensive_total) and held_is_total:
             _label_held_total(result, held_unit)
+        if composition_hold and not result.minimum_wage_state:
+            # 최저임금을 아예 계산하지 않은 구성 보류(금액이 기본급)도 '판정 보류'다 — 안내문이 그렇게 말한다. 예전에는
+            # minimum_wage_ok의 기본값 None이 이 표시를 대신했는데, 미실행 카드는 헤더를 내지 않게 바뀌었다(F4b)
+            result.minimum_wage_state = "held"
         if composition_hold and result.minimum_wage_ok is not None:
             # 보류해도 포괄임금 역산(comprehensive)이 같은 총액으로 판정을 다시 채운다. 비산입 수당은 시급을 부풀리기만
             # 하므로 '충족'은 믿을 수 없어 보류로 내리고, '미달'은 총액으로도 미달이라 그대로 두되 안내를 바꾼다.
             if result.minimum_wage_ok:
                 result.minimum_wage_ok = None
+                result.minimum_wage_state = "held"
                 for section in (result.summary, *result.breakdown.values()):
                     if isinstance(section, dict) and "최저임금 충족" in section:
                         section["최저임금 충족"] = "⏸ 판정 보류"
