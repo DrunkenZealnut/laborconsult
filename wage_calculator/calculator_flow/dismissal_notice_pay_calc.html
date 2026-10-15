@@ -98,7 +98,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <g class="c-amber">
 <rect x="120" y="92" width="440" height="56" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="112" text-anchor="middle" dominant-baseline="central">Step 1. 적용 제외 여부 확인</text>
-<text class="ts" x="340" y="130" text-anchor="middle" dominant-baseline="central">5가지 제외 사유 중 해당 있는지 → "적용 제외" 탭</text>
+<text class="ts" x="340" y="130" text-anchor="middle" dominant-baseline="central">3가지 제외 사유(제26조 단서) 중 해당 있는지 → "적용 제외" 탭</text>
 </g>
 
 <line x1="240" y1="148" x2="140" y2="182" class="arr" marker-end="url(#ar)"/>
@@ -154,10 +154,10 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <!-- TAB 1: 적용 제외 -->
 <div id="tab1" style="display:none">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">적용 제외 판정 — 5가지 사유</p>
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">적용 제외 판정 — 근로기준법 제26조 단서 3가지</p>
 <p style="font-size:13px;color:var(--color-text-secondary);margin:0">아래 중 하나라도 해당하면 해고예고 의무가 없습니다</p>
 </div>
-<svg width="100%" viewBox="0 0 680 620">
+<svg width="100%" viewBox="0 0 680 484">
 <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
 
 <g class="c-gray">
@@ -169,7 +169,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#a1)"/>
 <g class="c-amber">
 <rect x="140" y="94" width="400" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="116" text-anchor="middle" dominant-baseline="central">① 근속 3개월 미만?</text>
+<text class="th" x="340" y="116" text-anchor="middle" dominant-baseline="central">① 계속 근로 3개월 미만? (단서 제1호)</text>
 </g>
 <line x1="480" y1="138" x2="580" y2="156" class="arr" marker-end="url(#a1)"/>
 <text class="ts" x="540" y="142">예</text>
@@ -181,7 +181,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <text class="ts" x="354" y="152">아니오</text>
 <g class="c-amber">
 <rect x="120" y="162" width="420" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="330" y="184" text-anchor="middle" dominant-baseline="central">② 계절적 사업 4개월 이내?</text>
+<text class="th" x="330" y="184" text-anchor="middle" dominant-baseline="central">② 천재·사변 등으로 사업 계속 불가? (단서 제2호)</text>
 </g>
 <line x1="480" y1="206" x2="580" y2="220" class="arr" marker-end="url(#a1)"/>
 <text class="ts" x="540" y="210">예</text>
@@ -193,50 +193,26 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <text class="ts" x="344" y="220">아니오</text>
 <g class="c-amber">
 <rect x="120" y="230" width="420" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="330" y="252" text-anchor="middle" dominant-baseline="central">③ 천재사변·불가항력?</text>
+<text class="th" x="330" y="252" text-anchor="middle" dominant-baseline="central">③ 근로자 고의로 막대한 지장·손해? (단서 제3호)</text>
 </g>
 <line x1="480" y1="274" x2="580" y2="286" class="arr" marker-end="url(#a1)"/>
 <text class="ts" x="540" y="276">예</text>
 <rect x="540" y="278" width="100" height="30" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
 <text style="font-size:11px;fill:#791F1F;font-weight:500" x="590" y="297" text-anchor="middle" dominant-baseline="central">제외</text>
 
-<!-- 분기 4 -->
-<line x1="330" y1="274" x2="330" y2="298" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="344" y="288">아니오</text>
-<g class="c-amber">
-<rect x="120" y="298" width="420" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="330" y="320" text-anchor="middle" dominant-baseline="central">④ 일용근로자 1개월 미만 근무?</text>
-</g>
-<line x1="480" y1="342" x2="580" y2="352" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="540" y="344">예</text>
-<rect x="540" y="344" width="100" height="30" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
-<text style="font-size:11px;fill:#791F1F;font-weight:500" x="590" y="363" text-anchor="middle" dominant-baseline="central">제외</text>
-
-<!-- 분기 5 -->
-<line x1="330" y1="342" x2="330" y2="366" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="344" y="356">아니오</text>
-<g class="c-amber">
-<rect x="120" y="366" width="420" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="330" y="388" text-anchor="middle" dominant-baseline="central">⑤ 수습 3개월 이내?</text>
-</g>
-<line x1="480" y1="410" x2="580" y2="418" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="540" y="410">예</text>
-<rect x="540" y="410" width="100" height="30" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
-<text style="font-size:11px;fill:#791F1F;font-weight:500" x="590" y="429" text-anchor="middle" dominant-baseline="central">제외</text>
-
 <!-- 통과 -->
-<line x1="330" y1="410" x2="330" y2="444" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="344" y="428">아니오</text>
+<line x1="330" y1="274" x2="330" y2="308" class="arr" marker-end="url(#a1)"/>
+<text class="ts" x="344" y="292">아니오</text>
 <g>
-<rect x="200" y="444" width="260" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
-<text style="font-size:14px;fill:#085041;font-weight:500" x="330" y="470" text-anchor="middle" dominant-baseline="central">해고예고 의무 있음 ✓</text>
+<rect x="200" y="308" width="260" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text style="font-size:14px;fill:#085041;font-weight:500" x="330" y="334" text-anchor="middle" dominant-baseline="central">해고예고 의무 있음 ✓</text>
 </g>
 
 <!-- 핵심 메시지 -->
-<rect x="40" y="510" width="600" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="th" x="340" y="534" text-anchor="middle">반도체고 졸업생 관점</text>
-<text class="ts" x="340" y="558" text-anchor="middle">수습 3개월 이내에 해고되면 예고수당을 받을 수 없습니다</text>
-<text class="ts" x="340" y="578" text-anchor="middle">근속 3개월이 지나야 보호받으므로, 수습기간 조건을 반드시 확인해야 합니다</text>
+<rect x="40" y="374" width="600" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
+<text class="th" x="340" y="398" text-anchor="middle">반도체고 졸업생 관점</text>
+<text class="ts" x="340" y="422" text-anchor="middle">수습·일용·계절적 사업이라는 사정만으로는 해고예고 의무가 면제되지 않습니다</text>
+<text class="ts" x="340" y="442" text-anchor="middle">계속 근로 3개월 이상이면 수습 중이어도 30일 전 예고나 30일분 통상임금이 필요합니다</text>
 </svg>
 </div>
 
@@ -324,7 +300,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
 <label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">수습 여부</label>
 <button id="btnNoP" onclick="setProb(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">수습 아님</button>
-<button id="btnYesP" onclick="setProb(true);calc()">수습 3개월 이내</button>
+<button id="btnYesP" onclick="setProb(true);calc()">수습 중</button>
 </div>
 </div>
 
@@ -389,8 +365,8 @@ function calc(){
   // 적용 제외 체크
   var exempt=false;
   var exemptReason='';
-  if(tenure<3){exempt=true;exemptReason='근속 3개월 미만';}
-  else if(isProb){exempt=true;exemptReason='수습 3개월 이내';}
+  // 현행 제26조 단서는 계속 근로 3개월 미만·천재사변 등·근로자 고의 손해뿐 — 수습이라는 사정만으로는 면제되지 않는다
+  if(tenure<3){exempt=true;exemptReason='계속 근로 3개월 미만(제26조 단서 제1호)';}
 
   var el=document.getElementById('exemptCheck');
   if(exempt){
@@ -411,6 +387,10 @@ function calc(){
     el.style.background='var(--color-background-danger)';
     el.style.color='var(--color-text-danger)';
     el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">✗ 예고 없이 즉시 해고</p><p style="margin:0;font-size:13px">30일분 전액 지급 의무가 있습니다.</p>';
+  }
+
+  if(isProb && !exempt){
+    el.innerHTML+='<p style="margin:6px 0 0;font-size:12px">수습 중이라는 사정만으로는 면제되지 않습니다 — 계속 근로 3개월 이상이면 예고 의무가 있습니다.</p>';
   }
 
   document.getElementById('dailyPay').textContent=fmt(dailyPay)+'원';
