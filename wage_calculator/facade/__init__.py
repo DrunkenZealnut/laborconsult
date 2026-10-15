@@ -118,6 +118,11 @@ class WageCalculator:
         Returns:
             WageResult: 통합 계산 결과
         """
+        # 아직 나누지 않은 입력(CLI·직접 호출)은 사본에서 계산한다 — 호출자의 일정을 바꾸지 않고, 같은 입력을 일정만 고쳐 다시 넘기면
+        # 새로 나눈다(apply_hour_split은 이미 나눈 입력을 그대로 돌려준다, CodeRabbit PR #115). 파이프라인처럼 먼저 나눈 입력은 그대로 쓴다
+        if inp.hour_split is None:
+            from copy import deepcopy
+            inp = deepcopy(inp)
         _clamp_negative_inputs(inp)
         # 1일 8시간·1주 40시간을 넘는 시간은 연장근로로 나눈다(calc-card-followups D9). 파이프라인이 먼저 나눴으면 그대로다 —
         # 모든 계산기가 정규화된 같은 일정을 읽는다. 자동 대상 결정(연장 유무)보다 앞이어야 한다

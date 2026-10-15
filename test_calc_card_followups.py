@@ -105,6 +105,9 @@ class SplitRuleTest(unittest.TestCase):
         result = WageCalculator().calculate(inp, ["weekly_holiday"])
         self.assertIn("주휴수당(월)", result.summary)
         self.assertEqual(result.summary["주휴수당(월)"], "333,714원")
+        # 호출자의 입력은 그대로다 — 사본에서 나눈다(CodeRabbit PR #115: 고친 일정을 다시 넘겨도 옛 분리 결과가 남았다)
+        self.assertIsNone(inp.hour_split)
+        self.assertEqual((inp.schedule.daily_work_hours, inp.schedule.weekly_overtime_hours), (10, 0))
 
 
 class TimeAxisCardTest(unittest.TestCase):
