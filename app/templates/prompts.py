@@ -42,7 +42,7 @@ ANALYZE_TOOL = {
                 "type": "string",
                 "enum": ["5인미만", "5인이상", "30인이상", "300인이상"],
             },
-            "weekly_work_days": {"type": "integer", "description": "주당 근무일수"},
+            "weekly_work_days": {"type": "number", "description": "주당 근무일수. 평균이면 소수 그대로(격일제 평균 주 3.5일 → 3.5)"},
             "daily_work_hours": {"type": "number", "description": "1일 소정근로시간 (하루 단위). 주당 총시간이 주어진 경우 여기에 넣지 말고 weekly_total_hours를 사용하세요."},
             "weekly_total_hours": {"type": "number", "description": "주 소정근로시간 합계. '주 17시간' 등 주당 총근로시간으로 제시된 경우 사용. daily_work_hours와 동시에 설정하지 마세요."},
             "weekly_overtime_hours": {"type": "number", "description": "주당 연장근로시간"},

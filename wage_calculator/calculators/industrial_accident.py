@@ -137,8 +137,9 @@ def calc_industrial_accident(
 
     # ── 1. 평균임금 결정 ──────────────────────────────────────────────────
     avg_daily = ow.daily_ordinary_wage  # 기본: 통상임금 환산일급
-    # 월 임금총액 추정 — 연장·야간·휴일 근로 임금 포함(shared, F6). 시급제는 통상임금 월액이 기준이다(연장 등이 없으면 ÷30 값이
-    # 1일 통상임금보다 작아 결과가 그대로다)
+    # 월 임금총액 추정 — 연장·야간·휴일 근로 임금 포함(shared, F6). 시급제도 통상임금 월액(주휴 포함)이 기준이다. 주 5일 이하이고
+    # 연장 등이 없으면 ÷30 값이 1일 통상임금보다 작아 결과가 예전과 같고, 주 6일 이상은 주휴분만큼 조금 커질 수 있다(평균임금은
+    # 임금 총액 ÷ 일수다 — 근로기준법 제2조 제1항 제6호, calc-card-followups Check G5)
     monthly = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, inp.monthly_wage or ow.monthly_ordinary_wage)
     if monthly:
         est = monthly / 30
