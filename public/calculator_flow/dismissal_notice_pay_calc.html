@@ -262,7 +262,8 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <text class="ts" x="344" y="220">아니오</text>
 <g class="c-amber">
 <rect x="120" y="230" width="420" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="330" y="252" text-anchor="middle" dominant-baseline="central">③ 근로자 고의로 막대한 지장·손해? (단서 제3호)</text>
+<text class="th" x="330" y="243" text-anchor="middle" dominant-baseline="central">③ 근로자 고의로 막대한 지장·손해? (단서 제3호)</text>
+<text class="ts" x="330" y="262" text-anchor="middle" dominant-baseline="central">고용노동부령으로 정하는 사유에 해당하는 경우에 한함</text>
 </g>
 <line x1="480" y1="274" x2="580" y2="286" class="arr" marker-end="url(#a1)"/>
 <text class="ts" x="540" y="276">예</text>
@@ -434,7 +435,7 @@ function calc(){
   // 적용 제외 체크
   var exempt=false;
   var exemptReason='';
-  // 현행 제26조 단서는 계속 근로 3개월 미만·천재사변 등·근로자 고의 손해뿐 — 수습이라는 사정만으로는 면제되지 않는다
+  // 현행 제26조 단서는 계속 근로 3개월 미만·천재사변 등·근로자 고의 손해(고용노동부령 사유)뿐 — 수습이라는 사정만으로는 면제되지 않는다
   if(tenure<3){exempt=true;exemptReason='계속 근로 3개월 미만(제26조 단서 제1호)';}
 
   var el=document.getElementById('exemptCheck');

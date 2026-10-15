@@ -517,14 +517,15 @@ class FlowchartTest(unittest.TestCase):
 
     def test_t16_dismissal_and_static_examples(self):
         """해고예고 흐름도도 현행 제26조 단서 1~3호만 면제다 — 카드(F7)는 고쳤는데 공개 흐름도가 수습·일용·계절 면제로 계산했다
-        (Check §4.1). 주휴 흐름도의 정적 예시도 분리 규칙대로다(주 4일 × 10시간 → 주휴 6.4시간, Check §4.4)."""
+        (Check §4.1). 제3호는 고용노동부령 사유일 때만이다(CodeRabbit #116). 주휴 흐름도의 정적 예시도 분리 규칙대로다(주 4일 × 10시간 → 주휴 6.4시간, Check §4.4)."""
         for path in self.DISMISSAL:
             src = (ROOT / path).read_text(encoding="utf-8")
             with self.subTest(path):
                 for old in ("계절적 사업 4개월", "일용근로자 1개월", "수습 3개월 이내에 해고되면", "else if(isProb){exempt=true",
                             "5가지"):
                     self.assertNotIn(old, src)
-                for new in ("단서 제1호", "단서 제2호", "단서 제3호", "수습 중이라는 사정만으로는 면제되지 않습니다"):
+                for new in ("단서 제1호", "단서 제2호", "단서 제3호", "고용노동부령으로 정하는 사유",
+                            "수습 중이라는 사정만으로는 면제되지 않습니다"):
                     self.assertIn(new, src)
         for path in self.WEEKLY:
             src = (ROOT / path).read_text(encoding="utf-8")
