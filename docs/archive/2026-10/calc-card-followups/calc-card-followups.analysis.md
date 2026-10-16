@@ -5,7 +5,7 @@
 > **Project**: laborconsult (Korean Labor Law Chatbot + Wage Calculator)
 > **Analyst**: gap-detector (Claude 검증 보강)
 > **Date**: 2026-10-15
-> **Design Doc**: [calc-card-followups.design.md](../02-design/features/calc-card-followups.design.md) v0.6
+> **Design Doc**: [calc-card-followups.design.md](calc-card-followups.design.md)(같은 폴더) v0.6 — 현재 v0.7은 §14.10(Check 반영)을 더했다
 > **Implementation**: main `4028ce8` (PR #115 — 커밋 A `ea9cac3` 시간 축 / B `f82715c` 적용 요건 / `bba818d` CodeRabbit 반영)
 
 ---
@@ -113,10 +113,10 @@
 | §4.4 주휴 흐름도 정적 예시 | 주4일 × 10시간 → 소정 32h, 주휴 6.4시간 |
 | §4.5 `weekly_work_days` 타입 | integer → number(평균 근무일수 3.5 보존) |
 | §4.3·§4.9 CLAUDE.md | 926행 정정, ③에 미확인 모드 단서 |
-| §4.10 낡은 문구 | 실업급여 docstring·상수 주석, 산재 평균임금 주석(G5) |
+| §4.10 낡은 문구 | 실업급여 docstring·상수 주석, 산재 평균임금 주석(G5). CLAUDE.md의 shared.py 설명(455·496행)은 후속 |
 | G1·G5·G7~G11 | Design §14.10에 기록 |
 | §4.2(G2) | **재현됨** — 연장시간을 따로 적고 4대보험만 물으면 세후(2,885,875원) > 세전(2,502,857원). 후속 사이클(§12) |
-| G3·G4·G6, §4.7·§4.8 | 후속(§12) |
+| G3·G4·G6, §4.6·§4.7·§4.8 | 후속(§12, §4.6은 설계 §3.1 식에 `min(…, days_in)` 반영) |
 
 검증
 - `test_calc_card_followups.py` 79개(T16에 해고예고·정적 예시 단언 추가)
