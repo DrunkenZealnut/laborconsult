@@ -28,7 +28,10 @@ from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize, HourSplit
 from wage_calculator.result import format_result
-from wage_calculator.calculators.shared import AllowanceClassifier, apply_hour_split, premium_weekly, split_hours
+from wage_calculator.calculators.shared import (
+    AllowanceClassifier, adds_premium_pay, apply_hour_split, has_premium_hours as _has_premium_hours, premium_weekly,
+    split_hours,
+)
 from wage_calculator.utils import WEEKS_PER_MONTH, fmt_hours, fmt_won
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
                                  held_assessment, ground, decide_mode, as_list,
@@ -1297,15 +1300,14 @@ def _drop_not_ordinary_allowances(inp) -> None:
     inp.fixed_allowances = [a for a in inp.fixed_allowances or [] if not AllowanceClassifier.is_not_ordinary_by_name(name(a))]
 
 
-def _has_premium_hours(inp) -> bool:
-    """연장·야간·휴일 근로시간이 하나라도 입력됐는가 — 포괄임금 역산의 근거."""
-    return any((getattr(inp.schedule, f, 0) or 0) > 0 for f in (
-        "weekly_overtime_hours", "weekly_night_hours", "weekly_holiday_hours", "weekly_holiday_overtime_hours"))
-
-
 # 규모를 모를 때의 가산 안내 — 파이프라인은 사업장 규모가 없으면 5인 이상으로 계산한다
 _SIZE_ASSUMED_NOTE = ("상시 5명 이상 사업장 기준으로 연장·야간·휴일 가산(50%)을 계산했습니다 — 상시 4명 이하면 가산 없이 "
                       "1배입니다(근로기준법 제56조, 시행령 별표 1).")
+# 묻지 않은 연장수당을 파이프라인이 더한 카드에만 붙인다 — 섹션이 왜 생겼는지와 평균임금·보수 추정이 이미 쓰던 '매주 같은 시간'
+# 가정을 밝힌다. 특정 주인지는 판정하지 않는다(calc-card-consistency D5 — 기간 표지 정규식이 '이번 주에만'을 못 잡는다). '질문에
+# 적힌'이라 쓰지 않는다 — 앞 턴 캐시에서 채운 시간에도 붙는다(독립 리뷰 L4)
+_PREMIUM_ADDED_NOTE = ("대화에 나온 연장·야간·휴일 근로시간의 임금이 월 금액에 들어가므로 연장수당도 함께 계산했습니다 — 매주 같은 "
+                       "시간으로 보았고, 특정 주에만 한 근로라면 월 금액은 그보다 적습니다.")
 _WAGE_UNIT_LABEL = {WageType.DAILY: "일급", WageType.MONTHLY: "월급", WageType.ANNUAL: "연봉"}
 
 
@@ -2409,8 +2411,11 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         inp.hour_split = HourSplit(daily_hours, schedule.weekly_work_days, daily_hours, schedule.weekly_work_days,
                                    excess=regime[1], mode="held", reason=regime[0])
     split = apply_hour_split(inp)
+    # 묻지 않았지만 카드 금액을 맞추려고 더한 계산 — facade의 '시도한 계산이 전부 보류면 요청 보류' 판정에서 세지 않는다(리뷰 M2)
+    auxiliary = []
     if split.mode == "applied" and has_wage and "overtime" not in targets:
         targets.append("overtime")
+        auxiliary.append("overtime")
 
     composition_note = None
     composition_hold = False
@@ -2571,13 +2576,25 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
                            and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
                            and not inp.comprehensive_breakdown and _has_premium_hours(inp))
 
+    # 질문에 적힌 연장·야간·휴일 근로시간을 평균임금·보수 추정이 더하는 입력이면 연장수당도 계산한다(calc-card-consistency G2).
+    # 빠지면 '월 총 예상 수령액'에 그 몫이 없어 같은 카드의 세전 월 급여·평균임금과 갈렸다(4대보험만: 월 총 2,502,857원 vs 세전
+    # 3,285,000원, 세후 2,885,875원). 위의 파생 연장 규칙과 같은 뜻이다. 구성 판정 뒤라야 한다 — 그 임금이 이미 든 금액(포괄·
+    # 구성 진술)은 추정이 더하지 않아 대상이 아니고, 보류 경로의 amount_hold는 이 규칙보다 먼저 정해진다
+    premium_added = has_wage and not unknown_mode and "overtime" not in targets and adds_premium_pay(inp)
+    if premium_added:
+        targets.append("overtime")
+        auxiliary.append("overtime")
+
     try:
         calc = WageCalculator()
-        result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant)
+        result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant,
+                                auxiliary=tuple(auxiliary))
         if composition_unknown:
             result.monthly_total = 0.0
             result.warnings = [_composition_unknown_note(inp), *result.warnings]
             _add_composition_alternative(result, calc, inp, targets)
+        if premium_added:
+            result.warnings.append(_PREMIUM_ADDED_NOTE)
         if ("overtime" in targets and not params.get("business_size") and _has_premium_hours(inp)
                 and inp.business_size != BusinessSize.UNDER_5 and not inp.is_platform_worker):
             # 규모를 모르면 기본값 5인 이상으로 가산했다 — 가정이 확정처럼 읽히지 않게 밝힌다(calc-card-followups §3.4)

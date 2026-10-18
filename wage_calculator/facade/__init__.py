@@ -47,11 +47,14 @@ class WageCalculator:
         self.rule_store = rule_store
 
     def calculate(
-        self, inp: WageInput, targets: list[str] | None = None, *, amount_hold=(), hold_compliant=(),
+        self, inp: WageInput, targets: list[str] | None = None, *, amount_hold=(), hold_compliant=(), auxiliary=(),
     ) -> WageResult:
         """amount_hold: 계산은 하되 금액만 빼고 실을 계산 유형(통상임금이 총액이라 금액이 부풀려지는 경우 — pipeline이 넘긴다).
         hold_compliant: 계산은 하되 '충족' 판정이면 싣지 않을 판정 유형(현재 minimum_wage — 수당이 섞인 총액은 시급을
-        부풀리기만 하므로 미달만 확정이다)."""
+        부풀리기만 하므로 미달만 확정이다).
+        auxiliary: 묻지 않았지만 호출자가 카드 금액을 맞추려고 더한 계산 유형(pipeline의 연장수당 — 파생 연장·G2). '시도한
+        계산이 전부 보류면 요청 보류' 판정에서 세지 않는다 — 세면 물은 계산이 전부 보류돼도 더한 섹션이 성공해 보류 신호가
+        사라지고 세전 총액과 '이 수치를 사용하세요'가 나갔다(calc-card-consistency 독립 리뷰 M2)."""
         from copy import deepcopy
         from ..legal_rules import (
             RuleSnapshot, RuleUnavailable, resolve_reference_date, rule_scope,
@@ -61,7 +64,7 @@ class WageCalculator:
         # A snapshot belongs to one call, not a process-global mutable constants table.
         if self.rule_store is None and not rules_enabled():
             with rule_scope(None):
-                return self._calculate(inp, targets, amount_hold, hold_compliant)
+                return self._calculate(inp, targets, amount_hold, hold_compliant, auxiliary)
         reference_date = None
         try:
             # Resolve (and validate) before the store round trip: an unusable date
@@ -79,10 +82,11 @@ class WageCalculator:
                 managed_input.wage_type = WageType.HOURLY
                 managed_input.hourly_wage = snapshot.get("minimum_hourly_wage")
             with rule_scope(snapshot):
-                result = self._calculate(managed_input, targets, amount_hold, hold_compliant)
+                result = self._calculate(managed_input, targets, amount_hold, hold_compliant, auxiliary)
             # 시도한 계산이 **전부** 보류면 부분 결과가 아니라 보류다. 통상임금만 남은
-            # 껍데기를 정상 결과로 내보내면 '계산 보류' 신호가 사라진다.
-            if result.legal_rule_attempted and len(result.legal_rule_blocked) == result.legal_rule_attempted:
+            # 껍데기를 정상 결과로 내보내면 '계산 보류' 신호가 사라진다. 호출자가 더한 섹션(auxiliary)은 세지 않는다.
+            asked_blocked = [b for b in result.legal_rule_blocked if b["target"] not in auxiliary]
+            if result.legal_rule_attempted and len(asked_blocked) == result.legal_rule_attempted:
                 raise RuleUnavailable(" / ".join(
                     item["reason"] for item in result.legal_rule_blocked))
             # 승인 기준이 한 건도 소비되지 않았으면 'managed'로 부르지 않는다 — 빈
@@ -107,6 +111,7 @@ class WageCalculator:
         targets: list[str] | None = None,
         amount_hold=(),
         hold_compliant=(),
+        auxiliary=(),
     ) -> WageResult:
         """
         지정된 계산 유형에 대해 통합 계산 수행
@@ -155,7 +160,8 @@ class WageCalculator:
         blocked_targets: set = set()
 
         def guarded(target, section, run):
-            result.legal_rule_attempted += 1
+            if target not in auxiliary:
+                result.legal_rule_attempted += 1
             try:
                 with used_scope():        # 보류된 섹션이 읽은 기준은 provenance에서 제외
                     return run()
