@@ -1,6 +1,6 @@
 # calc-card-followups — Design
 
-> Plan: `../../01-plan/features/calc-card-followups.plan.md` · 작성 2026-10-15 · 기준 코드 main `e76ab02`
+> Plan: `calc-card-followups.plan.md`(같은 폴더) · 작성 2026-10-15 · 기준 코드 main `e76ab02`
 > 범위: Plan P0-1~P0-5·P1-1~P1-2. 여기에 Design 중 찾은 2건을 더한다. 하나는 F6(평균임금·보수월액에서 연장수당 누락)이고, 다른 하나는 F7(해고예고 면제를 개정 전 규정으로 판정)이다(§0 D10·D11). P2는 범위 밖이다(§12).
 > **이 문서의 법률 사실은 작성 시점에 공식 원문·행정해석으로 확인했다(§1).** 재현 값은 `_run_calculator(params, query)`로 뽑았다(LLM 호출 없음).
 
@@ -722,7 +722,7 @@ PR A 1차 수정분과 PR B를 함께 리뷰했다. 1차 지적은 대부분 해
 
 ### 14.10 Check(gap 분석) 반영 (2026-10-16)
 
-gap-detector Match Rate 95.6%(173/181, `docs/03-analysis/calc-card-followups.analysis.md`). 설계 범위 밖에서 확인한 결함과 기록 누락을 이 핫픽스에서 처리했다.
+gap-detector Match Rate 95.6%(173/181, `calc-card-followups.analysis.md`(같은 폴더)). 완료 보고서는 `calc-card-followups.report.md`(같은 폴더). 설계 범위 밖에서 확인한 결함 일부와 기록 누락을 이 핫픽스에서 처리했다(G2 등 나머지는 아래 '확인만 하고 후속으로 둔 것').
 
 - **C41 해고예고 흐름도(High).** 공개 흐름도와 계산기 사본 2곳이 '계절적 사업 4개월·일용 1개월·수습 3개월 이내'를 면제로 그렸다. JS도 근속 3개월 이상인 수습을 면제로 계산했다 — F7로 고친 카드와 반대였고 R16의 옛 오답이었다. 이제 다음과 같다.
   - 노드는 현행 제26조 단서 제1~3호만 그린다.
