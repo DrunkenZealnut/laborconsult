@@ -722,7 +722,7 @@ PR A 1차 수정분과 PR B를 함께 리뷰했다. 1차 지적은 대부분 해
 
 ### 14.10 Check(gap 분석) 반영 (2026-10-16)
 
-gap-detector Match Rate 95.6%(173/181, `calc-card-followups.analysis.md`(같은 폴더)). 완료 보고서는 `calc-card-followups.report.md`(같은 폴더). 설계 범위 밖에서 확인한 결함과 기록 누락을 이 핫픽스에서 처리했다.
+gap-detector Match Rate 95.6%(173/181, `calc-card-followups.analysis.md`(같은 폴더)). 완료 보고서는 `calc-card-followups.report.md`(같은 폴더). 설계 범위 밖에서 확인한 결함 일부와 기록 누락을 이 핫픽스에서 처리했다(G2 등 나머지는 아래 '확인만 하고 후속으로 둔 것').
 
 - **C41 해고예고 흐름도(High).** 공개 흐름도와 계산기 사본 2곳이 '계절적 사업 4개월·일용 1개월·수습 3개월 이내'를 면제로 그렸다. JS도 근속 3개월 이상인 수습을 면제로 계산했다 — F7로 고친 카드와 반대였고 R16의 옛 오답이었다. 이제 다음과 같다.
   - 노드는 현행 제26조 단서 제1~3호만 그린다.
