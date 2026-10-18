@@ -8,11 +8,18 @@
 - T4 대상이 아닌 경로(그 임금이 이미 든 금액·노무제공자·미확인 모드·임금 없음), 관리 모드 보류 승격(T4b), 52시간 경고(T4c)
 - T5 구성 미상(D4)과 겹치는 카드
 - T6 정기성 안내
+- T7 미확인 모드의 조건부 예시(kin-01)
+- T8 예시 경계(Design §4.3 조건 1~5)
+- T9 1주 15시간 미만·기준선 표현
+- T10 바뀌지 않는 것(구성 보류·확정 카드·예시 없는 미확인 카드)
+- T11 질문의 시간 표현 해석(_HourMention)
+- T12 답변 규칙(WAGE_CALC_RULES)
 """
 from __future__ import annotations
 
 import difflib
 import itertools
+import json
 import re
 import sys
 import unittest
@@ -409,6 +416,230 @@ class PremiumAddedNoteTest(unittest.TestCase):
                 self.assertTrue(out)
                 self.assertNotIn(_PREMIUM_ADDED_NOTE, out)
         self.assertIn(OT_LINE, derived)              # 파생 연장(1일 10시간)은 앞의 규칙이 이미 더했다 — 정기성은 계약상 매일이다
+
+
+def kin01_question() -> str:
+    return next(c for c in json.loads((ROOT / "data" / "eval_kin_queries.json").read_text(encoding="utf-8"))
+                if c["id"] == "kin-01")["question"]
+
+
+def holiday_card(query: str, **params) -> str:
+    """주휴수당만 물은 카드 — 의도분석이 근무일수만 뽑은 회차(K1-a)처럼 시간은 넣지 않는다."""
+    return card(dict({"calculation_types_kr": ["주휴수당"]}, **params), query)
+
+
+EXAMPLE_HOLD = ("금액 보류: 질문에 1일·1주 소정근로시간이 없어 다음은 확정하지 않았습니다 — 주휴시간·주휴수당. 질문의 근무시간을 "
+                "소정근로시간으로 단정하지 마세요 — 위 조건부 예시만 그 조건과 함께 쓰고, 다른 시간을 가정해 추정하지 마세요.")
+PLAIN_HOLD = ("금액 보류: 질문에 1일·1주 소정근로시간이 없어 다음은 계산하지 않았습니다 — 주휴시간·주휴수당. "
+              "가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
+HOLD_HEADING = "임금계산기 결과 — 이 수치를 사용하세요. 금액을 보류한 항목은 추정하지 마세요"
+CONDITION_SENTENCE = ". '조건부 예시'는 그 조건을 함께 밝혀서만 쓰세요"
+
+
+class ConditionalExampleTest(unittest.TestCase):
+    """T7 — 의도분석이 근무일수만 뽑은 회차에도 카드가 질문의 시간으로 조건부 예시를 계산한다(D1). 예전에는 '추정하지 마세요'가
+    조건을 밝힌 산식까지 막아 답변에서 3.6시간이 빠졌다(calc-card-followups 최종 실측 kin-01)."""
+
+    def test_t7_kin01_block(self):
+        from app.core.pipeline import _calculation_context_heading
+        out = holiday_card(kin01_question(), weekly_work_days=3)
+        lines = out.splitlines()
+        self.assertEqual(lines[0], "[소정근로시간 미확인 — 근로시간에 따라 달라지는 시간·금액은 계산하지 않음]")
+        self.assertIn("조건부 예시 — 근로계약상 1주 소정근로시간이 질문의 근무(주 3일 × 6시간 = 18시간)와 같다면: "
+                      "주 소정근로일 3일 < 5일 → 주휴: min(18h ÷ 5, 8h) = 3.6h (= 18h ÷ 40h × 8h — 1주 소정근로일을 5일로 봄)", lines)
+        self.assertEqual(lines[-1], EXAMPLE_HOLD)
+        self.assertLess(next(i for i, ln in enumerate(lines) if ln.startswith("주휴시간 = ")),
+                        next(i for i, ln in enumerate(lines) if ln.startswith("조건부 예시 —")))
+        self.assertNotIn("[주휴시간 산정", out)                 # 확정 카드가 아니다 — 실근로를 소정근로로 단정하지 않는다
+        self.assertEqual(_calculation_context_heading(out), HOLD_HEADING + CONDITION_SENTENCE)
+
+    def test_t7_hourly_wage_adds_the_amount(self):
+        out = holiday_card(kin01_question(), weekly_work_days=3, wage_type="시급", wage_amount=10320)
+        self.assertIn("1주 소정근로일을 5일로 봄) → 주휴수당 = 시급 10,320원 × 3.6h = 37,152원", out)
+        self.assertIn(EXAMPLE_HOLD, out)
+        self.assertIn("최저임금 충족: ✅ 충족", out)            # 시급제 판정은 그대로 남는다
+
+
+class ExampleBoundaryTest(unittest.TestCase):
+    """T8 — 조건이 하나라도 어긋나면 예시 없이 지금 카드(Design §4.3). 틀린 예시보다 예시 없음이 안전하다."""
+
+    NONE = {
+        "1일 8시간 초과(10h×2일)": ("이번 주 이틀 동안 하루 10시간씩 일했어요. 주휴수당은?", 2),
+        "1일 8시간 초과(9h×2일)": ("이번 주 이틀 동안 하루 9시간씩 일했어요. 주휴수당은?", 2),
+        "1주 40시간 초과(7h×6일)": ("주 6일 하루 7시간씩 일했어요. 주휴수당은?", 6),
+        "범위": ("하루 6~7시간씩 3일 일했어요. 주휴수당은?", 3),
+        "범위 + 합계": ("지난주 하루 6~7시간씩 3일, 총 20시간 일했어요. 주휴수당은?", 3),
+        "1일 × 일수 ≠ 합계": ("지난주 월·화·수 하루 6시간, 총 20시간 일했어요. 주휴수당은?", 3),
+        "기간 일수 ≠ 근무일수(a50-40)": ("주 6일, 시급 없이 일합니다. 9월 28일~30일 3일 동안 25시간 일했는데 주휴수당은?", 6),
+        "근무일수 없음": ("지난주 하루 6시간씩 일했어요. 주휴수당은?", None),
+        "시간 없음": ("지난주 사흘 일했는데 주휴수당은?", 3),
+        "값이 둘(1일 6시간·연장 2시간)": ("지난주 3일 일했고 하루 6시간씩, 연장 2시간도 했어요.", 3),
+        # 독립 리뷰 H1 — 표지 없는 값은 1일 시간인지 합계인지 모른다(예전에는 합계로 나눠 대개 '미발생'이 나왔다)
+        "표지 없는 값(월수금 6시간)": ("지난주 월수금 6시간 일했는데 주휴수당 받을 수 있나요?", 3),
+        "표지 없는 값(각 6시간)": ("월수금 각 6시간 일해요. 주휴수당은?", 3),
+        "시각 범위 뒤의 시간": ("주 3일 10시~16시(6시간) 일해요. 주휴수당은?", 3),
+        "맞교대 시간": ("12시간 맞교대로 주 3일 일해요. 주휴수당은?", 3),
+        "연장근무 시간": ("주 5일 출근하는데 매일 2시간씩 연장근무해요. 주휴수당은?", 5),
+        "야간 근무 시간": ("야간 8시간 근무를 주 3일 해요. 주휴수당은?", 3),
+        "휴일 근무 시간": ("휴일근무 8시간을 주 3일 해요. 주휴수당은?", 3),
+        "주휴 시간 언급(3시간분)": ("주 3일 일하는데 주휴수당을 3시간분만 준대요. 맞나요?", 3),
+        "1주가 아닌 기간의 합계": ("지난 2주 동안 총 24시간 일했어요. 주 3일이에요. 주휴수당은?", 3),
+        "한 달 합계": ("한 달에 60시간 일하고 주 3일 나가요. 주휴수당은?", 3),
+        "한 달 합계 + 1일 값(서로 안 맞음)": ("한 달에 총 30시간 일했고, 하루 6시간씩 주 3일 나가요. 주휴수당은?", 3),
+        "기준선 + 조사('15시간을 넘어야')": ("주 15시간을 넘어야 받는다던데 주 3일 일해요. 주휴수당은?", 3),
+        "기간 일수가 다른 절": ("주 6일 근무인데, 이번 주는 3일 동안 일했고 하루 6시간씩 했어요. 주휴수당은?", 6),
+        "날짜의 '1일'(21일 3시간)": ("지난 21일 3시간 일했어요. 주휴수당은?", 5),
+        "다른 표지 없는 값(주휴 3시간분)": ("하루 6시간씩 주 3일 일하는데 주휴수당을 3시간분만 준대요. 맞나요?", 3),
+    }
+    SOME = {
+        "8h×5일(40시간 경계)": ("지난주 5일 동안 하루 8시간씩 일했어요. 주휴수당은?", 5,
+                             "(주 5일 × 8시간 = 40시간)와 같다면: 주 소정근로일 5일 ≥ 5일 → 주휴: min(8h, 8h) = 8h"),
+        "5h×3일(15시간 경계)": ("지난주 화·목·토 하루 5시간씩(총 15시간) 일했어요. 주휴수당은?", 3,
+                             "(주 3일 × 5시간 = 15시간)와 같다면: 주 소정근로일 3일 < 5일 → 주휴: min(15h ÷ 5, 8h) = 3h"),
+        "휴게시간은 근무시간이 아니다": ("하루 6시간씩 3일 일했고 휴게시간 1시간이 있었어요. 주휴수당은?", 3, "= 3.6h"),
+        "합계만": ("지난주 3일 동안 총 18시간 일했어요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
+        "분 단위": ("지난주 3일 동안 하루 6시간 30분씩 일했어요. 주휴수당은?", 3, "(주 3일 × 6.5시간 = 19.5시간)"),
+        "'일 N시간'": ("주 3일, 일 6시간 근무해요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
+        "'주 N시간씩'(긴 기간 안의 1주 합계)": ("1년 6개월 동안 주 15시간씩 일하고 있어요. 주 3일이에요. 주휴수당은?", 3,
+                                        "(주 3일 × 5시간 = 15시간)"),
+        "같은 값을 되풀이한 표지 없는 값": ("하루 6시간씩 3일 일했어요. 6시간 일하고 퇴근했어요.", 3, "(주 3일 × 6시간 = 18시간)"),
+        "'총' 표지만 있는 합계": ("지난주 총 18시간 일했어요. 주 3일이에요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
+    }
+
+    def test_t8_no_example(self):
+        for name, (query, days) in self.NONE.items():
+            with self.subTest(name):
+                out = holiday_card(query, **({"weekly_work_days": days} if days else {}))
+                self.assertNotIn("조건부 예시", out)
+                if days:
+                    self.assertIn(PLAIN_HOLD, out)
+
+    def test_t8_example(self):
+        for name, (query, days, expected) in self.SOME.items():
+            with self.subTest(name):
+                out = holiday_card(query, weekly_work_days=days)
+                self.assertIn(expected, out)
+                self.assertIn(EXAMPLE_HOLD, out)
+
+    def test_t8_regime_signal_comes_first(self):
+        """제도 신호 카드는 제도 확인이 먼저다(조건 1) — 연소자 1일 8시간은 법정 한도(7시간) 밖이라 예시를 만들면 틀린 값이다."""
+        query = "고등학생 알바생이에요. 하루 8시간씩 주 5일 일해요. 주휴수당은요?"
+        for extra in ({}, {"wage_type": "시급", "wage_amount": 12000}):
+            with self.subTest(extra):
+                out = holiday_card(query, weekly_work_days=5, daily_work_hours=8, **extra)
+                self.assertIn("[근로시간 제도 확인 필요", out)
+                self.assertNotIn("조건부 예시", out)
+
+    def test_t8_regime_signal_in_the_unknown_mode(self):
+        """1일 시간이 없어 제도 판정(regime)이 생기지 않는 미확인 모드에서도 질문의 제도 신호로 막는다(독립 리뷰 M1 — 연소자
+        4.8h·시급 77,400원, 감시·단속이면 주휴 자체가 제외될 수 있다)."""
+        for query in ("고등학생 알바생이에요. 지난주 하루 8시간씩 3일 일했어요. 주휴수당은요?",
+                      "아파트 경비로 지난주 하루 8시간씩 3일 일했어요. 주휴수당은요?"):
+            for extra in ({}, {"wage_type": "시급", "wage_amount": 10320}):
+                with self.subTest((query[:10], extra)):
+                    out = holiday_card(query, weekly_work_days=3, **extra)
+                    self.assertIn("[소정근로시간 미확인", out)
+                    self.assertNotIn("조건부 예시", out)
+
+    def test_t8_grounded_out_hours(self):
+        """출처 대조가 버린 의도분석 시간(실근로)으로 미확인 모드가 된 카드(독립 리뷰 H1 재현 1). 예전에는 '질문의 6시간은 실제로 일한
+        시간'이라는 줄과 '주 3일 × 2시간 → 미발생' 예시가 함께 실렸다. 표지 없는 값이면 예시가 없고, '하루 6시간씩'이면 예시가 있다."""
+        params = {"weekly_work_days": 3, "daily_work_hours": 6}
+        loose = holiday_card("지난주 월수금 6시간 일했는데 주휴수당 받을 수 있나요?", **params)
+        self.assertIn("질문의 6시간은 그 기간에 실제로 일한 시간이라", loose)
+        self.assertNotIn("조건부 예시", loose)
+        marked = holiday_card("지난주 월수금 하루 6시간씩 일했는데 주휴수당 받을 수 있나요?", **params)
+        self.assertIn("질문의 6시간은 그 기간에 실제로 일한 시간이라", marked)
+        self.assertIn("(주 3일 × 6시간 = 18시간)와 같다면: 주 소정근로일 3일 < 5일 → 주휴: min(18h ÷ 5, 8h) = 3.6h", marked)
+
+
+class UnderFifteenHoursTest(unittest.TestCase):
+    """T9 — 1주 15시간 미만이면 산식 대신 '미발생'(근로기준법 제18조 제3항). '주 15시간 이상'은 기준선이라 값에서 뺀다."""
+
+    def test_t9_threshold_is_not_a_work_hour(self):
+        out = holiday_card("주 15시간 이상이어야 주휴수당이 나온다던데, 지난주 월화 하루 6시간씩 일했어요.", weekly_work_days=2)
+        self.assertIn("조건부 예시 — 근로계약상 1주 소정근로시간이 질문의 근무(주 2일 × 6시간 = 12시간)와 같다면: "
+                      "1주 소정근로시간 12h < 15h → 주휴수당 미발생(근로기준법 제18조 제3항)", out)
+        self.assertNotIn("min(12h", out)
+        self.assertIn(EXAMPLE_HOLD, out)
+
+
+class UnchangedCardTest(unittest.TestCase):
+    """T10 — 예시가 없는 카드의 문구는 그대로다(D7). 구성 보류의 추정 금지는 유지해야 한다(Plan R3)."""
+
+    def test_t10_composition_hold_keeps_its_wording(self):
+        from app.core.pipeline import _calculation_context_heading
+        out = card({"wage_type": "월급", "wage_amount": 3000000, "business_size": "5인이상", "weekly_work_days": 5,
+                    "daily_work_hours": 8, "calculation_types_kr": ["최저임금", "퇴직금"],
+                    "start_date": "2023-01-02", "end_date": "2026-01-01"},
+                   "월급 300만원에 연장수당이 포함돼 있어요. 주 5일 하루 8시간 일해요. 직원 10명. 최저임금 위반인지와 퇴직금은?")
+        self.assertIn("최저임금 충족 여부는 판정하지 않았습니다", out)
+        self.assertIn("금액 보류:", out)
+        self.assertIn("추정하지 마세요", out)
+        self.assertNotIn("조건부 예시", out)
+        self.assertEqual(_calculation_context_heading(out), HOLD_HEADING)
+
+    def test_t10_confirmed_holiday_card(self):
+        out = holiday_card(kin01_question(), weekly_work_days=3, daily_work_hours=6)
+        self.assertEqual(out.splitlines()[:3], [
+            "[주휴시간 산정 — 시급 미제공으로 금액은 산정하지 않음]",
+            "1주 소정근로시간: 3일 × 6h = 18h",
+            "주휴 유급시간: 주 소정근로일 3일 < 5일 → 주휴: min(18h ÷ 5, 8h) = 3.6h (= 18h ÷ 40h × 8h — 1주 소정근로일을 5일로 봄)"])
+        self.assertNotIn("조건부 예시", out)
+
+    def test_t10_unknown_card_without_example(self):
+        from app.core.pipeline import _calculation_context_heading
+        out = holiday_card("지난주 사흘 일했는데 주휴수당은?", weekly_work_days=3)
+        self.assertEqual(out.splitlines()[-1], PLAIN_HOLD)
+        self.assertEqual(_calculation_context_heading(out), HOLD_HEADING)
+
+
+class HourMentionTest(unittest.TestCase):
+    """T11 — 질문의 'N시간' 해석(_HourMention). 출처 대조가 읽는 앞 세 필드의 회귀는 test_audit50 T10이 본다."""
+
+    def test_t11_daily_total_and_aside(self):
+        from app.core.pipeline import _hours_mentions
+        cases = {   # (시간, 1일, 표지 있는 합계, 제외 표현)
+            "하루 6시간씩 일했어요": [(6.0, True, False, "")],
+            "주 3일, 총 18시간": [(18.0, False, True, "")],
+            "6시간씩 총 18시간": [(6.0, True, False, ""), (18.0, False, True, "")],
+            "하루 6시간 30분씩": [(6.5, True, False, "")],
+            "3일 동안 18시간": [(18.0, False, True, "")],
+            "주 15시간씩": [(15.0, False, True, "")],
+            "일평균 7시간": [(7.0, True, False, "")],
+            "월수금 6시간 일했어요": [(6.0, False, False, "")],
+            "지난 21일 3시간": [(3.0, False, False, "")],
+            "주 15시간 이상이어야 한대요": [(15.0, False, True, "threshold")],
+            "주 15시간을 넘어야 받는대요": [(15.0, False, True, "threshold")],
+            "15시간 미만이면 안 나와요": [(15.0, False, False, "threshold")],
+            "휴게시간 1시간이 있었어요": [(1.0, False, False, "break")],
+            "점심 1시간 빼고": [(1.0, False, False, "break")],
+            "하루 6~7시간씩": [(7.0, True, False, "range")],
+            "매일 2시간씩 연장근무": [(2.0, True, False, "premium")],
+            "야간 8시간 근무": [(8.0, False, False, "premium")],
+            "월 60시간 일해요": [(60.0, False, False, "period")],
+            "2주 동안 총 24시간": [(24.0, False, True, "period")],
+        }
+        for query, expected in cases.items():
+            with self.subTest(query):
+                self.assertEqual([(m.value, m.daily, m.total, m.aside) for m in _hours_mentions(query)], expected)
+
+    def test_t11_named_fields_keep_the_grounding_order(self):
+        from app.core.pipeline import _HourMention, _hours_mentions
+        mention = _hours_mentions("9월 28일~30일 3일 동안 25시간 일했는데")[0]
+        self.assertIsInstance(mention, _HourMention)
+        self.assertEqual(mention[:3], (25.0, True, (3, 3)))
+
+
+class WageCalcRulesTest(unittest.TestCase):
+    """T12 — 두 답변 분기 공통 규칙에 조건부 예시 지시가 있다. 이 상수는 .format()을 거치는 경로가 있어 중괄호를 쓰지 않는다."""
+
+    def test_t12_rule_present_without_braces(self):
+        from app.templates.prompts import WAGE_CALC_RULES
+        self.assertIn("계산 카드의 '조건부 예시'는 그 조건(근로계약상 소정근로시간이 질문의 근무와 같다면)을 함께 적어 쓰세요", WAGE_CALC_RULES)
+        self.assertIn("질문의 실제 근무시간을 소정근로시간으로 단정하지 마세요", WAGE_CALC_RULES)
+        self.assertNotIn("{", WAGE_CALC_RULES)
+        self.assertNotIn("}", WAGE_CALC_RULES)
 
 
 if __name__ == "__main__":
