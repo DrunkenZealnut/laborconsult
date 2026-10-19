@@ -1826,15 +1826,19 @@ def _span_days(specific) -> list[int]:
 
 
 def _question_span_days(query: str) -> list[int] | None:
-    """질문 전체의 기간 일수 — 시간이 다른 절에 있어도 본다('이번 주는 3일 동안 일했고, 하루 6시간씩'). 일수를 정할 수 없는 범위
-    (월을 넘는 '28일부터 10월 1일'·'9/28~10/1', 끝이 없는 '9/28~')가 있으면 None이다 — 그 기간이 1주 근무인지 확인할 수 없다.
-    _span_days는 그런 범위를 세지 않아 예시가 '주 6일 × 5시간'을 냈다(CodeRabbit #118)."""
+    """질문 전체의 기간 일수 — 시간이 다른 절에 있어도 본다('이번 주는 3일 동안 일했고, 하루 6시간씩'). 일수를 정할 수 없는 범위가
+    있으면 None이다 — 그 기간이 1주 근무인지 확인할 수 없다. 끝 날짜 앞에 월이 따로 적힌 범위('28일부터 10월 1일'·'9/28~10/30')는
+    날짜 숫자만으로 일수를 셀 수 없고(_span_days는 앞엣것을 세지 않고 뒤엣것을 3일로 센다 — 예시가 '주 6일 × 5시간'·'주 3일 ×
+    6시간'을 냈다, CodeRabbit #118), 끝이 없는 범위('9/28~')도 같다. 같은 달을 다시 적은 범위('9월 28일부터 9월 30일')도
+    예시만 빠지는 쪽으로 둔다."""
     days = []
     for clause in _CLAUSE_SPLIT_RE.split(query or ""):
         specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
         for cue in specific:
             g = cue.groupdict()
-            if any(g.get(a) and (not g.get(b) or int(g[b]) < int(g[a])) for a, b in _SPAN_RANGE_GROUPS):
+            if any(g.get(a) and (not g.get(b) or int(g[b]) < int(g[a])
+                                 or re.search(r"\d", clause[cue.end(a):cue.start(b)]))   # 끝 날짜 앞의 월
+                   for a, b in _SPAN_RANGE_GROUPS):
                 return None
         days += _span_days(specific)
     return days
