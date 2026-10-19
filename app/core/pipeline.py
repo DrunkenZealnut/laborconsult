@@ -1806,6 +1806,9 @@ class _HourMention(NamedTuple):
                           # "premium"(연장·야간·휴일 근로)·"period"(1주가 아닌 기간의 합계)
 
 
+_SPAN_RANGE_GROUPS = (("a1", "b1"), ("a2", "b2"), ("a3", "b3"), ("a4", "b4"))
+
+
 def _span_days(specific) -> list[int]:
     """특정 기간 표지들 → 그 기간의 일수('3일 동안' 3·'28일~30일' 3·'사흘' 3). 일수가 없는 표지('이번 주')는 세지 않는다."""
     days = []
@@ -1816,15 +1819,25 @@ def _span_days(specific) -> list[int]:
                 days.append(int(g[key]))
         if g.get("w"):
             days.append(_DAY_COUNT_WORDS[g["w"]])
-        for a, b in (("a1", "b1"), ("a2", "b2"), ("a3", "b3"), ("a4", "b4")):
+        for a, b in _SPAN_RANGE_GROUPS:
             if g.get(a) and g.get(b) and int(g[b]) >= int(g[a]):
                 days.append(int(g[b]) - int(g[a]) + 1)
     return days
 
 
-def _question_span_days(query: str) -> list[int]:
-    """질문 전체의 기간 일수 — 시간이 다른 절에 있어도 본다('이번 주는 3일 동안 일했고, 하루 6시간씩')."""
-    return [d for clause in _CLAUSE_SPLIT_RE.split(query or "") for d in _span_days(_SPECIFIC_SPAN_RE.finditer(clause))]
+def _question_span_days(query: str) -> list[int] | None:
+    """질문 전체의 기간 일수 — 시간이 다른 절에 있어도 본다('이번 주는 3일 동안 일했고, 하루 6시간씩'). 일수를 정할 수 없는 범위
+    (월을 넘는 '28일부터 10월 1일'·'9/28~10/1', 끝이 없는 '9/28~')가 있으면 None이다 — 그 기간이 1주 근무인지 확인할 수 없다.
+    _span_days는 그런 범위를 세지 않아 예시가 '주 6일 × 5시간'을 냈다(CodeRabbit #118)."""
+    days = []
+    for clause in _CLAUSE_SPLIT_RE.split(query or ""):
+        specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
+        for cue in specific:
+            g = cue.groupdict()
+            if any(g.get(a) and (not g.get(b) or int(g[b]) < int(g[a])) for a, b in _SPAN_RANGE_GROUPS):
+                return None
+        days += _span_days(specific)
+    return days
 
 
 def _hours_mentions(query: str) -> list[_HourMention]:
@@ -2135,9 +2148,10 @@ def _question_work_hours(query: str, weekly_days) -> float | None:
     if any(m.aside in ("range", "premium", "period") for m in mentions):
         return None
     mentions = [m for m in mentions if not m.aside]      # 기준선('15시간 이상')·휴게 시간은 근무시간이 아니다
-    # 기간 일수가 1주 근무일수와 다르면 그 시간은 1주 근무가 아니다 — '3일 동안 25시간'·주 6일이 '주 6일 × 4.1667시간' 예시가
-    # 됐다(시제품, a50-40 — PR #114가 막은 가정 그대로). 일수 표지가 다른 절에 있어도 본다(독립 리뷰 H1)
-    if any(abs(d - days) > 1e-9 for d in _question_span_days(query)):
+    # 기간 일수가 1주 근무일수와 다르거나 정할 수 없으면 그 시간은 1주 근무가 아니다 — '3일 동안 25시간'·주 6일이 '주 6일 ×
+    # 4.1667시간' 예시가 됐다(시제품, a50-40 — PR #114가 막은 가정 그대로). 일수 표지가 다른 절에 있어도 본다(독립 리뷰 H1)
+    span_days = _question_span_days(query)
+    if span_days is None or any(abs(d - days) > 1e-9 for d in span_days):
         return None
     dailies = {m.value for m in mentions if m.daily}
     totals = {m.value for m in mentions if m.total}
