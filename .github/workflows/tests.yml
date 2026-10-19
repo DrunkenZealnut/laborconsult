@@ -106,6 +106,12 @@ jobs:
           python3 test_calc_card_followups.py
           python3 eval_consultation.py --offline --fixture data/eval_calc_card_queries.json
 
+      # 한 카드 안의 금액은 같은 월 금액에서 나와야 한다. 연장수당을 묻지 않은 질문에서 월 총액이 연장분을 빼 세후가 세전보다
+      # 크게 나왔다(calc-card-consistency G2) — 갈린 숫자는 예외를 내지 않아 불변식 격자가 유일한 탐지 수단이다. 미확인 모드의
+      # 조건부 예시는 조건 하나가 빠지면 실근로가 소정근로로 단정된 값이 카드에 실린다(kin-01·a50-40).
+      - name: 계산 카드 금액 일관성(월 총 = 세전 월 급여·세후 ≤ 세전·평균임금 월액, 미확인 모드 조건부 예시)
+        run: python3 test_calc_card_consistency.py
+
       # 메모리는 사람이 기억해서 재는 값이었고, 그래서 RSS가 Vercel 한도의
       # 119%가 될 때까지 아무도 몰랐다. 초과 시 하이브리드 검색이 조용히
       # Dense-only로 떨어진다 — 경고가 아니라 실패로 둔다.

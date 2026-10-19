@@ -109,11 +109,12 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
     # ── 주 → 월 환산 (× 4.345주) ─────────────────────────────────────────────
     monthly = (overtime_pay + night_pay + holiday_pay) * WEEKS_PER_MONTH
 
-    # 주 52시간 초과 경고
+    # 주 52시간 초과 경고 — 상시 4명 이하는 연장 근로의 제한(제53조)이 적용되지 않는다(근로기준법 제11조, 주 52시간 체크와 같은
+    # 판정). 한도는 5명 이상 전체에 적용된다(30명 미만 특별연장은 2022년 말 종료 — 예전 표기 '30인 이상 사업장'은 낡았다)
     total_weekly = (inp.schedule.weekly_work_days * inp.schedule.daily_work_hours
                     + ot_hours + hol_hours + hol_ot_hours)
-    if total_weekly > 52:
-        warnings.append(f"주 총 근로시간 {total_weekly}h — 법정 한도 52h 초과 (30인 이상 사업장)")
+    if total_weekly > 52 and inp.business_size != BusinessSize.UNDER_5:
+        warnings.append(f"주 총 근로시간 {total_weekly}h — 법정 한도 52h 초과 (상시 5명 이상 사업장, 근로기준법 제53조)")
 
     breakdown = {
         "통상시급": f"{hourly:,.1f}원",

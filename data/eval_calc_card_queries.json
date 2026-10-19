@@ -418,5 +418,118 @@
     "다만 해고의 정당한 이유가 없다면 부당해고 구제신청을 검토할 수 있습니다."
    ]
   }
+ },
+ {
+  "id": "calc-12",
+  "category": "계산카드·금액일관성",
+  "question": "시급 12,000원으로 하루 8시간씩 주 5일 일하고, 매주 연장근로를 10시간 합니다. 직원은 10명입니다. 4대보험을 떼면 한 달 실수령액이 얼마이고, 세전 월급은 얼마인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:(?:세전|월\\s*총|총\\s*수령|월급(?:은|이))(?:(?!통상|기본)[^.\\n]){0,12}2,502,857"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-consistency",
+  "detector_examples": {
+   "positive": [
+    "월 총 예상 수령액(세전)은 2,502,857원이고 실수령액은 2,885,875원입니다.",
+    "세전 월급은 2,502,857원입니다."
+   ],
+   "negative": [
+    "세전 월급은 3,285,000원이고, 통상임금 2,502,857원에 연장수당 782,143원을 더한 값입니다.",
+    "통상임금 월 2,502,857원에 연장수당 782,143원을 더한 세전 3,285,000원 기준으로 실수령액은 2,885,875원입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-13",
+  "category": "계산카드·금액일관성",
+  "question": "시급 12,000원, 하루 8시간 주 5일에 매주 연장 10시간씩 2024년 1월 1일부터 2025년 12월 31일까지 일하고 퇴사했습니다. 직원 10명입니다. 퇴직금과, 퇴직금 계산에 들어간 월 임금은 얼마인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:(?:월\\s*(?:임금|급여|총)|세전)(?:(?!통상|기본)[^.\\n]){0,12}2,502,857"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-consistency",
+  "detector_examples": {
+   "positive": [
+    "퇴직금 계산에 들어간 월 임금은 2,502,857원입니다."
+   ],
+   "negative": [
+    "평균임금은 통상임금 월 2,502,857원과 연장수당 월 782,143원을 더한 3,285,000원으로 계산합니다.",
+    "퇴직금 계산에 들어간 월 임금은 3,285,000원(통상임금 월 2,502,857원 + 연장수당 782,143원)입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-14",
+  "category": "계산카드·시간축",
+  "question": "편의점에서 지난주 화·목·토 하루 5시간씩(총 15시간) 일했어요. 시급은 11,000원이고 직원은 3명입니다. 지난주 주휴수당이 나오나요? 나온다면 얼마인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:주휴(?:수당|시간)?\\s*(?:은|는|이|:)?\\s*(?:1주\\s*)?5\\s*시간\\s*(?:분|입니다|이에요|이고|이라|이며|으로|을)",
+   "55,000"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:calc-card-consistency",
+  "detector_examples": {
+   "positive": [
+    "주휴시간은 5시간이라 주휴수당은 55,000원입니다.",
+    "주휴수당은 5시간분입니다.",
+    "지난주 주휴수당은 55,000원입니다."
+   ],
+   "negative": [
+    "근로계약상 소정근로가 주 15시간이라면 주휴시간은 15 ÷ 5 = 3시간, 주휴수당은 33,000원입니다.",
+    "주휴수당 계산: 1일 5시간 × 3일 = 15시간 → 15 ÷ 5 = 3시간",
+    "1주 소정근로시간이 15시간이면 주휴시간은 3시간이고, 시급 11,000원 × 3시간 = 33,000원입니다."
+   ]
+  }
  }
 ]

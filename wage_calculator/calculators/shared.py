@@ -364,6 +364,20 @@ def _adds_premium(inp: WageInput) -> bool:
     return not (_premium_included(inp) or inp.is_platform_worker)
 
 
+def has_premium_hours(inp: WageInput) -> bool:
+    """연장·야간·휴일 근로시간이 하나라도 입력됐는가 — 포괄임금 역산의 근거이자 월 임금총액 추정이 더할 시간이 있는지의 판정."""
+    s = inp.schedule
+    return any((getattr(s, f, 0) or 0) > 0 for f in (
+        "weekly_overtime_hours", "weekly_night_hours", "weekly_holiday_hours", "weekly_holiday_overtime_hours"))
+
+
+def adds_premium_pay(inp: WageInput) -> bool:
+    """월 임금총액 추정(monthly_pay_estimate)이 연장·야간·휴일 근로 임금을 더하는 입력인가 — 더하면 카드의 연장수당 섹션도
+    계산해야 '월 총 예상 수령액'이 같은 금액을 쓴다(calc-card-consistency G2). 시간이 아니라 더할 금액으로 본다 — 상시 4명
+    이하의 야간근로는 가산이 없어(MultiplierContext) 시간만 보면 0원 섹션과 '월 금액에 들어간다'는 안내가 붙었다(독립 리뷰 L1)."""
+    return _adds_premium(inp) and premium_weekly(inp, 1.0).total > 0
+
+
 def fixed_overtime_monthly(inp: WageInput) -> float:
     """고정수당 중 연장·야간·휴일 근로의 대가(고정연장수당·시간외수당·포괄수당 등)의 월액. 통상임금 계산기가 이름으로 통상임금에서
     빼는 수당과 같은 판정이다(명시적으로 통상임금에 넣은 것·성과조건·연차수당은 제외)."""

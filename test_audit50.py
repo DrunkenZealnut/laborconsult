@@ -1653,11 +1653,13 @@ class ScheduleHoursTest(unittest.TestCase):
                          (None, None, {"weekly_total_hours": 30}))
         # 소수점 절 분리 결함 — '3.2시간'이 '3' | '2시간'으로 갈려 '2시간'이 '4주간' 절의 기간 합계로 잡혔다
         from app.core.pipeline import _hours_mentions
-        self.assertEqual(_hours_mentions("주휴시간을 3.2시간으로 산정하셨습니다 이에 따라 4주간 총 12.8시간입니다"),
+        # 출처 대조가 읽는 앞 세 필드(시간·기간 합계·기간 일수)만 본다 — 조건부 예시용 daily·aside는 test_calc_card_consistency T11
+        grounding = lambda q: [m[:3] for m in _hours_mentions(q)]  # noqa: E731
+        self.assertEqual(grounding("주휴시간을 3.2시간으로 산정하셨습니다 이에 따라 4주간 총 12.8시간입니다"),
                          [(3.2, True, ()), (12.8, True, ())])
-        self.assertEqual(_hours_mentions("하루 4시간 30분, 주 3일 2시간 반"), [(4.5, False, ()), (2.5, False, ())])
+        self.assertEqual(grounding("하루 4시간 30분, 주 3일 2시간 반"), [(4.5, False, ()), (2.5, False, ())])
         # 기간 일수 — 의도분석이 합계를 그 일수로 나눈 1일 시간(25 ÷ 3)도 기간 합계에서 나온 값이다
-        self.assertEqual(_hours_mentions("9월 28일~30일 3일 동안 25시간 일했는데"), [(25.0, True, (3, 3))])
+        self.assertEqual(grounding("9월 28일~30일 3일 동안 25시간 일했는데"), [(25.0, True, (3, 3))])
         self.assertEqual(ground("주 6일, 하루 8시간 근무인데 이번 주 3일 동안 25시간 일했어요", 25, 8, 6),
                          (None, 8, {"weekly_total_hours": 25}))
         # 주 합계는 근무일수로 나눈 1일 값으로도 대조한다 — 기간 1일 평균 × 근무일수(25 ÷ 3 × 6 = 50), 반올림한 1일을 곱한 값(8.3 × 6

@@ -9,6 +9,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import date as _date
+from typing import NamedTuple
 
 from app.config import (
     AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL,
@@ -28,7 +29,10 @@ from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize, HourSplit
 from wage_calculator.result import format_result
-from wage_calculator.calculators.shared import AllowanceClassifier, apply_hour_split, premium_weekly, split_hours
+from wage_calculator.calculators.shared import (
+    LEGAL_DAILY_HOURS, LEGAL_WEEKLY_HOURS, AllowanceClassifier, adds_premium_pay, apply_hour_split,
+    has_premium_hours as _has_premium_hours, premium_weekly, split_hours,
+)
 from wage_calculator.utils import WEEKS_PER_MONTH, fmt_hours, fmt_won
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
                                  held_assessment, ground, decide_mode, as_list,
@@ -1279,6 +1283,8 @@ _AVERAGE_WAGE_TARGETS = frozenset({
 })
 # 금액 보류 안내의 표지. LLM 컨텍스트 머리말이 이 표지로 '보류 항목 추정 금지'를 덧붙인다.
 _AMOUNT_HOLD_MARK = "금액 보류:"
+# 미확인 모드 주휴 블록의 조건부 예시 줄 표지 — 머리말이 이 표지로 '조건을 함께 밝혀서만 쓰세요'를 덧붙인다(calc-card-consistency D7)
+_CONDITIONAL_EXAMPLE_MARK = "조건부 예시 —"
 # 보류 경고의 이름표 설명. 보류 안내와 포괄임금 '미달' 안내가 같은 문장을 쓴다.
 _HELD_TOTAL_NOTE = " 위 시급은 그 수당이 섞인 월급 총액을 소정근로시간으로 나눈 값이라 통상시급이 아닙니다."
 # 다른 계산기가 만든 줄 속 '통상시급'(소정근로시간 계산식 등)도 같은 총액 ÷ 시간이다. 이름을 부정하는 표기는 건드리지 않는다.
@@ -1297,15 +1303,14 @@ def _drop_not_ordinary_allowances(inp) -> None:
     inp.fixed_allowances = [a for a in inp.fixed_allowances or [] if not AllowanceClassifier.is_not_ordinary_by_name(name(a))]
 
 
-def _has_premium_hours(inp) -> bool:
-    """연장·야간·휴일 근로시간이 하나라도 입력됐는가 — 포괄임금 역산의 근거."""
-    return any((getattr(inp.schedule, f, 0) or 0) > 0 for f in (
-        "weekly_overtime_hours", "weekly_night_hours", "weekly_holiday_hours", "weekly_holiday_overtime_hours"))
-
-
 # 규모를 모를 때의 가산 안내 — 파이프라인은 사업장 규모가 없으면 5인 이상으로 계산한다
 _SIZE_ASSUMED_NOTE = ("상시 5명 이상 사업장 기준으로 연장·야간·휴일 가산(50%)을 계산했습니다 — 상시 4명 이하면 가산 없이 "
                       "1배입니다(근로기준법 제56조, 시행령 별표 1).")
+# 묻지 않은 연장수당을 파이프라인이 더한 카드에만 붙인다 — 섹션이 왜 생겼는지와 평균임금·보수 추정이 이미 쓰던 '매주 같은 시간'
+# 가정을 밝힌다. 특정 주인지는 판정하지 않는다(calc-card-consistency D5 — 기간 표지 정규식이 '이번 주에만'을 못 잡는다). '질문에
+# 적힌'이라 쓰지 않는다 — 앞 턴 캐시에서 채운 시간에도 붙는다(독립 리뷰 L4)
+_PREMIUM_ADDED_NOTE = ("대화에 나온 연장·야간·휴일 근로시간의 임금이 월 금액에 들어가므로 연장수당도 함께 계산했습니다 — 매주 같은 "
+                       "시간으로 보았고, 특정 주에만 한 근로라면 월 금액은 그보다 적습니다.")
 _WAGE_UNIT_LABEL = {WageType.DAILY: "일급", WageType.MONTHLY: "월급", WageType.ANNUAL: "연봉"}
 
 
@@ -1771,25 +1776,81 @@ _DAILY_UNIT_RE = re.compile(r"(?:하루|1\s*일|일일|매일|평일|주말)\s*(
 # 배정'). 시간 바로 뒤나 바로 앞에 있을 때만 본다 — '스케줄이 바뀌어서 이번 주 3일 동안 25시간'은 실근로다(리뷰 M3)
 _PLANNED_RE = re.compile(r"스케줄|근무표|시프트|배정|편성|예정|계약|소정")
 _PLANNED_BEFORE_RE = re.compile(r"(?:스케줄|근무표|시프트|계약|소정근로시간?)\s*(?:상|대로|에는|엔|에|은|는|이|가)?\s*$")
+# 근무시간이 아닌 시간 표현 — 기준선('주 15시간 이상이어야')·휴게('휴게시간 1시간')·범위('6~7시간'). 조건부 예시만 뺀다
+# (calc-card-consistency D6). 출처 대조(_ground_schedule_hours)는 이 판정을 읽지 않는다 — 버리는 값·안내가 그대로다
+_HOURS_THRESHOLD_AFTER_RE = re.compile(r"^\s*(?:을|를|이|가|은|는|도)?\s*(?:이상|미만|이하|초과|넘|안\s*[되돼]|못\s*미치|채우|채워)")
+_HOURS_BREAK_BEFORE_RE = re.compile(r"(?:휴게|휴식|점심|식사|쉬는)\s*(?:시간)?\s*(?:은|는|이|가|:|으로|로)?\s*$")
+_HOURS_RANGE_BEFORE_RE = re.compile(r"\d\s*(?:~|∼|〜|-|–)\s*$")
+# 연장·야간·휴일 근로의 시간('연장 2시간'·'2시간씩 연장근무'·'야간 8시간') — 그 질문의 근무는 소정근로 하나로 정해지지 않는다
+_HOURS_PREMIUM_BEFORE_RE = re.compile(r"(?:연장|야간|휴일|초과|잔업|야근|특근)\s*(?:근무|근로)?\s*(?:을|를|은|는|이|가|로)?\s*"
+                                      r"(?:매일|하루|주|1일|매주)?\s*(?:평균|약|최대)?\s*$")
+_HOURS_PREMIUM_AFTER_RE = re.compile(r"^\s*(?:씩)?\s*(?:의|을|를|씩)?\s*(?:연장|야간|휴일|초과|잔업|야근|특근)")
+# 합계 표지('총 18시간') — 표지 없는 단독 값('월수금 6시간')은 1일 시간인지 합계인지 모른다(독립 리뷰 H1: 2시간 × 3일로 읽어 '미발생')
+_HOURS_TOTAL_BEFORE_RE = re.compile(r"(?:총|합계|모두|전부|도합|합쳐서?|통틀어)\s*$")
+# 1주가 아닌 기간의 합계('월 60시간'·'한 달에'·'2주 동안 총 24시간') — 1주 합계로 나누면 틀린 1일 시간이 된다
+_HOURS_PERIOD_BEFORE_RE = re.compile(r"(?:(?<![가-힣])월\s*$|한\s*달|매월|달에|개월)")
+_HOURS_MONTH_RE = re.compile(r"한\s*달|매월")
+# 1일 표지 보정 — 날짜('21일 3시간')의 '1일'은 1일 단위가 아니고, '일 8시간'·'일평균 7시간'은 1일 단위다
+_DATE_DAY_RE = re.compile(r"\d1\s*일\s*(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+_DAILY_PLAIN_RE = re.compile(r"(?<![가-힣\d])일\s*(?:평균)?\s*$")
 
 
-def _hours_mentions(query: str) -> list[tuple[float, bool, tuple]]:
-    """질문의 'N시간' 표현 → (시간, 기간 합계인지, 그 절의 기간 일수들)."""
+class _HourMention(NamedTuple):
+    """질문의 'N시간' 표현 하나 — 해석은 이곳 한 군데서 한다."""
+    value: float
+    span: bool            # 기간 합계(실근로)인가 — 출처 대조(_ground_schedule_hours)가 쓴다
+    days: tuple           # 그 절의 기간 일수들
+    daily: bool = False   # '하루 N시간'·'N시간씩' — 1일 시간(조건부 예시만 쓴다)
+    total: bool = False   # '총 N시간'·'주 N시간'·'3일 동안 N시간' — 표지 있는 합계(조건부 예시만 쓴다)
+    aside: str = ""       # 1주 근무시간으로 쓰지 않는 표현: "threshold"(15시간 이상)·"break"(휴게 1시간)·"range"(6~7시간)·
+                          # "premium"(연장·야간·휴일 근로)·"period"(1주가 아닌 기간의 합계)
+
+
+_SPAN_RANGE_GROUPS = (("a1", "b1"), ("a2", "b2"), ("a3", "b3"), ("a4", "b4"))
+
+
+def _span_days(specific) -> list[int]:
+    """특정 기간 표지들 → 그 기간의 일수('3일 동안' 3·'28일~30일' 3·'사흘' 3). 일수가 없는 표지('이번 주')는 세지 않는다."""
+    days = []
+    for cue in specific:
+        g = cue.groupdict()
+        for key in ("n1", "n2"):
+            if g.get(key):
+                days.append(int(g[key]))
+        if g.get("w"):
+            days.append(_DAY_COUNT_WORDS[g["w"]])
+        for a, b in _SPAN_RANGE_GROUPS:
+            if g.get(a) and g.get(b) and int(g[b]) >= int(g[a]):
+                days.append(int(g[b]) - int(g[a]) + 1)
+    return days
+
+
+def _question_span_days(query: str) -> list[int] | None:
+    """질문 전체의 기간 일수 — 시간이 다른 절에 있어도 본다('이번 주는 3일 동안 일했고, 하루 6시간씩'). 일수를 정할 수 없는 범위가
+    있으면 None이다 — 그 기간이 1주 근무인지 확인할 수 없다. 끝 날짜 앞에 월이 따로 적힌 범위('28일부터 10월 1일'·'9/28~10/30')는
+    날짜 숫자만으로 일수를 셀 수 없고(_span_days는 앞엣것을 세지 않고 뒤엣것을 3일로 센다 — 예시가 '주 6일 × 5시간'·'주 3일 ×
+    6시간'을 냈다, CodeRabbit #118), 끝이 없는 범위('9/28~')도 같다. 같은 달을 다시 적은 범위('9월 28일부터 9월 30일')도
+    예시만 빠지는 쪽으로 둔다."""
+    days = []
+    for clause in _CLAUSE_SPLIT_RE.split(query or ""):
+        specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
+        for cue in specific:
+            g = cue.groupdict()
+            if any(g.get(a) and (not g.get(b) or int(g[b]) < int(g[a])
+                                 or re.search(r"\d", clause[cue.end(a):cue.start(b)]))   # 끝 날짜 앞의 월
+                   for a, b in _SPAN_RANGE_GROUPS):
+                return None
+        days += _span_days(specific)
+    return days
+
+
+def _hours_mentions(query: str) -> list[_HourMention]:
+    """질문의 'N시간' 표현 → 시간·기간 합계인지·그 절의 기간 일수들, 그리고 조건부 예시가 쓰는 1일·합계 표지와 제외 표현."""
     found = []
     for clause in _CLAUSE_SPLIT_RE.split(query or ""):
         specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
         duration = bool(_DURATION_SPAN_RE.search(clause))
-        days = []
-        for cue in specific:
-            g = cue.groupdict()
-            for key in ("n1", "n2"):
-                if g.get(key):
-                    days.append(int(g[key]))
-            if g.get("w"):
-                days.append(_DAY_COUNT_WORDS[g["w"]])
-            for a, b in (("a1", "b1"), ("a2", "b2"), ("a3", "b3"), ("a4", "b4")):
-                if g.get(a) and g.get(b) and int(g[b]) >= int(g[a]):
-                    days.append(int(g[b]) - int(g[a]) + 1)
+        days = _span_days(specific)
         for m in _HOURS_MENTION_RE.finditer(clause):
             value = float(m.group(1)) + (int(m.group(2)) / 60 if m.group(2) else 0) + (0.5 if m.group(3) else 0)
             left, right = clause[:m.start()], clause[m.end():m.end() + 15]
@@ -1803,7 +1864,17 @@ def _hours_mentions(query: str) -> list[tuple[float, bool, tuple]]:
                 span = True
             else:
                 span = duration and not daily_rate
-            found.append((value, span, tuple(days)))
+            # 여기부터는 조건부 예시만 쓰는 해석이다 — 출처 대조(위 span)는 읽지 않는다. 1주 단위가 1일 표지보다 앞선다('주 15시간씩')
+            daily = not weekly_rate and ((bool(_DAILY_UNIT_RE.search(left)) and not _DATE_DAY_RE.search(left))
+                                         or bool(_DAILY_PLAIN_RE.search(left)) or right.lstrip().startswith("씩"))
+            total = not daily and bool(weekly_rate or _HOURS_TOTAL_BEFORE_RE.search(left) or (span and days))
+            aside = ("range" if _HOURS_RANGE_BEFORE_RE.search(left) else
+                     "threshold" if _HOURS_THRESHOLD_AFTER_RE.search(right) else
+                     "break" if _HOURS_BREAK_BEFORE_RE.search(left) else
+                     "premium" if _HOURS_PREMIUM_BEFORE_RE.search(left[-24:]) or _HOURS_PREMIUM_AFTER_RE.search(right) else
+                     "period" if not (daily or weekly_rate) and (_HOURS_PERIOD_BEFORE_RE.search(left[-12:]) or duration
+                                                                 or _HOURS_MONTH_RE.search(clause)) else "")
+            found.append(_HourMention(value, span, tuple(days), daily, total, aside))
     return found
 
 
@@ -1815,10 +1886,10 @@ def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted
     채운 값(trusted)은 그 턴의 질문으로 이미 대조했으므로 기간 밖 근거로 친다 — 이번 질문의 기간 표현 때문에 앞 턴의 정상
     소정근로시간까지 버리게 된다."""
     mentions = _hours_mentions(query)
-    spans = [(value, days) for value, span, days in mentions if span]
+    spans = [(m.value, m.days) for m in mentions if m.span]
     if not spans:
         return weekly_total, daily, {}
-    plain = [value for value, span, _ in mentions if not span]
+    plain = [m.value for m in mentions if not m.span]
     # 캐시에서 온 값은 그 자체로, 그 값에서 나온 값(1일 × 근무일수)도 근거다
     plain += [value for key, value in (("weekly_total_hours", weekly_total), ("daily_work_hours", daily))
               if key in trusted and value is not None]
@@ -2006,12 +2077,16 @@ def _stated_weekly_days(query: str) -> float | None:
 
 
 def _unknown_schedule_block(hourly, weekly_days, holiday: bool, held: list[str], span_hours: list,
-                            regime: tuple[str, float] | None = None) -> str | None:
+                            regime: tuple[str, float] | None = None, example: str | None = None) -> str | None:
     """소정근로시간 미확인 안내 — 주휴는 산식만, 근로시간에 따라 달라지는 계산은 금액 보류. 알릴 것이 없으면 None.
 
-    regime: (근로시간 제도 신호 이름, 1주 초과 시간) — 시간은 있지만 제도에 따라 소정·연장 구분이 갈리는 경우(D3)."""
+    regime: (근로시간 제도 신호 이름, 1주 초과 시간) — 시간은 있지만 제도에 따라 소정·연장 구분이 갈리는 경우(D3).
+    example: 질문의 근무시간으로 계산한 주휴 조건부 예시 줄(_conditional_holiday_example). 있으면 산식 뒤에 싣고 보류 줄을
+    '확정하지 않았습니다 … 위 조건부 예시만 그 조건과 함께'로 바꾼다 — 없을 때의 '추정하지 마세요'가 조건을 밝힌 예시까지
+    막아 계산법 질문에 답이 빠졌다(calc-card-consistency D1·D7, kin-01)."""
     if not (holiday or held or span_hours or regime):
         return None
+    example = example if holiday else None
     if regime and regime[0] == _MINOR_LABEL:
         lines = ["[근로시간 제도 확인 필요 — 소정근로시간에 따라 달라지는 시간·금액은 계산하지 않음]",
                  f"질문에 {regime[0]} 언급이 있습니다. 연소자의 근로시간은 1일 7시간·1주 35시간을 넘지 못해(근로기준법 제69조) "
@@ -2045,19 +2120,90 @@ def _unknown_schedule_block(hourly, weekly_days, holiday: bool, held: list[str],
         if weekly_days and float(weekly_days) > 5:
             lines.append("같은 업무의 통상 근로자가 있는 단시간근로자는 1일 소정근로시간을 4주 동안의 소정근로시간 ÷ 그 기간 "
                          "통상 근로자의 총 소정근로일 수로 정한다(근로기준법 시행령 별표 2 제2호나목).")
+        if example:
+            lines.append(example)
     names = (["주휴시간·주휴수당"] if holiday else []) + [CALC_TYPES.get(key, key) for key in held]
     if names:
         cause = "근로시간 제도를 확인해야 해" if regime else "질문에 1일·1주 소정근로시간이 없어"
-        lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 계산하지 않았습니다 — {', '.join(names)}. "
-                     "가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
+        if example:
+            lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 확정하지 않았습니다 — {', '.join(names)}. "
+                         "질문의 근무시간을 소정근로시간으로 단정하지 마세요 — 위 조건부 예시만 그 조건과 함께 쓰고, 다른 시간을 "
+                         "가정해 추정하지 마세요.")
+        else:
+            lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 계산하지 않았습니다 — {', '.join(names)}. "
+                         "가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
     return "\n".join(lines)
+
+
+def _question_work_hours(query: str, weekly_days) -> float | None:
+    """질문 본문의 근무시간이 1주 근무 형태 하나로 정해지면 그 1일 시간, 아니면 None(조건부 예시를 만들지 않는다 — Design §4.3).
+
+    조건: 1주 근무일수가 있다 · 범위('6~7시간')·연장·야간·휴일 근로·1주가 아닌 기간의 합계가 없다 · 질문의 기간 일수('3일 동안')가
+    1주 근무일수와 같다 · 기준선·휴게를 뺀 1일 값('하루 6시간')과 표지 있는 합계('총 18시간'·'주 15시간')가 각각 하나 이하이고
+    하나는 있으며, 둘 다 있으면 1일 × 근무일수 = 합계 · 표지 없는 값은 그 1일 시간이나 합계와 같다 · 1일 8시간·1주 40시간
+    이하(그 범위 밖은 소정근로시간일 수 없다 — 근로기준법 제2조 제1항 제8호·제50조). 틀린 예시보다 예시 없음이 안전하다."""
+    try:
+        days = float(weekly_days)
+    except (TypeError, ValueError):
+        return None
+    if not 0 < days <= 7:
+        return None
+    mentions = _hours_mentions(query)
+    if any(m.aside in ("range", "premium", "period") for m in mentions):
+        return None
+    mentions = [m for m in mentions if not m.aside]      # 기준선('15시간 이상')·휴게 시간은 근무시간이 아니다
+    # 기간 일수가 1주 근무일수와 다르거나 정할 수 없으면 그 시간은 1주 근무가 아니다 — '3일 동안 25시간'·주 6일이 '주 6일 ×
+    # 4.1667시간' 예시가 됐다(시제품, a50-40 — PR #114가 막은 가정 그대로). 일수 표지가 다른 절에 있어도 본다(독립 리뷰 H1)
+    span_days = _question_span_days(query)
+    if span_days is None or any(abs(d - days) > 1e-9 for d in span_days):
+        return None
+    dailies = {m.value for m in mentions if m.daily}
+    totals = {m.value for m in mentions if m.total}
+    # 표지 없는 값만 있으면 1일 시간인지 합계인지 모른다 — '지난주 월수금 6시간'을 합계로 읽어 '주 3일 × 2시간 → 미발생'을 냈다
+    if len(dailies) > 1 or len(totals) > 1 or not (dailies or totals):
+        return None
+    daily, total = next(iter(dailies), None), next(iter(totals), None)
+    if daily is not None and total is not None and abs(daily * days - total) >= 0.05:
+        return None
+    if daily is None:
+        daily = total / days
+    if any(abs(m.value - daily) >= 0.05 and abs(m.value - daily * days) >= 0.05
+           for m in mentions if not (m.daily or m.total)):
+        return None
+    if not (0 < daily <= LEGAL_DAILY_HOURS + 1e-9 and daily * days <= LEGAL_WEEKLY_HOURS + 1e-9):
+        return None
+    return daily
+
+
+def _conditional_holiday_example(query: str, weekly_days, hourly) -> str | None:
+    """미확인 모드 주휴 블록의 '조건부 예시' 줄 — 근로계약상 1주 소정근로시간이 질문의 근무와 같다면의 주휴시간(calc-card-consistency
+    D1). 산식은 weekly_holiday_hours 단일 출처, 1주 15시간 미만은 미발생(근로기준법 제18조 제3항). 시급을 알면 금액까지 적는다.
+    질문에 근로시간 제도 신호가 있으면 만들지 않는다 — 제도 확인이 먼저다(연소자 1일 7시간 한도, 감시·단속 승인이면 주휴 제외).
+    계산한 제도 판정(regime)은 1일 시간이 있을 때만 생겨 미확인 모드에서는 늘 비어 있다(독립 리뷰 M1)."""
+    from wage_calculator.calculators.weekly_holiday import weekly_holiday_hours
+    from wage_calculator.constants import WEEKLY_HOLIDAY_MIN_HOURS
+    if _hour_regime_signal(query):
+        return None
+    daily = _question_work_hours(query, weekly_days)
+    if daily is None:
+        return None
+    days = float(weekly_days)
+    weekly = days * daily
+    head = (f"{_CONDITIONAL_EXAMPLE_MARK} 근로계약상 1주 소정근로시간이 질문의 근무(주 {fmt_hours(days)}일 × {fmt_hours(daily)}시간 = "
+            f"{fmt_hours(weekly)}시간)와 같다면: ")
+    if weekly < WEEKLY_HOLIDAY_MIN_HOURS:
+        return (head + f"1주 소정근로시간 {fmt_hours(weekly)}h < {WEEKLY_HOLIDAY_MIN_HOURS:g}h → 주휴수당 미발생"
+                       "(근로기준법 제18조 제3항)")
+    hours, formula = weekly_holiday_hours(days, daily)
+    tail = f" → 주휴수당 = 시급 {fmt_won(hourly)}원 × {fmt_hours(hours)}h = {fmt_won(hourly * hours)}원" if hourly else ""
+    return head + formula + tail
 
 
 def _rejected_span_hours(query: str, params: dict) -> list:
     """버린 시간이 있으면 안내에 적을 질문의 기간 합계 시간 — 버린 값(의도분석이 나눈 8.33h 등)은 질문에 없는 숫자다."""
     if not params.get("schedule_hours_rejected"):
         return []
-    return list(dict.fromkeys(value for value, span, _ in _hours_mentions(query) if span))
+    return list(dict.fromkeys(m.value for m in _hours_mentions(query) if m.span))
 
 
 # 최저임금 미달 경고의 월 부족액 — "(부족분 1,320원/h, 월 275,314원)"
@@ -2354,9 +2500,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             # 근무일수만 있고 시간이 없으면 소정근로시간 산정·52시간 체크는 기본 8시간을 넣은 값이다(주 6일 → 243시간, 리뷰 H3)
             held = [t for t in wageless if t != "wage_arrears"]
             wageless = [t for t in wageless if t == "wage_arrears"]
+            holiday = "weekly_holiday" in targets and not inp.is_platform_worker
             holiday_hours_block = _unknown_schedule_block(
-                None, params.get("weekly_work_days"), "weekly_holiday" in targets and not inp.is_platform_worker, held,
-                _rejected_span_hours(query, params), regime)
+                None, params.get("weekly_work_days"), holiday, held, _rejected_span_hours(query, params), regime,
+                _conditional_holiday_example(query, params.get("weekly_work_days"), None) if holiday else None)
         if not wageless:
             if holiday_hours_block:
                 logger.info("임금 정보 없음 — 주휴 시간만 산정(금액 미산정), 나머지 %s 제외", targets)
@@ -2390,10 +2537,12 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         free = _SCHEDULE_FREE_TARGETS | (_HOURLY_SCHEDULE_FREE_TARGETS if hourly_known else frozenset())
         kept = [t for t in targets if t in free]
         held = [t for t in targets if t not in kept and t not in ("weekly_holiday", "legal_hints")]
+        # 관리 모드의 '최저시급' 질문은 시급 자리가 표지값(1)이다 — 승인 금액은 계산기가 정하므로 금액을 적지 않는다
+        hourly = inp.hourly_wage if hourly_known and not inp.use_minimum_wage else None
+        holiday = "weekly_holiday" in targets
         unknown_schedule_block = _unknown_schedule_block(
-            # 관리 모드의 '최저시급' 질문은 시급 자리가 표지값(1)이다 — 승인 금액은 계산기가 정하므로 금액을 적지 않는다
-            inp.hourly_wage if hourly_known and not inp.use_minimum_wage else None, params.get("weekly_work_days"),
-            "weekly_holiday" in targets, held, _rejected_span_hours(query, params), regime)
+            hourly, params.get("weekly_work_days"), holiday, held, _rejected_span_hours(query, params), regime,
+            _conditional_holiday_example(query, params.get("weekly_work_days"), hourly) if holiday else None)
         logger.info("소정근로시간 미확인 — 계산 %s, 보류 %s", kept, held)
         if not [t for t in kept if t != "legal_hints"] and not inp.is_platform_worker:
             return unknown_schedule_block or None
@@ -2409,8 +2558,11 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         inp.hour_split = HourSplit(daily_hours, schedule.weekly_work_days, daily_hours, schedule.weekly_work_days,
                                    excess=regime[1], mode="held", reason=regime[0])
     split = apply_hour_split(inp)
+    # 묻지 않았지만 카드 금액을 맞추려고 더한 계산 — facade의 '시도한 계산이 전부 보류면 요청 보류' 판정에서 세지 않는다(리뷰 M2)
+    auxiliary = []
     if split.mode == "applied" and has_wage and "overtime" not in targets:
         targets.append("overtime")
+        auxiliary.append("overtime")
 
     composition_note = None
     composition_hold = False
@@ -2571,13 +2723,25 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
                            and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
                            and not inp.comprehensive_breakdown and _has_premium_hours(inp))
 
+    # 질문에 적힌 연장·야간·휴일 근로시간을 평균임금·보수 추정이 더하는 입력이면 연장수당도 계산한다(calc-card-consistency G2).
+    # 빠지면 '월 총 예상 수령액'에 그 몫이 없어 같은 카드의 세전 월 급여·평균임금과 갈렸다(4대보험만: 월 총 2,502,857원 vs 세전
+    # 3,285,000원, 세후 2,885,875원). 위의 파생 연장 규칙과 같은 뜻이다. 구성 판정 뒤라야 한다 — 그 임금이 이미 든 금액(포괄·
+    # 구성 진술)은 추정이 더하지 않아 대상이 아니고, 보류 경로의 amount_hold는 이 규칙보다 먼저 정해진다
+    premium_added = has_wage and not unknown_mode and "overtime" not in targets and adds_premium_pay(inp)
+    if premium_added:
+        targets.append("overtime")
+        auxiliary.append("overtime")
+
     try:
         calc = WageCalculator()
-        result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant)
+        result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant,
+                                auxiliary=tuple(auxiliary))
         if composition_unknown:
             result.monthly_total = 0.0
             result.warnings = [_composition_unknown_note(inp), *result.warnings]
             _add_composition_alternative(result, calc, inp, targets)
+        if premium_added:
+            result.warnings.append(_PREMIUM_ADDED_NOTE)
         if ("overtime" in targets and not params.get("business_size") and _has_premium_hours(inp)
                 and inp.business_size != BusinessSize.UNDER_5 and not inp.is_platform_worker):
             # 규모를 모르면 기본값 5인 이상으로 가산했다 — 가정이 확정처럼 읽히지 않게 밝힌다(calc-card-followups §3.4)
@@ -3084,7 +3248,11 @@ def _calculation_context_heading(calc_result: str) -> str:
         return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
     if _AMOUNT_HOLD_MARK in calc_result:
         # 금액을 보류한 항목은 카드에 없다 — '이 수치를 사용하세요'만 붙이면 빈자리를 카드의 총액 기준 시급으로 채운다
-        return "임금계산기 결과 — 이 수치를 사용하세요. 금액을 보류한 항목은 추정하지 마세요"
+        heading = "임금계산기 결과 — 이 수치를 사용하세요. 금액을 보류한 항목은 추정하지 마세요"
+        if _CONDITIONAL_EXAMPLE_MARK in calc_result:
+            # 조건부 예시는 조건과 함께여야 맞는 값이다 — 조건을 떼면 실제로 일한 시간이 소정근로시간으로 단정된다(D7)
+            heading += ". '조건부 예시'는 그 조건을 함께 밝혀서만 쓰세요"
+        return heading
     return "임금계산기 결과 — 이 수치를 사용하세요"
 
 
