@@ -1790,9 +1790,19 @@ _HOURS_TOTAL_BEFORE_RE = re.compile(r"(?:총|합계|모두|전부|도합|합쳐�
 # 1주가 아닌 기간의 합계('월 60시간'·'한 달에'·'2주 동안 총 24시간') — 1주 합계로 나누면 틀린 1일 시간이 된다
 _HOURS_PERIOD_BEFORE_RE = re.compile(r"(?:(?<![가-힣])월\s*$|한\s*달|매월|달에|개월)")
 _HOURS_MONTH_RE = re.compile(r"한\s*달|매월")
-# 1일 표지 보정 — 날짜('21일 3시간')의 '1일'은 1일 단위가 아니고, '일 8시간'·'일평균 7시간'은 1일 단위다
-_DATE_DAY_RE = re.compile(r"\d1\s*일\s*(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+# 1일 표지 보정 — 날짜('21일 3시간'·'10월 1일 6시간'·'지난 1일')의 '1일'은 1일 단위가 아니고, '일 8시간'·'일평균 7시간'은 1일
+# 단위다. 한 자리 날짜는 앞의 월·지시어로만 가린다 — 두 자리만 보던 때 '10월 1일에 6시간'이 '주 3일 × 6시간' 예시가 됐다(Check G-2)
+_DATE_DAY_RE = re.compile(r"(?:\d1|(?:\d\s*월|(?:이번|지난|저번|다음)\s*달|이달|지난|이번|저번|오는)\s*1)\s*일\s*"
+                          r"(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
 _DAILY_PLAIN_RE = re.compile(r"(?<![가-힣\d])일\s*(?:평균)?\s*$")
+# '총 N시간'을 1주 합계로 볼 단서(Check §4.1) — '오후 12시부터 밤 12시까지 총 12시간'·'총 24시간 근무'는 하루(한 번의 근무)의
+# 합계인데 1주 합계로 나눠 '주 4일 × 3시간 → 미발생' 예시가 됐다(상담 코퍼스 예시 95건 중 2건). 1주 단서는 같은 문장에서 본다
+# ('주 3일, 총 18시간'은 쉼표가 절을 나눈다). 그 절에 하루 단서(시각 범위·어제·익일 등)가 있으면 1주 단서가 있어도 하루 합계다
+_WEEK_CONTEXT_RE = re.compile(r"(?<![가-힣])주\s*(?:\d|당|마다|에)|1\s*주|일주일|한\s*주|매주"
+                              r"|(?:이번|지난|저번|다음|그|첫|마지막)\s*주(?:에는|에도|에|는|엔|도|동안|간)?(?![가-힣])")
+_DAY_CONTEXT_RE = re.compile(r"\d{1,2}\s*(?:시|:\d{2})\s*(?:\d{1,2}\s*분\s*)?(?:부터|~|∼|〜|-|–)"
+                             r"|어제|그날|당일|익일|다음\s*날|밤새|연속")
+_SENTENCE_SPLIT_RE = re.compile(r"\.(?!\d)|[!?\n]")
 
 
 class _HourMention(NamedTuple):
@@ -1801,7 +1811,7 @@ class _HourMention(NamedTuple):
     span: bool            # 기간 합계(실근로)인가 — 출처 대조(_ground_schedule_hours)가 쓴다
     days: tuple           # 그 절의 기간 일수들
     daily: bool = False   # '하루 N시간'·'N시간씩' — 1일 시간(조건부 예시만 쓴다)
-    total: bool = False   # '총 N시간'·'주 N시간'·'3일 동안 N시간' — 표지 있는 합계(조건부 예시만 쓴다)
+    total: bool = False   # '주 N시간'·'3일 동안 N시간'·1주 단서가 있는 '총 N시간' — 1주 합계로 볼 표지 있는 합계(조건부 예시만 쓴다)
     aside: str = ""       # 1주 근무시간으로 쓰지 않는 표현: "threshold"(15시간 이상)·"break"(휴게 1시간)·"range"(6~7시간)·
                           # "premium"(연장·야간·휴일 근로)·"period"(1주가 아닌 기간의 합계)
 
@@ -1847,10 +1857,14 @@ def _question_span_days(query: str) -> list[int] | None:
 def _hours_mentions(query: str) -> list[_HourMention]:
     """질문의 'N시간' 표현 → 시간·기간 합계인지·그 절의 기간 일수들, 그리고 조건부 예시가 쓰는 1일·합계 표지와 제외 표현."""
     found = []
-    for clause in _CLAUSE_SPLIT_RE.split(query or ""):
+    # 문장 → 절 순서로 나눠도 절은 _CLAUSE_SPLIT_RE.split(query)와 같다(문장 경계는 절 경계이기도 하다) — 문장은 '총'의 1주 단서만 본다
+    clauses = [(clause, sentence) for sentence in _SENTENCE_SPLIT_RE.split(query or "")
+               for clause in _CLAUSE_SPLIT_RE.split(sentence)]
+    for clause, sentence in clauses:
         specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
         duration = bool(_DURATION_SPAN_RE.search(clause))
         days = _span_days(specific)
+        week_total = not _DAY_CONTEXT_RE.search(clause) and bool(days or _WEEK_CONTEXT_RE.search(sentence))
         for m in _HOURS_MENTION_RE.finditer(clause):
             value = float(m.group(1)) + (int(m.group(2)) / 60 if m.group(2) else 0) + (0.5 if m.group(3) else 0)
             left, right = clause[:m.start()], clause[m.end():m.end() + 15]
@@ -1867,7 +1881,8 @@ def _hours_mentions(query: str) -> list[_HourMention]:
             # 여기부터는 조건부 예시만 쓰는 해석이다 — 출처 대조(위 span)는 읽지 않는다. 1주 단위가 1일 표지보다 앞선다('주 15시간씩')
             daily = not weekly_rate and ((bool(_DAILY_UNIT_RE.search(left)) and not _DATE_DAY_RE.search(left))
                                          or bool(_DAILY_PLAIN_RE.search(left)) or right.lstrip().startswith("씩"))
-            total = not daily and bool(weekly_rate or _HOURS_TOTAL_BEFORE_RE.search(left) or (span and days))
+            total = not daily and bool(weekly_rate or (span and days)
+                                       or (_HOURS_TOTAL_BEFORE_RE.search(left) and week_total))
             aside = ("range" if _HOURS_RANGE_BEFORE_RE.search(left) else
                      "threshold" if _HOURS_THRESHOLD_AFTER_RE.search(right) else
                      "break" if _HOURS_BREAK_BEFORE_RE.search(left) else
@@ -2126,9 +2141,14 @@ def _unknown_schedule_block(hourly, weekly_days, holiday: bool, held: list[str],
     if names:
         cause = "근로시간 제도를 확인해야 해" if regime else "질문에 1일·1주 소정근로시간이 없어"
         if example:
-            lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 확정하지 않았습니다 — {', '.join(names)}. "
+            lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 확정하지 않았습니다 — {names[0]}. "
                          "질문의 근무시간을 소정근로시간으로 단정하지 마세요 — 위 조건부 예시만 그 조건과 함께 쓰고, 다른 시간을 "
                          "가정해 추정하지 마세요.")
+            # 예시는 주휴 산식에만 있다 — 다른 보류 항목까지 같은 줄에 묶으면 '확정 전 값'이 있거나 예시의 시간으로 추정해도 되는
+            # 것으로 읽힌다(Check G-7: '주휴시간·주휴수당, 4대보험·소득세 … 위 조건부 예시만 그 조건과 함께')
+            if names[1:]:
+                lines.append(f"{_AMOUNT_HOLD_MARK} 다음은 계산하지 않았습니다 — {', '.join(names[1:])}. 조건부 예시의 시간을 "
+                             "포함해 가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
         else:
             lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 계산하지 않았습니다 — {', '.join(names)}. "
                          "가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")

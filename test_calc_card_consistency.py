@@ -459,6 +459,21 @@ class ConditionalExampleTest(unittest.TestCase):
         self.assertIn(EXAMPLE_HOLD, out)
         self.assertIn("최저임금 충족: ✅ 충족", out)            # 시급제 판정은 그대로 남는다
 
+    def test_t7_other_held_items_keep_their_own_line(self):
+        """예시는 주휴 산식에만 있다 — 함께 보류한 4대보험 등은 '계산하지 않았습니다'와 추정 금지를 따로 싣는다(Check G-7). 한 줄로
+        묶으면 '주휴시간·주휴수당, 4대보험·소득세 … 위 조건부 예시만 그 조건과 함께'가 되어, 4대보험에도 확정 전 값이 있거나 예시의
+        시간으로 추정해도 되는 것으로 읽혔다."""
+        from app.core.pipeline import _calculation_context_heading
+        out = card({"wage_type": "시급", "wage_amount": 10320, "weekly_work_days": 3,
+                    "calculation_types_kr": ["주휴수당", "4대보험"]},
+                   "시급 10,320원이고 주 3일 하루 6시간씩 일해요. 주휴수당이랑 4대보험 계산해 주세요.")
+        self.assertIn("(주 3일 × 6시간 = 18시간)와 같다면", out)
+        holds = [ln for ln in out.splitlines() if ln.startswith("금액 보류:")]
+        self.assertEqual(holds, [EXAMPLE_HOLD,
+                                 "금액 보류: 다음은 계산하지 않았습니다 — 4대보험·소득세 (세전/세후, 근로자). 조건부 예시의 시간을 "
+                                 "포함해 가정한 시간이나 실제로 일한 시간으로 추정하지 마세요."])
+        self.assertEqual(_calculation_context_heading(out), HOLD_HEADING + CONDITION_SENTENCE)
+
 
 class ExampleBoundaryTest(unittest.TestCase):
     """T8 — 조건이 하나라도 어긋나면 예시 없이 지금 카드(Design §4.3). 틀린 예시보다 예시 없음이 안전하다."""
@@ -471,7 +486,6 @@ class ExampleBoundaryTest(unittest.TestCase):
         "범위 + 합계": ("지난주 하루 6~7시간씩 3일, 총 20시간 일했어요. 주휴수당은?", 3),
         "1일 × 일수 ≠ 합계": ("지난주 월·화·수 하루 6시간, 총 20시간 일했어요. 주휴수당은?", 3),
         "기간 일수 ≠ 근무일수(a50-40)": ("주 6일, 시급 없이 일합니다. 9월 28일~30일 3일 동안 25시간 일했는데 주휴수당은?", 6),
-        "근무일수 없음": ("지난주 하루 6시간씩 일했어요. 주휴수당은?", None),
         "시간 없음": ("지난주 사흘 일했는데 주휴수당은?", 3),
         "값이 둘(1일 6시간·연장 2시간)": ("지난주 3일 일했고 하루 6시간씩, 연장 2시간도 했어요.", 3),
         # 독립 리뷰 H1 — 표지 없는 값은 1일 시간인지 합계인지 모른다(예전에는 합계로 나눠 대개 '미발생'이 나왔다)
@@ -497,6 +511,13 @@ class ExampleBoundaryTest(unittest.TestCase):
             "주 3일 일해요. 9월 28일부터 10월 30일까지 하루 6시간씩 일했어요. 주휴수당은?", 3),
         "날짜의 '1일'(21일 3시간)": ("지난 21일 3시간 일했어요. 주휴수당은?", 5),
         "다른 표지 없는 값(주휴 3시간분)": ("하루 6시간씩 주 3일 일하는데 주휴수당을 3시간분만 준대요. 맞나요?", 3),
+        # Check G-2 — 한 자리 날짜의 '1일'도 1일 단위가 아니다(두 자리만 보던 때 '주 3일 × 6시간'·'주 5일 × 3시간' 예시가 났다)
+        "날짜의 '1일'(10월 1일)": ("10월 1일에 6시간 일했어요. 주휴수당은?", 3),
+        "날짜의 '1일'(지난 1일)": ("지난 1일 3시간 일했어요. 주휴수당은?", 5),
+        # Check §4.1 — 하루(한 번의 근무)의 '총'은 1주 합계가 아니다(1주 합계로 나눠 '주 4일 × 3시간 → 미발생'·'주 5일 × 4.8시간')
+        "하루 합계 '총'(시각 범위)": ("오후 12시부터 밤 12시까지 총 12시간 일했어요. 주휴수당은?", 4),
+        "하루 합계 '총'(어제 — 같은 문장에 주 4일)": ("주 4일 근무인데 어제는 총 12시간 일했어요. 주휴수당은?", 4),
+        "1주 단서 없는 '총'(연속 근무)": ("공장에 일이 생겨 다음 날 아침까지 일했어요. 총 24시간 근무했어요. 주휴수당은?", 5),
     }
     SOME = {
         "8h×5일(40시간 경계)": ("지난주 5일 동안 하루 8시간씩 일했어요. 주휴수당은?", 5,
@@ -512,15 +533,29 @@ class ExampleBoundaryTest(unittest.TestCase):
         "같은 값을 되풀이한 표지 없는 값": ("하루 6시간씩 3일 일했어요. 6시간 일하고 퇴근했어요.", 3, "(주 3일 × 6시간 = 18시간)"),
         "'총' 표지만 있는 합계": ("지난주 총 18시간 일했어요. 주 3일이에요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
         "같은 달 범위('9/28~30')": ("9/28~30 하루 6시간씩 일했어요. 주 3일이에요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
+        # Check §4.1 — '총'의 1주 단서는 같은 문장에서 본다(쉼표가 절을 나눈다). 기간 일수가 있는 '총'은 1주 단서가 없어도 합계다
+        "'주 N일, 총 N시간'(쉼표로 나뉜 절)": ("주 3일, 총 18시간 일해요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
+        "'이번 주에 총'": ("이번 주에 총 18시간 일했어요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
+        "기간 일수가 있는 계획 합계": ("3일 동안 총 18시간을 스케줄에 넣었어요. 주휴수당은?", 3, "(주 3일 × 6시간 = 18시간)"),
     }
 
     def test_t8_no_example(self):
         for name, (query, days) in self.NONE.items():
             with self.subTest(name):
-                out = holiday_card(query, **({"weekly_work_days": days} if days else {}))
+                out = holiday_card(query, weekly_work_days=days)
                 self.assertNotIn("조건부 예시", out)
-                if days:
-                    self.assertIn(PLAIN_HOLD, out)
+                self.assertIn(PLAIN_HOLD, out)
+
+    def test_t8_no_workdays(self):
+        """근무일수가 없으면 예시가 없다(조건 2). 임금도 근무일수도 없으면 카드 자체가 비어 단언이 공허했다 — 시급제 미확인 모드로
+        본다(Check G-3). 같은 질문에 근무일수만 더하면 예시가 생기므로 이 사례는 조건 2만 가른다."""
+        hourly = {"wage_type": "시급", "wage_amount": 10320}
+        query = "지난주 하루 6시간씩 일했어요. 주휴수당은?"
+        out = holiday_card(query, **hourly)
+        self.assertIn("[소정근로시간 미확인", out)
+        self.assertNotIn("조건부 예시", out)
+        self.assertIn(PLAIN_HOLD, out)
+        self.assertIn("(주 3일 × 6시간 = 18시간)와 같다면", holiday_card(query, weekly_work_days=3, **hourly))
 
     def test_t8_example(self):
         for name, (query, days, expected) in self.SOME.items():
@@ -610,7 +645,14 @@ class HourMentionTest(unittest.TestCase):
         cases = {   # (시간, 1일, 표지 있는 합계, 제외 표현)
             "하루 6시간씩 일했어요": [(6.0, True, False, "")],
             "주 3일, 총 18시간": [(18.0, False, True, "")],
-            "6시간씩 총 18시간": [(6.0, True, False, ""), (18.0, False, True, "")],
+            # 1주 단서가 없는 '총'은 무엇의 합계인지 모른다 — 표지 없는 값으로 둔다(1일 값 × 근무일수와 같으면 예시는 그대로, Check §4.1)
+            "6시간씩 총 18시간": [(6.0, True, False, ""), (18.0, False, False, "")],
+            "주 3일 6시간씩 총 18시간": [(6.0, True, False, ""), (18.0, False, True, "")],
+            "오후 12시부터 밤 12시까지 총 12시간": [(12.0, False, False, "")],
+            "주 4일인데 어제 총 12시간": [(12.0, False, False, "")],
+            "10월 1일 6시간": [(6.0, False, False, "")],
+            "지난 1일 3시간": [(3.0, False, False, "")],
+            "1일 6시간 주 3일": [(6.0, True, False, "")],
             "하루 6시간 30분씩": [(6.5, True, False, "")],
             "3일 동안 18시간": [(18.0, False, True, "")],
             "주 15시간씩": [(15.0, False, True, "")],
@@ -626,7 +668,7 @@ class HourMentionTest(unittest.TestCase):
             "매일 2시간씩 연장근무": [(2.0, True, False, "premium")],
             "야간 8시간 근무": [(8.0, False, False, "premium")],
             "월 60시간 일해요": [(60.0, False, False, "period")],
-            "2주 동안 총 24시간": [(24.0, False, True, "period")],
+            "2주 동안 총 24시간": [(24.0, False, False, "period")],    # 2주의 합계 — 1주 합계 표지가 아니다(예시는 period로 이미 없다)
         }
         for query, expected in cases.items():
             with self.subTest(query):
