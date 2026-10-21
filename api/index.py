@@ -5,6 +5,7 @@ import hashlib
 import hmac as _hmac
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -205,30 +206,35 @@ def _guard_chat_request(
             sb, subject_key, "length", "",
             f"len={len(message) if isinstance(message, str) else 0}", "block",
         )
-        raise GuardRejection(400, err or abuse_guard.MSG_EMPTY)
+        raise GuardRejection(400, err or abuse_guard.MSG_EMPTY, code=abuse_guard.REJECT_INVALID)
 
     # 2. Rate limit (FR-02) — 인메모리, Vercel 인스턴스별 베스트에포트
-    if not _check_rate_limit(
+    wait = _rate_limit_wait(
         client_ip,
         max_count=abuse_guard.CHAT_RATE_LIMIT,
         window=abuse_guard.CHAT_RATE_WINDOW,
         store=_chat_rate,
-    ):
+    )
+    if wait:
         # 의도적으로 DB 기록하지 않는다 — 이미 인메모리로 차단된 요청마다
         # INSERT하면 요청 폭주가 그대로 DB 쓰기 증폭이 된다. 자동 차단 카운트
         # 대상도 아니므로(RPC는 injection|quota|length만 집계) 로그로 충분하다.
         logging.info("채팅 rate limit 초과: %s", subject_key)
-        raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED)
+        raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED, wait,
+                             code=abuse_guard.REJECT_RATE_LIMITED)
 
     # 3. 차단 목록 + 일일 쿼터 (FR-03/11) — Supabase RPC 1왕복, 장애 시 fail-open
     check = abuse_guard.check_guard(sb, subject_key)
     if not check.allowed:
         if check.reason == "blocked":
-            raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED, check.retry_after)
+            raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED, check.retry_after,
+                                 code=abuse_guard.REJECT_BLOCKED)
         abuse_guard.record_violation(
             sb, subject_key, "quota", valid_sid or "", f"count={check.count}", "block",
         )
-        raise GuardRejection(429, abuse_guard.MSG_QUOTA_EXCEEDED)
+        # retry_after = 다음 KST 자정까지 — 프런트가 그때까지 입력을 잠근다(동기 경로는 Retry-After 헤더)
+        raise GuardRejection(429, abuse_guard.MSG_QUOTA_EXCEEDED,
+                             abuse_guard.seconds_until_kst_midnight(), code=abuse_guard.REJECT_QUOTA)
 
     ctx = GuardContext(
         subject_key=subject_key,
@@ -240,17 +246,24 @@ def _guard_chat_request(
     return cleaned, valid_sid, ctx
 
 
-def _sse_error(detail: str) -> StreamingResponse:
-    """가드 거절을 SSE error 이벤트로 반환 (기존 초기화 실패 패턴과 동일).
+def _sse_error_events(detail: str, code: str = "server_error", retry_after: int = 0):
+    """SSE error 이벤트 + done. 요청 거절·초기화 실패·첨부 검증 실패·답변 중 예외가 모두 이 모양을 쓴다.
 
-    'detail'을 기본 인자로 바인딩 — 지연 실행되는 제너레이터가 지역변수를
-    참조하면 NameError가 나는 기존 관례를 따른다.
+    `code`(가드 거절이면 abuse_guard.REJECT_*, 입력 검증 실패면 invalid, 그 밖은 server_error)와
+    `retry_after`(초)를 싣는다. 문구만 보내던 때는 프런트가 쿼터 거절을 일반 답변 말풍선으로 그리고
+    입력창을 다시 열어, 한도에 걸린 뒤에도 겉으로는 정상처럼 보였다(2026-10-06). 소비자(평가·벤치마크)는
+    `type`·`text`만 읽으므로 필드를 더해도 깨지지 않는다.
     """
-    def error_gen(msg=detail):
-        yield f"data: {json.dumps({'type': 'error', 'text': msg}, ensure_ascii=False)}\n\n"
+    event = {"type": "error", "text": detail, "code": code or "server_error",
+             "retry_after": max(0, int(retry_after or 0))}
+    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+    yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
+
+def _sse_error(detail: str, code: str = "server_error", retry_after: int = 0) -> StreamingResponse:
+    """요청 거절·초기화 실패를 SSE error 이벤트 + done으로 반환한다(HTTP 200)."""
     return StreamingResponse(
-        error_gen(), media_type="text/event-stream",
+        _sse_error_events(detail, code, retry_after), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -291,22 +304,14 @@ def chat_stream(request: Request, message: str, session_id: str | None = None):
     try:
         message, session_id, guard_ctx = _guard_chat_request(request, message, session_id)
     except GuardRejection as e:
-        return _sse_error(e.detail)
+        return _sse_error(e.detail, e.code, e.retry_after)
 
     try:
         config = get_config()
         session, _ = get_or_create_session(session_id, _restore_fn)
     except Exception as e:
         logging.error("SSE 초기화 실패: %s\n%s", e, traceback.format_exc())
-        err_text = "서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요."
-
-        # 'e'는 except 블록을 벗어나면 자동 삭제됨 → 지연 실행되는 제너레이터가
-        # 직접 참조하면 NameError 발생. 기본 인자로 메시지를 바인딩해 회피한다.
-        def error_gen(msg=err_text):
-            yield f"data: {json.dumps({'type': 'error', 'text': msg}, ensure_ascii=False)}\n\n"
-
-        return StreamingResponse(error_gen(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return _sse_error("서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요.")
 
     def event_generator():
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
@@ -315,8 +320,7 @@ def chat_stream(request: Request, message: str, session_id: str | None = None):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패: %s\n%s", e, traceback.format_exc())
-            error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-            yield f"data: {json.dumps({'type': 'error', 'text': error_msg}, ensure_ascii=False)}\n\n"
+            yield from _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
     return StreamingResponse(
         event_generator(),
@@ -339,26 +343,21 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
             request, req.message, req.session_id,
         )
     except GuardRejection as e:
-        return _sse_error(e.detail)
+        return _sse_error(e.detail, e.code, e.retry_after)
 
     try:
         config = get_config()
         session, _ = get_or_create_session(session_id, _restore_fn)
     except Exception as e:
         logging.error("SSE(POST) 초기화 실패: %s\n%s", e, traceback.format_exc())
-        err_text = "서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요."
-
-        # 'e'는 except 블록을 벗어나면 자동 삭제됨 → 지연 실행되는 제너레이터가
-        # 직접 참조하면 NameError 발생. 기본 인자로 메시지를 바인딩해 회피한다.
-        def error_gen(msg=err_text):
-            yield f"data: {json.dumps({'type': 'error', 'text': msg}, ensure_ascii=False)}\n\n"
-
-        return StreamingResponse(error_gen(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return _sse_error("서버 초기화에 실패했습니다. 환경설정(API 키)을 확인해주세요.")
 
     # 첨부파일 파싱
     parsed_attachments = []
     validation_error = None
+    # 개수 초과·FileValidationError는 입력 거절(invalid)이다 — server_error로 보내면 프런트가 같은 첨부를
+    # 다시 보내는 '다시 시도'를 붙인다. 원인을 모르는 파싱 예외만 server_error로 둔다.
+    validation_code = abuse_guard.REJECT_INVALID
 
     if req.attachments:
         if len(req.attachments) > MAX_ATTACHMENTS:
@@ -374,13 +373,14 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
                     break
                 except Exception:
                     validation_error = f"파일 처리 중 오류가 발생했습니다. ({att.filename})"
+                    validation_code = "server_error"
                     break
 
     def event_generator():
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
 
         if validation_error:
-            yield f"data: {json.dumps({'type': 'error', 'text': validation_error}, ensure_ascii=False)}\n\n"
+            yield from _sse_error_events(validation_error, validation_code)
             return
 
         try:
@@ -390,8 +390,7 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패(POST): %s\n%s", e, traceback.format_exc())
-            error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-            yield f"data: {json.dumps({'type': 'error', 'text': error_msg}, ensure_ascii=False)}\n\n"
+            yield from _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
     return StreamingResponse(
         event_generator(),
@@ -929,20 +928,32 @@ def _verify_captcha(token: str, user_answer: int) -> bool:
 _write_rate: dict[str, list[float]] = {}
 
 
-def _check_rate_limit(
+def _rate_limit_wait(
     ip: str, max_count: int = 3, window: int = 60, store: dict | None = None
-) -> bool:
-    """IP당 window초 내 max_count건 초과 시 False. store 미지정 시 게시판 버킷 사용."""
+) -> int:
+    """허용이면 기록하고 0, 초과면 다시 허용될 때까지 남은 초(올림, 최소 1).
+
+    남은 시간은 버킷에서 가장 오래된 유효 요청이 창을 벗어나는 시점까지다. 창 전체(window)를
+    돌려주면 프런트가 그만큼 입력을 잠가, 서버가 이미 허용하는데도 최대 window초를 더 기다리게 된다.
+    """
     store = _write_rate if store is None else store
     ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
     now = time.time()
     times = store.get(ip_hash, [])
     times = [t for t in times if now - t < window]
     if len(times) >= max_count:
-        return False
+        oldest = min(times) if times else now   # max_count가 0이면 버킷이 비어 있어도 거절한다
+        return max(1, math.ceil(oldest + window - now))
     times.append(now)
     store[ip_hash] = times
-    return True
+    return 0
+
+
+def _check_rate_limit(
+    ip: str, max_count: int = 3, window: int = 60, store: dict | None = None
+) -> bool:
+    """IP당 window초 내 max_count건 초과 시 False. store 미지정 시 게시판 버킷 사용."""
+    return _rate_limit_wait(ip, max_count, window, store) == 0
 
 
 # 금칙어 필터 ──────────────────────────────────────────────────────────────────
