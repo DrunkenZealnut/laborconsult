@@ -5,6 +5,7 @@ import hashlib
 import hmac as _hmac
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -208,17 +209,18 @@ def _guard_chat_request(
         raise GuardRejection(400, err or abuse_guard.MSG_EMPTY, code=abuse_guard.REJECT_INVALID)
 
     # 2. Rate limit (FR-02) — 인메모리, Vercel 인스턴스별 베스트에포트
-    if not _check_rate_limit(
+    wait = _rate_limit_wait(
         client_ip,
         max_count=abuse_guard.CHAT_RATE_LIMIT,
         window=abuse_guard.CHAT_RATE_WINDOW,
         store=_chat_rate,
-    ):
+    )
+    if wait:
         # 의도적으로 DB 기록하지 않는다 — 이미 인메모리로 차단된 요청마다
         # INSERT하면 요청 폭주가 그대로 DB 쓰기 증폭이 된다. 자동 차단 카운트
         # 대상도 아니므로(RPC는 injection|quota|length만 집계) 로그로 충분하다.
         logging.info("채팅 rate limit 초과: %s", subject_key)
-        raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED, abuse_guard.CHAT_RATE_WINDOW,
+        raise GuardRejection(429, abuse_guard.MSG_RATE_LIMITED, wait,
                              code=abuse_guard.REJECT_RATE_LIMITED)
 
     # 3. 차단 목록 + 일일 쿼터 (FR-03/11) — Supabase RPC 1왕복, 장애 시 fail-open
@@ -924,20 +926,32 @@ def _verify_captcha(token: str, user_answer: int) -> bool:
 _write_rate: dict[str, list[float]] = {}
 
 
-def _check_rate_limit(
+def _rate_limit_wait(
     ip: str, max_count: int = 3, window: int = 60, store: dict | None = None
-) -> bool:
-    """IP당 window초 내 max_count건 초과 시 False. store 미지정 시 게시판 버킷 사용."""
+) -> int:
+    """허용이면 기록하고 0, 초과면 다시 허용될 때까지 남은 초(올림, 최소 1).
+
+    남은 시간은 버킷에서 가장 오래된 유효 요청이 창을 벗어나는 시점까지다. 창 전체(window)를
+    돌려주면 프런트가 그만큼 입력을 잠가, 서버가 이미 허용하는데도 최대 window초를 더 기다리게 된다.
+    """
     store = _write_rate if store is None else store
     ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
     now = time.time()
     times = store.get(ip_hash, [])
     times = [t for t in times if now - t < window]
     if len(times) >= max_count:
-        return False
+        oldest = min(times) if times else now   # max_count가 0이면 버킷이 비어 있어도 거절한다
+        return max(1, math.ceil(oldest + window - now))
     times.append(now)
     store[ip_hash] = times
-    return True
+    return 0
+
+
+def _check_rate_limit(
+    ip: str, max_count: int = 3, window: int = 60, store: dict | None = None
+) -> bool:
+    """IP당 window초 내 max_count건 초과 시 False. store 미지정 시 게시판 버킷 사용."""
+    return _rate_limit_wait(ip, max_count, window, store) == 0
 
 
 # 금칙어 필터 ──────────────────────────────────────────────────────────────────

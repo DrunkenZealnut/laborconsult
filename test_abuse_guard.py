@@ -385,7 +385,7 @@ def test_record_violation() -> None:
 
 def test_chat_rate_limit_bucket() -> None:
     """채팅 rate limit이 게시판·이메일 버킷과 분리되어 있는지."""
-    from api.index import _check_rate_limit, _chat_rate, _write_rate
+    from api.index import _check_rate_limit, _rate_limit_wait, _chat_rate, _write_rate
 
     _chat_rate.clear()
     _write_rate.clear()
@@ -395,6 +395,8 @@ def test_chat_rate_limit_bucket() -> None:
     assert not _check_rate_limit(ip, max_count=5, window=60, store=_chat_rate), "6회차가 통과됨"
     # 게시판 버킷은 영향 없음
     assert _check_rate_limit(ip, max_count=3, window=60, store=_write_rate)
+    # 한도 0이면 빈 버킷에서도 거절하고 창 전체를 기다리게 한다(가장 오래된 요청이 없어도 예외 없이)
+    assert _rate_limit_wait(ip, max_count=0, window=60, store={}) == 60
     _chat_rate.clear()
     _write_rate.clear()
     print("  ✅ 채팅 rate limit: 5회/60초 경계 + 버킷 분리")
@@ -452,8 +454,23 @@ def test_guard_chat_request() -> None:
             raise AssertionError("rate limit 초과가 통과됨")
         except GuardRejection as e:
             assert e.status == 429
-            assert (e.code, e.retry_after) == (ag.REJECT_RATE_LIMITED, ag.CHAT_RATE_WINDOW), (e.code, e.retry_after)
+            assert e.code == ag.REJECT_RATE_LIMITED and 0 < e.retry_after <= ag.CHAT_RATE_WINDOW, (
+                e.code, e.retry_after)
         assert not spy.called, "rate limit 초과인데 쿼터 RPC를 호출했다"
+
+        # 창 끝 무렵의 거절은 창 전체가 아니라 남은 시간이다 — 창 전체를 주면 프런트가 그만큼 입력을
+        # 잠가, 서버가 이미 허용하는데도 최대 1분을 더 기다리게 된다(CodeRabbit #103).
+        _chat_rate.clear()
+        ip = "198.51.100.78"
+        with patch("api.index.time.time", return_value=1_000.0):
+            for _ in range(ag.CHAT_RATE_LIMIT):
+                _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
+        with patch("api.index.time.time", return_value=1_000.0 + ag.CHAT_RATE_WINDOW - 10):
+            try:
+                _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
+                raise AssertionError("rate limit 초과가 통과됨")
+            except GuardRejection as e:
+                assert (e.code, e.retry_after) == (ag.REJECT_RATE_LIMITED, 10), (e.code, e.retry_after)
 
         # 쿼터 소진 → 429 + 쿼터 메시지
         _chat_rate.clear()
