@@ -9,6 +9,7 @@
 | effective-law-and-graph-precedents | 98.2% | 2026-10-05 | [Plan](effective-law-and-graph-precedents/effective-law-and-graph-precedents.plan.md), [Design](effective-law-and-graph-precedents/effective-law-and-graph-precedents.design.md), [Analysis](effective-law-and-graph-precedents/effective-law-and-graph-precedents.analysis.md), [Report](effective-law-and-graph-precedents/effective-law-and-graph-precedents.report.md) |
 | audit-50-legal-accuracy | 99.7% ※※※ | 2026-10-14 | [Plan](audit-50-legal-accuracy/audit-50-legal-accuracy.plan.md), [Design](audit-50-legal-accuracy/audit-50-legal-accuracy.design.md), [Analysis](audit-50-legal-accuracy/audit-50-legal-accuracy.analysis.md), [Report](audit-50-legal-accuracy/audit-50-legal-accuracy.report.md) |
 | calc-card-followups | 95.6% ※※※※ | 2026-10-16 | [Plan](calc-card-followups/calc-card-followups.plan.md), [Design](calc-card-followups/calc-card-followups.design.md), [Analysis](calc-card-followups/calc-card-followups.analysis.md), [Report](calc-card-followups/calc-card-followups.report.md) |
+| calc-card-consistency | 98.4% ※※※※※ | 2026-10-21 | [Plan](calc-card-consistency/calc-card-consistency.plan.md), [Design](calc-card-consistency/calc-card-consistency.design.md), [Analysis](calc-card-consistency/calc-card-consistency.analysis.md), [Report](calc-card-consistency/calc-card-consistency.report.md) |
 
 ※ **Design 후 중단.** 9-27 재빌드가 anthropic SDK 1.8.0을 받아 Claude 답변이 전량 폴백된 사고의
 후속으로 SDK 1.x 대응을 설계했으나, "API만 쓰는데 SDK를 왜 올리나"라는 판단으로 중단했다 —
@@ -31,3 +32,9 @@
 바꿔 깨졌다(CLI #17 11,554,560 → 11,880,000원). Check에서 찾은 설계 밖 High(공개 해고예고 흐름도가 옛 면제로 계산)는 핫픽스 PR #116으로
 고쳤고, Match Rate는 그 뒤 재분석하지 않았다. 후속 사이클 후보: 미확인 모드 '추정 금지'와 조건부 산식 충돌(kin-01), 연장시간을 따로 적은
 질문의 세전 < 세후(G2 재현).
+
+※※※※※ **완료 조건 6개 중 충족 4, 단서 붙은 충족 1, 부분 1이다**(보고서 §6). 부분은 지식iN 20 필수 조문이다 — 핫픽스 코드 1회 실측에서 18(기준선 19)이었고,
+빠진 kin-02는 계산 카드가 없는 문항이며 답변이 '제56조'를 법령명 없이 적어 매처에 걸리지 않았다. 단서는 휴업수당 시급제 기준 월액(격자 87카드)으로,
+이 사이클 전부터의 결함이라 예상 실패 테스트로 분리했다. Check에서 찾은 설계 밖 Medium('총 N시간'이 하루 근무의 합계인데 1주 합계로 읽어 조건부
+예시가 '미발생'을 냄)은 핫픽스 PR #119로 고쳤고, Match Rate는 그 뒤 재분석하지 않았다. 실측 답변 모델은 gpt-6-sol rev 12다. 후속 사이클 후보:
+기준 월액 단일화(고정수당 f1·f2, 휴업수당 f4).
