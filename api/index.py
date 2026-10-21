@@ -246,24 +246,24 @@ def _guard_chat_request(
     return cleaned, valid_sid, ctx
 
 
-def _sse_error(detail: str, code: str = "server_error", retry_after: int = 0) -> StreamingResponse:
-    """요청 거절·초기화 실패를 SSE error 이벤트 + done으로 반환한다(HTTP 200).
+def _sse_error_events(detail: str, code: str = "server_error", retry_after: int = 0):
+    """SSE error 이벤트 + done. 요청 거절·초기화 실패·첨부 검증 실패·답변 중 예외가 모두 이 모양을 쓴다.
 
-    `code`(가드 거절이면 abuse_guard.REJECT_*, 그 밖은 server_error)와 `retry_after`(초)를 싣는다.
-    문구만 보내던 때는 프런트가 쿼터 거절을 일반 답변 말풍선으로 그리고 입력창을 다시 열어,
-    한도에 걸린 뒤에도 겉으로는 정상처럼 보였다(2026-10-06). 소비자(평가·벤치마크)는
+    `code`(가드 거절이면 abuse_guard.REJECT_*, 입력 검증 실패면 invalid, 그 밖은 server_error)와
+    `retry_after`(초)를 싣는다. 문구만 보내던 때는 프런트가 쿼터 거절을 일반 답변 말풍선으로 그리고
+    입력창을 다시 열어, 한도에 걸린 뒤에도 겉으로는 정상처럼 보였다(2026-10-06). 소비자(평가·벤치마크)는
     `type`·`text`만 읽으므로 필드를 더해도 깨지지 않는다.
-
-    인자를 기본값으로 바인딩한다 — 지연 실행되는 제너레이터가 지역변수를
-    참조하면 NameError가 나는 기존 관례를 따른다.
     """
-    def error_gen(msg=detail, reason=code or "server_error", wait=max(0, int(retry_after or 0))):
-        event = {"type": "error", "text": msg, "code": reason, "retry_after": wait}
-        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+    event = {"type": "error", "text": detail, "code": code or "server_error",
+             "retry_after": max(0, int(retry_after or 0))}
+    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+    yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
+
+def _sse_error(detail: str, code: str = "server_error", retry_after: int = 0) -> StreamingResponse:
+    """요청 거절·초기화 실패를 SSE error 이벤트 + done으로 반환한다(HTTP 200)."""
     return StreamingResponse(
-        error_gen(), media_type="text/event-stream",
+        _sse_error_events(detail, code, retry_after), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -320,8 +320,7 @@ def chat_stream(request: Request, message: str, session_id: str | None = None):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패: %s\n%s", e, traceback.format_exc())
-            error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-            yield f"data: {json.dumps({'type': 'error', 'text': error_msg, 'code': 'server_error'}, ensure_ascii=False)}\n\n"
+            yield from _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
     return StreamingResponse(
         event_generator(),
@@ -356,6 +355,9 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
     # 첨부파일 파싱
     parsed_attachments = []
     validation_error = None
+    # 개수 초과·FileValidationError는 입력 거절(invalid)이다 — server_error로 보내면 프런트가 같은 첨부를
+    # 다시 보내는 '다시 시도'를 붙인다. 원인을 모르는 파싱 예외만 server_error로 둔다.
+    validation_code = abuse_guard.REJECT_INVALID
 
     if req.attachments:
         if len(req.attachments) > MAX_ATTACHMENTS:
@@ -371,13 +373,14 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
                     break
                 except Exception:
                     validation_error = f"파일 처리 중 오류가 발생했습니다. ({att.filename})"
+                    validation_code = "server_error"
                     break
 
     def event_generator():
         yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
 
         if validation_error:
-            yield f"data: {json.dumps({'type': 'error', 'text': validation_error}, ensure_ascii=False)}\n\n"
+            yield from _sse_error_events(validation_error, validation_code)
             return
 
         try:
@@ -387,8 +390,7 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패(POST): %s\n%s", e, traceback.format_exc())
-            error_msg = "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-            yield f"data: {json.dumps({'type': 'error', 'text': error_msg, 'code': 'server_error'}, ensure_ascii=False)}\n\n"
+            yield from _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
     return StreamingResponse(
         event_generator(),

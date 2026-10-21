@@ -502,6 +502,7 @@ def test_stream_rejection_contract() -> None:
     문구만 보내던 때는 프런트가 쿼터 거절을 일반 답변 말풍선으로 그리고 입력창을 다시 열어, 한도에
     걸린 뒤에도 겉으로는 정상처럼 보였다(2026-10-06 실측: 같은 IP가 51~54번째 요청까지 계속 보냄).
     """
+    import base64
     import json as _json
     from unittest.mock import patch
     from fastapi.testclient import TestClient
@@ -529,6 +530,32 @@ def test_stream_rejection_contract() -> None:
             patch.object(idx, "get_config", side_effect=RuntimeError("no keys")):
         evs = events(TestClient(idx.app).get("/api/chat/stream", params={"message": "질문"}).text)
     assert [e["type"] for e in evs] == ["error", "done"] and evs[0]["code"] == "server_error", evs
+
+    # 답변 중 예외(두 경로)와 첨부 검증 실패도 error(code·retry_after) + done이다. 첨부 검증 실패는 입력
+    # 거절(invalid)이다 — server_error면 프런트가 같은 첨부를 다시 보내는 '다시 시도'를 붙인다(CodeRabbit #103).
+    class FakeSession:
+        id = "sess-test"
+
+    def attach(content_type, data=b"x"):
+        return {"filename": "a.bin", "content_type": content_type, "data": base64.b64encode(data).decode()}
+
+    with patch.object(idx, "_guard_chat_request", return_value=("질문", None, ag.GuardContext(subject_key="ip:x"))), \
+            patch.object(idx, "get_config", return_value=object()), \
+            patch.object(idx, "get_or_create_session", return_value=(FakeSession(), False)), \
+            patch.object(idx, "process_question", side_effect=RuntimeError("boom")):
+        client = TestClient(idx.app)
+        answer_failed = [events(client.get("/api/chat/stream", params={"message": "질문"}).text),
+                         events(client.post("/api/chat/stream", json={"message": "질문", "attachments": []}).text)]
+        too_many = events(client.post("/api/chat/stream", json={
+            "message": "질문", "attachments": [attach("text/plain")] * (idx.MAX_ATTACHMENTS + 1)}).text)
+        bad_type = events(client.post("/api/chat/stream", json={
+            "message": "질문", "attachments": [attach("application/zip")]}).text)
+    for evs in answer_failed:
+        assert [e["type"] for e in evs] == ["session", "error", "done"], evs
+        assert (evs[1]["code"], evs[1]["retry_after"]) == ("server_error", 0), evs
+    for evs in (too_many, bad_type):
+        assert [e["type"] for e in evs] == ["session", "error", "done"], evs
+        assert (evs[1]["code"], evs[1]["retry_after"]) == (ag.REJECT_INVALID, 0), evs
 
     from datetime import datetime, timezone, timedelta
     kst = timezone(timedelta(hours=9))
