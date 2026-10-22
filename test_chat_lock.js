@@ -229,6 +229,26 @@ test('L8: 답변 수신 중 FAQ는 보내지 않고 질문을 입력창에 남�
   assert.equal(h.ctx.btn.disabled, true, '막힌 FAQ는 남의 관문을 풀지 않는다');
   h.finishStreams();
   await p1;
+
+  // 300ms 예약이 돌기 전에 진행 중 답변이 끝나도, 클릭 때 진행 중이었으면 자동으로 보내지 않는다(CodeRabbit #121)
+  const h2 = submissionHarness();
+  const q1 = h2.run('send()');
+  await flush();
+  h2.run('askQuestion("FAQ 후속 질문")');
+  h2.finishStreams();
+  await q1;
+  h2.fireTimers(300);
+  await flush();
+  assert.equal(h2.requests.length, 1, '진행 중에 누른 FAQ는 입력창만 채운다');
+  assert.equal(h2.ctx.msgInput.value, 'FAQ 후속 질문');
+
+  // 진행 중이 아닐 때는 지금처럼 300ms 뒤에 보낸다
+  const h3 = submissionHarness();
+  h3.run('askQuestion("FAQ 질문")');
+  h3.fireTimers(300);
+  await flush();
+  assert.equal(h3.requests.length, 1);
+  h3.finishStreams();
 });
 
 test('L9: 답변 수신 중 다시 시도는 막히고, 끝난 뒤에는 다시 누를 수 있다', async () => {

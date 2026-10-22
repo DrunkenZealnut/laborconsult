@@ -1967,7 +1967,9 @@ function askQuestion(text) {
   document.getElementById('chat-section').scrollIntoView({ behavior: 'smooth' });
   msgInput.value = text;
   msgInput.dispatchEvent(new Event('input'));
-  setTimeout(() => send(), 300);
+  // 누른 순간 답변을 받는 중이었다면 채우기만 한다 — 300ms 안에 그 답변이 끝나도 관문이 열려 있어 그대로 보내진다
+  const busy = submitting;
+  setTimeout(() => { if (!busy) send(); }, 300);
 }
 
 // ── Board ────────────────────────────────────────────────────────────────────
