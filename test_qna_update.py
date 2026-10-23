@@ -51,6 +51,13 @@ class UpdateTests(unittest.TestCase):
             (root/'crawl'/'report.json').write_text(json.dumps({'complete':False}))
             with self.assertRaises(ValueError):self.q.prepare(root/'crawl',root/'candidate')
 
+    def test_parallel_embedding_still_validates_and_completes_each_document(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t);self.crawl(root/"crawl");self.q.prepare(root/"crawl",root/"candidate")
+            result=self.q.embed(root/"candidate",lambda texts:[[0.1]*EMBED_DIM for _ in texts],workers=2)
+            self.assertEqual(result["documents"],2)
+            self.assertEqual(len(self.q.replacements(root/"candidate")),2)
+
     def test_embedding_resume_and_partial_provider_error(self):
         with tempfile.TemporaryDirectory() as t:
             root=Path(t);self.crawl(root/'crawl');self.q.prepare(root/'crawl',root/'candidate')

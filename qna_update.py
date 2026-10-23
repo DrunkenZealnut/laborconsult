@@ -2,6 +2,7 @@
 """Prepare/embed/apply/build a document-scoped Q&A release. Raw artifacts stay private."""
 from __future__ import annotations
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import gzip
 import json
 from pathlib import Path
@@ -64,12 +65,11 @@ def _read_vectors(path):
     with gzip.open(path,'rt',encoding='utf-8') as f:return json.load(f)
 
 
-def embed(candidate:Path,embed_fn):
+def embed(candidate:Path,embed_fn,*,workers:int=1):
     manifest=read(candidate/'manifest.json')
     complete=candidate/'embedding-complete.json';complete.unlink(missing_ok=True)
     folder=candidate/'vectors';folder.mkdir(exist_ok=True)
-    count=0
-    for pid in sorted(manifest['documents']):
+    def one(pid):
         prepared=read(candidate/'prepared'/f'{pid}.json')
         out=folder/f'{pid}.json.gz'
         if out.exists():
@@ -86,8 +86,17 @@ def embed(candidate:Path,embed_fn):
             with gzip.open(tmp,'wt',encoding='utf-8') as f:
                 json.dump({'input_hash':prepared['input_hash'],'candidate_version':manifest['candidate_version'],'vectors':rows},f,ensure_ascii=False)
             tmp.replace(out)
-        count+=1
-        if count%50==0:print(f'embedded {count}/{len(manifest["documents"])}',flush=True)
+    count=0
+    if workers not in {1,2,4,8}:raise ValueError("workers must be 1, 2, 4 or 8")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        jobs=[pool.submit(one,pid) for pid in sorted(manifest['documents'])]
+        try:
+            for job in as_completed(jobs):
+                job.result();count+=1
+                if count%50==0:print(f'embedded {count}/{len(manifest["documents"])}',flush=True)
+        except Exception:
+            for job in jobs:job.cancel()
+            raise
     result={'candidate_version':manifest['candidate_version'],'documents':count,'status':'complete'}
     save(complete,result)
     return result
@@ -101,7 +110,7 @@ def replacements(candidate):
     return {pid:_read_vectors(candidate/'vectors'/f'{pid}.json.gz')['vectors'] for pid in manifest['documents']}
 
 
-def apply(candidate,index,namespace,ledger,*,production=False,gate=None):
+def apply(candidate,index,namespace,ledger,*,production=False,gate=None,workers:int=1):
     from qna_vectors import replace_document
     manifest=read(candidate/'manifest.json')
     if namespace=='qa':
@@ -109,9 +118,17 @@ def apply(candidate,index,namespace,ledger,*,production=False,gate=None):
             raise ValueError('production requires matching quality gate and explicit apply flag')
     rows=replacements(candidate)
     done=ledger/'apply-complete.json';done.unlink(missing_ok=True)
-    for number,(pid,vectors) in enumerate(rows.items(),1):
-        replace_document(index,namespace,pid,vectors,ledger,production=production)
-        if number%50==0:print(f'applied {number}/{len(rows)}',flush=True)
+    if workers not in {1,2,4,8}:raise ValueError("workers must be 1, 2, 4 or 8")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        jobs=[pool.submit(replace_document,index,namespace,pid,vectors,ledger,production=production)
+              for pid,vectors in rows.items()]
+        try:
+            for number,job in enumerate(as_completed(jobs),1):
+                job.result()
+                if number%50==0:print(f'applied {number}/{len(rows)}',flush=True)
+        except Exception:
+            for job in jobs:job.cancel()
+            raise
     result={'namespace':namespace,'candidate_version':manifest['candidate_version'],'documents':len(rows),'status':'complete'}
     save(done,result)
     return result
@@ -122,8 +139,8 @@ def main():
     sub=parser.add_subparsers(dest='command',required=True)
     p=sub.add_parser('prepare');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--candidate',type=Path,required=True)
     p=sub.add_parser('manifest');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    p=sub.add_parser('embed');p.add_argument('--candidate',type=Path,required=True)
-    p=sub.add_parser('apply');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--production',action='store_true');p.add_argument('--gate',type=Path)
+    p=sub.add_parser('embed');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--workers',type=int,choices=[1,2,4,8],default=4)
+    p=sub.add_parser('apply');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--production',action='store_true');p.add_argument('--gate',type=Path);p.add_argument('--workers',type=int,choices=[1,2,4,8],default=4)
     p=sub.add_parser('build');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--snapshot',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p=sub.add_parser('restore');p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--post-id',required=True);p.add_argument('--production',action='store_true')
     args=parser.parse_args()
@@ -153,13 +170,13 @@ def main():
                     if [row.index for row in ordered]!=list(range(len(batch))):raise ValueError('embedding indices mismatch')
                     vectors.extend(row.embedding for row in ordered)
                 return vectors
-            result=embed(args.candidate,embedding)
+            result=embed(args.candidate,embedding,workers=args.workers)
         else:
             from app.config import open_offline_index,resolve_index_name
             if resolve_index_name()!='laborconsult':raise ValueError('index must be laborconsult')
             index=open_offline_index()
             if args.command=='apply':
-                result=apply(args.candidate,index,args.namespace,args.ledger,production=args.production,gate=read(args.gate) if args.gate else None)
+                result=apply(args.candidate,index,args.namespace,args.ledger,production=args.production,gate=read(args.gate) if args.gate else None,workers=args.workers)
             else:
                 from qna_vectors import restore_document
                 result=restore_document(index,args.namespace,args.post_id,args.ledger,production=args.production)
