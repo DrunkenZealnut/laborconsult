@@ -63,20 +63,38 @@ def _scheme(inp,ws,reference):
             raise ValueError('6+6은 같은 자녀에 대한 양쪽 부모의 개시일·사용 기간 확인이 필요합니다')
         first=ws[0].start
         if first is None: raise ValueError('6+6은 양쪽 부모의 실제 개시일이 필요합니다')
+        starts=[(day(w.period['start_date'],'본인 구간 개시일'),
+                 w.period.get('reason',inp.childcare_reason),inp.childcare_spouse_risk_eligible)
+                for w in ws if w.start==day(w.period['start_date'],'본인 구간 개시일')]
         if inp.parental_prior_months and not inp.parental_first_leave_start:
             raise ValueError('6+6 재사용은 같은 자녀에 대한 본인 최초 개시일을 확인해주세요')
         if inp.parental_first_leave_start:
             initial=day(inp.parental_first_leave_start,'최초 육아휴직 개시일')
             if initial>first: raise ValueError('최초 개시일이 재사용 개시일보다 늦습니다')
-            first=initial
-        second=day(start,'상대 부모 개시일')
-        if inp.childcare_reason=='child':
-            if not inp.childcare_child_birth_date: raise ValueError('6+6 자녀 생년월일을 확인해주세요')
-            birth=day(inp.childcare_child_birth_date,'자녀 생년월일')
-            if any(d<birth or d>month_after(birth,18) for d in (first,second)):
+            starts.append((initial,inp.parental_first_leave_reason or inp.childcare_reason,
+                           inp.childcare_spouse_risk_eligible))
+        if inp.parental_other_parent_periods:
+            starts.extend((day(p['start_date'],'상대 부모 구간 개시일'),
+                           p.get('reason',inp.parental_other_parent_reason),
+                           inp.parental_other_parent_spouse_risk_eligible)
+                          for p in inp.parental_other_parent_periods)
+        else:
+            starts.append((day(start,'상대 부모 개시일'),inp.parental_other_parent_reason,
+                           inp.parental_other_parent_spouse_risk_eligible))
+        if not inp.childcare_child_birth_date:
+            raise ValueError('6+6은 양쪽 부모의 개시일 요건을 확인할 자녀 생년월일이 필요합니다')
+        birth=day(inp.childcare_child_birth_date,'자녀 생년월일')
+        for d,reason,risk in starts:
+            if reason not in ('child','pregnant_self','pregnant_spouse'):
+                raise ValueError('부모 각각의 사용 구간별 육아휴직 사유를 확인해주세요')
+            if d>month_after(birth,18):
                 raise ValueError('6+6은 부모 각각의 개시일에 자녀가 생후 18개월 이내여야 합니다')
-        elif inp.childcare_reason=='pregnant_spouse' and first<date(2026,9,18):
-            raise ValueError('임신 중 배우자 돌봄 특례 시행일을 확인해주세요')
+            if d<birth and reason=='child':
+                raise ValueError('출생 전 개시한 부모의 모성보호 또는 법정 임신 배우자 돌봄 사유를 확인해주세요')
+            if reason=='pregnant_spouse' and (d<date(2026,9,18) or risk is not True):
+                raise ValueError('임신 배우자 돌봄은 해당 부모의 2026-09-18 이후 개시와 법정 위험 요건이 필요합니다')
+            if reason!='child' and d>birth:
+                raise ValueError('출생 후 개시일과 임신 중 사용 사유가 서로 다릅니다')
         matched=min(6,other)
     return scheme,matched,other
 

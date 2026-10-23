@@ -12,9 +12,10 @@ CHILDCARE_INPUT_FIELDS = frozenset({
     'childcare_example','childcare_child_birth_date','childcare_child_age','childcare_child_grade',
     'childcare_reason','childcare_spouse_risk_eligible','childcare_insured_days',
     'childcare_employer_monthly_payment','parental_leave_months','is_second_parent',
-    'parental_leave_start','parental_first_leave_start','parental_leave_end','parental_leave_periods','parental_prior_months',
+    'parental_leave_start','parental_first_leave_start','parental_first_leave_reason','parental_leave_end','parental_leave_periods','parental_prior_months',
     'parental_prior_days','parental_scheme','parental_same_child','parental_other_parent_months',
-    'parental_other_parent_start','parental_other_parent_periods','parental_single_parent_eligible',
+    'parental_other_parent_start','parental_other_parent_reason','parental_other_parent_spouse_risk_eligible',
+    'parental_other_parent_periods','parental_single_parent_eligible',
     'parental_disabled_child_eligible','short_parental_reason_eligible','short_parental_used_this_year',
     'reduced_work_hours_per_day','reduced_weekly_hours_before','reduced_weekly_hours_after',
     'reduced_start','reduced_end','reduced_periods','reduced_months','reduced_prior_months',
@@ -130,11 +131,13 @@ def windows(inp,rules,*,reduced=False):
     return result,reference,prior
 
 
-def check_child(inp,start,warnings,*,reduced=False):
-    reason=inp.childcare_reason
+def check_child(inp,start,warnings,*,reduced=False,reason=None):
+    reason=inp.childcare_reason if reason is None else reason
     if reason not in ('child','pregnant_self','pregnant_spouse'): raise ValueError('육아휴직 사유를 확인해주세요')
     if reason!='child':
         if reduced: raise ValueError('육아기 단축급여와 임신기 근로시간 단축은 별도 제도입니다')
+        if inp.childcare_child_birth_date and start>day(inp.childcare_child_birth_date,'자녀 생년월일'):
+            raise ValueError('출생 후 다시 시작한 구간은 자녀 양육 사유로 구분해주세요')
         if reason=='pregnant_spouse' and (start<date(2026,9,18) or inp.childcare_spouse_risk_eligible is not True):
             raise ValueError('임신 중 배우자 돌봄은 2026-09-18 이후 법정 위험 요건 확인이 필요합니다')
         return
@@ -161,7 +164,8 @@ def common_checks(inp,ws,reference,warnings,*,reduced=False):
     for w in ws:
         s=w.period.get('start_date')
         if s not in seen:
-            check_child(inp,day(s,'사용 시작일') if s else reference,warnings,reduced=reduced);seen.add(s)
+            check_child(inp,day(s,'사용 시작일') if s else reference,warnings,
+                        reduced=reduced,reason=w.period.get('reason'));seen.add(s)
     if ws[0].start is None:
         warnings.append(f'{reference.isoformat()} 기준 내장 규칙을 고정한 제도 예시이며 실제 사용일·지급 확정액이 아닙니다')
     warnings.append('월 통상임금은 해당 휴직·단축 개시일 기준 입력값입니다. 신청 시기·취업·소득에 따른 지급 제한은 별도 확인이 필요합니다')

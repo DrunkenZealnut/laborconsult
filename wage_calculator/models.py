@@ -360,6 +360,7 @@ class WageInput:
     childcare_employer_monthly_payment: Optional[float] = None # 월 환산 지급액; 일부월은 비례
     parental_leave_start: Optional[str] = None
     parental_first_leave_start: Optional[str] = None # 재사용 때 6+6 연령 확인용 최초 개시일
+    parental_first_leave_reason: Optional[str] = None
     parental_leave_end: Optional[str] = None    # 포함
     parental_leave_periods: Optional[list] = None # start_date,end_date,kind=regular/short
     parental_prior_months: int = 0
@@ -368,6 +369,8 @@ class WageInput:
     parental_same_child: Optional[bool] = None
     parental_other_parent_months: Optional[int] = None
     parental_other_parent_start: Optional[str] = None
+    parental_other_parent_reason: str = "child"
+    parental_other_parent_spouse_risk_eligible: Optional[bool] = None
     parental_other_parent_periods: Optional[list] = None
     parental_single_parent_eligible: Optional[bool] = None
     parental_disabled_child_eligible: Optional[bool] = None

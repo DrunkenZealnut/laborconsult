@@ -9,6 +9,7 @@ for _kind,_fields in {
         'parental_single_parent_eligible':'한부모가족지원법상 한부모 자격 확인. 단순히 혼자 양육한다는 말로 추정하지 않음',
         'parental_disabled_child_eligible':'법령상 장애아동 부모 연장 자격이 명시된 경우',
         'childcare_spouse_risk_eligible':'임신 중 배우자의 법정 유산·조산 등 위험 요건이 명시된 경우',
+        'parental_other_parent_spouse_risk_eligible':'상대 부모가 임신 배우자 돌봄으로 사용하는 경우의 법정 위험 요건',
         'short_parental_reason_eligible':'단기 육아휴직 법정 사유(자녀 기관 휴원·휴교·방학·질병 등)가 확인된 경우',
         'short_parental_used_this_year':'해당 연도 단기 육아휴직을 이미 사용했는지. 미기재는 생략',
     },
@@ -47,6 +48,10 @@ CHILDCARE_PROPERTIES.update({
                        'description':'요청한 급여 유형. 두 번째 사용자라는 사실만으로 6+6 선택 금지'},
     'childcare_reason':{'type':'string','enum':['child','pregnant_self','pregnant_spouse'],
                         'description':'자녀 양육/임신 중 본인 모성보호/법정 위험 임신 배우자 돌봄'},
+    'parental_first_leave_reason':{'type':'string','enum':['child','pregnant_self','pregnant_spouse'],
+                                  'description':'본인 최초 사용 사유. 재사용 사유와 다르면 별도 전달'},
+    'parental_other_parent_reason':{'type':'string','enum':['child','pregnant_self','pregnant_spouse'],
+                                   'description':'상대 부모 최초 사용 사유. 상대가 출산 전 모성보호 휴직했는지 별도 구분'},
 })
 for _key,_label in [('parental_leave_periods','본인 휴직'),('parental_other_parent_periods','상대 부모 휴직'),('reduced_periods','육아기 단축')]:
     CHILDCARE_PROPERTIES[_key]={
@@ -55,6 +60,8 @@ for _key,_label in [('parental_leave_periods','본인 휴직'),('parental_other_
             'start_date':{'type':'string','description':'시작일 YYYY-MM-DD'},
             'end_date':{'type':'string','description':'종료일 YYYY-MM-DD 포함'},
             'kind':{'type':'string','enum':['regular','short'],'description':'short는 법정 7/14일 단기 육아휴직만'},
+            'reason':{'type':'string','enum':['child','pregnant_self','pregnant_spouse'],
+                      'description':'이 구간 개시 사유. 임신 중 사용 뒤 출생 후 재사용이면 각각 구분'},
             'employer_monthly_payment':{'type':'number','description':'해당 구간의 사업주 지급 월 환산액. 미확인 생략'},
             'offset_monthly_ordinary_wage':{'type':'number','description':'해당 단축 구간의 감액 기준 월 통상임금'},
         },'required':['start_date','end_date']},

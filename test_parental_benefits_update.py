@@ -22,13 +22,53 @@ def benefit(reduced=False, **changes):
 
 
 class ParentalBenefitsUpdateTests(unittest.TestCase):
-    def test_resume_special_uses_first_start_not_resumption_age(self):
+    def test_prenatal_six_plus_six_checks_both_parents(self):
+        fields=dict(monthly_wage=5_000_000,childcare_example=False,parental_leave_start='2024-01-01',
+                    parental_leave_months=6,childcare_reason='pregnant_self',childcare_child_birth_date='2024-02-01',
+                    parental_scheme='six_plus_six',parental_same_child=True,
+                    parental_other_parent_start='2025-09-01',parental_other_parent_months=6)
+        self.assertTrue(benefit(**fields).held_reason)
+        fields.update(parental_leave_start='2024-03-01',childcare_reason='child',
+                      parental_other_parent_start='2024-01-01',parental_other_parent_reason='pregnant_self')
+        self.assertFalse(benefit(**fields).held_reason)
+        fields['parental_other_parent_reason']='child'
+        self.assertTrue(benefit(**fields).held_reason)
+
+    def test_resume_special_checks_resumption_age(self):
         r=benefit(childcare_example=False,parental_leave_start="2026-09-01",parental_leave_months=1,
                   parental_prior_months=3,parental_first_leave_start="2025-03-01",
                   childcare_child_birth_date="2025-01-01",parental_scheme="six_plus_six",
                   parental_same_child=True,parental_other_parent_start="2025-06-01",parental_other_parent_months=6)
+        self.assertTrue(r.held_reason)
+
+    def test_special_checks_each_split_start_for_both_parents(self):
+        fields=dict(childcare_example=False,parental_leave_months=0,
+                    childcare_child_birth_date='2025-01-01',parental_scheme='six_plus_six',
+                    parental_same_child=True,parental_other_parent_start='2025-06-01',
+                    parental_other_parent_months=6)
+        periods=[dict(start_date='2025-03-01',end_date='2025-05-31'),
+                 dict(start_date='2026-09-01',end_date='2026-11-30')]
+        self.assertTrue(benefit(**fields,parental_leave_periods=periods).held_reason)
+        fields.update(parental_other_parent_start=None,parental_other_parent_periods=periods)
+        self.assertTrue(benefit(**fields,parental_leave_start='2025-06-01',
+                               parental_leave_end='2025-11-30').held_reason)
+
+    def test_continuous_special_can_continue_beyond_age_limit(self):
+        r=benefit(monthly_wage=5_000_000,childcare_example=False,
+                  parental_leave_start='2026-06-01',parental_leave_months=6,
+                  childcare_child_birth_date='2025-01-01',parental_scheme='six_plus_six',
+                  parental_same_child=True,parental_other_parent_start='2026-06-01',
+                  parental_other_parent_months=6)
         self.assertFalse(r.held_reason,r.held_reason)
-        self.assertEqual(r.total_benefit,3_000_000)
+        self.assertEqual([row['payment'] for row in r.monthly_schedule],
+                         [2_500_000,2_500_000,3_000_000,3_500_000,4_000_000,4_500_000])
+
+    def test_pregnancy_reason_cannot_bypass_postnatal_split_eligibility(self):
+        r=benefit(childcare_example=False,parental_leave_months=0,
+                  childcare_reason='pregnant_self',childcare_child_birth_date='2024-02-01',
+                  parental_leave_periods=[dict(start_date='2024-01-01',end_date='2024-01-31'),
+                                          dict(start_date='2026-09-01',end_date='2026-09-30')])
+        self.assertTrue(r.held_reason)
 
     def test_explicit_invalid_fields_and_conflicting_periods_are_held(self):
         for data in [dict(childcare_example="false"),dict(parental_leave_months=1.5),
