@@ -16,6 +16,7 @@ DISCLAIMER = (
 # 카드 첫 줄 시급의 기본 이름. '통상시급'이 아닌 값(연장·야간·휴일수당이 섞인 월급 총액 ÷ 소정근로시간 등)을
 # 싣는 호출부만 바꾼다 — 통상임금은 소정근로의 대가라 그 수당을 포함하지 않는다(audit-50-legal-accuracy P0-5).
 DEFAULT_HOURLY_LABEL = "통상시급"
+SKIPPED_CALCULATION_MARK = "계산 보류 (아래 항목은 계산 결과에 포함되지 않음):"
 
 
 @dataclass
@@ -25,6 +26,9 @@ class WageResult:
     ordinary_hourly: float = 0.0          # 통상시급 (원)
     hourly_label: str = DEFAULT_HOURLY_LABEL   # 위 시급이 카드 첫 줄에 붙는 이름
     amount_held: list = field(default_factory=list)  # 금액만 보류한 계산 유형 키(facade `amount_hold`) — 일수·시간은 남는다
+    calculation_status: str = "complete"  # complete / partial / not_run (요청 계산 기준, 보조 계산 제외)
+    calculation_executed: list = field(default_factory=list)
+    calculation_skipped: list = field(default_factory=list)  # [{target, section, reason}]
     monthly_total: float = 0.0            # 월 총 예상 수령액 (세전, 원)
     monthly_net: float = 0.0             # 월 실수령액 (세후, 원) — insurance 계산 시 채워짐
     minimum_wage_ok: bool | None = None   # None: 미실행 또는 계산 보류
@@ -67,9 +71,13 @@ def format_result(result: "WageResult") -> str:
         day = f" (기준일 {result.legal_reference_date})" if result.legal_reference_date else ""
         return ("계산 보류" + day + ": " + " / ".join(result.warnings)
                 + "\n승인된 기준 확인 전에는 금액을 추정 계산하지 마세요.")
+    if result.calculation_status == "not_run":
+        return format_skipped_calculations(result.calculation_skipped)
     lines = []
 
     lines.append("=" * 50)
+    if result.calculation_skipped:
+        lines.append(format_skipped_calculations(result.calculation_skipped))
     if result.legal_rule_status == "managed_parameters":
         lines.append(f"수치 기준 적용일: {result.legal_reference_date} (산식의 법률 검토는 별도)")
         for version in result.legal_rule_versions:
@@ -132,6 +140,14 @@ def format_result(result: "WageResult") -> str:
     return "\n".join(lines)
 
 
+def format_skipped_calculations(items: list) -> str:
+    """미실행을 정상 계산 카드와 구별하고, 혼합 요청에서도 누락 사유를 남긴다."""
+    lines = [SKIPPED_CALCULATION_MARK]
+    lines.extend(f"  · {item['section']}: {item['reason']}" for item in items)
+    lines.append("보류 항목의 금액은 확정하지 마세요. 다른 항목의 월 총액을 대신 사용하지 마세요.")
+    return "\n".join(lines)
+
+
 MW_COMPLIANT, MW_VIOLATION, MW_HELD, MW_NOT_APPLICABLE = "compliant", "violation", "held", "not_applicable"
 
 
@@ -170,4 +186,8 @@ def format_result_json(result: "WageResult") -> dict:
         payload["hourly_label"] = result.hourly_label
     if result.amount_held:
         payload["amount_held"] = list(result.amount_held)
+    if result.calculation_skipped or result.calculation_status == "not_run":
+        payload["calculation_status"] = result.calculation_status
+        payload["calculation_executed"] = list(result.calculation_executed)
+        payload["calculation_skipped"] = list(result.calculation_skipped)
     return payload

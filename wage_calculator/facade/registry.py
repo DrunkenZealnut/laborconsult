@@ -28,7 +28,7 @@ from ..calculators.unemployment import calc_unemployment
 from ..calculators.working_hours import calc_working_hours
 from ..calculators.ordinary_wage import calc_ordinary_wage as _calc_ow_raw, OrdinaryWageResult
 from ..base import BaseCalculatorResult
-from ..utils import fmt_hours
+from ..utils import fmt_hours, parse_date
 from ..models import WageType
 from .helpers import (
     _pop_overtime, _pop_minimum_wage, _pop_weekly_holiday, _pop_annual_leave,
@@ -152,9 +152,6 @@ CALC_TYPE_MAP = {
     "임금계산 검증":       ["minimum_wage"],
     "공휴일수당":          ["public_holiday"],
     "시급환산":            ["ordinary_wage"],
-    "임금체불액":          ["wage_arrears"],
-    "미지급 임금 계산":     ["wage_arrears"],
-    "부당임금삭감액":       ["wage_arrears"],
     "중도입사 급여":        ["prorated"],
     "일할계산급여":         ["prorated"],
     "소정근로시간":         ["working_hours"],
@@ -167,9 +164,20 @@ CALC_TYPE_MAP = {
     "월근로시간":           ["working_hours"],
     "연차발생":             ["annual_leave"],
     "연차 발생일수 계산":    ["annual_leave"],
-    "연말정산":             ["insurance"],
     "휴일근무수당":         ["overtime", "minimum_wage"],
 }
+
+
+def unsupported_calc_reason(label: str) -> str | None:
+    """구현이 없는 정산을 이름이 비슷한 계산기로 대체하지 않는다."""
+    compact = "".join(label.split())
+    if "연말정산" in compact:
+        return "연말정산 환급·추가납부액 계산은 아직 지원하지 않습니다. 월별 4대보험·원천징수 계산과 구분해야 합니다."
+    if "선택적근로" in compact or "선택근로" in compact:
+        return "선택적 근로시간제 정산은 아직 지원하지 않습니다. 정산기간과 실제 근로 내역을 확인해야 합니다."
+    if compact in {"임금체불액", "미지급임금계산", "부당임금삭감액"}:
+        return "미지급 임금 원금 산정은 아직 지원하지 않습니다. 확정 원금·지급기일이 있는 지연이자는 별도로 계산할 수 있습니다."
+    return None
 
 
 def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
@@ -177,6 +185,8 @@ def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
     CALC_TYPE_MAP 정확 매칭 → 구분자 분리 → 키워드 fallback.
     모든 단계 매칭 실패 시 None — 묵시적 기본값 없음 (웹 파이프라인 라우팅용).
     """
+    if unsupported_calc_reason(calc_type_str):
+        return []
     if calc_type_str in CALC_TYPE_MAP:
         return CALC_TYPE_MAP[calc_type_str]
 
@@ -223,7 +233,8 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
     resolve_calc_type_strict + 미매칭 시 최저임금 검증 기본값.
     벤치마크·chatbot 양쪽에서 사용 (기존 동작 유지).
     """
-    return resolve_calc_type_strict(calc_type_str) or ["minimum_wage"]
+    resolved = resolve_calc_type_strict(calc_type_str)
+    return resolved if resolved is not None else ["minimum_wage"]
 
 
 # ── 디스패처 레지스트리 ──────────────────────────────────────────────────────
@@ -240,7 +251,7 @@ _STANDARD_CALCS = [
     ("comprehensive",      calc_comprehensive,       "포괄임금제 역산",      _pop_comprehensive,
      lambda inp: inp.wage_type == WageType.COMPREHENSIVE),
     ("prorated",           calc_prorated,            "중도입사 일할계산",    _pop_prorated,
-     lambda inp: inp.join_date),
+     lambda inp: parse_date(inp.join_date) is not None),
     ("public_holiday",     calc_public_holiday,      "유급 공휴일",          _pop_public_holiday,
      lambda inp: inp.public_holiday_days > 0),
     ("average_wage",       calc_average_wage,        "평균임금",             _pop_average_wage,       None),

@@ -134,6 +134,8 @@ class WageCalculator:
         apply_hour_split(inp)
         if targets is None:
             targets = self._auto_detect_targets(inp)
+        # 초기 CLI·골든 소비자가 쓰던 이름도 실제 독립 계산기로 연결한다.
+        targets = ["ordinary_wage" if target == "ordinary" else target for target in targets]
 
         # 통상임금 계산 (모든 계산의 기반)
         ow = calc_ordinary_wage(inp)
@@ -165,7 +167,9 @@ class WageCalculator:
                 result.legal_rule_attempted += 1
             try:
                 with used_scope():        # 보류된 섹션이 읽은 기준은 provenance에서 제외
-                    return run()
+                    value = run()
+                    result.calculation_executed.append(target)
+                    return value
             except RuleUnavailable as exc:
                 blocked.append({"target": target, "section": section, "reason": str(exc)})
                 blocked_targets.add(target)
@@ -174,6 +178,7 @@ class WageCalculator:
         # ── 상시근로자 수 판정 (다른 계산기보다 먼저 실행) ────────────────────
         if "business_size" in targets and inp.business_size_input is not None:
             bs = calc_business_size(inp.business_size_input)
+            result.calculation_executed.append("business_size")
             inp.business_size = bs.business_size
             result.summary["상시근로자 수"] = f"{bs.regular_worker_count:.1f}명"
             result.summary["사업장 규모"] = bs.business_size.value
@@ -304,6 +309,38 @@ class WageCalculator:
         result.warnings = list(dict.fromkeys(all_w))
         result.legal_basis = list(dict.fromkeys(all_l))
         result.legal_rule_blocked = blocked
+
+        # 선행조건 때문에 조용히 건너뛴 계산도 결과로 보고한다. 통상임금 기반 계산이나
+        # 호출자가 추가한 연장수당만으로 요청 계산이 완료된 것으로 간주하지 않는다.
+        requested = set(targets) - set(auxiliary) - {"legal_hints"}
+        if not targets:
+            result.calculation_skipped.append({"target": "", "section": "계산 유형",
+                "reason": "실행할 계산 유형이 없습니다. 지원하는 계산 유형을 지정해주세요."})
+        for target in dict.fromkeys(targets):
+            if target in requested and target not in result.calculation_executed and target not in blocked_targets:
+                reasons = {
+                    "prorated": "일할계산에 필요한 입사일(join_date)이 없습니다. 중도퇴사·휴복직 정산은 아직 지원하지 않습니다.",
+                    "wage_arrears": "확정된 체불 원금과 원래 지급기일이 필요합니다. 이 계산은 원금 산정이 아닌 지연이자 계산입니다.",
+                    "comprehensive": "포괄임금제 입력이 필요합니다.",
+                    "public_holiday": "계산할 유급 공휴일 수가 필요합니다.",
+                    "shutdown_allowance": "계산할 휴업일 수가 필요합니다.",
+                    "flexible_work": "탄력적 근로시간제의 단위기간 입력이 필요합니다.",
+                    "business_size": "상시근로자 수 판정을 위한 사업장 인원 자료가 필요합니다.",
+                }
+                result.calculation_skipped.append({
+                    "target": target, "section": CALC_TYPES.get(target, target),
+                    "reason": reasons.get(target, "지원하지 않는 계산 유형입니다."),
+                })
+        if not targets or (requested and not requested.intersection(result.calculation_executed)):
+            result.calculation_status = "not_run"
+            result.ordinary_hourly = result.monthly_total = result.monthly_net = 0.0
+            result.minimum_wage_ok = None
+            result.minimum_wage_state = ""
+            result.summary.clear()
+            result.breakdown.clear()
+            result.formulas.clear()
+        elif result.calculation_skipped:
+            result.calculation_status = "partial"
 
         return result
 
