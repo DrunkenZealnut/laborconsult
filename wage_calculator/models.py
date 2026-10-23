@@ -318,6 +318,15 @@ class WageInput:
     # ── 중도입사 일할계산용 ──────────────────────────────────────────────────
     join_date: Optional[str] = None                # 중도입사일
     first_month_worked_days: Optional[int] = None  # 입사 첫 달 근무일수
+    # 월별·항목별 원금 정산(C5), 세전 의무액과 확인된 변제충당 명세.
+    wage_claim_items: list | None = None
+    wage_claim_scope_complete: bool | None = None
+    wage_claim_amount_basis: str | None = None
+    wage_claim_calc_date: str | None = None
+    wage_claim_payments: list | None = None
+    wage_claim_adjustments: list | None = None
+    wage_claim_include_interest: bool = False
+
     settlement_month: Optional[str] = None
     proration_method: Optional[str] = None
     proration_retirement_effective_date: Optional[str] = None

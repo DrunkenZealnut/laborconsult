@@ -4,6 +4,7 @@ from test_parental_benefits_update import ParentalBenefitsUpdateTests
 from test_arrears_interest_update import ArrearsInterestUpdateTests
 from test_pay_input_update import PayInputUpdateTests
 from test_proration_update import ProrationUpdateTests
+from test_wage_claims_update import WageClaimsUpdateTests
 
 from app.core.pipeline import _run_calculator
 from wage_calculator.facade import WageCalculator

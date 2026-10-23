@@ -55,6 +55,7 @@ class MinimumWageResult(BaseCalculatorResult):
     monthly_hours_used: float = 0.0    # 적용된 월 근로시간
     undetermined: bool = False         # 다른 기준으로 보면 판정이 갈려 보류(별표 2 주휴·연장분 포함 역산·수습 감액 — 아래 대안)
     not_applicable: bool = False       # 노무제공자 — 최저임금법의 근로자가 아니라 판정하지 않음(근로자로 인정될 때의 참고값만)
+    shortage_undetermined: bool = False  # 판정이 같아도 가능한 부족 금액은 다를 수 있음(C5)
     alternative_minimum: float = 0.0   # 수습 감액 요건을 모를 때 감액 기준(판정이 갈린 경우만)
     alternative_hourly: float = 0.0    # 판정이 갈린 첫 대안의 실질 시급 — undetermined일 때만(하위 호환)
     alternative_hourlies: tuple = ()   # 판정이 갈린 대안 실질 시급 전부(표기용)
@@ -185,6 +186,12 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
     # ── 5-3. 수습 감액 요건을 모름 — 감액 기준(90%)과 고시 최저임금 중 어느 쪽인지에 따라 판정이 갈리면 보류(D5) ──────────
     probation_split = probation_alt is not None and (effective_hourly >= probation_alt) != is_compliant
     undetermined = (annex_split or ot_split or probation_split) and not platform
+
+    shortage_options=[shortage_monthly]
+    if alt_hours:shortage_options.append(max(0.0,legal_minimum*alt_hours-alt_included))
+    if ratio is not None:shortage_options.append(max(0.0,legal_minimum*monthly_hours-ot_included_monthly))
+    if probation_alt is not None:shortage_options.append(max(0.0,probation_alt*monthly_hours-included_monthly))
+    shortage_undetermined=len({round(x) for x in shortage_options})>1 and not platform
 
     # ── formulas ──────────────────────────────────────────────────────────────
     formulas.append(f"기본급 월액: {base_monthly:,.0f}원")
@@ -333,6 +340,7 @@ def calc_minimum_wage(inp: WageInput, ow: OrdinaryWageResult) -> MinimumWageResu
         reference_year=year,
         monthly_hours_used=monthly_hours,
         undetermined=undetermined,
+        shortage_undetermined=shortage_undetermined,
         not_applicable=platform,
         alternative_minimum=round(probation_alt, 0) if probation_split else 0.0,
         alternative_hourly=(round(alt_effective, 0) if annex_split else round(ot_effective, 0) if ot_split else 0.0),

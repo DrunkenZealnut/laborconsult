@@ -292,6 +292,42 @@ ANALYZE_TOOL["input_schema"]["properties"]["precedent_keywords"] = {
     ),
 }
 
+# 체불 원금 정산: 현재 월급으로 과거 채권이나 세후 지급액을 추정하지 않는다.
+_PAY_PROPS.update({
+    "weekly_attendance_days":{"type":"number","description":"확인된 주 소정근로일 중 실제 출근 일수. 주휴 채권의 개근 여부 보존. 미확인은 생략"},
+    "wage_claim_scope_complete": {"type":"boolean","description":"사용자가 요청한 월·항목 범위의 의무액과 지급 내역이 명시되면 true. 다른 채권까지 모두 포함한다는 뜻 아님. 미지급은 paid_amount=0, 지급 내역 미상은 생략"},
+    "wage_claim_amount_basis": {"type":"string","enum":["gross","net","unknown"],"description":"의무액과 지급 원금이 같은 세전 기준이면 gross. 세후 통장 입금만 알면 net/unknown. 세전 의무액에서 세후 입금액을 바로 차감 금지"},
+    "wage_claim_calc_date": {"type":"string","description":"명시된 원금 잔액 기준일 YYYY-MM-DD"},
+    "wage_claim_include_interest": {"type":"boolean","description":"원금 정산과 그 채권의 지연이자를 함께 요청하면 true. C5가 이자 채권을 만들므로 arrear_amount/arrear_due_date/arrear_claims를 중복 생성하지 말 것"},
+    "wage_claim_items": {"type":"array","maxItems":100,"description":"요청 범위의 월별 지급 의무액·기지급 원금·지급기일. 원금 차액을 LLM이 계산해서 amount에 넣지 말고 의무액과 지급액을 분리. 명시 금액은 source=explicit. 실제 월 시간 수당·일할·최저임금은 아래 source로 기존 계산기를 사용. 지급액의 귀속이 불명확하면 전체 지급 목록에 보존하고 임의 배분 금지.","items":{"type":"object","properties":{
+        "id":{"type":"string","description":"월·항목별 고유 ID"},"month":{"type":"string","description":"귀속월 YYYY-MM"},
+        "name":{"type":"string"},"due_date":{"type":"string","description":"그 항목의 원래 지급기일 YYYY-MM-DD"},
+        "components":{"type":"array","items":{"type":"string"},"description":"임금 요소 식별자: regular(기본 임금), weekly_holiday(주휴), overtime, night, holiday, annual_leave, retirement, bonus:항목ID, other:항목ID. 월급은 regular·weekly_holiday. 고정연장 포함 월급은 overtime도 포함. 동일 월의 같은 요소를 다시 독립 항목으로 생성 금지"},
+        "amount":{"type":"number","description":"확정된 세전 지급 의무액. 미지급 차액이 아님. source가 explicit 이외이면 생략"},
+        "payment_cycle":{"type":"string","enum":["매월","분기","반기","연"],"description":"실제 지급 회차. 연 상여의 월 환산액을 매월 채권으로 생성하지 않음"},
+        "paid_amount":{"type":"number","description":"이 항목에 지급·충당된 세전 원금. 전혀 미지급이면 0. 귀속 불명이면 생략"},
+        "paid_date":{"type":"string","description":"실제 지급일 YYYY-MM-DD. 날짜가 다르면 wage_claim_payments에 개별 기록"},
+        "paid_interest_amount":{"type":"number","description":"이미 지급한 이자 충당액. 없다고 확인되면 0, 미확인은 생략"},
+        "source":{"type":"string","enum":["explicit","ordinary_hours","overtime","night","holiday","weekly_holiday","minimum_wage","prorated","monthly_estimate"],"description":"explicit=명시 의무액, ordinary_hours=통상시급×실제 시간, overtime/night/holiday=해당 월 확정 가산시간, weekly_holiday=확정 주 수, minimum_wage=계약 월액을 최저임금으로 보충한 총 의무액, prorated=일할 명세 항목, monthly_estimate=평균 월 추정. minimum_wage 행에 실제 paid_amount를 한 번 차감하며 같은 월급 차액 행을 중복 생성 금지"},
+        "basis_confirmed":{"type":"boolean","description":"파생 source의 실제 근로·개근·전체월·지급 조건이 질문에 확인되면 true. 같은 월은 상위 settlement_month에도 보존"},
+        "source_item_id":{"type":"string","description":"prorated 출처의 원본 항목 ID. 전체 월급 비례는 monthly_contract, 항목별은 proration_items의 id"},
+        "hours":{"type":"number","description":"해당 월에 실제 확정된 시간. 매주 시간이 아니며 weekly_overtime_hours에 중복 입력 금지"},
+        "holiday_overtime_hours":{"type":"number","description":"휴일별 8시간 초과분으로 확정된 월 합계, hours는 8시간 이내 부분"},
+        "weeks":{"type":"integer","description":"개근 등 동일 조건으로 주휴 자격이 확인된 완전한 주 수"},
+        "monthly_hours":{"type":"number","description":"minimum_wage의 명시된 월 유급시간(예:209). 명시한 209를 평균 주수로 재환산하지 않음"},
+        "exclusions":ARREARS_PROPERTIES["arrear_exclusions"]
+    }}},
+    "wage_claim_payments":{"type":"array","description":"실제 지급 건별 전체 금액과 항목별 충당. 귀속 불명이면 allocation_confirmed=false로 보존해 보류하며 날짜순 자동 배분 금지","items":{"type":"object","properties":{
+        "id":{"type":"string"},"date":{"type":"string"},"amount":{"type":"number"},"allocation_confirmed":{"type":"boolean"},
+        "allocations":{"type":"array","items":{"type":"object","properties":{
+            "item_id":{"type":"string"},"principal_amount":{"type":"number"},"interest_amount":{"type":"number"},"cost_amount":{"type":"number"}}}}
+    }}},
+    "wage_claim_adjustments":{"type":"array","description":"확인된 지급 의무액의 정정. 세금·손해배상·징계 공제를 임의로 정정으로 넣지 말 것","items":{"type":"object","properties":{
+        "id":{"type":"string"},"item_id":{"type":"string"},"amount":{"type":"number","description":"의무액 증감액, 감소는 음수"},
+        "reason":{"type":"string"},"confirmed":{"type":"boolean"}
+    }}}
+})
+
 ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 사용자의 노동상담 질문을 분석하여 analyze_labor_question 도구를 호출하세요.
 
@@ -301,7 +337,11 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 1. 임금/수당/퇴직금 등 수치 계산이 필요하면 requires_calculation=true
    - 연말정산 환급·추가납부액은 year_end_settlement, 월별 보험료·원천징수는 insurance로 구분하세요.
    - 선택적 근로시간제 정산은 selective_work_settlement, 일반 소정근로시간은 working_hours입니다.
-   - 미지급 임금 원금·차액 산정은 arrears_principal, 확정 원금의 지연이자는 wage_arrears입니다.
+   - 미지급 임금 원금·차액 산정은 arrears_principal이며 wage_claim_items에 의무액·기지급 원금을 분리합니다. 차액을 대신 계산해 넣지 마세요. 원금과 그 이자를 함께 요청하면 wage_claim_include_interest=true로 하고 별도 arrear_amount/arrear_claims는 생성하지 마세요. 이미 확정된 체불 원금의 이자만 요청하면 기존 wage_arrears입니다. 새 정산과 별개인 기존 채권 이자를 명시적으로 요청하면 wage_claim_include_interest=false와 기존 arrear 입력을 함께 보존하세요. 관계 미상은 생략하며 임의 분리하지 마세요. 이자 제외 기간은 적용되는 wage_claim_items의 exclusions에 보존하고 귀속 미상은 상위 arrear_exclusions에 남겨 보류하세요.
+   - 체불 차액만 묻는 경우 기초 산출인 연장·최저임금·일할은 wage_claim_items.source로 연결하고 독립 계산 유형에 중복 추가하지 마세요. 파생 항목의 month는 상위 settlement_month와 같아야 합니다. 실제 월 20시간은 hours=20이며 주 20시간으로 바꾸지 마세요. 주휴 source는 질문의 개근 여부를 weekly_attendance_days로 보존하세요.
+   - 월급 계약이 최저임금보다 낮고 일부만 지급됐다면 source=minimum_wage 한 행에 계약 임금은 상위 wage_amount, 실제 지급액은 paid_amount로 넣습니다. 월 209시간 등 명시 유급시간은 monthly_hours로 보존합니다. 계약 미지급분과 최저임금 미달분을 별도 중복 행으로 만들지 마세요.
+   - 긴 정산 명세를 요약·생략하거나 일부 행만 전체 범위로 표시하지 마세요. 전체 항목·지급을 보존할 수 없으면 wage_claim_scope_complete=false로 하고 분할 명세를 요청하세요.
+   - 초과 지급은 해당 월 원금 지급액으로 보존하며 다른 월의 체불에서 자동 차감하지 마세요. 세전 기준·요청 범위와 지급 귀속이 명시되면 scope_complete와 amount_basis를 보존하세요.
    - 중도입사·중도퇴사·휴복직 급여 일할계산은 prorated입니다. 일반 임금계산으로 대신하지 마세요.
    - 일할계산은 정산월·약정 방식·항목별 지급 조건·무급 기간을 보존하세요. 'N일까지 재직'은 last_employed_date, 'N일 퇴직 효력'은 proration_retirement_effective_date입니다. 단순 '퇴사일'의 뜻은 확인하세요. 단일 월급액에 역일수 등 일할 약정을 명시하면 그 금액의 proration_all_items_proportional=true이며 proration_items는 생략합니다. 수당별 지급 조건이 다르거나 미확인이라고 명시되면 전체 비례를 추정하지 말고 항목별 조건을 보존하세요. 실제 지급 확정 수당은 proration_items의 actual로 넣고 정기 고정수당으로 중복 생성하지 마세요.
    - 사용자가 요청한 계산만 유형에 넣으세요. 과거 보험 납부 사실·제도 부정 표현은 계산 요청이 아닙니다.

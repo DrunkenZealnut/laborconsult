@@ -192,6 +192,13 @@ def _messages_text(messages: list[dict]) -> list[tuple[str, str]]:
     return [(m["role"], flatten_content(m.get("content", ""))) for m in messages]
 
 
+def extraction_budget(context, default=1024):
+    """Bounded ledger budget; exhausted responses fail over, never become partial complete ledgers."""
+    text=context if isinstance(context,str) else '\n'.join(content for _,content in _messages_text(context))
+    if not re.search(r'체불|미지급|원금|정산|wage_claim|arrears',text,re.I):return default
+    return min(32768,max(8192,len(text)*4))
+
+
 def _claude_tool(config, model, system, messages, tools, choice, max_tokens, timeout):
     kw = {"model": model, "max_tokens": max(max_tokens, _MIN_TOKENS["claude"]),
           "tools": tools, "messages": messages,
@@ -199,6 +206,8 @@ def _claude_tool(config, model, system, messages, tools, choice, max_tokens, tim
     if system:
         kw["system"] = system
     resp = config.claude_client.with_options(timeout=timeout, max_retries=0).messages.create(**kw)
+    if getattr(resp,"stop_reason",None)=="max_tokens":
+        raise ValueError("Truncated tool response: max_tokens")
     for block in resp.content:
         if getattr(block, "type", "") == "tool_use":
             return block.name, block.input
@@ -223,6 +232,8 @@ def _openai_tool(config, model, system, messages, tools, choice, max_tokens, tim
             raise
         _OPENAI_TOOL_NEEDS_NO_REASONING.add(model)
         resp = client.chat.completions.create(**kw, reasoning_effort="none")
+    if getattr(resp.choices[0],"finish_reason",None)=="length":
+        raise ValueError("Truncated tool response: length")
     calls = resp.choices[0].message.tool_calls
     if not calls:
         return None, None
@@ -250,10 +261,15 @@ def _gemini_tool(config, model, system, messages, tools, choice, max_tokens, tim
     names = [choice] if choice else [t["name"] for t in tools]
     gm = _gemini_model(config, model, system, tools=[{"function_declarations": declarations}],
                        tool_config={"function_calling_config": {
-                           "mode": "ANY", "allowed_function_names": names}})
+                           "mode": "ANY", "allowed_function_names": names}},
+                       generation_config={"max_output_tokens":max(max_tokens,_MIN_TOKENS["gemini"])})
     contents = [{"role": "model" if role == "assistant" else "user", "parts": [content]}
                 for role, content in _messages_text(messages)]
     resp = gm.generate_content(contents, request_options={"timeout": timeout})
+    for candidate in getattr(resp,"candidates",[]) or []:
+        reason=getattr(candidate,"finish_reason",None)
+        if reason==2 or str(reason).endswith("MAX_TOKENS"):
+            raise ValueError("Truncated tool response: MAX_TOKENS")
     schemas = {t["name"]: t["input_schema"] for t in tools}
     for part in _gemini_parts(resp):
         call = getattr(part, "function_call", None)

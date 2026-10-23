@@ -861,5 +861,195 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-32",
+    "category": "복수 월 원금",
+    "question": "2026년 10월 24일 기준 미지급 임금 원금만 계산해주세요. 근로자이고 아래는 세전 기준 전체 정산 내역입니다. 2026년 7월 급여의 지급 의무액은 300만원, 지급기일은 8월 10일이고 그날 200만원을 원금으로 지급받았습니다. 8월 급여 의무액도 300만원, 지급기일은 9월 10일이고 그날 100만원을 원금으로 받았습니다. 월별 귀속은 확정됐고 이후 지급이나 조정은 없습니다. 다른 수당·퇴직금·연차수당·이자는 합산하지 마세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 3000000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-33",
+    "category": "전액 지급",
+    "question": "2026년 9월 세전 급여 의무액 300만원을 지급기일인 2026년 10월 10일에 세전 기준 원금으로 전액 지급받았습니다. 근로자이고 이것이 정산 대상 전부이며 조정이나 다른 항목은 없습니다. 2026년 10월 24일 기준 남은 체불 원금만 계산해주세요. 이자는 요청하지 않습니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 0
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-34",
+    "category": "일할 원금 이자",
+    "question": "월급 300만원 전액을 해당월 역일수로 일할하는 약정입니다. 근로자로 2024년 1월 1일 입사했고 주5일 하루8시간, 2026년 10월 16일까지 재직하며 17일 퇴직 효력이 발생합니다. 다른 수당·무급일은 없습니다. 2026년 10월 임금의 약정 지급기일은 10월 20일이고, 그날 세전 기준 원금 100만원을 받았으며 해당 월 임금에 충당하기로 확인했습니다. 지급 이자·비용은 0원이고 이후 지급·법정 이자 제외 사유는 없습니다. 2026년 10월 24일 기준 남은 임금 원금과 지연이자 및 합계를 계산해주세요. 퇴직금·연차수당은 제외합니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 548387,
+      "remaining_interest": 1202,
+      "total_claim": 549589
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-35",
+    "category": "확정 실제 연장수당 차액",
+    "question": "5인 이상 사업장 근로자이고 통상시급은 15000원, 주5일 하루8시간입니다. 2026년 9월에 지급 대상인 실제 연장근로가 총 20시간으로 확정됐습니다. 매주 20시간이 아니라 그달 전체 20시간입니다. 야간·휴일근로는 없으며 연장수당은 기본급에 포함되지 않습니다. 지급기일 2026년 10월 10일에 이 연장수당 원금으로 세전 10만원만 지급받았고 그 뒤 지급은 없습니다. 기본급 등 다른 항목은 모두 지급돼 이번 정산에서 제외합니다. 2026년 10월 24일 기준 이 연장수당 미지급 원금만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 350000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-36",
+    "category": "지급 귀속 미확인",
+    "question": "근로자이고 2026년 9월 기본급 의무액 200만원과 별도 연장수당 의무액 50만원의 지급기일은 모두 2026년 10월 10일입니다. 세전 기준 금액입니다. 10월 15일에 합계 100만원을 받았지만 어느 항목의 원금·이자·비용에 얼마씩 충당됐는지 확인되지 않았습니다. 다른 내역은 없습니다. 2026년 10월 24일 기준 항목별 체불 원금과 이자를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-37",
+    "category": "초과 지급과 미지급 분리",
+    "question": "근로자이고 아래 금액은 모두 세전이며 정산 범위 전체입니다. 2026년 8월 급여 의무액은 200만원인데 지급기일 9월 10일에 해당 급여로 210만원을 받았습니다. 9월 급여 의무액은 200만원인데 지급기일 10월 10일에 해당 급여로 150만원만 받았습니다. 각 지급은 해당 월 원금 귀속으로 확정됐으며 이자·비용은 없고 다른 지급·조정은 없습니다. 두 달 사이 상계 약정은 없습니다. 2026년 10월 24일 기준 체불 원금과 초과 지급액을 구분해주세요. 이자는 제외합니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 500000,
+      "overpayment": 100000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-38",
+    "category": "최저임금과 미지급 중복 방지",
+    "question": "2026년 9월 한 달 내내 5인 이상 사업장에서 주5일 하루8시간 개근한 성인 근로자입니다. 수습·감액은 없고 주휴 포함 월 209시간입니다. 세전 기본 월급 계약은 200만원이며 상여·수당·연장근로는 전혀 없습니다. 지급기일 2026년 10월 10일에 세전 기준 원금 180만원을 받았고 이후 지급·조정은 없습니다. 2026년 10월 24일 기준 법정 최저임금까지 반영한 미지급 원금 총액을 계산해주세요. 계약 월급 미지급분과 최저임금 차액이 겹치지 않게 해주세요. 이자·퇴직금·연차수당은 제외합니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 356880
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
   }
 ]
