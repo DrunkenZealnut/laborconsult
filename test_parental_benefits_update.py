@@ -220,7 +220,20 @@ class ParentalBenefitsUpdateTests(unittest.TestCase):
         text=_run_calculator(params,"통상임금 300만원, 2026년 주 40시간에서 30시간 단축 시 한 달 급여 예시")
         self.assertIn("625,000",text)
         self.assertNotIn("육아휴직 총 수령액",text)
+        self.assertNotIn("월 총 예상 수령액",text)
         self.assertEqual(resolve_calc_type_strict("육아기 근로시간 단축급여"),['reduced_work_benefit'])
+
+    def test_benefits_only_card_does_not_present_prior_wage_as_payment(self):
+        from wage_calculator.facade import WageCalculator
+        inp=WageInput(wage_type=WageType.MONTHLY,monthly_wage=3_000_000,
+                      reference_date='2026-10-24',reference_year=2026,
+                      childcare_example=True,parental_leave_months=12)
+        r=WageCalculator().calculate(inp,['parental_leave'])
+        self.assertEqual(r.monthly_total,0)
+        self.assertIn('23,100,000',str(r.summary))
+        # A separately requested wage calculation still has its own wage total.
+        r=WageCalculator().calculate(inp,['parental_leave','insurance'])
+        self.assertEqual(r.monthly_total,3_000_000)
 
 
 if __name__ == '__main__':

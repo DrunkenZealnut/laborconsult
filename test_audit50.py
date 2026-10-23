@@ -965,7 +965,11 @@ class WageCompositionTest(unittest.TestCase):
                 self.assertIn("추정하지 마세요", out)
                 # 금액이 총액 위에 더해지지 않는다 — 카드의 월 총액은 사용자가 말한 총액이다
                 won = "2,000,000" if "포괄" in name else "2,700,000"
-                self.assertIn(f"월 총 예상 수령액(세전): {won}원", out)
+                if name in ("육아휴직", "육아기 단축"):
+                    # 보험급여만 요청한 경우 휴직/단축 전 임금을 지급액으로 내보내지 않는다.
+                    self.assertNotIn("월 총 예상 수령액", out)
+                else:
+                    self.assertIn(f"월 총 예상 수령액(세전): {won}원", out)
                 self.assertEqual(self._stale_names(out), [])
 
     def test_t5_held_card_passes_only_eligibility_zeros(self):
