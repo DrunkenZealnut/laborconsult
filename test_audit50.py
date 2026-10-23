@@ -932,7 +932,10 @@ class WageCompositionTest(unittest.TestCase):
                                  reduced_months=1, reduced_weekly_hours_before=40,
                                  reduced_weekly_hours_after=30, **self.DATES), self.HOLD_Q,
                         ["육아기 단축급여"], [], ["육아기 단축급여 월별 지급액"], []),
-            "출산휴가(다태아)": (dict(base, calculation_types_kr=["출산휴가"], is_multiple_birth=True, **self.DATES),
+            "출산휴가(다태아)": (dict(base, calculation_types_kr=["출산휴가"], is_multiple_birth=True,
+                            family_leave_start_date="2026-05-01",family_leave_end_date="2026-08-28",
+                            family_leave_days=120,family_leave_used_days=0,family_leave_eligible=True,
+                            family_leave_insured_days=180,is_priority_support_company=True, **self.DATES),
                             self.HOLD_Q, ["출산전후휴가급여"], [], ["출산전후휴가 월 급여", "배우자 출산휴가 유급액"],
                             ["다태아 출산전후휴가: 120일"]),
             "유급 공휴일": (dict(base, calculation_types_kr=["유급공휴일"], public_holiday_days=2), self.HOLD_Q,
@@ -965,7 +968,7 @@ class WageCompositionTest(unittest.TestCase):
                 self.assertIn("추정하지 마세요", out)
                 # 금액이 총액 위에 더해지지 않는다 — 카드의 월 총액은 사용자가 말한 총액이다
                 won = "2,000,000" if "포괄" in name else "2,700,000"
-                if name in ("육아휴직", "육아기 단축"):
+                if name in ("육아휴직", "육아기 단축", "출산휴가(다태아)"):
                     # 보험급여만 요청한 경우 휴직/단축 전 임금을 지급액으로 내보내지 않는다.
                     self.assertNotIn("월 총 예상 수령액", out)
                 else:
@@ -1110,7 +1113,8 @@ class WageCompositionTest(unittest.TestCase):
             # 기준 월액(shared.monthly_wage_total)도 통상임금 월액을 읽는다 — 그 함수를 부르는 계산기는 간접 독자다
             if re.search(r"\bow\.(?:hourly|daily|monthly)_ordinary_wage\b|\b(?:monthly|annual)_wage_total\(",
                          path.read_text(encoding="utf-8")):
-                readers.add(path.stem)
+                # C4b helpers are guarded through their owning registered calculator.
+                readers.add({"family_leave": "maternity_leave", "pay_inputs": "average_wage"}.get(path.stem, path.stem))
         self.assertEqual(readers - _ORDINARY_BASED_TARGETS - set(self.KEPT_ORDINARY_READERS), set())
         # 분류표가 실제 계산기를 가리키는지도 본다 — 이름이 바뀌면 분류가 조용히 비고, 겹치면 어느 쪽인지 모호하다
         self.assertLessEqual(set(self.KEPT_ORDINARY_READERS), readers)

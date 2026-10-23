@@ -97,6 +97,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     # ── Step 2: 고정수당 중 통상임금 포함분 합산 ─────────────────────────────
     # 대법원 2023다302838: 재직조건·근무일수 조건부도 통상임금 포함 가능
     allowance_total = 0.0
+    allowance_terms = []
     excluded_brief: list[str] = []
     excluded_notes: list[str] = []
     not_ordinary_fixed_total = 0.0
@@ -115,6 +116,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
 
         if is_ordinary:
             allowance_total += monthly_amount
+            allowance_terms.append(f"{a.name} 월 환산 {monthly_amount:,.0f}원")
             label = f"{a.name}: {monthly_amount:,.0f}원/월"
             if note:
                 label += f" ({note})"
@@ -133,7 +135,9 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     monthly_ordinary = monthly_base + allowance_total
 
     if allowance_total > 0:
-        formula += f" + 통상임금 포함 수당 {allowance_total:,.0f}원 = {monthly_ordinary:,.0f}원"
+        terms = (" + ".join(allowance_terms) if any(a.annual or a.payment_cycle != "매월" for a in allowances)
+                 else f"통상임금 포함 수당 {allowance_total:,.0f}원")
+        formula += f" + {terms} = {monthly_ordinary:,.0f}원"
     if excluded_brief:
         # 제외한 수당을 밝힌다 — 질문에 적힌 수당이 계산식에서 말없이 사라지면 빠뜨린 것처럼 읽힌다
         reasons = f" — {'; '.join(excluded_notes)}" if excluded_notes else ""

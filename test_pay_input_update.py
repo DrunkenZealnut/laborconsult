@@ -15,6 +15,26 @@ def average(**changes):
 
 
 class PayInputUpdateTests(unittest.TestCase):
+    def test_explicit_average_event_date_is_preserved_without_retirement(self):
+        from app.core.analyzer import _build_analysis_result
+        from app.core.pipeline import _analysis_to_extract_params, _run_calculator
+        raw=dict(requires_calculation=True,calculation_types=['average_wage'],wage_type='월급',
+            wage_amount=3_000_000,weekly_work_days=5,daily_work_hours=8,
+            average_wage_date='2026-10-01',last_3m_days=92,last_3m_wages=[2_000_000,4_000_000,4_000_000],
+            excluded_periods=[dict(start='2026-07-01',end='2026-07-10',paid=1_000_000,reason='사용자귀책휴업')])
+        params=_analysis_to_extract_params(_build_analysis_result(raw,'평균임금 사유 발생일 2026년 10월 1일'))
+        text=_run_calculator(params,'평균임금 계산')
+        self.assertIn('산정기간: 82일',text)
+        self.assertIn('9,000,000원',text)
+        self.assertIn('115,068원',text)
+
+    def test_annual_bonus_formula_names_the_same_item_in_the_sum(self):
+        inp=WageInput(monthly_wage=3_000_000,fixed_allowances=[
+            dict(name='정기상여',amount=1_200_000,annual=True)])
+        formula=calc_ordinary_wage(inp).formula
+        self.assertIn('+ 정기상여 월 환산 100,000원',formula)
+        self.assertNotIn('+ 통상임금 포함 수당',formula)
+
     def test_unknown_cycle_alternative_preserves_independent_interest(self):
         from app.core.pipeline import _run_calculator
         text=_run_calculator(dict(needs_calculation=True,calculation_types_kr=['평균임금','임금체불 지연이자'],
@@ -191,7 +211,7 @@ class PayInputUpdateTests(unittest.TestCase):
                                                 source_id='bonus1', condition='없음')])
                 text=_run_calculator(_analysis_to_extract_params(_build_analysis_result(raw,query)),query)
                 self.assertIn('3,100,000',text)
-                self.assertIn('통상임금 포함 수당 100,000원',text)
+                self.assertIn('정기상여 월 환산 100,000원',text)
 
     def test_annual_flag_is_total_even_when_paid_quarterly(self):
         inp=WageInput(monthly_wage=3_000_000, fixed_allowances=[dict(

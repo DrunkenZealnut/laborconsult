@@ -151,8 +151,9 @@ _PAY_PROPS["fixed_allowances"]["items"]["properties"].update({
     "source_id": {"type": "string", "description": "질문 속 동일 수당의 식별자. 같은 금액의 서로 다른 수당은 다른 ID"},
 })
 _PAY_PROPS.update({
+    "average_wage_date": {"type": "string", "description": "평균임금 산정 사유 발생일(YYYY-MM-DD). 퇴직을 말하지 않아도 사유 발생일·산정일을 명시하면 반드시 추출. 조회 기준일(reference_date)과 다르며 오늘 날짜로 추정 금지"},
     "monthly_total_pay": {"type": "number", "description": "명시된 월 총액·월 환산 총액. 기본급이 따로 있으면 wage_amount에는 기본급, 여기에 총액. 연 상여 포함액은 monthly_total_bonus_included로 구분"},
-    "annual_bonus_total": {"type": "number", "description": "직전 12개월 실제 평균임금 산입 대상 연 상여 총액. 계약상 장래 상여를 실제 지급액으로 추정 금지"},
+    "annual_bonus_total": {"type": "number", "description": "직전 12개월 실제 평균임금 산입 대상 연 상여 총액. 계약상 장래 상여를 실제 지급액으로 추정 금지. 정기적·일률적 연 상여로 명시되면 통상임금 비교를 위해 같은 항목을 fixed_allowances에도 연 주기로 보존하고 annual_bonus_allowance_ids로 연결. 다른 수당 없음은 해당 상여를 제외한다는 뜻이 아님"},
     "last_3m_wages": {"type": "array", "items": {"oneOf": [
         {"type": "number"}, {"type": "object", "properties": {"base": {"type": "number"}, "allowance": {"type": "number"}}, "additionalProperties": False}]},
         "description": "평균임금 산정기간 실제 임금 목록. 월급×3으로 만들어 넣지 말 것. 상여 포함 여부는 last_3m_bonus_included에 명시"},
@@ -290,6 +291,7 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 2. 질문에서 추출 가능한 정보는 최대한 추출 (임금액, 근무시간, 근무기간 등)
    - 수당의 지급 주기를 보존하세요. 연 120만원을 월 120만원으로 넣지 마세요. amount는 회차 금액, 연간 총액이면 annual=true입니다.
    - 같은 상여를 고정수당과 연간 상여에 넣으면 source_id와 annual_bonus_allowance_ids로 연결하세요. 포함 여부 미확인은 추가 질문입니다.
+   - 평균임금 사유 발생일은 average_wage_date에 반드시 보존하세요. 퇴직 언급이 없어도 이 날짜가 제외 기간 검증의 기준입니다.
    - 실제 3개월 임금·달력일수·제외 기간은 그대로 추출하고, 월급으로 실지급액이나 무급·제외 사유를 만들지 마세요.
 3. 추출 불가능하지만 계산에 필수인 정보는 missing_info에 추가
 4. 관련 법조문을 relevant_laws에 키워드로 추출 (예: "근로기준법 제56조")

@@ -273,6 +273,7 @@ class WageInput:
     # 퇴직금 계산 시 사용. None이면 monthly_wage × 3으로 추정
     last_3m_wages: Optional[list] = None   # 최근 3개월 각 지급액 [m1, m2, m3]
     last_3m_days: Optional[int] = None     # 최근 3개월 총 일수 (기본 92일)
+    average_wage_date: Optional[str] = None  # 평균임금 사유 발생일; 퇴직 외 사건에도 사용
 
     # 퇴직금 평균임금 — 1년치 임금 (대법원 2023다302579 반영)
     # None이면 monthly_wage × 12 추정. 제공 시 3개월 vs 1년 중 유리한 쪽 선택

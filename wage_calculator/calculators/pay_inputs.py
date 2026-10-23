@@ -4,7 +4,7 @@ import re
 from datetime import date
 
 PAY_INPUT_FIELDS = {
-    'monthly_total_pay', 'annual_bonus_total', 'last_3m_wages', 'last_3m_days', 'excluded_periods',
+    'monthly_total_pay', 'annual_bonus_total', 'last_3m_wages', 'last_3m_days', 'excluded_periods', 'average_wage_date',
     'annual_bonus_allowance_ids', 'last_3m_bonus_included', 'monthly_total_bonus_included',
 }
 

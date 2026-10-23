@@ -11,7 +11,7 @@
 """
 
 import calendar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from ..base import BaseCalculatorResult
@@ -39,6 +39,8 @@ class AverageWageResult(BaseCalculatorResult):
 
 def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResult:
     try:
+        if inp.average_wage_date is not None:
+            inp = replace(inp, end_date=inp.average_wage_date)
         validate_average_inputs(inp)
         return _calculate_average_wage(inp, ow)
     except PayInputError as exc:
