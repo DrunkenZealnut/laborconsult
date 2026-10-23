@@ -1,6 +1,6 @@
 # chat-submission-lock — Design
 
-> Plan: `docs/01-plan/features/chat-submission-lock.plan.md`(v0.1) · 작성 2026-10-22 · 기준 코드 main `758f694`
+> Plan: `chat-submission-lock.plan.md`(같은 폴더)(v0.1) · 작성 2026-10-22 · 기준 코드 main `758f694`
 > 범위: Plan P0(전송 관문·입력 스냅숏과 실패 복원)와 P1(전송 직후 상태 표시·테스트·문서·배포)이다. Design 중 '새 상담'이 진행 중 요청을 끊지 않는 문제를 찾았다. 관문을 넣으면 그 문제가 모든 진입점으로 번지므로 P0에 넣었다(§0 D6).
 > 검증 방법: main `public/index.html` 사본에 이 설계를 적용한 시제품을 만들었다(저장소 밖 `proto_patch.py`, 121줄 변경). 실제 함수를 vm에서 돌리는 행동 테스트(저장소 밖 `test_submission_proto.js`, 10개)를 main과 시제품 양쪽에서 실행했다(§6). 저장소 코드는 바꾸지 않았다.
 > 서버·API·DB는 바꾸지 않는다. 바뀌는 파일은 `public/index.html`·`public/sw.js`·`test_chat_lock.js`·`CLAUDE.md`다.
@@ -372,7 +372,7 @@ Abuse Guard 절의 '거절 계약' 항목에서 지킬 것 ②를 다음으로 �
 
 ### 12.5 Check 반영 (2026-10-22)
 
-- gap-detector Match Rate 99.4%(81항목: 일치 78·의도된 변경 2·부분 1·누락 0). 분석은 `docs/03-analysis/chat-submission-lock.analysis.md`.
+- gap-detector Match Rate 99.4%(81항목: 일치 78·의도된 변경 2·부분 1·누락 0). 분석은 `chat-submission-lock.analysis.md`(같은 폴더).
 - 문서 갭 GAP-1~4는 이 문서에 반영했다(§3.1 코드·§4·§6.3 M3·§12.1). 설계 공백 DG-1·DG-3은 §11에 후속으로, DG-2는 §5에 적었다.
 - 테스트 공백 중 '응답 헤더 전 초기화'를 L14에 더했다. 콜드 스타트 중 fetch 자체가 AbortError로 끝나는 경로다. 이 사례 추가 뒤 `test_chat_lock.js`는 16/16이고, 겨냥한 변이 M9(abort 삭제)·M10(끊긴 요청 안내 억제 삭제)는 사본에서 L14가 잡는다. 전체 변이 재실행은 하지 않았다. 세션 재시작으로 저장소 밖 스크립트가 지워졌고, 이번 변경은 단언 추가뿐이라 기존 검출이 줄 수 없다.
 
