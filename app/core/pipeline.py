@@ -1160,7 +1160,7 @@ _KNOWLEDGE_MODULES = [
 
 # 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반 + 독립 계산)
 # wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
-_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
+_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears", "prorated"}
 
 # 월급 구성 진술(audit-50-legal-accuracy §5). 질문이 "월급에 연장·야간·휴일·연차수당이 포함"이라고 밝혔는데
 # 그 총액으로 최저임금을 판정하면 결정적 카드가 '✅ 충족'을 낸다 — 이 수당들은 최저임금 산입에서 빠진다
@@ -2581,7 +2581,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
     from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
     from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
-    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS:
+    from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
     _complete_explicit_reduced_calendar_month(inp, query)
@@ -2681,8 +2682,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         wageless = [t for t in targets if t in _WAGELESS_TARGETS]
         if schedule_unknown:
             # 근무일수만 있고 시간이 없으면 소정근로시간 산정·52시간 체크는 기본 8시간을 넣은 값이다(주 6일 → 243시간, 리뷰 H3)
-            held = [t for t in wageless if t != "wage_arrears"]
-            wageless = [t for t in wageless if t == "wage_arrears"]
+            held = [t for t in wageless if t not in {"wage_arrears", "prorated"}]
+            wageless = [t for t in wageless if t in {"wage_arrears", "prorated"}]
             holiday = "weekly_holiday" in targets and not inp.is_platform_worker
             holiday_hours_block = _unknown_schedule_block(
                 None, params.get("weekly_work_days"), holiday, held, _rejected_span_hours(query, params), regime,
@@ -2960,7 +2961,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                         f"월급 중 기본급·산입 수당 외 몫(연장수당 등) {stated_premium_part:,.0f}원이 위에서 계산한 연장·야간·휴일 근로 임금 "
                         f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
         requested_amounts = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave"}:
+        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave", "prorated"}:
             # 구성 보정이 기초 월급을 급여·이자 요청의 지급액으로 되살리지 않도록 한다.
             result.monthly_total = result.monthly_net = 0.0
         if (composition_hold or comprehensive_total) and held_is_total:
@@ -3261,7 +3262,8 @@ def _analysis_to_extract_params(analysis) -> dict:
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
     from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
     from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
-    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS if key in info})
+    from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

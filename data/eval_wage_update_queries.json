@@ -720,5 +720,146 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-27",
+    "category": "퇴직 효력일 일할",
+    "question": "2024년 1월 1일 입사한 월급제 근로자입니다. 월급 300만원 전액을 해당월 역일수로 일할하는 약정이며 다른 수당이나 무급 기간은 없습니다. 주5일 하루8시간 근무합니다. 2026년 10월 16일은 마지막 재직일이 아니라 퇴직 효력일이고 10월 15일까지 재직합니다. 2026년 10월 급여를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 1451613,
+      "worked_days": 15,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-28",
+    "category": "윤년 동일월 입퇴사",
+    "question": "월급 290만원 전액을 월 역일수로 일할하는 약정입니다. 2024년 2월 15일 입사해 2024년 2월 20일까지 재직하고 21일 퇴직 효력이 발생했습니다. 다른 수당이나 무급 기간은 없고 주5일 하루8시간입니다. 2024년 2월 세전 급여를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 600000,
+      "worked_days": 6,
+      "month_days": 29
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-29",
+    "category": "무급 휴직 복직",
+    "question": "2024년 1월 1일 입사한 근로자로 2026년 10월 내내 재직 중입니다. 월급은 310만원 전액을 해당월 역일수로 일할하는 약정이며 다른 수당은 없습니다. 주5일 하루8시간입니다. 2026년 10월 10일부터 14일까지 5일은 개인사유 무급휴직으로 확인됐고 15일 복직했습니다. 이 5일 외 무급 처리일은 없으며 주휴일 추가 공제도 없습니다. 2026년 10월 세전 임금을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 2600000,
+      "worked_days": 26,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-30",
+    "category": "항목별 지급 조건",
+    "question": "2024년 1월 1일 입사해 2026년 10월 16일까지 재직하고 17일 퇴직 효력이 생깁니다. 주5일 하루8시간입니다. 2026년 10월 급여의 전체 항목은 기본급 280만원, 식대 20만원, 별도 실제 근로수당뿐입니다. 계약상 기본급만 10월 역일수로 일할하고, 식대는 재직일수와 관계없이 이번 달 20만원 전액을 지급하기로 확인됐습니다. 실제 근로수당은 별도로 산정 완료한 15만원을 지급하며 다시 일할하지 않습니다. 다른 무급 기간이나 지급항목은 없습니다. 10월 세전 급여 합계를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 1795161,
+      "worked_days": 16,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-31",
+    "category": "일할 방식 미확인",
+    "question": "월급 300만원, 주5일 하루8시간, 2024년 1월 1일 입사했습니다. 2026년 10월 16일까지 재직하고 다음날 퇴직 효력이 발생합니다. 회사의 일할계산 방식과 수당별 지급 조건은 확인하지 못했습니다. 2026년 10월 지급액을 확정해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
   }
 ]

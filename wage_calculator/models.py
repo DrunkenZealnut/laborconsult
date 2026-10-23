@@ -318,6 +318,15 @@ class WageInput:
     # ── 중도입사 일할계산용 ──────────────────────────────────────────────────
     join_date: Optional[str] = None                # 중도입사일
     first_month_worked_days: Optional[int] = None  # 입사 첫 달 근무일수
+    settlement_month: Optional[str] = None
+    proration_method: Optional[str] = None
+    proration_retirement_effective_date: Optional[str] = None
+    proration_employed_at_month_start: Optional[bool] = None
+    proration_unpaid_periods: Optional[list] = None
+    proration_scheduled_dates: Optional[list] = None
+    proration_all_items_proportional: Optional[bool] = None
+    proration_items: Optional[list] = None
+    proration_items_complete: Optional[bool] = None
 
     # ── 수습기간 여부 ─────────────────────────────────────────────────────────
     is_probation: bool = False             # 수습기간 여부 (최저임금 90% 특례)

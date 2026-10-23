@@ -147,14 +147,17 @@ class WageCalculator:
         except PayInputError as exc:
             from dataclasses import replace
             independent = {"wage_arrears", "working_hours", "weekly_hours_check", "business_size"}
+            if inp.proration_items_complete is True:
+                independent.add("prorated")
             remaining = [t for t in targets if t in independent]
             result = (self._calculate(replace(inp, fixed_allowances=[]), remaining)
                       if remaining else WageResult(minimum_wage_ok=None))
             result.calculation_skipped.extend({"target": t, "section": CALC_TYPES.get(t,t), "reason": str(exc)}
                                               for t in targets if t not in independent)
             result.monthly_total = result.monthly_net = result.ordinary_hourly = 0.0
-            result.warnings.append(str(exc))
-            result.calculation_status = "partial" if result.calculation_executed else "not_run"
+            if result.calculation_skipped:
+                result.warnings.append(str(exc))
+            result.calculation_status = ("partial" if result.calculation_executed else "not_run") if result.calculation_skipped else "complete"
             return result
 
         # 통상임금 계산 (모든 계산의 기반)
@@ -370,7 +373,11 @@ class WageCalculator:
         # 선행조건 때문에 조용히 건너뛴 계산도 결과로 보고한다. 통상임금 기반 계산이나
         # 호출자가 추가한 연장수당만으로 요청 계산이 완료된 것으로 간주하지 않는다.
         requested = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested and requested <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave"}:
+        if requested == {"prorated"}:
+            result.ordinary_hourly = 0.0
+            result.breakdown.pop("통상임금", None)
+            result.formulas = [f for f in result.formulas if not f.startswith(("[기준시간]", "[통상임금]"))]
+        if requested and requested <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave", "prorated"}:
             # 휴직/단축 전 통상임금은 보험 급여의 기초액이다. 회사가 실제로
             # 지급하는 임금 또는 휴직 중 월 총수령액으로 표시하지 않는다.
             result.monthly_total = result.monthly_net = 0.0
@@ -440,7 +447,7 @@ class WageCalculator:
             if inp.shutdown_days > 0:
                 targets.append("shutdown_allowance")
 
-            if inp.join_date:
+            if inp.join_date or inp.settlement_month is not None or inp.proration_items is not None:
                 targets.append("prorated")
 
             if inp.public_holiday_days > 0:
