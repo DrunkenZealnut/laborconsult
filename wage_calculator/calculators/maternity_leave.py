@@ -191,6 +191,7 @@ class MaternityLeaveResult(BaseCalculatorResult):
     spouse_miscarriage_insurance_benefit: float = 0.0   # 그중 고용보험 지원 급여(상한 적용)
 
     upper_limit_applied: bool = False
+    requested_maternity_only: bool = False
 
 
 def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLeaveResult:
@@ -204,6 +205,9 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
           - is_premature_birth: 미숙아 여부 (기본 False, 2025-02-23~ 100일)
         ow: 통상임금 계산 결과
     """
+    if inp.maternity_leave_type not in (None, "maternity"):
+        from .family_leave import calc_family_leave
+        return calc_family_leave(inp, ow)
     warnings = []
     formulas = []
     legal = [
@@ -354,6 +358,21 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         formulas.append(
             f"사업주 부담 총액: {daily_benefit:,.0f}원 × {employer_days}일 = {total_employer_benefit:,.0f}원"
         )
+
+    if inp.maternity_leave_type == "maternity":
+        warnings.extend(["수급 요건: 출산 전 피보험기간 180일 이상 (고용보험법 제75조)",
+                         "신청 기한: 출산전후휴가 종료 후 12개월 이내"])
+        return MaternityLeaveResult(
+            requested_maternity_only=True, leave_days=leave_days, raw_monthly_wage=monthly_ow,
+            monthly_benefit=round(monthly_benefit), is_priority_support=is_priority,
+            insurance_covered_days=insurance_days, employer_covered_days=employer_days,
+            total_insurance_benefit=round(total_insurance_benefit),
+            total_employer_benefit=round(total_employer_benefit), upper_limit_applied=upper_applied,
+            breakdown={"월 통상임금": f"{monthly_ow:,.0f}원", "월 급여(상한 적용)":f"{monthly_benefit:,.0f}원",
+                       "총 휴가 일수":f"{leave_days}일", "고용보험 지원 일수":f"{insurance_days}일",
+                       "고용보험 지급 총액":f"{total_insurance_benefit:,.0f}원",
+                       "사업주 부담 총액":f"{total_employer_benefit:,.0f}원"},
+            formulas=formulas, warnings=warnings, legal_basis=legal)
 
     # ── 배우자 출산휴가 ───────────────────────────────────────────────────
     # 유급액·고용보험 급여 분리는 `_employer_and_insurance` 단일 출처 — 그 함수 docstring 참조.

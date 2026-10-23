@@ -140,6 +140,8 @@ def calc_industrial_accident(
     # 분모는 3개월 총일수(근로기준법 제2조 제1항 제6호), 평균임금이 통상임금보다 적으면 통상임금(제2조 제2항). 산정 사유 발생일은
     # 사고가 발생한 날이다(근로기준법 시행령 제52조). 예전에는 '월 금액 ÷ 30'과 1일 통상임금 중 큰 쪽이었다
     avg = calc_average_wage(replace(inp, end_date=inp.accident_date or inp.end_date), ow)
+    if avg.held_reason:
+        return IndustrialAccidentResult(held_reason=avg.held_reason, warnings=avg.warnings)
     avg_daily = avg.avg_daily_wage
     if avg.used_basis == "통상임금":
         formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 평균임금 {avg.avg_daily_3m:,.0f}원 < 1일 통상임금 "

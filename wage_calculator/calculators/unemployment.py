@@ -206,6 +206,8 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
     # 예외 포함)이 한다
     if avg_daily is None:
         avg = calc_average_wage(inp, ow)
+        if avg.held_reason:
+            return UnemploymentResult(held_reason=avg.held_reason, warnings=avg.warnings)
         avg_daily = avg.avg_daily_3m
         extra_3m = avg.bonus_addition + avg.leave_addition
         extras = (f" + 상여금 {avg.bonus_addition:,.0f}원 + 연차수당 {avg.leave_addition:,.0f}원" if extra_3m else "")

@@ -2579,7 +2579,9 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
     from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
-    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS:
+    from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+    from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
     _complete_explicit_reduced_calendar_month(inp, query)
@@ -2635,6 +2637,34 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     if not targets:
         return format_skipped_calculations([{"section": "계산 유형",
             "reason": "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목을 확인해주세요."}])
+
+    if "maternity_leave" in targets:
+        # Analyzer aliases and legacy labels both select the requested subtype.
+        if inp.maternity_leave_type is None:
+            compact = "".join(" ".join(calc_types).split())
+            if "난임" in compact:
+                inp.maternity_leave_type = "infertility"
+            elif "배우자" in compact and ("유산" in compact or "사산" in compact):
+                inp.maternity_leave_type = "spouse_miscarriage"
+            elif "배우자" in compact:
+                inp.maternity_leave_type = "spouse_birth"
+            else:
+                inp.maternity_leave_type = "maternity"
+        specific_types = set()
+        for label in [part for value in calc_types for part in split_calc_labels(value)]:
+            compact_label = "".join(label.split())
+            if "난임" in compact_label:
+                specific_types.add("infertility")
+            elif "배우자" in compact_label and ("유산" in compact_label or "사산" in compact_label):
+                specific_types.add("spouse_miscarriage")
+            elif "배우자" in compact_label and "출산" in compact_label:
+                specific_types.add("spouse_birth")
+            elif "출산" in compact_label:
+                specific_types.add("maternity")
+        if len(specific_types) > 1:
+            inp.maternity_leave_type = "multiple"
+        if inp.maternity_leave_type != "maternity" and "is_priority_support_company" not in params:
+            inp.is_priority_support_company = None
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
     holiday_hours_block = None
@@ -3229,7 +3259,9 @@ def _analysis_to_extract_params(analysis) -> dict:
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
     from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
-    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS if key in info})
+    from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+    from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

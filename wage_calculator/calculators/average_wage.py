@@ -20,6 +20,7 @@ from ..utils import parse_date
 from .shared import monthly_wage_note, monthly_wage_total
 from ..constants import AVG_WAGE_PERIOD_DAYS
 from .ordinary_wage import OrdinaryWageResult
+from .pay_inputs import PayInputError, validate_average_inputs, validated_exclusions, bonus_already_included
 
 
 @dataclass
@@ -37,6 +38,14 @@ class AverageWageResult(BaseCalculatorResult):
 
 
 def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResult:
+    try:
+        validate_average_inputs(inp)
+        return _calculate_average_wage(inp, ow)
+    except PayInputError as exc:
+        return AverageWageResult(held_reason=str(exc), warnings=[str(exc)])
+
+
+def _calculate_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResult:
     """
     평균임금 산정 (독립 호출 가능)
 
@@ -61,6 +70,12 @@ def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResu
 
     # ── 2. 3개월 임금총액 (제외 임금 차감) ──────────────────────────────────────
     wage_total, wage_note = _calc_wage_total(inp, ow)
+    included_bonus = bonus_already_included(inp, ow)
+    if included_bonus > wage_total:
+        raise PayInputError("이미 포함된 상여가 3개월 임금총액보다 큽니다.")
+    if included_bonus:
+        wage_total -= included_bonus
+        formulas.append(f"동일 연 상여 중복 조정: 3개월 임금에 포함된 {included_bonus:,.0f}원 제외 후 연간 배분액 산입")
     if excluded_days > 0:
         if not inp.last_3m_wages:
             # 추정 총액(기준 월액 × 3)은 제외 기간에도 평소 임금을 받은 것으로 센 값이다 — 그 기간의 몫을 일수 비율로 뺀다. 실제로
@@ -68,6 +83,8 @@ def calc_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWageResu
             excluded_wages = wage_total * min(excluded_days, full_days) / full_days
         share = "추정 총액의 그 기간 몫, " if not inp.last_3m_wages else ""
         formulas.append(f"산정기간 제외: {excluded_days}일, 제외 임금: {excluded_wages:,.0f}원 ({share}근기법 시행령 제2조)")
+    if excluded_wages > wage_total:
+        raise PayInputError("제외 기간 지급액이 3개월 임금총액보다 큽니다.")
     wage_total -= excluded_wages
     if excluded_days > 0:
         legal.append("근로기준법 시행령 제2조 제1항 (평균임금 산정 제외 기간)")
@@ -202,36 +219,7 @@ def _calc_wage_total(inp: WageInput, ow: OrdinaryWageResult) -> tuple[float, str
 
 
 def _calc_excluded(inp: WageInput, period_days: int) -> tuple[int, float]:
-    """
-    평균임금 산정 제외 기간·임금 합산 (근기법 시행령 제2조)
-
-    산정 사유 발생일(end_date)을 알면 제외 기간을 산정기간 [발생일 − period_days일, 발생일)과 겹치는 날만 센다 — 휴업 시작일·재해일로
-    산정 기준일을 옮기면 그 창 밖의 제외 기간까지 빼서 평균임금이 부풀었다(독립 리뷰 M3). 일부만 겹치면 그 기간에 받은 금액(paid)도
-    겹친 일수 비율로 나눈다.
-
-    Returns: (제외 일수, 제외 임금)
-    """
-    if not getattr(inp, "excluded_periods", None):
-        return 0, 0.0
-
-    end_date = parse_date(inp.end_date)
-    window = (end_date - timedelta(days=period_days), end_date - timedelta(days=1)) if end_date else None
-    excluded_days = 0
-    excluded_wages = 0.0
-    for period in inp.excluded_periods:
-        start = parse_date(period.get("start"))
-        end = parse_date(period.get("end"))
-        if not (start and end):
-            continue
-        days = (end - start).days + 1
-        lo, hi = (max(start, window[0]), min(end, window[1])) if window else (start, end)
-        overlap = (hi - lo).days + 1
-        if overlap <= 0 or days <= 0:
-            continue
-        excluded_days += overlap
-        excluded_wages += float(period.get("paid", 0)) * overlap / days
-
-    return excluded_days, excluded_wages
+    return validated_exclusions(inp, period_days)
 
 
 def _subtract_months(d: date, months: int) -> date:

@@ -137,6 +137,26 @@ class WageCalculator:
         # 초기 CLI·골든 소비자가 쓰던 이름도 실제 독립 계산기로 연결한다.
         targets = ["ordinary_wage" if target == "ordinary" else target for target in targets]
 
+        # 지급 주기가 불명확한 수당을 월액으로 확정하지 않는다. 임금 기반과
+        # 무관한 명시 체불 원금 이자·시간 계산은 그대로 실행할 수 있다.
+        from ..calculators.shared import normalize_allowances
+        from ..calculators.pay_inputs import PayInputError
+        try:
+            for allowance in normalize_allowances(inp.fixed_allowances):
+                allowance.monthly_amount
+        except PayInputError as exc:
+            from dataclasses import replace
+            independent = {"wage_arrears", "working_hours", "weekly_hours_check", "business_size"}
+            remaining = [t for t in targets if t in independent]
+            result = (self._calculate(replace(inp, fixed_allowances=[]), remaining)
+                      if remaining else WageResult(minimum_wage_ok=None))
+            result.calculation_skipped.extend({"target": t, "section": CALC_TYPES.get(t,t), "reason": str(exc)}
+                                              for t in targets if t not in independent)
+            result.monthly_total = result.monthly_net = result.ordinary_hourly = 0.0
+            result.warnings.append(str(exc))
+            result.calculation_status = "partial" if result.calculation_executed else "not_run"
+            return result
+
         # 통상임금 계산 (모든 계산의 기반)
         ow = calc_ordinary_wage(inp)
 
@@ -198,6 +218,9 @@ class WageCalculator:
                 continue
             if precondition and not precondition(inp):
                 continue
+            if key == "maternity_leave" and inp.maternity_leave_type:
+                from ..calculators.family_leave import FAMILY_LABELS
+                section = FAMILY_LABELS.get(inp.maternity_leave_type, section)
             mark = used_mark()
             r = guarded(key, section, lambda: func(inp, ow))
             if r is None:
@@ -336,6 +359,9 @@ class WageCalculator:
                 if hint_text:
                     all_w.append(hint_text)
 
+        if not inp.monthly_total_pay and any(a.annual or a.payment_cycle != "매월" for a in normalize_allowances(inp.fixed_allowances)):
+            result.monthly_total_is_equivalent = True
+            all_w.append("연·분기·반기 수당은 월 환산액입니다. 실제 매월 지급액과 지급기일별 채권은 지급 내역을 별도로 확인해야 합니다.")
         result.monthly_total = round(monthly_total, 0)
         result.warnings = list(dict.fromkeys(all_w))
         result.legal_basis = list(dict.fromkeys(all_l))
@@ -344,7 +370,7 @@ class WageCalculator:
         # 선행조건 때문에 조용히 건너뛴 계산도 결과로 보고한다. 통상임금 기반 계산이나
         # 호출자가 추가한 연장수당만으로 요청 계산이 완료된 것으로 간주하지 않는다.
         requested = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested and requested <= {"parental_leave", "reduced_work_benefit", "wage_arrears"}:
+        if requested and requested <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave"}:
             # 휴직/단축 전 통상임금은 보험 급여의 기초액이다. 회사가 실제로
             # 지급하는 임금 또는 휴직 중 월 총수령액으로 표시하지 않는다.
             result.monthly_total = result.monthly_net = 0.0

@@ -167,7 +167,9 @@ _INFO_KEYS = {
 }
 _INFO_KEYS.update(set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS)
 from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
-_INFO_KEYS.update(ARREARS_INPUT_FIELDS)
+from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+_INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS)
 
 
 def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:
@@ -180,6 +182,11 @@ def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisRes
     context: LLM이 본 질문·대화 텍스트 — 날짜 연도 보정 여부를 정한다(_correct_date_year).
     """
     extracted = {k: v for k, v in inp.items() if k in _INFO_KEYS and v is not None}
+
+    if isinstance(extracted.get("fixed_allowances"), list):
+        extracted["fixed_allowances"] = [
+            dict(a, payment_cycle=a.get("payment_cycle", "연" if a.get("annual") is True else "미확인"))
+            if isinstance(a, dict) else a for a in extracted["fixed_allowances"]]
 
     # 날짜 보정: LLM이 연도를 잘못 추정한 경우 현재 기준으로 수정
     for date_key in ("start_date", "end_date", "arrear_due_date"):

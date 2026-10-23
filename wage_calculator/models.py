@@ -90,24 +90,29 @@ class FixedAllowance:
     payment_cycle: str = "매월"        # "매월" | "분기" | "반기" | "연"
     min_wage_type: str = ""            # "" | "standard" | "regular_bonus" | "welfare" | "excluded"
     guaranteed_amount: Optional[float] = None  # 최소보장 성과급의 보장분
+    source_id: str = ""                # 동일 급여 항목의 출처 식별자
 
     @property
     def monthly_amount(self) -> float:
         """월 환산 금액 (payment_cycle 반영)"""
-        if self.annual or self.payment_cycle == "연":
-            return self.amount / 12
-        elif self.payment_cycle == "분기":
-            return self.amount / 3
-        elif self.payment_cycle == "반기":
-            return self.amount / 6
-        return self.amount
+        from .calculators.pay_inputs import PayInputError, money
+        amount = money(self.amount, self.name)
+        if type(self.annual) is not bool:
+            raise PayInputError(f"{self.name}: 연간 총액 여부를 확인해주세요.")
+        if self.annual:
+            return amount / 12
+        divisors = {"매월": 1, "분기": 3, "반기": 6, "연": 12}
+        if not isinstance(self.payment_cycle, str) or self.payment_cycle not in divisors:
+            raise PayInputError(f"{self.name}: 지급 주기를 확인해주세요(매월·분기·반기·연).")
+        return amount / divisors[self.payment_cycle]
 
     @classmethod
     def from_dict(cls, d: dict) -> "FixedAllowance":
         """dict → FixedAllowance 변환 (하위 호환)"""
         return cls(
+            source_id=d.get("source_id", ""),
             name=d.get("name", "수당"),
-            amount=float(d.get("amount", 0)),
+            amount=d.get("amount", 0),
             condition=d.get("condition", "없음"),
             is_ordinary=d.get("is_ordinary"),
             annual=d.get("annual", False),
@@ -387,6 +392,13 @@ class WageInput:
     reduced_offset_monthly_ordinary_wage: Optional[float] = None # 감액 기준: 직전월/인상 후 통상임금
 
     # ── 출산전후휴가급여 계산용 ───────────────────────────────────────────────
+    maternity_leave_type: Optional[str] = None
+    family_leave_days: Optional[int] = None
+    family_leave_used_days: Optional[int] = None
+    family_leave_insured_days: Optional[int] = None
+    family_leave_eligible: Optional[bool] = None
+    family_leave_start_date: Optional[str] = None
+    family_leave_end_date: Optional[str] = None
     is_priority_support_company: bool = True    # 우선지원대상기업(중소기업) 여부
     is_multiple_birth: bool = False             # 다태아 여부 (True면 120일)
     is_premature_birth: bool = False            # 미숙아 여부 (2025-02-23~ 100일, 근기법 제74조①)
@@ -453,6 +465,9 @@ class WageInput:
 
     # ── 퇴직금 평균임금 가산용 ───────────────────────────────────────────────
     annual_bonus_total: float = 0.0            # 연간 상여금 총액
+    annual_bonus_allowance_ids: Optional[list] = None
+    last_3m_bonus_included: Optional[float] = None
+    monthly_total_bonus_included: Optional[float] = None
     unused_annual_leave_pay: float = 0.0       # 최종 미사용 연차수당
 
     # ── 평균임금 산정 제외 기간 (근기법 시행령 제2조) ──────────────────────

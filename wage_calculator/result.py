@@ -30,6 +30,7 @@ class WageResult:
     calculation_executed: list = field(default_factory=list)
     calculation_skipped: list = field(default_factory=list)  # [{target, section, reason}]
     monthly_total: float = 0.0            # 월 총 예상 수령액 (세전, 원)
+    monthly_total_is_equivalent: bool = False
     monthly_net: float = 0.0             # 월 실수령액 (세후, 원) — insurance 계산 시 채워짐
     minimum_wage_ok: bool | None = None   # None: 미실행 또는 계산 보류
     # 표시용 상태(calc-card-followups D6) — ""(미실행)·compliant·violation·held(보류)·not_applicable(노무제공자). None인
@@ -111,7 +112,8 @@ def format_result(result: "WageResult") -> str:
         lines.append("")
 
     if result.monthly_total:
-        lines.append(f"월 총 예상 수령액(세전): {result.monthly_total:,.0f}원")
+        label = "월 환산 임금(세전)" if result.monthly_total_is_equivalent else "월 총 예상 수령액(세전)"
+        lines.append(f"{label}: {result.monthly_total:,.0f}원")
     if result.monthly_net:
         lines.append(f"월 실수령액(세후):       {result.monthly_net:,.0f}원")
     if result.monthly_total or result.monthly_net:
@@ -168,6 +170,7 @@ def format_result_json(result: "WageResult") -> dict:
     payload = {
         "ordinary_hourly": result.ordinary_hourly,
         "monthly_total": result.monthly_total,
+        "monthly_total_is_equivalent": result.monthly_total_is_equivalent,
         "minimum_wage_ok": result.minimum_wage_ok,
         "minimum_wage_state": result.minimum_wage_state,
         "legal_rule_status": result.legal_rule_status,

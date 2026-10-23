@@ -111,7 +111,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         else:
             effective_amount = a.amount
 
-        monthly_amount = effective_amount / 12 if a.annual else effective_amount
+        monthly_amount = a.monthly_amount * effective_amount / a.amount if a.amount else a.monthly_amount
 
         if is_ordinary:
             allowance_total += monthly_amount

@@ -388,7 +388,7 @@ def fixed_overtime_monthly(inp: WageInput) -> float:
         name = a.name or ""
         if (AllowanceClassifier.is_not_ordinary_by_name(name) and AllowanceClassifier.is_overtime_related(name)
                 and not any(kw in AllowanceClassifier._keyword_name(name) for kw in AllowanceClassifier.NON_INCLUDED_KEYWORDS)):
-            total += a.amount / 12 if a.annual else a.amount
+            total += a.monthly_amount
     return total
 
 

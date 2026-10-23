@@ -1032,6 +1032,7 @@ TEST_CASES = [
             last_3m_wages=[3_000_000, 3_000_000, 3_000_000],
             last_3m_days=92,
             annual_bonus_total=2_400_000,
+            last_3m_bonus_included=0,  # 위 3개월 임금에는 연 상여 미포함
             unused_annual_leave_pay=600_000,
         ),
         "targets": ["average_wage"],

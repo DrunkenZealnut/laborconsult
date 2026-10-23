@@ -71,6 +71,8 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
     # 적으면 통상임금)이 그 안에 있다. 예전에는 여기서 '시급 × 1일 시간 × 근무일수 × 52/12'(주휴분 없음)를 92일로 나눠 하한 없이
     # 썼다 — 시급 12,000원·휴업 10일이 474,783원(맞는 값 672,000원)이었다
     avg = calc_average_wage(replace(inp, end_date=inp.shutdown_start_date or inp.end_date), ow)
+    if avg.held_reason:
+        return ShutdownAllowanceResult(held_reason=avg.held_reason, warnings=avg.warnings)
     avg_daily_wage = avg.avg_daily_wage
 
     avg_70 = avg_daily_wage * SHUTDOWN_RATE

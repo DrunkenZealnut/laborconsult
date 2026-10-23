@@ -555,5 +555,170 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-21",
+    "category": "연 상여 주기",
+    "question": "월 기본급 300만원에 별도로 정기상여를 연간 총 120만원 받습니다. 상여는 모든 직원에게 동일 조건으로 지급됩니다. 주5일 하루8시간 근무합니다. 2026년 10월 기준 통상임금의 월 환산액만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "monthly_ordinary_wage": 3100000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-22",
+    "category": "실제 평균임금 제외",
+    "question": "2020년 1월 1일 입사했고 평균임금 산정 사유 발생일은 2026년 10월 1일입니다. 현재 월 기본급은 300만원, 주5일 하루8시간입니다. 직전 3개월 실제 임금은 7월 200만원, 8월 400만원, 9월 400만원이고 제외 전 달력일수는 92일입니다. 7월 1일부터 7월 10일까지 사용자 귀책 휴업이며 그 기간 지급한 100만원이 위 임금에 포함되어 있습니다. 상여금과 연차수당은 없습니다. 평균임금을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "period_days": 82,
+      "wage_total": 9000000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-23",
+    "category": "같은 상여 중복 방지",
+    "question": "2020년부터 재직 중이고 2026년 10월 1일 기준 평균임금을 추정해주세요. 월 기본급 300만원, 주5일 하루8시간, 별도 정기상여는 연간 총 120만원입니다. 평균임금용 직전 12개월 상여 실지급 총액도 120만원이며 앞의 정기상여와 정확히 같은 항목입니다. 최근 3개월 실지급 내역과 다른 수당은 없으니 기본급과 이 동일 상여만으로 3개월 임금총액을 추정해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "grand_total": 9300000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-24",
+    "category": "실지급액에 포함된 연 상여",
+    "question": "2020년 1월 1일 입사했고 평균임금 사유 발생일은 2026년 10월 1일입니다. 월 기본급 300만원, 주5일 하루8시간입니다. 직전 3개월 실제 임금이 각각 300만원, 300만원, 420만원이며 세 번째 달 금액에는 직전 12개월 정기상여 전액 120만원이 이미 들어 있습니다. 연 상여 총액은 바로 그 120만원이고, 제외 기간·연차수당·다른 수당은 없습니다. 달력일수 92일로 평균임금을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "grand_total": 9300000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-25",
+    "category": "난임치료휴가 단독",
+    "question": "2026년 11월 27일부터 12월 1일까지 난임치료휴가를 실제 3일 사용 예정입니다. 올해 같은 난임치료휴가를 이미 1일 썼고 법정 사용·신청 요건은 모두 충족합니다. 통상시급 15000원, 주5일 하루8시간 근무, 우선지원대상기업이며 휴가 종료 전 고용보험 피보험 단위기간 180일 이상입니다. 이번 3일의 유급액과 고용보험 지원액만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "employer_pay": 360000,
+      "insurance_benefit": 252630
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-26",
+    "category": "배우자 유산사산 단독",
+    "question": "2026년 10월 15일부터 10월 16일까지 배우자 유산·사산휴가를 처음 2일 사용했습니다. 같은 건의 기사용 휴가는 0일이며 법정 휴가 사용·신청 가능 기간의 요건을 모두 충족합니다. 통상시급 15000원, 주5일 하루8시간, 우선지원대상기업이고 휴가 종료 전 피보험 단위기간 180일 이상입니다. 이번 2일 사업주 유급액과 고용보험 지원액만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "employer_pay": 240000,
+      "insurance_benefit": 168420
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
   }
 ]
