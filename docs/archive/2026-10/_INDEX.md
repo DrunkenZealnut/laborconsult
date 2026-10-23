@@ -10,6 +10,7 @@
 | audit-50-legal-accuracy | 99.7% ※※※ | 2026-10-14 | [Plan](audit-50-legal-accuracy/audit-50-legal-accuracy.plan.md), [Design](audit-50-legal-accuracy/audit-50-legal-accuracy.design.md), [Analysis](audit-50-legal-accuracy/audit-50-legal-accuracy.analysis.md), [Report](audit-50-legal-accuracy/audit-50-legal-accuracy.report.md) |
 | calc-card-followups | 95.6% ※※※※ | 2026-10-16 | [Plan](calc-card-followups/calc-card-followups.plan.md), [Design](calc-card-followups/calc-card-followups.design.md), [Analysis](calc-card-followups/calc-card-followups.analysis.md), [Report](calc-card-followups/calc-card-followups.report.md) |
 | calc-card-consistency | 98.4% ※※※※※ | 2026-10-21 | [Plan](calc-card-consistency/calc-card-consistency.plan.md), [Design](calc-card-consistency/calc-card-consistency.design.md), [Analysis](calc-card-consistency/calc-card-consistency.analysis.md), [Report](calc-card-consistency/calc-card-consistency.report.md) |
+| chat-submission-lock | 99.4% ※※※※※※ | 2026-10-23 | [Plan](chat-submission-lock/chat-submission-lock.plan.md), [Design](chat-submission-lock/chat-submission-lock.design.md), [Analysis](chat-submission-lock/chat-submission-lock.analysis.md), [Report](chat-submission-lock/chat-submission-lock.report.md) |
 
 ※ **Design 후 중단.** 9-27 재빌드가 anthropic SDK 1.8.0을 받아 Claude 답변이 전량 폴백된 사고의
 후속으로 SDK 1.x 대응을 설계했으나, "API만 쓰는데 SDK를 왜 올리나"라는 판단으로 중단했다 —
@@ -38,3 +39,5 @@
 이 사이클 전부터의 결함이라 예상 실패 테스트로 분리했다. Check에서 찾은 설계 밖 Medium('총 N시간'이 하루 근무의 합계인데 1주 합계로 읽어 조건부
 예시가 '미발생'을 냄)은 핫픽스 PR #119로 고쳤고, Match Rate는 그 뒤 재분석하지 않았다. 실측 답변 모델은 gpt-6-sol rev 12다. 후속 사이클 후보:
 기준 월액 단일화(고정수당 f1·f2, 휴업수당 f4).
+
+※※※※※※ **완료 조건 6개 모두 충족이다**(보고서 §5). 다만 1·5번은 실행 기록에 기대는데, 수정 전 실패 확인·브라우저 확인·CI 28단계가 그 기록이다. 브라우저 확인은 PR 리뷰 반영(`.trim()` 복원, 진행 중 FAQ 예약 전송) 이전 코드 기준이고, 두 수정은 행동 테스트 L8·L11이 고정한다. Check 뒤에는 테스트 사례만 더했고 전체 변이 재실행은 하지 않았다(저장소 밖 스크립트 유실, M9·M10만 사본에서 확인). 후속 후보: 진행 중 FAQ가 써 둔 초안을 덮는 문제(DG-1), 드래그앤드롭 첨부의 잠금 무시(DG-3), 한글 IME 조합 중 Enter, 답변 중지 버튼, `?q=` 외부 링크 자동 전송.

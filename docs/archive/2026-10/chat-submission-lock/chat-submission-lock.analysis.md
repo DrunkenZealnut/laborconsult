@@ -5,7 +5,7 @@
 > - **작성일**: 2026-10-22
 > - **대상**: 작업 트리 `laborconsult-submit-lock`(브랜치 `feat/chat-submission-lock`, 커밋 전)
 > - **기준**: `758f694`(origin/main, PR #103 머지). 로컬 `main` ref는 `867c2db`에 멈춰 있어 HEAD보다 40커밋 뒤다. 그래서 `git diff main`에는 이번 작업과 무관한 파일 109개가 섞인다. 대조는 `git diff HEAD`로 했다. 바뀐 파일은 4개, +380/−44다.
-> - **범위**: Design `docs/02-design/features/chat-submission-lock.design.md`(v0.2, §0~§12), Plan `docs/01-plan/features/chat-submission-lock.plan.md`(§7)
+> - **범위**: Design `chat-submission-lock.design.md`(같은 폴더)(v0.2, §0~§12), Plan `chat-submission-lock.plan.md`(같은 폴더)(§7)
 > - **바뀐 파일**: `public/index.html`, `public/sw.js`, `test_chat_lock.js`, `CLAUDE.md`
 > - **분석 도구**: gap-detector(정적 대조) + 노드 테스트 직접 실행. Check 뒤 조치는 §7.
 
