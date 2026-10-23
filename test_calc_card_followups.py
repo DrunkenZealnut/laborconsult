@@ -403,21 +403,28 @@ class MonthlyPayEstimateTest(unittest.TestCase):
         self.assertIn("퇴직금: 6,427,174원", out)
 
     def test_t10_helper_contract(self):
-        from wage_calculator.calculators.shared import monthly_pay_estimate
+        """기준 월액(shared.monthly_wage_total) — 연장 등이 없으면 통상임금 월액, 있으면 더하고, 이미 든 총액이면 더하지 않으며,
+        주어진 총액이 먼저다(monthly-base-unification: 옛 monthly_pay_estimate의 같은 다섯 경우)."""
+        from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
+        from wage_calculator.calculators.shared import monthly_wage_total
         from wage_calculator.models import WageInput, WageType, WorkSchedule
+
+        def total(inp, **kw):
+            return monthly_wage_total(inp, calc_ordinary_wage(inp), **kw)
         plain = WageInput(wage_type=WageType.MONTHLY, monthly_wage=2700000,
                           schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5))
-        self.assertEqual(monthly_pay_estimate(plain, 12000, 2700000), 2700000)          # 연장 등이 없으면 그대로
+        self.assertEqual(total(plain), 2700000)                                          # 연장 등이 없으면 그대로
         with_ot = WageInput(wage_type=WageType.MONTHLY, monthly_wage=2700000,
                             schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5, weekly_overtime_hours=10))
-        self.assertGreater(monthly_pay_estimate(with_ot, 12000, 2700000), 2700000)
+        self.assertGreater(total(with_ot), 2700000)
+        self.assertEqual(total(with_ot, premium=False), 2700000)                        # facade: 연장수당 섹션을 안 셌으면
         for extra in (dict(wage_type=WageType.COMPREHENSIVE), dict(wage_composition_known=True)):
             inp = WageInput(**{**dict(monthly_wage=2700000, wage_type=WageType.MONTHLY), **extra},
                             schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5, weekly_overtime_hours=10))
-            self.assertEqual(monthly_pay_estimate(inp, 12000, 2700000), 2700000, extra)   # 이미 들어 있는 총액
+            self.assertEqual(total(inp), 2700000, extra)                                  # 이미 들어 있는 총액
         given = WageInput(monthly_wage=2096270, monthly_total_pay=2700000,
                           schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5, weekly_overtime_hours=10))
-        self.assertEqual(monthly_pay_estimate(given, 12000, 2096270), 2700000)
+        self.assertEqual(total(given), 2700000)
 
 
 class StructureTest(unittest.TestCase):

@@ -325,7 +325,7 @@ def split_note(split: HourSplit | None) -> str:
 
 
 # ── 연장·야간·휴일 근로 임금 ─────────────────────────────────────────────────────
-# 연장수당 계산기(calc_overtime)와 평균임금·보수월액 추정(monthly_pay_estimate)이 같은 산식을 쓴다. 예전에는 카드의 '월 총 예상
+# 연장수당 계산기(calc_overtime)와 기준 월액(monthly_wage_total)이 같은 산식을 쓴다. 예전에는 카드의 '월 총 예상
 # 수령액'(통상임금 + 연장수당 3,285,000원)과 퇴직금 평균임금·4대보험 보수(통상임금만 2,502,857원 기준)가 한 카드에서 갈렸다
 # (calc-card-followups R15).
 
@@ -372,7 +372,7 @@ def has_premium_hours(inp: WageInput) -> bool:
 
 
 def adds_premium_pay(inp: WageInput) -> bool:
-    """월 임금총액 추정(monthly_pay_estimate)이 연장·야간·휴일 근로 임금을 더하는 입력인가 — 더하면 카드의 연장수당 섹션도
+    """기준 월액(monthly_wage_total)이 연장·야간·휴일 근로 임금을 더하는 입력인가 — 더하면 카드의 연장수당 섹션도
     계산해야 '월 총 예상 수령액'이 같은 금액을 쓴다(calc-card-consistency G2). 시간이 아니라 더할 금액으로 본다 — 상시 4명
     이하의 야간근로는 가산이 없어(MultiplierContext) 시간만 보면 0원 섹션과 '월 금액에 들어간다'는 안내가 붙었다(독립 리뷰 L1)."""
     return _adds_premium(inp) and premium_weekly(inp, 1.0).total > 0
@@ -392,14 +392,6 @@ def fixed_overtime_monthly(inp: WageInput) -> float:
     return total
 
 
-def premium_monthly_with_fixed(inp: WageInput, hourly: float) -> tuple[float, float, float]:
-    """(월 총액에 넣을 연장 등 임금, 계산한 연장 등 월액, 고정연장수당 월액). 고정연장수당은 연장·야간·휴일 근로의 대가라 계산한
-    금액과 같은 몫이다 — 둘 다 있으면 큰 쪽만 센다(독립 리뷰 M2: 월 총액 3,785,000원 = 통상임금 + 고정연장수당 + 계산한 연장수당)."""
-    derived = premium_weekly(inp, hourly).total * WEEKS_PER_MONTH
-    fixed = fixed_overtime_monthly(inp) if derived > 0.5 else 0.0
-    return max(derived, fixed), derived, fixed
-
-
 def ordinary_wage_from_total(inp: WageInput) -> bool:
     """통상임금 계산 결과가 실제 통상임금이 아니라 수당이 섞인 총액에서 나왔는가 — 포괄임금제 총액(명세 없음), 또는 파이프라인이
     질문의 구성 진술로 정한 총액 경로(보류 카드 — 정확 경로는 기본급과 monthly_total_pay가 따로 있다). 이때는 통상임금과
@@ -409,29 +401,74 @@ def ordinary_wage_from_total(inp: WageInput) -> bool:
     return inp.wage_composition_known and not inp.monthly_total_pay
 
 
-def monthly_pay_estimate(inp: WageInput, hourly: float, base: float | None) -> float | None:
-    """평균임금·보수월액·소득 추정에 쓰는 월 임금총액 — 주어진 총액(monthly_total_pay)이 있으면 그 값, 없으면 base에 연장·
-    야간·휴일 근로 임금 월액을 더한다. 그 임금이 이미 들어 있는 총액이면 더하지 않는다. 연장 등이 없으면 base 그대로다."""
+def _included_outside_base(inp: WageInput) -> float:
+    """포괄임금 명세(comprehensive_breakdown)가 있을 때 총액 중 기본급 밖의 몫(포함된 연장수당·상여 등). 통상임금 계산기는 명세의
+    기본급만 통상임금으로 쓰므로 총액을 세려면 이 몫을 되돌린다. 명세가 없으면 통상임금 자리에 이미 총액이 들어 있다."""
+    bd = inp.comprehensive_breakdown
+    if inp.wage_type != WageType.COMPREHENSIVE or not bd or not inp.monthly_wage:
+        return 0.0
+    return max(0.0, inp.monthly_wage - float(bd.get("base", inp.monthly_wage)))
+
+
+def _premium_over_fixed(inp: WageInput, ow) -> tuple[float, float]:
+    """(계산한 연장·야간·휴일 근로 임금 월액, 고정연장수당 월액)."""
+    return premium_weekly(inp, ow.hourly_ordinary_wage).total * WEEKS_PER_MONTH, fixed_overtime_monthly(inp)
+
+
+def monthly_wage_total(inp: WageInput, ow, *, premium: bool = True) -> float:
+    """월 임금총액(기준 월액)의 단일 출처 — 카드의 월 총액, 보험 세전(근로자·사업주), 평균임금 3개월 총액, 퇴직금 1년 평균,
+    DC형 연간임금, 근로장려금 소득이 모두 이 값을 쓴다. 소비처에서 월 금액을 따로 만들지 말 것(monthly-base-unification —
+    계산기마다 만들던 때 고정연장수당·직책수당·휴업수당 주휴분이 계산기마다 빠지거나 들어가 한 카드 안에서 금액이 갈렸다).
+
+    기본은 통상임금 월액 + 통상임금에서 뺀 고정수당(연장·야간·휴일·연차수당 — not_ordinary_fixed_total)이고,
+    ① 주어진 총액(monthly_total_pay)이 있으면 그 값만 쓴다
+    ② 연장 등이 이미 든 총액(포괄임금·구성 진술)이면 명세의 기본급 밖 몫을 더한다 — 연장 등은 더하지 않는다
+    ③ 그 밖에는 계산한 연장 등 임금 중 고정연장수당을 넘는 금액을 더한다. 고정연장수당은 계산한 연장 등과 같은 근로의 대가라
+       큰 쪽 하나만 센다(독립 리뷰 M2) — 계산한 금액이 0이어도 고정연장수당은 매월 받는 임금이다(f1). 고정연장수당은 기본에 이미
+       들어 있다(fixed_overtime_monthly ⊆ not_ordinary_fixed_total — 같은 이름 판정).
+    premium=False는 ③을 하지 않는다. facade 월 총액은 연장수당 섹션을 계산한 카드에만 그 금액을 넣는다 — 파이프라인은 더할
+    입력이면 연장수당 섹션을 함께 계산한다(adds_premium_pay, calc-card-consistency G2)."""
     if inp.monthly_total_pay:
         return inp.monthly_total_pay
-    if base is None:
-        return None
-    if not _adds_premium(inp):
+    base = ow.monthly_ordinary_wage + ow.not_ordinary_fixed_total
+    if _premium_included(inp):
+        return base + _included_outside_base(inp)
+    if not premium or not adds_premium_pay(inp):
         return base
-    return base + premium_monthly_with_fixed(inp, hourly)[0]
+    derived, fixed = _premium_over_fixed(inp, ow)
+    return base + max(0.0, derived - fixed)
 
 
-def premium_monthly_note(inp: WageInput, hourly: float) -> str:
-    """monthly_pay_estimate가 더한 금액의 표기 — 더하지 않았으면 빈 문자열."""
-    if inp.monthly_total_pay or not _adds_premium(inp):
+def monthly_wage_extras(inp: WageInput, ow, *, premium: bool = True) -> str:
+    """통상임금 월액 위에 monthly_wage_total이 더한 항목의 표기(' + …' 꼴) — 더한 것이 없거나 총액 경로면 빈 문자열."""
+    if inp.monthly_total_pay or _premium_included(inp):
         return ""
-    added, derived, fixed = premium_monthly_with_fixed(inp, hourly)
-    if added <= 0.5:
-        return ""
-    if fixed:
-        return (f" + 연장·야간·휴일 근로 임금 월 {added:,.0f}원(고정연장수당 {fixed:,.0f}원과 계산한 금액 {derived:,.0f}원 중 "
-                "큰 쪽, 매주 같은 시간으로 봄)")
-    return f" + 연장·야간·휴일 근로 임금 월 {added:,.0f}원(매주 같은 시간으로 봄)"
+    text = ""
+    if ow.not_ordinary_fixed_total > 0.5:
+        text += f" + 통상임금에서 뺀 고정수당 {ow.not_ordinary_fixed_total:,.0f}원"
+    if not premium or not adds_premium_pay(inp):
+        return text
+    derived, fixed = _premium_over_fixed(inp, ow)
+    if derived - fixed <= 0.5:
+        return text
+    if fixed > 0.5:
+        return (text + f" + 연장·야간·휴일 근로 임금 중 고정연장수당을 넘는 금액 월 {derived - fixed:,.0f}원(계산한 금액 "
+                f"{derived:,.0f}원 − 고정연장수당 {fixed:,.0f}원, 매주 같은 시간으로 봄)")
+    return text + f" + 연장·야간·휴일 근로 임금 월 {derived:,.0f}원(매주 같은 시간으로 봄)"
+
+
+def monthly_wage_note(inp: WageInput, ow, *, premium: bool = True) -> str:
+    """monthly_wage_total의 구성 표기 — 더한 항목만 적는다(더한 것이 없으면 '통상임금').
+
+    연장 등이 든 총액 경로(포괄임금 명세 없음·구성 진술)도 '통상임금'이다 — 통상임금 계산 결과가 곧 그 금액이고, 그것이 월급
+    '총액'인지는 파이프라인만 안다(`_label_held_total`이 `held_is_total`일 때만 '월급 총액'으로 바꾼다). 여기서 '월급 총액'이라 적으면
+    금액이 질문의 기본급인 보류 카드에서 기본급을 총액이라 부른다(독립 리뷰 M1). 총액 밖 수당인지도 단정하지 않는다 — 진술 속 수당이
+    총액 안에 있는지는 파이프라인이 정한다. 포괄임금 명세가 있으면 통상임금 자리에 기본급만 있어 '포괄임금 총액'이라 적는다."""
+    if inp.monthly_total_pay:
+        return "월 임금총액"
+    if _premium_included(inp):
+        return "포괄임금 총액" if _included_outside_base(inp) > 0.5 else "통상임금"
+    return "통상임금" + monthly_wage_extras(inp, ow, premium=premium)
 
 
 # ── Allowance Normalization ────────────────────────────────────────────────────

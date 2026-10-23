@@ -9,14 +9,14 @@
 - 5인 미만 사업장에도 적용
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..base import BaseCalculatorResult
 from ..constants import SHUTDOWN_RATE
 from ..models import WageInput
 from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
-from .shared import monthly_pay_estimate
+from .average_wage import calc_average_wage
 
 
 @dataclass
@@ -66,13 +66,20 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
             legal_basis=legal,
         )
 
-    # 평균임금 산정 (간이)
-    avg_daily_wage = _calc_avg_daily_wage(inp, hourly, daily_hours)
+    # 평균임금 — 평균임금 계산기 하나로 구한다(monthly-base-unification). 산정 기준일은 휴업 시작일이다(shutdown_start_date).
+    # 기준 월액(주휴분·통상임금에서 뺀 고정수당·연장 등 포함)·상여 3/12·제외기간과 근로기준법 제2조 제2항(평균임금이 통상임금보다
+    # 적으면 통상임금)이 그 안에 있다. 예전에는 여기서 '시급 × 1일 시간 × 근무일수 × 52/12'(주휴분 없음)를 92일로 나눠 하한 없이
+    # 썼다 — 시급 12,000원·휴업 10일이 474,783원(맞는 값 672,000원)이었다
+    avg = calc_average_wage(replace(inp, end_date=inp.shutdown_start_date or inp.end_date), ow)
+    avg_daily_wage = avg.avg_daily_wage
 
     avg_70 = avg_daily_wage * SHUTDOWN_RATE
-    formulas.append(
-        f"1일 평균임금: {avg_daily_wage:,.0f}원"
-    )
+    if avg.used_basis == "통상임금":
+        formulas.append(f"1일 평균임금: {avg_daily_wage:,.0f}원 (3개월 평균임금 {avg.avg_daily_3m:,.0f}원 < 1일 통상임금 "
+                        f"{avg.avg_daily_ordinary:,.0f}원 → 통상임금, 근로기준법 제2조 제2항)")
+        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
+    else:
+        formulas.append(f"1일 평균임금: {avg_daily_wage:,.0f}원")
     formulas.append(
         f"평균임금 70%: {avg_daily_wage:,.0f}원 × {SHUTDOWN_RATE} = {avg_70:,.0f}원"
     )
@@ -147,20 +154,3 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
         warnings=warnings,
         legal_basis=legal,
     )
-
-
-def _calc_avg_daily_wage(inp: WageInput, hourly: float, daily_hours: float) -> float:
-    """평균임금 간이 산정 (3개월 기준)"""
-    if inp.last_3m_wages:
-        total_3m = sum(inp.last_3m_wages)
-        days_3m = inp.last_3m_days or 92
-        return total_3m / days_3m
-
-    # 월 임금총액(없으면 monthly_wage) 기반 추정 — 연장 등의 임금 포함(shared, F6)
-    monthly = monthly_pay_estimate(inp, hourly, inp.monthly_wage)
-    if monthly:
-        return (monthly * 3) / 92
-
-    # hourly 기반 추정
-    monthly_est = monthly_pay_estimate(inp, hourly, hourly * daily_hours * inp.schedule.weekly_work_days * (52 / 12))
-    return (monthly_est * 3) / 92

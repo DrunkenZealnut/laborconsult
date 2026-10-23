@@ -11,7 +11,7 @@
 ■ 참조: https://www.nodong.kr/IndustrialAccidentCompensationCal
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..base import BaseCalculatorResult
 from ..models import WageInput
@@ -31,7 +31,7 @@ from ..constants import (
     MIN_COMPENSATION_DAILY,
 )
 from .ordinary_wage import OrdinaryWageResult
-from .shared import monthly_pay_estimate
+from .average_wage import calc_average_wage
 
 
 @dataclass
@@ -75,7 +75,7 @@ def calc_industrial_accident(
     산재보상금 통합 계산
 
     계산 순서:
-    1. 평균임금 결정 (monthly_wage/30 또는 통상임금 환산일급)
+    1. 평균임금 결정 (평균임금 계산기 — 산정 기준일은 재해일)
     2. 해당 급여 항목별 계산
     3. 합산 및 결과 조립
     """
@@ -136,22 +136,19 @@ def calc_industrial_accident(
         legal.append("고용노동부 고시 '뇌혈관 질병 또는 심장 질병의 업무상 질병 인정 여부 결정에 필요한 사항'")
 
     # ── 1. 평균임금 결정 ──────────────────────────────────────────────────
-    avg_daily = ow.daily_ordinary_wage  # 기본: 통상임금 환산일급
-    # 월 임금총액 추정 — 연장·야간·휴일 근로 임금 포함(shared, F6). 시급제도 통상임금 월액(주휴 포함)이 기준이다. 주 5일 이하이고
-    # 연장 등이 없으면 ÷30 값이 1일 통상임금보다 작아 결과가 예전과 같고, 주 6일 이상은 주휴분만큼 조금 커질 수 있다(평균임금은
-    # 임금 총액 ÷ 일수다 — 근로기준법 제2조 제1항 제6호, calc-card-followups Check G5)
-    monthly = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, inp.monthly_wage or ow.monthly_ordinary_wage)
-    if monthly:
-        est = monthly / 30
-        if est > avg_daily:
-            avg_daily = est
-            formulas.append(
-                f"평균임금(추정): {monthly:,.0f}원 ÷ 30일 = {avg_daily:,.0f}원/일"
-            )
-        else:
-            formulas.append(f"평균임금: 통상임금 환산일급 {avg_daily:,.0f}원/일 적용")
+    # 산재보험의 평균임금은 근로기준법의 평균임금이다(산재보험법 제5조 제2호) — 평균임금 계산기 하나로 구한다(monthly-base-unification).
+    # 분모는 3개월 총일수(근로기준법 제2조 제1항 제6호), 평균임금이 통상임금보다 적으면 통상임금(제2조 제2항). 산정 사유 발생일은
+    # 사고가 발생한 날이다(근로기준법 시행령 제52조). 예전에는 '월 금액 ÷ 30'과 1일 통상임금 중 큰 쪽이었다
+    avg = calc_average_wage(replace(inp, end_date=inp.accident_date or inp.end_date), ow)
+    avg_daily = avg.avg_daily_wage
+    if avg.used_basis == "통상임금":
+        formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 평균임금 {avg.avg_daily_3m:,.0f}원 < 1일 통상임금 "
+                        f"{avg.avg_daily_ordinary:,.0f}원 → 통상임금, 근로기준법 제2조 제2항)")
+        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
     else:
-        formulas.append(f"평균임금: 통상임금 환산일급 {avg_daily:,.0f}원/일 적용")
+        formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 기준)")
+    if inp.accident_date:
+        legal.append("근로기준법 시행령 제52조 (재해보상 시의 평균임금 산정 사유 발생일)")
 
     total_compensation = 0.0
     breakdown: dict = {"적용 평균임금": f"{avg_daily:,.0f}원/일"}

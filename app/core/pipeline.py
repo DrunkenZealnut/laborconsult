@@ -31,7 +31,7 @@ from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSi
 from wage_calculator.result import format_result
 from wage_calculator.calculators.shared import (
     LEGAL_DAILY_HOURS, LEGAL_WEEKLY_HOURS, AllowanceClassifier, adds_premium_pay, apply_hour_split,
-    has_premium_hours as _has_premium_hours, premium_weekly, split_hours,
+    has_premium_hours as _has_premium_hours, monthly_wage_total, premium_weekly, split_hours,
 )
 from wage_calculator.utils import WEEKS_PER_MONTH, fmt_hours, fmt_won
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
@@ -1295,6 +1295,36 @@ _HELD_FORMULA_BASE_RE = re.compile(r"^((?:\[시급 환산\] )?)월 기본급:")
 _HELD_INSURANCE_BASIS_RE = re.compile(r"^(세전 월 급여: [\d,]+원) \(통상임금 기준\)$")
 
 
+# '포함' 문장의 부정·별도 표지 — "식대는 포함되지 않아요"·"식대는 별도"는 총액 밖이다
+_NOT_INCLUDED_RE = re.compile(r"포함(?:되|하|돼|이|해)?\s*(?:있)?지\s*않|포함\s*(?:안|X)|미포함|불포함|제외|별도|따로")
+
+
+def _stated_included_items(text: str) -> set[str]:
+    """'포함'이라고 말한 문장에서 그 '포함' **앞에** 적힌 수당 이름(공백 제거) — "월급 270만 원에 식대 20만 원과 연장수당이 모두
+    포함"의 식대는 말한 총액 안에 있다. '포함' 뒤에 오는 이름("월급 270만 원(연장수당 포함), 식대 20만 원")은 총액 밖일 수 있어
+    고르지 않고, 부정·별도 표지가 있는 문장은 보지 않는다."""
+    names: set[str] = set()
+    for sentence in _SENTENCE_RE.split(text or ""):
+        cut = sentence.rfind("포함")
+        if cut < 0 or _NOT_INCLUDED_RE.search(sentence):
+            continue
+        masked = _EXCLUDED_ITEM_RE.sub(lambda m: " " * len(m.group(0)), sentence[:cut])
+        names.update(re.sub(r"\s+", "", m.group(1)) for m in _PAY_ITEM_RE.finditer(masked))
+    return names
+
+
+def _drop_stated_included(inp, text: str) -> None:
+    """금액이 월급 총액인 경로에서 '총액에 포함'이라고 말한 수당을 고정수당에서 뺀다 — 기준 월액이 그 금액을 총액 위에 다시 더해
+    실업급여·근로장려금·4대보험이 부풀었다(독립 리뷰 M4: "월급 270만 원에 식대 20만 원과 연장수당이 모두 포함" → 290만 원)."""
+    included = _stated_included_items(text)
+    if not included:
+        return
+
+    def name(a):
+        return re.sub(r"\s+", "", a.get("name", "") if isinstance(a, dict) else getattr(a, "name", ""))
+    inp.fixed_allowances = [a for a in inp.fixed_allowances or [] if name(a) not in included]
+
+
 def _drop_not_ordinary_allowances(inp) -> None:
     """금액이 월급 총액인 경로에서 의도분석이 뽑은 연장·연차수당 등(이름으로 통상임금이 아닌 고정수당)을 뺀다 — 이미 그 총액의
     일부라 '월 총 예상 수령액'에 다시 더해졌다(재검토 M-A: 270만 원 + 고정연장수당 60만 원 → 3,300,000원)."""
@@ -1315,7 +1345,8 @@ _WAGE_UNIT_LABEL = {WageType.DAILY: "일급", WageType.MONTHLY: "월급", WageTy
 
 
 # 일급 보류에서 금액을 빼는 월 보수·소득 계산 — 보류 안내가 통상임금 계열과 다른 이유를 적는다(실업급여는 평균임금 계열)
-_PAY_BASED_HELD = frozenset({"insurance", "employer_insurance", "eitc"})
+# 실업급여도 여기다 — 평균임금을 기준 월액 × 3으로 추정하므로(monthly-base-unification) 월 금액을 정할 수 없으면 계산할 수 없다
+_PAY_BASED_HELD = frozenset({"insurance", "employer_insurance", "eitc", "unemployment"})
 # 평균임금·보수월액·소득으로 금액을 내는 계산 — D4에서 '연장 등이 금액에 포함된 경우' 값을 함께 싣는다(리뷰 H2)
 _PAY_ESTIMATE_TARGETS = frozenset({
     "average_wage", "severance", "retirement_tax", "retirement_pension", "shutdown_allowance", "industrial_accident",
@@ -1343,7 +1374,9 @@ def _composition_alternative_input(inp):
     # B의 총액 = B 통상임금 월액 + B 시급으로 센 연장·야간·휴일 임금 월액. 월급·연봉이면 금액과 같고, 일급은 주휴를 연장분이 섞인
     # 일급으로 세지 않는다(2차 리뷰 M1: 일급 12만 원·하루 10시간 B 세전 월 급여 3,128,571원 vs 2,986,364원)
     ow_b = calc_ordinary_wage(alt)
-    alt.monthly_total_pay = ow_b.monthly_ordinary_wage + premium_weekly(alt, ow_b.hourly_ordinary_wage).total * WEEKS_PER_MONTH
+    # 기준 월액 함수 그대로다 — 통상임금에서 뺀 고정수당(연차수당 등)도 A처럼 넣어야 'A원 또는 B원'의 차이가 구성 차이만 남는다
+    # (독립 리뷰 M2: 월급 250만 + 연차수당 10만 + 주 연장 10시간에서 B에만 연차수당이 빠졌다). 구성 진술을 표시하기 전에 부른다
+    alt.monthly_total_pay = monthly_wage_total(alt, ow_b)
     alt.wage_composition_known = True
     return alt
 
@@ -2688,6 +2721,7 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
                     # 미달이면 실제로도 미달이다. 예전에는 판정을 통째로 빼 "포괄임금제로 월 200만원"에도 '보류'였다(리뷰 H5)
                     hold_compliant = ("minimum_wage",)
                     _drop_not_ordinary_allowances(inp)
+                    _drop_stated_included(inp, query)
                     composition_note += _HELD_TOTAL_NOTE
                 else:
                     # 금액이 기본급이면(산입 여부가 갈리는 수당이 남음) 기본급만으로 낸 판정은 어느 쪽도 확정이 아니다

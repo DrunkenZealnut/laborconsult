@@ -13,7 +13,7 @@ from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
 from .severance import SeveranceResult
 from .shared import DateRange
-from .shared import monthly_pay_estimate
+from .shared import monthly_wage_total
 
 
 @dataclass
@@ -129,8 +129,7 @@ def _calc_dc(
                 "contribution": round(contribution, 0),
             })
     else:
-        annual_wage = monthly_pay_estimate(inp, ow.hourly_ordinary_wage,
-                                           inp.monthly_wage or ow.monthly_ordinary_wage) * 12   # 연장 등 포함(F6)
+        annual_wage = monthly_wage_total(inp, ow) * 12   # 기준 월액(카드의 월 총액과 같은 함수)
         dr2 = DateRange(inp.start_date, inp.end_date)
         years = max(1, round(dr2.years)) if dr2.is_valid else 1
         for i in range(1, years + 1):

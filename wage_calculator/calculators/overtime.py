@@ -66,7 +66,7 @@ def calc_overtime(inp: WageInput, ow: OrdinaryWageResult) -> OvertimeResult:
     else:
         legal.append("근로기준법 제56조 (연장·야간·휴일 근로)")
 
-    # 금액은 평균임금·보수월액 추정(monthly_pay_estimate)과 같은 산식이다 — 한 카드에서 월 총액과 평균임금이 갈리지 않게
+    # 금액은 기준 월액(shared.monthly_wage_total)이 더하는 연장 등과 같은 산식이다 — 한 카드에서 월 총액과 평균임금이 갈리지 않게
     pw = premium_weekly(inp, hourly)
 
     # ── 연장수당 ──────────────────────────────────────────────────────────────

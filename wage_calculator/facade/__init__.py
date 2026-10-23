@@ -9,7 +9,7 @@ Phase D 분리: registry.py (유형·매핑), helpers.py (_pop_*), conversion.py
 
 from ..calculators.business_size import calc_business_size
 from ..calculators.ordinary_wage import calc_ordinary_wage
-from ..calculators.shared import apply_hour_split, fixed_overtime_monthly
+from ..calculators.shared import apply_hour_split, fixed_overtime_monthly, monthly_wage_total
 from ..calculators.overtime import check_weekly_hours_compliance
 from ..calculators.retirement_pension import calc_retirement_pension
 from ..calculators.retirement_tax import calc_retirement_tax
@@ -149,8 +149,9 @@ class WageCalculator:
             "기준시간 산출": ow.base_hours_detail,
         }
 
-        # 이름으로 통상임금에서 뺀 고정수당(연장·연차수당 등)도 매월 받는 돈이다 — 빼면 '월 총 예상 수령액'에서 사라졌다
-        monthly_total = ow.monthly_ordinary_wage + ow.not_ordinary_fixed_total
+        # 월 총액은 기준 월액(shared.monthly_wage_total)이다 — 보험 세전·평균임금과 같은 함수. 예전에는 여기서 섹션 금액을 따로
+        # 더해 포괄임금 명세 총액이 기본급으로 나오고 공휴일 수당 ÷ 12가 월급에 이중으로 들어갔다(monthly-base-unification)
+        flexible_added = 0.0
         all_w, all_l = [], ["근로기준법 (통상임금)"]
 
         # 승인 기준 누락은 **그 섹션만** 제외한다. 기반 단계(통상임금·사업장 규모)는
@@ -206,14 +207,18 @@ class WageCalculator:
             added = populate(r, result)
             if key == "overtime":
                 overtime_monthly = added
-            monthly_total += added
+            elif key == "flexible_work":
+                flexible_added = added   # 탄력적 근로시간제의 연장 근로 임금 — 기준 월액의 연장 등과 따로 계산한다
             _merge(result, section, r, all_w, all_l)
 
+        # 월 총액 = 기준 월액(연장 등은 연장수당 섹션을 계산한 카드만) + 탄력적 근로시간제 연장 임금. 공휴일 수당 ÷ 12는 더하지 않는다 —
+        # 월급제는 공휴일 임금이 월급에 들어 있고(이중 계산), 시급제는 질문의 공휴일 일수를 12로 나눈 값이라 월 임금이 아니다
+        monthly_total = monthly_wage_total(inp, ow, premium=overtime_monthly > 0.5) + flexible_added
+
         # 고정연장수당(통상임금에서 빼고 월 총액에 넣은 고정수당)과 계산한 연장·야간·휴일 근로 임금은 같은 근로의 대가다 — 둘 다
-        # 더하면 같은 근로를 두 번 센다(독립 리뷰 M2). 큰 쪽만 남긴다 — 평균임금·보수 추정(shared.premium_monthly_with_fixed)과 같다
+        # 더하면 같은 근로를 두 번 센다(독립 리뷰 M2). 금액은 monthly_wage_total이 큰 쪽만 센다 — 여기서는 그 사실을 알린다
         fixed_ot = fixed_overtime_monthly(inp) if overtime_monthly > 0.5 else 0.0
         if fixed_ot:
-            monthly_total -= min(fixed_ot, overtime_monthly)
             gap = (f" 계산한 금액이 고정연장수당보다 월 {overtime_monthly - fixed_ot:,.0f}원 많습니다."
                    if overtime_monthly > fixed_ot + 0.5 else "")
             all_w.append(f"고정연장수당 등 월 {fixed_ot:,.0f}원과 계산한 연장·야간·휴일 근로 임금 월 {overtime_monthly:,.0f}원(매주 "
