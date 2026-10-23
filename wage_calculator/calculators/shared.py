@@ -439,6 +439,16 @@ def monthly_wage_total(inp: WageInput, ow, *, premium: bool = True) -> float:
     return base + max(0.0, derived - fixed)
 
 
+def annual_wage_total(inp: WageInput, ow, *, premium: bool = True) -> float:
+    """연 임금총액 = 기준 월액 × 12(DC형 연간임금·근로장려금 소득). 연봉제는 통상임금 월액의 원 단위 반올림을 되돌린다 — 연봉
+    2,200만 원이 1,833,333원 × 12 = 21,999,996원이 되어 근로장려금 단독가구 상한(2,200만 원 이상 수급 불가)을 4원 차이로 넘지
+    못하고 1원이 나왔다(Check S3). 통상임금 월액은 round(연봉 ÷ 12 + 수당)이라 수당이 원 단위면 이 보정으로 연봉이 그대로 돌아온다."""
+    total = monthly_wage_total(inp, ow, premium=premium) * 12
+    if inp.wage_type == WageType.ANNUAL and inp.annual_wage and not inp.monthly_total_pay and not _premium_included(inp):
+        total += inp.annual_wage - round(inp.annual_wage / 12) * 12
+    return total
+
+
 def monthly_wage_extras(inp: WageInput, ow, *, premium: bool = True) -> str:
     """통상임금 월액 위에 monthly_wage_total이 더한 항목의 표기(' + …' 꼴) — 더한 것이 없거나 총액 경로면 빈 문자열."""
     if inp.monthly_total_pay or _premium_included(inp):
@@ -467,7 +477,10 @@ def monthly_wage_note(inp: WageInput, ow, *, premium: bool = True) -> str:
     if inp.monthly_total_pay:
         return "월 임금총액"
     if _premium_included(inp):
-        return "포괄임금 총액" if _included_outside_base(inp) > 0.5 else "통상임금"
+        if _included_outside_base(inp) <= 0.5:
+            return "통상임금"
+        outside = monthly_wage_total(inp, ow) - inp.monthly_wage   # 명세 경로의 통상임금 계산은 수당을 기본급 위에 더한다
+        return "포괄임금 총액" + (f" + 고정수당 {outside:,.0f}원" if outside > 0.5 else "")
     return "통상임금" + monthly_wage_extras(inp, ow, premium=premium)
 
 

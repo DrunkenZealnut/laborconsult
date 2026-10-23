@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from ..base import BaseCalculatorResult
-from ..models import WageInput
+from ..models import WageInput, WageType
 from ..utils import parse_date
 from .shared import monthly_wage_note, monthly_wage_total
 from ..constants import AVG_WAGE_PERIOD_DAYS
@@ -194,6 +194,10 @@ def _calc_wage_total(inp: WageInput, ow: OrdinaryWageResult) -> tuple[float, str
     # 기준 월액 × 3 — 카드의 '월 총 예상 수령액'·보험 세전과 같은 함수다(shared.monthly_wage_total: 주어진 총액 우선, 통상임금에서
     # 뺀 고정수당·연장 등 포함)
     note = monthly_wage_note(inp, ow)
+    # 월급제에 통상임금 포함 수당이 없으면 그 통상임금이 곧 월급이다 — 예전 표기('월급 × 3')를 지킨다(Check G-1)
+    if (note.startswith("통상임금") and inp.wage_type == WageType.MONTHLY and inp.monthly_wage
+            and abs(ow.monthly_ordinary_wage - inp.monthly_wage) < 1):
+        note = "월급" + note[len("통상임금"):]
     return monthly_wage_total(inp, ow) * 3, f" ({f'({note})' if ' + ' in note else note} × 3 추정)"
 
 
