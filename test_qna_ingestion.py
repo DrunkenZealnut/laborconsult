@@ -148,6 +148,16 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(out["new"], 1)
             self.assertEqual(out["visited_pages"], [1, 2])
 
+    def test_posts_after_cutoff_time_are_not_included_on_same_day(self):
+        listing='<table class="bd_lst"><tbody><tr><td class="title"><a href="/qna/123">질문</a></td><td class="time">2026.10.24</td></tr></tbody></table>'
+        with tempfile.TemporaryDirectory() as tmp:
+            out=self.r.refresh(run_dir=Path(tmp),baseline={},
+                fetch=lambda url: listing if "page=" in url else html_post("2026.10.24 08:00"),
+                start_page=1,end_page=1,since="2026-03-01",until="2026-10-24T07:00:00+09:00",
+                revisit_pending=False)
+            self.assertEqual(out["new"],0)
+            self.assertFalse((Path(tmp)/"documents/123.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

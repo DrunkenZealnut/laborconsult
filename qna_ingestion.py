@@ -4,7 +4,8 @@ import hashlib
 import json
 import re
 import unicodedata
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
@@ -139,9 +140,19 @@ def parse_live(html: str, post_id: str, fetched_at: str) -> dict:
     if not parsed["title"].strip() or not parsed["content"].strip():
         raise ValueError("empty_document")
     # Comment creation dates are not answer edit timestamps.
-    return document(post_id, parsed["title"], iso_date(parsed["date"]),
-                    parsed["content"], parsed["answers"], category=parsed["category"],
-                    fetched_at=fetched_at)
+    record = document(post_id, parsed["title"], iso_date(parsed["date"]),
+                      parsed["content"], parsed["answers"], category=parsed["category"],
+                      fetched_at=fetched_at)
+    soup = BeautifulSoup(html, "lxml")
+    stamp = soup.select_one(".rd .rd_hd .date")
+    match = re.search(r"(\d{4}[.-]\d{2}[.-]\d{2})\s+(\d{2}:\d{2})(?!\d)", stamp.get_text() if stamp else "")
+    if match:
+        try:
+            when = datetime.fromisoformat(match[1].replace(".", "-") + "T" + match[2])
+            record["posted_datetime"] = when.replace(tzinfo=ZoneInfo("Asia/Seoul")).isoformat()
+        except ValueError:
+            pass
+    return record
 
 def render_markdown(record: dict) -> str:
     from crawl_qna import build_markdown

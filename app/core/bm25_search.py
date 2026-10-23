@@ -43,7 +43,10 @@ BM25_CORPUS_PATHS = [_BM25_DATA_DIR / "bm25_corpus.jsonl.gz",
 # **build_bm25_corpus.py가 이 상수를 import한다** — 두 곳에서 손으로 선언하면
 # 빌더가 필드를 추가해도 `_slim()`이 말없이 버려, Dense 히트에는 있고 BM25
 # 히트에만 빈 값인 상태가 된다(경로 리뷰 M4). 회귀는 test_offline_units.py.
-CORPUS_FIELDS = ("id", "text", "title", "section", "source_type", "book_id")
+from app.core.provenance import PROVENANCE_FIELDS, provenance
+from app.core.qna_experiment import corpus_paths, include_sparse_document
+
+CORPUS_FIELDS = ("id", "text", "title", "section", "source_type", "book_id") + PROVENANCE_FIELDS
 _KEEP_FIELDS = CORPUS_FIELDS
 # 그중 반복이 큰 것만 인터닝한다(text는 문서마다 달라 공유될 일이 없다).
 _INTERN_FIELDS = ("title", "section", "source_type", "book_id")
@@ -492,6 +495,8 @@ def _load_streaming(corpus_path) -> tuple[list[dict], list[list[str]]]:
         broad except가 삼켜 **하이브리드 검색이 조용히 Dense-only로 떨어진다** —
         코퍼스 한 줄 때문에 전체가 반쪽이 되는데 로그도 warning 한 줄뿐이다.
         """
+        if not include_sparse_document(doc):
+            return
         tokenized.append([sys.intern(w)
                           for w in _tokenize_ko(doc.get("text") or "", tok_cache)])
         corpus.append(_slim(doc))
@@ -567,7 +572,7 @@ def load_bm25_corpus() -> bool:
 
     _bm25_loaded = True
 
-    corpus_path = next((p for p in BM25_CORPUS_PATHS if p.exists()), None)
+    corpus_path = next((p for p in corpus_paths(BM25_CORPUS_PATHS) if p.exists()), None)
     if corpus_path is None:
         # **warning 이상이어야 한다.** 코퍼스 미커밋은 프로덕션이 조용히
         # Dense-only로 떨어지는 가장 흔한 원인이고, 이 로그가 유일한 신호다.
@@ -649,6 +654,7 @@ def search_bm25(query: str, top_k: int = 10) -> list[dict]:
             "book_id": doc.get("book_id", ""),   # 해설서 인용 가드(G4) 키
             "score": round(float(score), 4),
             "search_type": "bm25",
+            **provenance(doc),
         })
 
     logger.info("BM25 검색: query=%r, %d건", query[:40], len(results))

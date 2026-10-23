@@ -67,7 +67,10 @@ def refresh(*, run_dir: Path, baseline: dict, fetch, start_page: int, end_page: 
             continue
         try:
             doc = parse_live(fetch(target["canonical_url"]), post_id, now())
-            if doc["posted_at"] and doc["posted_at"] > cutoff.date().isoformat():
+            published = datetime.fromisoformat(doc["posted_datetime"]) if doc.get("posted_datetime") else None
+            if doc["posted_at"] == cutoff.date().isoformat() and published is None:
+                raise ValueError("publication_time_missing_at_cutoff")
+            if (published and published > cutoff) or (doc["posted_at"] and doc["posted_at"] > cutoff.date().isoformat()):
                 result = {"status": "outside_cutoff", "posted_at": doc["posted_at"]}
             else:
                 old = baseline.get(post_id)

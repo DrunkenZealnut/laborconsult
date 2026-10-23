@@ -1572,3 +1572,11 @@ def serve_public_asset(asset_path: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.index:app", host="0.0.0.0", port=5555, reload=True)
+
+# Q&A feedback: signed answer/session token, separate IP bucket and private DB RPC.
+from api.qa_quality import build_router as build_qa_quality_router
+_qa_feedback_rate: dict[str, list[float]] = {}
+app.include_router(build_qa_quality_router(
+    require_admin, get_config, JWT_SECRET,
+    lambda request: _rate_limit_wait(_client_ip(request), max_count=30, window=60, store=_qa_feedback_rate),
+))
