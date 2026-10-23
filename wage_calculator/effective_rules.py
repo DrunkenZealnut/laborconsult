@@ -24,6 +24,20 @@ class RuleSlice:
     rule: EffectiveRule
 
 
+# 법률 제20520호 부칙: 기간이 아니라 최초 지급사유 발생일에 적용.
+ARREARS_RULES = (
+    EffectiveRule("arrears-before-20251023", date(2005,7,1), date(2025,10,23),
+                  {"regular_rate": None, "retirement_rate": .20, "civil_rate": .05, "commercial_rate": .06},
+                  ("https://www.law.go.kr/법령/근로기준법/제37조",
+                   "https://www.law.go.kr/법령/근로기준법시행령/제17조")),
+    EffectiveRule("arrears-20251023", date(2025,10,23), None,
+                  {"regular_rate": .20, "retirement_rate": .20, "civil_rate": .05, "commercial_rate": .06},
+                  ("https://www.law.go.kr/법령/근로기준법/제37조",
+                   "법률 제20520호 부칙 제2조",
+                   "https://1350.moel.go.kr/rtmview.do?id=1000309035")),
+)
+
+
 PARENTAL_RULES = (
     EffectiveRule("parental-2024", date(2024,1,1), date(2025,1,1),
                   {"general_caps": (1_500_000,)*3, "general_rates": (.8,)*3,

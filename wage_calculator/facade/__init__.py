@@ -235,17 +235,43 @@ class WageCalculator:
                          f"같은 시간으로 봄)은 같은 근로의 대가라 합치지 않았습니다.{gap}")
 
         # ── 특수 계산기: 임금체불 (독립 함수, WageInput 미사용) ───────────────
-        if "wage_arrears" in targets and inp.arrear_amount > 0 and inp.arrear_due_date:
+        if "wage_arrears" in targets:
             wa = guarded("wage_arrears", "임금체불 지연이자", lambda: calc_wage_arrears(
                 arrear_amount=inp.arrear_amount,
                 arrear_due_date=inp.arrear_due_date,
                 is_post_retirement_arrear=inp.is_post_retirement_arrear,
-                arrear_calc_date=inp.arrear_calc_date or None,
+                arrear_calc_date=inp.arrear_calc_date,
+                claim_kind=inp.arrear_claim_kind,
+                retirement_effective_date=inp.arrear_retirement_effective_date,
+                last_employed_date=inp.arrear_last_employed_date,
+                debtor_is_merchant=inp.debtor_is_merchant,
+                payments=inp.arrear_payments, exclusions=inp.arrear_exclusions,
+                claims=inp.arrear_claims, deadline_holidays=inp.arrear_deadline_holidays,
+                reference_date=inp.reference_date, reference_year=inp.reference_year,
+                is_employee=not inp.is_platform_worker,
             ))
             if wa is not None:
-                result.summary["임금체불 지연이자"] = f"{wa.interest_amount:,.0f}원"
-                result.summary["총 청구액"] = f"{wa.total_claim:,.0f}원"
-                result.summary["지연일수"] = f"{wa.delay_days}일"
+                result.summary["남은 체불 원금"] = f"{wa.arrear_amount:,.0f}원"
+                if wa.conditional_scenarios:
+                    for scenario in wa.conditional_scenarios:
+                        label = "상사채무" if scenario["debtor_is_merchant"] else "민사채무"
+                        result.summary[f"{label} 조건 지연이자"] = f'{scenario["interest_amount"]:,.0f}원'
+                        if scenario["total_claim"] is not None:
+                            result.summary[f"{label} 조건 남은 이자"] = f'{scenario["remaining_interest"]:,.0f}원'
+                            result.summary[f"{label} 조건 원금·이자 합계"] = f'{scenario["total_claim"]:,.0f}원'
+                else:
+                    result.summary["임금체불 누적 지연이자"] = f"{wa.interest_amount:,.0f}원"
+                    if wa.total_claim is not None:
+                        result.summary["남은 지연이자"] = f"{wa.remaining_interest:,.0f}원"
+                        result.summary["남은 원금·이자 합계"] = f"{wa.total_claim:,.0f}원"
+                if wa.interest_paid is None:
+                    result.summary["청구 합계"] = "보류 — 이미 지급한 이자 충당액 확인 필요"
+                elif wa.interest_paid:
+                    result.summary["이미 지급한 이자"] = f"{wa.interest_paid:,.0f}원"
+                if len(wa.claims)==1:
+                    result.summary["지연일수"] = f"{wa.delay_days}일"
+                else:
+                    result.summary["이자 계산 채권 수"] = f"{len(wa.claims)}건"
                 _merge(result, "임금체불 지연이자", wa, all_w, all_l)
 
         # ── 특수 계산기: 주 52시간 체크 (ow 미사용) ──────────────────────────
@@ -318,7 +344,7 @@ class WageCalculator:
         # 선행조건 때문에 조용히 건너뛴 계산도 결과로 보고한다. 통상임금 기반 계산이나
         # 호출자가 추가한 연장수당만으로 요청 계산이 완료된 것으로 간주하지 않는다.
         requested = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested and requested <= {"parental_leave", "reduced_work_benefit"}:
+        if requested and requested <= {"parental_leave", "reduced_work_benefit", "wage_arrears"}:
             # 휴직/단축 전 통상임금은 보험 급여의 기초액이다. 회사가 실제로
             # 지급하는 임금 또는 휴직 중 월 총수령액으로 표시하지 않는다.
             result.monthly_total = result.monthly_net = 0.0
@@ -417,7 +443,11 @@ class WageCalculator:
         if getattr(inp, "is_multiple_birth", False) or getattr(inp, "is_premature_birth", False):
             targets.append("maternity_leave")
 
-        if inp.arrear_amount > 0 and inp.arrear_due_date:
+        if (inp.arrear_claims is not None or inp.arrear_amount != 0 or inp.arrear_due_date
+                or inp.arrear_calc_date is not None or inp.is_post_retirement_arrear
+                or inp.arrear_claim_kind != "regular_wage"
+                or inp.arrear_retirement_effective_date is not None or inp.arrear_last_employed_date is not None
+                or inp.arrear_payments is not None or inp.arrear_exclusions is not None):
             targets.append("wage_arrears")
 
         if getattr(inp, "flexible_work_unit", ""):

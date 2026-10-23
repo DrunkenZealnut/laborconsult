@@ -145,6 +145,8 @@ ANALYZE_TOOL = {
 # 육아급여 입력: 기간·자격·시간을 계산기까지 보존한다.
 from .childcare_inputs import CHILDCARE_PROPERTIES
 ANALYZE_TOOL["input_schema"]["properties"].update(CHILDCARE_PROPERTIES)
+from .arrears_inputs import ARREARS_PROPERTIES
+ANALYZE_TOOL["input_schema"]["properties"].update(ARREARS_PROPERTIES)
 
 # 법률상담 분류 필드 추가
 ANALYZE_TOOL["input_schema"]["properties"].update({

@@ -402,8 +402,16 @@ class WageInput:
     # ── 임금체불 지연이자 계산용 ──────────────────────────────────────────────
     arrear_amount: float = 0.0                  # 미지급 임금 원금 (원)
     arrear_due_date: str = ""                   # 원래 지급예정일 "YYYY-MM-DD"
-    arrear_calc_date: str = ""                  # 이자 계산 기준일 (빈 문자열이면 오늘)
-    is_post_retirement_arrear: bool = False     # True이면 연 20% (퇴직 후 14일 초과)
+    arrear_calc_date: Optional[str] = None      # 생략만 조회 기준일 사용; 잘못된 날짜는 보류
+    is_post_retirement_arrear: bool = False     # 호환용 퇴직 사실; 날짜나 14일 경과를 대체하지 않음
+    arrear_claim_kind: str = "regular_wage"     # regular_wage / retirement_lump_sum / other_rate
+    arrear_retirement_effective_date: Optional[str] = None  # 마지막 재직일 다음 날 0시
+    arrear_last_employed_date: Optional[str] = None
+    debtor_is_merchant: Optional[bool] = None
+    arrear_payments: Optional[list] = None
+    arrear_exclusions: Optional[list] = None
+    arrear_claims: Optional[list] = None
+    arrear_deadline_holidays: Optional[list] = None
 
     # ── 탄력적 근로시간제 계산용 ──────────────────────────────────────────────
     flexible_work_unit: str = ""               # "2주", "3개월", "6개월"

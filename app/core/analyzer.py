@@ -166,6 +166,8 @@ _INFO_KEYS = {
     "is_platform_worker",
 }
 _INFO_KEYS.update(set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS)
+from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+_INFO_KEYS.update(ARREARS_INPUT_FIELDS)
 
 
 def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:
