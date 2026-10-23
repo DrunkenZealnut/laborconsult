@@ -33,15 +33,17 @@ def main() -> None:
     r = run(["wage_arrears"], {
         "wage_type": "월급", "monthly_wage": 3_000_000,
         "arrear_amount": 10_000_000, "arrear_due_date": "2026-01-10",
-    })
-    assert r and "임금체불 지연이자" in r, f"W1 실패:\n{r}"
+        "arrear_calc_date": "2026-01-31",
+    }, "2026년 1월 10일 지급기일, 1월 31일까지 지연이자")
+    assert r and "누적 지연이자: 115,068원" in r, f"W1 실패:\n{r}"
     print("  ✅ W1 체불 배선 → 지연이자 섹션 생성")
 
     # ── W2. 체불 + 임금 정보 없음: wageless 부분 실행 경로에서도 계산됨 ──
     r = run(["wage_arrears"], {
         "arrear_amount": 5_000_000, "arrear_due_date": "2026-03-01",
-    })
-    assert r and "임금체불 지연이자" in r, f"W2 실패:\n{r}"
+        "arrear_calc_date": "2026-03-31",
+    }, "2026년 3월 1일 지급기일, 3월 31일까지 지연이자")
+    assert r and "누적 지연이자: 82,192원" in r, f"W2 실패:\n{r}"
     print("  ✅ W2 임금 없는 체불 질문도 지연이자 계산 실행")
 
     # ── W3. 육아휴직 배선 ──
