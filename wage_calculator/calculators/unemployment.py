@@ -34,7 +34,8 @@ from ..constants import (
 from ..models import WageInput, WorkType
 from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
-from .shared import (DateRange, monthly_pay_estimate, ordinary_wage_from_total, premium_monthly_note,
+from .average_wage import calc_average_wage
+from .shared import (DateRange, monthly_wage_extras, monthly_wage_total, ordinary_wage_from_total,
                      weekly_holiday_hours)
 
 
@@ -91,7 +92,7 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
     실업급여(구직급여) 계산
 
     필요 입력:
-      - monthly_wage 또는 last_3m_wages + last_3m_days  (평균임금 산정)
+      - 임금(기준 월액) 또는 last_3m_wages [+ last_3m_days]  (평균임금 — 평균임금 계산기)
       - insurance_months 또는 start_date + end_date      (피보험기간)
       - age                                              (소정급여일수)
       - is_involuntary_quit                              (수급 자격)
@@ -199,51 +200,39 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         # 상여금/연차수당 3개월 비례분 가산 (nodong.kr 기준)
         avg_daily = None  # 아래에서 계산
 
-    # 단일 사업장 (기존 로직)
-    bonus_3m = (inp.annual_bonus_total / 12) * 3 if inp.annual_bonus_total else 0
-    leave_pay_3m = (inp.unused_annual_leave_pay / 12) * 3 if inp.unused_annual_leave_pay else 0
-    extra_3m = bonus_3m + leave_pay_3m
-
-    if avg_daily is not None:
-        pass  # 다중 사업장에서 이미 계산됨
-    elif inp.last_3m_wages and inp.last_3m_days:
-        base_3m   = sum(inp.last_3m_wages)
-        total_3m  = base_3m + extra_3m
-        avg_daily = total_3m / inp.last_3m_days
-        formulas.append(
-            f"평균임금 일액: ({base_3m:,.0f}원"
-            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
-            + f") ÷ {inp.last_3m_days}일 = {avg_daily:,.1f}원"
-        )
-    elif inp.monthly_total_pay or inp.monthly_wage:
-        monthly   = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, inp.monthly_wage)   # 연장 등 포함(F6)
-        base_3m   = monthly * 3
-        total_3m  = base_3m + extra_3m
-        avg_daily = total_3m / 92
-        formulas.append(
-            f"평균임금 일액(추정): ({monthly:,.0f}원 × 3"
-            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
-            + f") ÷ 92일 = {avg_daily:,.1f}원"
-        )
-        if not extra_3m:
-            warnings.append(
-                "평균임금은 이직 전 3개월 실지급 임금으로 산정합니다. "
-                "상여금·성과금 등 변동 급여가 있으면 급여명세서로 재확인하세요."
-            )
-    else:
-        # 월급이 없으면(시급제 등) 통상임금 월액(시급 × 월 기준시간)으로 추정한다 — 예전에는 '통상시급 × 8h'라 단시간근로자의
-        # 평균임금을 부풀렸다(주 5일 × 4h: 82,560원, 실제 월 임금 기준 35,094원 — calc-card-followups R9)
-        monthly   = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, ow.monthly_ordinary_wage)
-        total_3m  = monthly * 3 + extra_3m
-        avg_daily = total_3m / 92
-        formulas.append(
-            f"평균임금 일액(추정): (통상임금 월 {ow.monthly_ordinary_wage:,.0f}원"
-            f"{premium_monthly_note(inp, ow.hourly_ordinary_wage)} × 3"
-            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
-            + f") ÷ 92일 = {avg_daily:,.1f}원"
-        )
-        warnings.append("평균임금을 통상임금 월액(시급 × 월 기준시간)으로 추정했습니다. 정확한 계산은 이직 전 3개월 임금으로 "
-                        "확인하세요.")
+    # 단일 사업장 — 기초일액은 근로기준법 제2조 제1항 제6호의 평균임금이다(고용보험법 제45조 제1항). 평균임금 계산기 하나로 구한다
+    # (monthly-base-unification): 3개월 총일수로 나누고(예전에는 92일 고정 — 같은 카드의 퇴직금과 분모가 달랐다), 기준 월액·상여·
+    # 연차수당 3/12·제외기간이 그 안에 있다. 하한 전 6호 금액(avg_daily_3m)을 받는다 — 통상임금 비교는 아래 제45조 제2항(일용근로자
+    # 예외 포함)이 한다
+    if avg_daily is None:
+        avg = calc_average_wage(inp, ow)
+        avg_daily = avg.avg_daily_3m
+        extra_3m = avg.bonus_addition + avg.leave_addition
+        extras = (f" + 상여금 {avg.bonus_addition:,.0f}원 + 연차수당 {avg.leave_addition:,.0f}원" if extra_3m else "")
+        tail = f"{extras}) ÷ {avg.period_days}일 = {avg_daily:,.1f}원"
+        excluded = [f for f in avg.formulas if f.startswith("산정기간 제외")]
+        formulas.extend(excluded)
+        if inp.last_3m_wages:
+            formulas.append(f"평균임금 일액: ({avg.wage_total:,.0f}원" + tail)
+        elif excluded:
+            formulas.append(f"평균임금 일액(추정): (3개월 임금총액 {avg.wage_total:,.0f}원(제외 임금 차감 후)" + tail)
+        elif inp.monthly_total_pay or inp.monthly_wage:
+            formulas.append(f"평균임금 일액(추정): ({monthly_wage_total(inp, ow):,.0f}원 × 3" + tail)
+        else:
+            parts = f"통상임금 월 {ow.monthly_ordinary_wage:,.0f}원{monthly_wage_extras(inp, ow)}"
+            formulas.append(f"평균임금 일액(추정): ({f'({parts})' if ' + ' in parts else parts} × 3" + tail)
+        if not inp.last_3m_wages:
+            if inp.monthly_total_pay or inp.monthly_wage:
+                if not extra_3m:
+                    warnings.append(
+                        "평균임금은 이직 전 3개월 실지급 임금으로 산정합니다. "
+                        "상여금·성과금 등 변동 급여가 있으면 급여명세서로 재확인하세요."
+                    )
+            else:
+                # 월급이 없으면(시급제 등) 기준 월액(시급 × 월 기준시간 — 주휴 포함)으로 추정한다 — 예전에는 '통상시급 × 8h'라
+                # 단시간근로자의 평균임금을 부풀렸다(주 5일 × 4h: 82,560원, 실제 월 임금 기준 35,094원 — calc-card-followups R9)
+                warnings.append("평균임금을 통상임금 월액(시급 × 월 기준시간)으로 추정했습니다. 정확한 계산은 이직 전 3개월 임금으로 "
+                                "확인하세요.")
 
     # ── 3-1. 기초일액 — 평균임금이 통상임금보다 적으면 통상임금(고용보험법 제45조 제2항, 일용근로자 제외) ─────────────
     # 통상임금이 수당이 섞인 총액에서 나온 경로(포괄임금 총액·구성 진술 보류 카드)는 비교하지 않는다 — 부풀린 '통상임금'이 하한이 된다

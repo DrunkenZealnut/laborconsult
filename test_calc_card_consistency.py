@@ -68,11 +68,10 @@ GRID_ASKS = (
 )
 GRID_SIZES = ("5인이상", "5인미만", None)
 GRID_STATEMENTS = ("", " 연장수당은 따로 받습니다.", " 이번 주에만 그렇게 일했습니다.")
-AVERAGE_WAGE_TARGETS = ("severance", "average_wage", "unemployment", "industrial_accident", "retirement_pension",
-                        "shutdown_allowance")
-# 휴업수당은 월급이 없으면 '시급 × 1일 시간 × 근무일수 × 52/12'(주휴분 없음)로 월 금액을 추정해 월 총액과 갈린다 — 이 사이클 전부터
-# 있던 결함이라 기준 월액 단일화(후속, Design §11-1)에서 고친다. 고치면 test_t2_known_gap가 '예상 밖 통과'로 알린다(독립 리뷰 M3)
-KNOWN_BASIS_GAPS = frozenset({"shutdown_allowance"})
+# 기준 월액(shared.monthly_wage_total)을 직접 부르는 평균임금 계열 모듈. 휴업수당·산재는 평균임금 계산기(average_wage)를 거쳐
+# 그 호출이 'average_wage'로 잡힌다 — 직접 계산하지 않는다는 것은 test_monthly_base_unification U9가 구조로 본다. 예전에는
+# 휴업수당이 '시급 × 1일 시간 × 근무일수 × 52/12'(주휴분 없음)로 따로 추정해 예상 실패로 두었다(monthly-base-unification에서 해소)
+BASIS_MODULES = ("severance", "average_wage", "unemployment", "retirement_pension")
 
 
 def grid():
@@ -111,7 +110,7 @@ class CapturedCalculation:
 
 
 class MonthlyBasisCapture:
-    """평균임금 계열 계산기가 실제로 쓴 월 금액(monthly_pay_estimate 결과)을 모듈별로 잡는다. 같은 식으로 다시 계산해 비교하면
+    """평균임금 계열 계산기가 실제로 쓴 월 금액(monthly_wage_total 결과)을 모듈별로 잡는다. 같은 식으로 다시 계산해 비교하면
     계산기가 다른 기준 월액을 넘기는 결함을 못 본다 — 첫 판의 I3가 휴업수당에서 그렇게 공허하게 통과했다(독립 리뷰 M3)."""
 
     def __enter__(self):
@@ -119,14 +118,14 @@ class MonthlyBasisCapture:
         from wage_calculator.calculators import shared
         self.values = []
         self._patches = []
-        for name in AVERAGE_WAGE_TARGETS:
+        for name in BASIS_MODULES:
             module = importlib.import_module(f"wage_calculator.calculators.{name}")
 
-            def wrapped(inp, hourly, base, _name=name):
-                value = shared.monthly_pay_estimate(inp, hourly, base)
+            def wrapped(inp, ow, *, premium=True, _name=name):
+                value = shared.monthly_wage_total(inp, ow, premium=premium)
                 self.values.append((_name, value))
                 return value
-            patch = mock.patch.object(module, "monthly_pay_estimate", wrapped)
+            patch = mock.patch.object(module, "monthly_wage_total", wrapped)
             patch.start()
             self._patches.append(patch)
         return self
@@ -190,7 +189,7 @@ class InvariantGridTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.checked = {"I1": 0, "I2": 0, "I3": 0}
-        cls.violations, cls.gaps = [], []
+        cls.violations = []
         cls.cards = 0
         with CapturedCalculation() as cap, MonthlyBasisCapture() as basis:
             for params, query, _ in grid():
@@ -214,23 +213,17 @@ class InvariantGridTest(unittest.TestCase):
                 if not total:
                     continue
                 used = [(name, value) for name, value in basis.values if value]
-                if any(name not in KNOWN_BASIS_GAPS for name, _ in used):
+                if used:
                     cls.checked["I3"] += 1
                 for name, value in used:
                     if abs(value - total) > 1:
-                        (cls.gaps if name in KNOWN_BASIS_GAPS else cls.violations).append(
-                            ("I3", name, query, asked, round(value), total))
+                        cls.violations.append(("I3", name, query, asked, round(value), total))
 
     def test_t2_invariants_hold_across_the_grid(self):
         self.assertEqual(self.cards, 2160)
         for name, count in self.checked.items():
             self.assertGreater(count, 0, f"{name}를 검사한 카드가 없다 — 공허한 통과")
         self.assertEqual(self.violations[:5], [])
-
-    @unittest.expectedFailure
-    def test_t2_known_gap_shutdown_allowance_basis(self):
-        """휴업수당의 시급제 월 금액(주휴분 없음)은 아직 월 총액과 갈린다 — 후속에서 고치면 이 테스트가 통과해 실패로 알린다."""
-        self.assertEqual(self.gaps[:3], [])
 
 
 class RuleScopeTest(unittest.TestCase):

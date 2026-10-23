@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..models import WageInput, NonTaxableIncome
 from .ordinary_wage import OrdinaryWageResult
-from .shared import monthly_pay_estimate, premium_monthly_note
+from .shared import monthly_wage_note, monthly_wage_total
 from ..constants import (
     get_insurance_rates,
     FREELANCER_TAX_RATE,
@@ -106,14 +106,10 @@ def calc_insurance(inp: WageInput, ow: OrdinaryWageResult) -> InsuranceResult:
     legal = []
 
     # ── 세전 월 급여 산정 ────────────────────────────────────────────────────
-    # 보수월액 — 월 임금총액이 주어지면 그 값(연장·야간수당 등 포함), 없으면 통상임금 기준 월 급여(고정수당 포함)
-    if inp.monthly_total_pay:
-        gross = inp.monthly_total_pay
-        formulas.append(f"세전 월 급여: {gross:,.0f}원 (월 임금총액 기준)")
-    else:
-        # 통상임금 기준 월 급여 (고정수당 포함) + 연장·야간·휴일 근로 임금(shared, F6 — 카드의 월 총액과 같은 산식)
-        gross = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, ow.monthly_ordinary_wage)
-        formulas.append(f"세전 월 급여: {gross:,.0f}원 (통상임금{premium_monthly_note(inp, ow.hourly_ordinary_wage)} 기준)")
+    # 보수월액 — 기준 월액(shared.monthly_wage_total: 월 임금총액이 주어지면 그 값, 없으면 통상임금 월액 + 통상임금에서 뺀
+    # 고정수당 + 연장 등). 카드의 월 총액과 같은 함수다
+    gross = monthly_wage_total(inp, ow)
+    formulas.append(f"세전 월 급여: {gross:,.0f}원 ({monthly_wage_note(inp, ow)} 기준)")
 
     if getattr(inp, "is_platform_worker", False):
         return _calc_platform_worker(inp, gross, warnings, formulas, legal, inp.reference_year)
@@ -513,7 +509,7 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
 
     year = inp.reference_year
     rates = get_insurance_rates(year, getattr(inp, "reference_date", None))
-    gross = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, ow.monthly_ordinary_wage)   # 연장 등 포함(F6)
+    gross = monthly_wage_total(inp, ow)   # 기준 월액(monthly-base-unification)
 
     # 사업장 규모 카테고리
     size_cat = getattr(inp, "company_size_category", "under_150") or "under_150"

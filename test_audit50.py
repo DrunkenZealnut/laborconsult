@@ -597,7 +597,8 @@ class WageCompositionTest(unittest.TestCase):
         self.assertEqual(pension(dual).total_pension, pension(total_only).total_pension)
         from wage_calculator.calculators.industrial_accident import calc_industrial_accident
         accident = calc_industrial_accident(copy.deepcopy(dual), calc_ordinary_wage(copy.deepcopy(dual)))
-        self.assertIn("평균임금(추정): 2,700,000원 ÷ 30일 = 90,000원/일", accident.formulas)
+        # 산재도 평균임금 계산기 하나로 구한다 — 총액 × 3 ÷ 3개월 총일수(monthly-base-unification, 예전에는 총액 ÷ 30)
+        self.assertIn("평균임금: 88,043원/일 (3개월 기준)", accident.formulas)
         # 근로장려금은 소득이 한도를 넘으면 두 기준 모두 0원이라 요약만으로는 못 가른다 — 소득 추정 안내로 본다
         from wage_calculator.calculators.eitc import calc_eitc
         eitc = calc_eitc(copy.deepcopy(dual), calc_ordinary_wage(copy.deepcopy(dual)))
@@ -651,8 +652,10 @@ class WageCompositionTest(unittest.TestCase):
     def test_t5_severance_and_accident_summaries_do_not_overwrite_each_other(self):
         """퇴직금과 산재를 함께 물으면 요약의 '적용 평균임금' 키가 겹쳐 퇴직금 옆에 산재 값이 찍혔다(Act-3 리뷰 L2)."""
         from wage_calculator import WageCalculator, WageInput, WageType
+        # 두 값이 달라야 덮어쓰기를 가린다 — 산재는 재해일(2026-03-01, 산정기간 90일)로 평균임금을 구한다(근로기준법 시행령 제52조)
         r = WageCalculator().calculate(WageInput(wage_type=WageType.MONTHLY, monthly_wage=2096270, monthly_total_pay=2700000,
-                                                 reference_year=2026, start_date="2023-03-01", end_date="2026-10-01"),
+                                                 reference_year=2026, start_date="2023-03-01", end_date="2026-10-01",
+                                                 accident_date="2026-03-01"),
                                        ["severance", "industrial_accident"])
         self.assertEqual(r.summary["적용 평균임금"], "88,043원/일 (3개월 기준)")
         self.assertEqual(r.summary["산재 적용 평균임금"], "90,000원/일")
@@ -1073,10 +1076,10 @@ class WageCompositionTest(unittest.TestCase):
         "comprehensive": "월급 총액(inp.monthly_wage)으로 역산하는 계산이다 — 판정은 따로 내린다",
         "prorated": "월급 총액으로 일할계산한다(통상임금은 월급이 없을 때만 읽는다)",
         "insurance": "보수월액은 수당을 포함한 총액이 맞다 — 계산식의 이름만 바꾼다(사업주 부담분도 같은 모듈)",
-        "unemployment": ("월급이 있으면 평균임금을 월급 총액으로 추정한다(통상시급은 월급이 없을 때만 읽는다). 기초일액의 통상임금 "
-                         "비교(고용보험법 제45조 제2항)는 총액 경로에서 하지 않는다(shared.ordinary_wage_from_total)"),
-        "eitc": ("소득은 월급(총액)으로 추정한다 — 통상시급은 연장 등 근로 임금을 더할 때만 읽고, 구성이 정해진 총액(보류 경로)에는 "
-                 "더하지 않는다(shared.monthly_pay_estimate, calc-card-followups F6)"),
+        "unemployment": ("평균임금은 평균임금 계산기(기준 월액 × 3 ÷ 3개월 총일수)로 구한다 — 보류 경로의 기준 월액은 말한 총액이다. "
+                         "기초일액의 통상임금 비교(고용보험법 제45조 제2항)는 총액 경로에서 하지 않는다(shared.ordinary_wage_from_total)"),
+        "eitc": ("소득은 기준 월액(shared.monthly_wage_total) × 12로 추정한다 — 구성이 정해진 총액(보류 경로)에는 연장 등을 더하지 "
+                 "않는다(monthly-base-unification)"),
         "working_hours": "시간을 계산한다 — 계산식의 시급 단어만 바꾼다",
     }
 
@@ -1088,7 +1091,9 @@ class WageCompositionTest(unittest.TestCase):
         for path in (ROOT / "wage_calculator" / "calculators").glob("*.py"):
             if path.stem in ("ordinary_wage", "shared", "__init__"):
                 continue
-            if re.search(r"\bow\.(?:hourly|daily|monthly)_ordinary_wage\b", path.read_text(encoding="utf-8")):
+            # 기준 월액(shared.monthly_wage_total)도 통상임금 월액을 읽는다 — 그 함수를 부르는 계산기는 간접 독자다
+            if re.search(r"\bow\.(?:hourly|daily|monthly)_ordinary_wage\b|\bmonthly_wage_total\(",
+                         path.read_text(encoding="utf-8")):
                 readers.add(path.stem)
         self.assertEqual(readers - _ORDINARY_BASED_TARGETS - set(self.KEPT_ORDINARY_READERS), set())
         # 분류표가 실제 계산기를 가리키는지도 본다 — 이름이 바뀌면 분류가 조용히 비고, 겹치면 어느 쪽인지 모호하다

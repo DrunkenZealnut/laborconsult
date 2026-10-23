@@ -17,9 +17,9 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
-from ..models import WageInput
+from ..models import WageInput, WageType
 from .ordinary_wage import OrdinaryWageResult
-from .shared import monthly_pay_estimate
+from .shared import monthly_wage_total
 from ..constants import (
     get_eitc_params,
     EITC_ASSET_UPPER,
@@ -108,15 +108,14 @@ def calc_eitc(inp: WageInput, ow: OrdinaryWageResult) -> EitcResult:
     # ── 2. 연간 총소득 결정 ───────────────────────────────────────────────
     income = max(0.0, inp.annual_total_income)
     if income == 0:
-        monthly = monthly_pay_estimate(inp, ow.hourly_ordinary_wage, inp.monthly_wage)   # 연장 등 포함(F6)
+        monthly = monthly_wage_total(inp, ow)   # 기준 월액 — 시급제도 추정한다(예전에는 월급만 봐 '소득 정보 없음')
         if monthly:
             income = monthly * 12
             warnings.append(
-                f"연간 총소득 미입력 — {'월 임금총액' if inp.monthly_total_pay else '월급'} {monthly:,.0f}원 x 12 = "
+                f"연간 총소득 미입력 — {'월 임금총액' if inp.monthly_total_pay else '월급' if inp.wage_type == WageType.MONTHLY else '월 임금'} "
+                f"{monthly:,.0f}원 x 12 = "
                 f"{income:,.0f}원으로 추정합니다."
             )
-        elif inp.annual_wage:
-            income = inp.annual_wage
         else:
             return _ineligible(
                 "소득 정보 없음 — 연간 총소득 또는 월급 정보가 필요합니다.",

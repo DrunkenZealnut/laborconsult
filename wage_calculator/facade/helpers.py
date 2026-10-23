@@ -77,7 +77,8 @@ def _merge_amount_held(result, key, section, calc_result, populate, all_warnings
 
 
 # ── populate 함수: 각 계산기의 summary/특수필드 설정 ──────────────────────────
-# 반환값 = monthly_total에 더할 금액 (0이면 미반영)
+# 반환값 = 그 섹션의 월 금액. facade 월 총액은 기준 월액(shared.monthly_wage_total)이고, 반환값은 연장수당(premium 판정)과
+# 탄력적 근로시간제(가산)만 읽는다 — 나머지는 쓰지 않는다(monthly-base-unification)
 
 
 def _pop_overtime(r, result):
@@ -165,7 +166,7 @@ def _pop_prorated(r, result):
 
 
 def _pop_public_holiday(r, result):
-    """result.summary에 유급공휴일 수당·적용여부 추가. 반환: holiday_pay/12 or 0."""
+    """result.summary에 유급공휴일 수당·적용여부 추가. 반환: holiday_pay/12 or 0(월 총액에는 더하지 않는다 — 월급에 이미 든 임금)."""
     result.summary["유급공휴일 수당"] = f"{r.total_holiday_pay:,.0f}원"
     result.summary["유급공휴일 적용"] = "✅" if r.eligible else "❌ 미적용"
     return (r.total_holiday_pay / 12) if r.eligible else 0
