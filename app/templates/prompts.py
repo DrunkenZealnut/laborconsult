@@ -146,6 +146,7 @@ ANALYZE_TOOL = {
 ANALYZE_TOOL["input_schema"]["properties"].update({
     "annual_leave_used": {"type": "number", "description": "현재 계산 대상 발생분에서 사용한 연차일수. 과거 첫해 사용분과 더하지 않음. 미기재는 생략"},
     "first_year_leave_used": {"type": "number", "description": "입사 1년 미만에 발생한 휴가의 사용일수. 현재 연차 15일에서 차감하지 않음"},
+    "first_year_leave_used_hours": {"type": "number", "description": "첫해 발생분에서 실제 차감된 시간. 단축 중 사용 일수를 원래 8시간으로 추정하지 않음. 현재 연도 사용시간과 별도"},
     "attendance_rate": {"type": "number", "description": "연차 산정기간 출근율 0~1. 일수 기준이며 육아기/임신기 단축시간을 결근율로 환산하지 않음. 질문에서 확인된 경우만"},
     "annual_full_attendance_months": {"type": "integer", "description": "현재 산정기간의 실제 월 개근 수. 1년 미만 또는 연간 출근율 80% 미만에 필요. 전체 출근율로 추정 금지"},
     "first_year_full_attendance_months": {"type": "integer", "description": "과거 첫해 실제 개근 개월 수(0~11). 현재 연도 출근율로 추정하지 않음"},

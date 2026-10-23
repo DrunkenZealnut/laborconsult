@@ -24,7 +24,7 @@
 | annual_deemed_periods | 사유·시작/종료일·휴직 중 소정근로일수·육아휴직 최초 신청일. 중복 구간 거부 |
 | annual_original_weekly_hours, annual_original_daily_hours | 법정 단축 전 기준 소정시간 |
 | annual_leave_used / annual_leave_used_hours | 현재 발생분의 사용 일수 / 실제 차감 시간. 시간이 있으면 시간 우선 |
-| first_year_leave_used, first_year_full_attendance_months | 과거 첫해의 사용분·개근 수. 현재 출근율로 과거 개근을 만들지 않음 |
+| first_year_leave_used / first_year_leave_used_hours, first_year_full_attendance_months | 과거 첫해의 사용분(일수/실제 차감 시간)·개근 수. 현재 출근율로 과거 개근을 만들지 않음 |
 | use_fiscal_year, fiscal_year_granted_days | 회사가 회계연도 기준으로 실제 부여한 휴가. 입사월만으로 회사 정책을 지어내지 않음 |
 
 출근 간주 사유는 업무상 부상·질병, 법정 출산전후휴가, 육아휴직, 단기 육아휴직, 육아기·임신기 단축이다. 일반 결근은 출근 간주 목록에 넣지 않는다. 월별 개근 수는 출근 간주를 반영한 실제 수치다.

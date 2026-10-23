@@ -196,6 +196,30 @@ class AnnualLeaveUpdateTests(unittest.TestCase):
         self.assertIn("월별",r.breakdown["정산 시점"])
         self.assertNotIn("2020-10-01",r.breakdown["정산 시점"])
 
+    def test_historical_low_attendance_schedule_matches_current_grant(self):
+        r = annual(start_date="2017-01-01",end_date="2018-01-01",attendance_rate=.7,
+                   annual_full_attendance_months=6,first_year_leave_used=5)
+        self.assertEqual((r.accrued_days,r.schedule[-1]["days"],r.schedule[-1]["hours"]),(6,6,48))
+
+    def test_reduced_first_year_usage_alias_requires_actual_hours(self):
+        data = dict(end_date="2025-07-01",schedule=WorkSchedule(daily_work_hours=5,weekly_work_days=5),
+                    annual_original_weekly_hours=40,annual_original_daily_hours=8,
+                    annual_deemed_periods=[dict(kind="childcare_reduced",start_date="2025-01-01",end_date="2025-07-01")])
+        self.assertTrue(annual(**data,first_year_leave_used=1).held_reason)
+        r = annual(**data,first_year_leave_used=1,annual_leave_used_hours=5)
+        self.assertEqual((r.used_hours,r.remaining_hours),(5,43))
+        same = annual(**data,first_year_leave_used_hours=5)
+        self.assertEqual((same.used_hours,same.remaining_hours),(5,43))
+
+    def test_first_year_reduced_usage_requires_its_own_hours(self):
+        data = dict(schedule=WorkSchedule(daily_work_hours=5,weekly_work_days=5),
+                    annual_original_weekly_hours=40,annual_original_daily_hours=8,
+                    annual_deemed_periods=[dict(kind="childcare_reduced",start_date="2025-01-01",end_date="2025-12-31")],
+                    first_year_full_attendance_months=11,first_year_leave_used=1)
+        self.assertIsNone(annual(**data).first_year_settlement_days)
+        r = annual(**data,first_year_leave_used_hours=5)
+        self.assertEqual((r.first_year_accrued_hours,r.first_year_remaining_hours),(88,83))
+
     def test_schema_covers_all_annual_fields(self):
         from app.templates.prompts import ANALYZE_TOOL
         from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS

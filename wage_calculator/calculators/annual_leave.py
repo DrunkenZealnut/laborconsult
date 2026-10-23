@@ -16,7 +16,7 @@ from .ordinary_wage import OrdinaryWageResult
 
 ANNUAL_INPUT_FIELDS = (
     "annual_leave_used", "attendance_rate", "use_fiscal_year", "leave_use_promotion",
-    "first_year_leave_used", "annual_full_attendance_months", "first_year_full_attendance_months",
+    "first_year_leave_used", "first_year_leave_used_hours", "annual_full_attendance_months", "first_year_full_attendance_months",
     "annual_scheduled_days", "annual_attended_days", "annual_deemed_periods",
     "annual_original_weekly_hours", "annual_original_daily_hours", "annual_leave_used_hours",
     "fiscal_year_granted_days", "last_employed_date",
@@ -251,6 +251,10 @@ def _calculate(inp, ow, legal):
     used = _number(inp.annual_leave_used,"현재 기간 사용 연차")
     first_used = (_number(inp.first_year_leave_used,"첫해 사용 연차")
                   if inp.first_year_leave_used is not None else None)
+    first_input_hours = (_number(inp.first_year_leave_used_hours,"첫해 실제 사용 연차시간")
+                         if inp.first_year_leave_used_hours is not None else None)
+    if first_input_hours is not None:
+        first_used = first_input_hours/daily
     first_count = inp.first_year_full_attendance_months
     if first_count is not None:
         _number(first_count,"첫해 개근 수",hi=min(11,_count_complete_months(start,end)),integer=True)
@@ -287,16 +291,21 @@ def _calculate(inp, ow, legal):
             raise ValueError("개정 전 첫해 사용분이 발생 한도를 초과합니다")
         accrued_hours -= deducted*daily
         accrued_days = accrued_hours/daily
-    if inp.annual_leave_used_hours is not None:
-        used_hours = _number(inp.annual_leave_used_hours,"실제 사용 연차시간")
+    current_input_hours = inp.annual_leave_used_hours
+    if years == 0 and first_input_hours is not None:
+        if current_input_hours is not None and current_input_hours != first_input_hours:
+            raise ValueError("첫해 실제 사용 연차시간이 두 입력에서 다릅니다")
+        current_input_hours = first_input_hours
+    if current_input_hours is not None:
+        used_hours = _number(current_input_hours,"실제 사용 연차시간")
         used = used_hours/daily
     else:
-        if reduced and used:
-            raise ValueError("단축 중 사용 연차는 실제 차감한 시간을 알려주세요. 발생 1일과 사용 1일의 시간이 다를 수 있습니다")
         if years == 0 and first_used:
             if used and used != first_used:
                 raise ValueError("첫해 사용 연차가 두 입력에서 다릅니다. 동일한 첫해 사용분을 확인해주세요")
             used = first_used
+        if reduced and used:
+            raise ValueError("단축 중 사용 연차는 실제 차감한 시간을 알려주세요. 발생 1일과 사용 1일의 시간이 다를 수 있습니다")
         used_hours = used*daily
     if used_hours > accrued_hours:
         raise ValueError("사용 연차가 현재 기간 발생분보다 많습니다. 이월·선사용 또는 다른 기간의 사용분인지 확인해주세요")
@@ -304,7 +313,13 @@ def _calculate(inp, ow, legal):
     if years == 0:
         first_used = used  # 동일 첫해 장부. 호환 입력 둘을 중복 합산하지 않음
     first_hours = first_count*_leave_hours(1,weekly,daily)[0] if first_count is not None else None
-    first_used_hours = first_used*daily if first_used is not None else None
+    if years == 0:
+        first_used_hours = used_hours
+    elif inp.first_year_leave_used_hours is not None:
+        first_used_hours = _number(inp.first_year_leave_used_hours,"첫해 실제 사용 연차시간")
+        first_used = first_used_hours/daily
+    else:
+        first_used_hours = first_used*daily if first_used is not None and not reduced else None
     if first_hours is not None and first_used_hours is not None and first_used_hours > first_hours:
         raise ValueError("첫해 사용분이 첫해 발생분을 초과합니다. 이월·선사용 여부를 확인해주세요")
     rows = _first_year_schedule(start,end) if start >= date(2014,7,1) else []
@@ -323,6 +338,8 @@ def _calculate(inp, ow, legal):
         if old:
             row_hours = max(0,row_hours-old*daily)
             row_equiv = row_hours/daily
+        if current:
+            row_hours,row_equiv = accrued_hours,accrued_days
         rows.append(dict(period=f"{y+1}년차",kind="annual",accrual_date=_safe_date(start,y).isoformat(),
                          days=round(row_equiv,2), hours=row_hours,
                          pay_trigger_date=_safe_date(start,y+1).isoformat(),
