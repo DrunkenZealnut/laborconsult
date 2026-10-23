@@ -75,6 +75,7 @@ def _calculate_average_wage(inp: WageInput, ow: OrdinaryWageResult) -> AverageWa
         raise PayInputError("이미 포함된 상여가 3개월 임금총액보다 큽니다.")
     if included_bonus:
         wage_total -= included_bonus
+        wage_note = " (동일 연 상여 중복 조정 후)"
         formulas.append(f"동일 연 상여 중복 조정: 3개월 임금에 포함된 {included_bonus:,.0f}원 제외 후 연간 배분액 산입")
     if excluded_days > 0:
         if not inp.last_3m_wages:

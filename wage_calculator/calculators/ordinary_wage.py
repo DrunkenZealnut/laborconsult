@@ -139,6 +139,11 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         reasons = f" — {'; '.join(excluded_notes)}" if excluded_notes else ""
         formula += f" (통상임금 제외: {', '.join(excluded_brief)}{reasons})"
 
+    for a in allowances:
+        if a.annual or a.payment_cycle != "매월":
+            cycle = "연간 총액" if a.annual else f"{a.payment_cycle} 지급 회차액"
+            formula += f"; {a.name}: {cycle} {a.amount:,.0f}원 → 월 환산 {a.monthly_amount:,.0f}원 (동일 항목의 환산)"
+
     hourly_ordinary = monthly_ordinary / base_hours
     daily_work_hours = inp.schedule.daily_work_hours or 8.0
     daily_ordinary = hourly_ordinary * daily_work_hours

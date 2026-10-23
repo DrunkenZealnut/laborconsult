@@ -270,6 +270,7 @@ def _pop_maternity_leave(r, result):
     result.summary["출산전후휴가 월 급여"] = f"{r.monthly_benefit:,.0f}원"
     result.summary["고용보험 지급 총액"] = f"{r.total_insurance_benefit:,.0f}원"
     if r.requested_maternity_only:
+        result.summary["출산전후휴가 사업주 잔여 부담"] = f"{r.total_employer_benefit:,.0f}원"
         return 0
     # 유급액(사업주 의무)과 고용보험 지원분은 다른 금액이다 — 하나로 뭉치면 대규모기업
     # 근로자에게 받지도 못할 보험 급여를 유급액으로 보여 주게 된다.

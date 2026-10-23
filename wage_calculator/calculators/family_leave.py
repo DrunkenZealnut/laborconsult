@@ -27,6 +27,29 @@ def _days(value, label, maximum):
     return value
 
 
+def validate_maternity_request(inp):
+    """The existing maternity formula covers a full leave, not arbitrary slices."""
+    start = strict_date(inp.family_leave_start_date, '출산전후휴가 시작일')
+    end = strict_date(inp.family_leave_end_date, '출산전후휴가 종료일')
+    if inp.is_platform_worker:
+        raise PayInputError('명시 출산휴가 입력은 근로자용입니다. 노무제공자는 별도 자격·보수 자료가 필요합니다.')
+    if inp.family_leave_eligible is not True:
+        raise PayInputError('출산전후휴가 법정 사용 요건 충족 여부를 확인해주세요.')
+    insured = _days(inp.family_leave_insured_days, '휴가 종료 전 피보험 단위기간', 100_000)
+    if insured < 180:
+        raise PayInputError('고용보험 피보험 단위기간 180일 요건을 충족하지 않습니다. 보험 급여를 지급액으로 확정할 수 없으며 사업주 유급 의무는 별도 확인 대상입니다.')
+    if type(inp.is_priority_support_company) is not bool:
+        raise PayInputError('우선지원대상기업 여부를 확인해주세요.')
+    if start.year != end.year:
+        raise PayInputError('출산휴가가 연도 경계를 걸칩니다. 기간별 상한과 지급 내역 확인이 필요합니다.')
+    days = 120 if inp.is_multiple_birth else (100 if inp.is_premature_birth and start.isoformat() >= '2025-02-23' else 90)
+    if inp.family_leave_days != days or type(inp.family_leave_days) is not int or inp.family_leave_used_days != 0 or type(inp.family_leave_used_days) is not int or (end-start).days+1 != days:
+        raise PayInputError(f'현재 출산전후휴가 산식은 전체 {days}일의 최초 사용을 계산합니다. 부분 사용·분할 사용은 실제 구간별 지급 내역을 확인해주세요.')
+    if inp.reference_date and inp.reference_date[:4] != str(start.year):
+        raise PayInputError('출산휴가 사용 연도와 계산 기준일의 연도가 다릅니다.')
+    return start
+
+
 def calc_family_leave(inp, ow):
     try:
         return _calculate(inp, ow)
@@ -102,10 +125,15 @@ def _calculate(inp, ow):
         warnings.append(insurance_text)
     summary = {f'{label} 이번 사용 일수':f'{requested}일 (기사용 {used}일, 이번 유급 {paid_days}일)',
                f'{label} 사업주 유급액':f'{pay:,.0f}원', f'{label} 급여(고용보험)':insurance_text}
+    effective_from = max(day for day in table if day <= start.isoformat())
+    summary['적용 법률 기준'] = f"{effective_from} 시행: 총 {total}일, 최초 {paid_limit}일 유급. 사용 구간 {start}~{end}"
     formulas = [f'{label}: 이번 유급 {paid_days}일 × 1일 통상임금 {daily:,.2f}원 = {pay:,.0f}원']
     if benefit is not None:
         formulas.append(f'고용보험 지원분 {benefit:,.0f}원은 위 유급액에 포함되며 별도 합산하지 않습니다.')
         summary[f'{label} 사업주 잔여 부담'] = f'{pay-benefit:,.0f}원'
+    if kind == 'infertility' and start.isoformat() >= '2026-11-27':
+        formulas.append('난임치료휴가 유급 기간은 2026-11-27 시행 개정으로 최초 2일에서 4일로 확대됩니다. 이 사용 구간에는 4일 한도를 적용했습니다.')
+        warnings.append('시행 근거: 정부 이렇게 달라집니다 — https://whatsnew.mofe.go.kr/mec/ots/dif/view.do?comBaseCd=DIFTYPCD&difField1=DIFFIELD26&difSer=5e74bf92-50c2-419c-9b43-745406c5e51c')
     warnings.append('근로자가 진술한 법정 휴가 요건 충족을 전제로 산정했습니다. 실제 지원은 신청·심사를 거칩니다.')
     return FamilyLeaveResult(selected_type=kind,paid_days=paid_days,employer_pay=round(pay),
         insurance_benefit=benefit,summary=summary,breakdown=summary.copy(),formulas=formulas,warnings=warnings,

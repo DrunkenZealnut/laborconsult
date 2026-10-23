@@ -208,6 +208,15 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     if inp.maternity_leave_type not in (None, "maternity"):
         from .family_leave import calc_family_leave
         return calc_family_leave(inp, ow)
+    if inp.maternity_leave_type == "maternity":
+        from .family_leave import validate_maternity_request
+        from .pay_inputs import PayInputError
+        from dataclasses import replace
+        try:
+            start = validate_maternity_request(inp)
+        except PayInputError as exc:
+            return MaternityLeaveResult(held_reason=str(exc), warnings=[str(exc)])
+        inp = replace(inp, reference_date=start.isoformat(), reference_year=start.year)
     warnings = []
     formulas = []
     legal = [
@@ -318,8 +327,9 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         legal.append("고용보험법 제75조제1항 (우선지원대상기업 전액 지원)")
     else:
         # 대규모 기업: 최초 60일 사업주 부담, 이후만 고용보험
-        employer_days  = min(60, leave_days)
-        insurance_days = max(0, leave_days - 60)
+        guaranteed_days = 75 if inp.maternity_leave_type == "maternity" and is_multiple else 60
+        employer_days = min(guaranteed_days, leave_days)
+        insurance_days = max(0, leave_days - guaranteed_days)
         formulas.append(
             f"대규모 기업: 최초 {employer_days}일 사업주 부담, "
             f"이후 {insurance_days}일 고용보험 지원"
@@ -346,6 +356,10 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         if overflow > 0:
             total_insurance_benefit -= overflow if insurance_days else 0
             total_employer_benefit -= overflow if not insurance_days else 0
+    if inp.maternity_leave_type == "maternity":
+        guaranteed_days = 75 if is_multiple else 60
+        total_employer_benefit = max(0, monthly_ow / 30 - (daily_benefit if is_priority else 0)) * guaranteed_days
+        formulas.append(f"사업주 유급 의무: 최초 {guaranteed_days}일 통상임금 보장, 고용보험 지원분 공제 후 잔여 부담 {total_employer_benefit:,.0f}원")
     total_benefit = total_insurance_benefit + total_employer_benefit
 
     formulas.append(
@@ -356,11 +370,13 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
     )
     if employer_days > 0:
         formulas.append(
+            f"사업주 부담 총액: {total_employer_benefit:,.0f}원 ({employer_days}일, 통상임금 기준)"
+            if inp.maternity_leave_type == "maternity" else
             f"사업주 부담 총액: {daily_benefit:,.0f}원 × {employer_days}일 = {total_employer_benefit:,.0f}원"
         )
 
     if inp.maternity_leave_type == "maternity":
-        warnings.extend(["수급 요건: 출산 전 피보험기간 180일 이상 (고용보험법 제75조)",
+        warnings.extend(["수급 요건: 휴가 종료 전 피보험 단위기간 180일 이상 (고용보험법 제75조)",
                          "신청 기한: 출산전후휴가 종료 후 12개월 이내"])
         return MaternityLeaveResult(
             requested_maternity_only=True, leave_days=leave_days, raw_monthly_wage=monthly_ow,

@@ -1401,10 +1401,10 @@ def _add_composition_alternative(result, calc, inp, targets) -> None:
     pay_targets = [t for t in targets if t in _PAY_ESTIMATE_TARGETS]
     if not pay_targets:
         return
-    alt_inp = _composition_alternative_input(inp)
-    if alt_inp is None:
-        return
     try:
+        alt_inp = _composition_alternative_input(inp)
+        if alt_inp is None:
+            return
         alt = calc.calculate(alt_inp, pay_targets)
     except Exception:  # noqa: BLE001 — 대안 계산이 실패해도 원래 카드는 그대로 낸다
         logger.warning("D4 대안 구성 계산 실패", exc_info=True)
@@ -2663,7 +2663,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                 specific_types.add("maternity")
         if len(specific_types) > 1:
             inp.maternity_leave_type = "multiple"
-        if inp.maternity_leave_type != "maternity" and "is_priority_support_company" not in params:
+        if "is_priority_support_company" not in params:
             inp.is_priority_support_company = None
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
@@ -2960,7 +2960,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                         f"월급 중 기본급·산입 수당 외 몫(연장수당 등) {stated_premium_part:,.0f}원이 위에서 계산한 연장·야간·휴일 근로 임금 "
                         f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
         requested_amounts = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears"}:
+        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave"}:
             # 구성 보정이 기초 월급을 급여·이자 요청의 지급액으로 되살리지 않도록 한다.
             result.monthly_total = result.monthly_net = 0.0
         if (composition_hold or comprehensive_total) and held_is_total:
