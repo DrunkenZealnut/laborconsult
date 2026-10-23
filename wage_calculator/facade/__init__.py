@@ -125,8 +125,9 @@ class WageCalculator:
         """
         # 아직 나누지 않은 입력(CLI·직접 호출)은 사본에서 계산한다 — 호출자의 일정을 바꾸지 않고, 같은 입력을 일정만 고쳐 다시 넘기면
         # 새로 나눈다(apply_hour_split은 이미 나눈 입력을 그대로 돌려준다, CodeRabbit PR #115). 파이프라인처럼 먼저 나눈 입력은 그대로 쓴다
+        from copy import deepcopy
+        proration_input = deepcopy(inp)  # 정산 계약 금액은 음수 보정 전 원본으로 검증한다.
         if inp.hour_split is None:
-            from copy import deepcopy
             inp = deepcopy(inp)
         _clamp_negative_inputs(inp)
         # 1일 8시간·1주 40시간을 넘는 시간은 연장근로로 나눈다(calc-card-followups D9). 파이프라인이 먼저 나눴으면 그대로다 —
@@ -147,7 +148,9 @@ class WageCalculator:
         except PayInputError as exc:
             from dataclasses import replace
             independent = {"wage_arrears", "working_hours", "weekly_hours_check", "business_size"}
-            if inp.proration_items_complete is True:
+            if (inp.proration_all_items_proportional is not True
+                    and inp.proration_items_complete is True
+                    and isinstance(inp.proration_items, list) and inp.proration_items):
                 independent.add("prorated")
             remaining = [t for t in targets if t in independent]
             result = (self._calculate(replace(inp, fixed_allowances=[]), remaining)
@@ -225,7 +228,7 @@ class WageCalculator:
                 from ..calculators.family_leave import FAMILY_LABELS
                 section = FAMILY_LABELS.get(inp.maternity_leave_type, section)
             mark = used_mark()
-            r = guarded(key, section, lambda: func(inp, ow))
+            r = guarded(key, section, lambda: func(proration_input if key == "prorated" else inp, ow))
             if r is None:
                 continue
             if key == "severance":
@@ -387,9 +390,7 @@ class WageCalculator:
         for target in dict.fromkeys(targets):
             if target in requested and target not in result.calculation_executed and target not in blocked_targets:
                 reasons = {
-                    "prorated": ("현재 일할계산은 중도입사월만 지원합니다. 중도퇴사·휴복직 정산은 아직 지원하지 않아 계산하지 않았습니다."
-                                 if inp.end_date else
-                                 "중도입사 일할계산에 유효한 입사일이 필요합니다. 중도퇴사·휴복직 정산은 아직 지원하지 않습니다."),
+                    "prorated": "정산 대상월·재직 날짜·약정한 일할 방식과 항목별 지급 조건을 확인해주세요.",
                     "wage_arrears": "확정된 체불 원금과 원래 지급기일이 필요합니다. 이 계산은 원금 산정이 아닌 지연이자 계산입니다.",
                     "comprehensive": "포괄임금제 입력이 필요합니다.",
                     "public_holiday": "계산할 유급 공휴일 수가 필요합니다.",

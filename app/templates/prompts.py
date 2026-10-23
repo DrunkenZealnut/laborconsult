@@ -156,7 +156,7 @@ _PAY_PROPS.update({
     "join_date": {"type": "string", "description": "실제 입사일 YYYY-MM-DD. 퇴직·복직일을 넣지 않음"},
     "proration_retirement_effective_date": {"type": "string", "description": "명시한 퇴직 효력일 YYYY-MM-DD. 이 날 제외. 마지막 재직일은 last_employed_date에 그대로 보존"},
     "proration_employed_at_month_start": {"type": "boolean", "description": "정산월 월초부터 재직 중임을 사용자가 명시한 경우 true. 실제 입사일을 모를 때 사용"},
-    "proration_all_items_proportional": {"type": "boolean", "description": "전체 월급에 동일한 일할 비율을 적용하는 약정이 명시된 경우만 true. 수당별 조건이 다르거나 미확인이면 true 금지"},
+    "proration_all_items_proportional": {"type": "boolean", "description": "월급액에 일할 약정을 명시하면 true. 단일 월급액을 제시하며 역일수 약정이라고 한 경우도 그 금액의 비례 약정이다. 수당별 조건이 다르거나 미확인이라고 명시하면 true 금지. true이면 proration_items는 생략"},
     "proration_items_complete": {"type": "boolean", "description": "요청 정산의 전체 급여항목·지급조건이 proration_items에 들어 있음을 명시한 경우 true"},
     "proration_scheduled_dates": {"type": "array", "items": {"type":"string"}, "description": "scheduled 방식의 해당 월 전체 분모 날짜 목록 YYYY-MM-DD. 소정근로일·유급 처리일 포함. 평일을 임의 생성하지 말 것"},
     "proration_unpaid_periods": {"type":"array", "items":{"type":"object","properties":{
@@ -303,7 +303,7 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
    - 선택적 근로시간제 정산은 selective_work_settlement, 일반 소정근로시간은 working_hours입니다.
    - 미지급 임금 원금·차액 산정은 arrears_principal, 확정 원금의 지연이자는 wage_arrears입니다.
    - 중도입사·중도퇴사·휴복직 급여 일할계산은 prorated입니다. 일반 임금계산으로 대신하지 마세요.
-   - 일할계산은 정산월·약정 방식·항목별 지급 조건·무급 기간을 보존하세요. 'N일까지 재직'은 last_employed_date, 'N일 퇴직 효력'은 proration_retirement_effective_date입니다. 단순 '퇴사일'의 뜻은 확인하세요. 전체 월급에 같은 비율을 적용한다고 한 경우만 proration_all_items_proportional=true입니다.
+   - 일할계산은 정산월·약정 방식·항목별 지급 조건·무급 기간을 보존하세요. 'N일까지 재직'은 last_employed_date, 'N일 퇴직 효력'은 proration_retirement_effective_date입니다. 단순 '퇴사일'의 뜻은 확인하세요. 단일 월급액에 역일수 등 일할 약정을 명시하면 그 금액의 proration_all_items_proportional=true이며 proration_items는 생략합니다. 수당별 지급 조건이 다르거나 미확인이라고 명시되면 전체 비례를 추정하지 말고 항목별 조건을 보존하세요. 실제 지급 확정 수당은 proration_items의 actual로 넣고 정기 고정수당으로 중복 생성하지 마세요.
    - 사용자가 요청한 계산만 유형에 넣으세요. 과거 보험 납부 사실·제도 부정 표현은 계산 요청이 아닙니다.
      복합 질문에서는 지원 여부와 관계없이 각 요청을 별도 유형으로 보존하세요.
 2. 질문에서 추출 가능한 정보는 최대한 추출 (임금액, 근무시간, 근무기간 등)

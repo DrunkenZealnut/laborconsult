@@ -34,8 +34,6 @@ def _dates(start, end):
 
 def _contract_items(inp, ow):
     if inp.proration_all_items_proportional is True:
-        if inp.proration_items is not None:
-            raise ValueError('전체 월액과 항목별 정산을 동시에 합산할 수 없습니다.')
         if inp.monthly_total_pay is None and inp.monthly_wage is None:
             raise ValueError('일할 약정의 실제 월 계약 금액을 확인해주세요.')
         for amount in (inp.monthly_total_pay,inp.monthly_wage):
@@ -53,6 +51,18 @@ def _contract_items(inp, ow):
             contract=inp.monthly_wage+sum(a.monthly_amount for a in normalize_allowances(inp.fixed_allowances))
         # Ordinary-wage classification must not remove contractually payable items.
         amount=monthly_wage_total(replace(inp,monthly_total_pay=contract),ow,premium=False) if contract else 0
+        if inp.proration_items:
+            items=inp.proration_items
+            # 분석기가 같은 월급을 단일 항목으로 재기록한 경우만 같은 계약으로 취급한다.
+            same=(isinstance(items,list) and len(items)==1 and isinstance(items[0],dict)
+                  and items[0].get('policy')=='prorate' and items[0].get('payment_cycle')=='매월'
+                  and isinstance(items[0].get('id'),str) and bool(items[0]['id'].strip())
+                  and isinstance(items[0].get('name'),str) and bool(items[0]['name'].strip())
+                  and money(items[0].get('amount'),'계약 지급액')==amount)
+            if not same:
+                raise ValueError('전체 월액과 항목별 지급 조건이 다릅니다. 정산 대상 금액과 조건을 확인해주세요.')
+        elif inp.proration_items is not None and inp.proration_items != []:
+            raise ValueError('급여 항목 목록을 확인해주세요.')
         return [dict(id='monthly_contract',name='전체 월 계약 임금',
                      amount=amount,payment_cycle='매월',policy='prorate')]
     items=inp.proration_items
