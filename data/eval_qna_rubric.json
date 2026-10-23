@@ -1,0 +1,112 @@
+{
+  "as_of": "2026-10-24",
+  "critical_error": "적용시점·수급요건·계산단위를잘못정해행동이나금액결론이바뀌는오류. 사례를공식법적근거로단정하는오류.",
+  "dimensions": [
+    "법률·시점정확성",
+    "계산정확성",
+    "질문해결정도",
+    "행동안내구체성"
+  ],
+  "cases": {
+    "qna-01": {
+      "expected_interpretation": "첫 3개월 각 250만원, 다음 3개월 각 200만원. 총 1,350만원. 전체 월분이고 사업주 지급 없음.",
+      "source": "https://www.work24.go.kr/cm/c/f/1100/selecSimulate12.do?systClId=SC00000251&systId=SI00000402",
+      "human_review_required": true
+    },
+    "qna-02": {
+      "expected_interpretation": "7개월 이후 80%, 상한160만원. 150만원을 현행 상한으로 단정하지 않음.",
+      "source": "https://www.work24.go.kr/cm/c/f/1100/selecSimulate12.do?systClId=SC00000251&systId=SI00000402",
+      "human_review_required": true
+    },
+    "qna-03": {
+      "expected_interpretation": "2025년 이후 대상 기간의 사후지급 폐지. 2024년 대상분과 구분.",
+      "source": "https://www.work24.go.kr/cm/c/f/1100/selecSimulate12.do?systClId=SC00000251&systId=SI00000402",
+      "human_review_required": true
+    },
+    "qna-04": {
+      "expected_interpretation": "2024년 일반형 상한150만원, 25% 사후지급 공제 후112.5만원. 현행250만원 소급 적용 금지.",
+      "source": "https://www.work24.go.kr/cm/c/f/1100/selecSimulate12.do?systClId=SC00000251&systId=SI00000402",
+      "human_review_required": true
+    },
+    "qna-05": {
+      "expected_interpretation": "시행 전후 사용기간 구분. 개시일만으로2025년사용분까지구기준고정하지않음. 정확한월지급구간추가확인허용.",
+      "source": "https://www.work24.go.kr/cm/c/f/1100/selecSimulate12.do?systClId=SC00000251&systId=SI00000402",
+      "human_review_required": true
+    },
+    "qna-06": {
+      "expected_interpretation": "2025-10-23이후지급사유발생임금의지연이자20%, 정기지급일다음날. 민사청구방법안내, 무조건6%오류.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000309035",
+      "human_review_required": true
+    },
+    "qna-07": {
+      "expected_interpretation": "경과일만으로기존체불임금에신설재직자20%소급하지않음. 지급사유발생일과부칙확인, 민상사이자별도.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000309035",
+      "human_review_required": true
+    },
+    "qna-08": {
+      "expected_interpretation": "시행일경계구분. 전후지급사유발생분혼합계산금지. 정확한정기지급일확인허용.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000309035",
+      "human_review_required": true
+    },
+    "qna-09": {
+      "expected_interpretation": "퇴직자14일경과후연20%유지. 재직자와퇴직자의기산점구분.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000309035",
+      "human_review_required": true
+    },
+    "qna-10": {
+      "expected_interpretation": "지급일/지급사유발생일/산정종료일/법정제외사유확인. 임의날짜로확정금액내지않음. 이율/계산식조건부설명허용.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000309035",
+      "human_review_required": true
+    },
+    "qna-11": {
+      "expected_interpretation": "2018년차감규정삭제, 새15일에서첫해11일재차감하지않음. 사용분을미사용수당으로중복계산하지않음.",
+      "source": "https://www.law.go.kr/LSW/nwRvsLsInfoR.do?lsiSeq=199151",
+      "human_review_required": true
+    },
+    "qna-12": {
+      "expected_interpretation": "365일종료는최대11일. 다음날근로관계없으면추가15일발생하지않음.",
+      "source": "https://www.moel.go.kr/news/enews/report/enewsView.do?news_seq=13052",
+      "human_review_required": true
+    },
+    "qna-13": {
+      "expected_interpretation": "366일근로/개근최대11+15=26일. 수당정산시기/적법사용촉진있으면별도검토.",
+      "source": "https://www.moel.go.kr/news/enews/report/enewsView.do?news_seq=13052",
+      "human_review_required": true
+    },
+    "qna-14": {
+      "expected_interpretation": "2016년당시차감조항존재,2018-05-29삭제. 과거사건에현행법일괄소급하지않음.",
+      "source": "https://www.law.go.kr/LSW/nwRvsLsInfoR.do?lsiSeq=199151",
+      "human_review_required": true
+    },
+    "qna-15": {
+      "expected_interpretation": "연도/적용판본추가확인,2018삭제전후구분. 시점불명상태무조건위법단정금지.",
+      "source": "https://www.law.go.kr/LSW/nwRvsLsInfoR.do?lsiSeq=199151",
+      "human_review_required": true
+    },
+    "qna-16": {
+      "expected_interpretation": "2026년상한68,100원. 실제지급액과상한을구분.",
+      "source": "https://gonggam.korea.kr/gonggamWeb/publication/pdf/2026_K_ladder_of_hope.pdf",
+      "human_review_required": true
+    },
+    "qna-17": {
+      "expected_interpretation": "2025년상한66,000원, 해당판본/이직일기준확인. 2026값소급금지.",
+      "source": "https://gonggam.korea.kr/gonggamWeb/publication/pdf/2026_K_ladder_of_hope.pdf",
+      "human_review_required": true
+    },
+    "qna-18": {
+      "expected_interpretation": "육아기단축12세와고용보험시행규칙별표2육아8세또는초2구분. 다른사유별도검토.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000280148",
+      "human_review_required": true
+    },
+    "qna-19": {
+      "expected_interpretation": "만8세이하또는초2이하육아+계속수행곤란+휴가휴직불허정당사유가능. 다른수급요건과증빙/고용센터최종판정.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000280148",
+      "human_review_required": true
+    },
+    "qna-20": {
+      "expected_interpretation": "질문자주장과상담답변구분, 현재공식근거로재직자시행요건및육아휴직기간별상한확인. 글날짜만으로법적정답확정금지.",
+      "source": "https://1350.moel.go.kr/rtmview.do?id=1000309035",
+      "human_review_required": true
+    }
+  }
+}

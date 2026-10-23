@@ -19,6 +19,7 @@ class TraceTests(unittest.TestCase):
         self.assertTrue(by_id[a["id"]]["selected_for_context"])
         self.assertFalse(by_id[b["id"]]["selected_for_context"])
         self.assertEqual(by_id[a["id"]]["corpus_origin"],"nodong_qna")
+        self.assertEqual(by_id[b["id"]]["corpus_origin"],"counsel")
         self.assertNotIn("sensitive body",str(trace))
         self.assertNotIn("private title",str(trace))
         self.assertNotIn("actual_influence",str(trace))

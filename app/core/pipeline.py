@@ -4504,11 +4504,11 @@ def process_question(query: str, session: Session, config: AppConfig,
     yield {"type": "ping"}
     try:
         conv_id = save_conversation(config.supabase, record)
-        if conv_id and not outcome.truncated:
+        if conv_id and not outcome.truncated and os.getenv("QA_QUALITY_ENABLED", "").lower() == "true":
             try:
-                from app.core.qa_quality_store import record_quality
+                from app.core.qa_quality_store import record_quality, quality_client
                 feedback = record_quality(
-                    config.supabase, conv_id, session.id, retrieval_trace, outcome.model,
+                    quality_client(), conv_id, session.id, retrieval_trace, outcome.model,
                     synthetic=bool(conv_metadata.get("synthetic")),
                 )
                 if feedback:

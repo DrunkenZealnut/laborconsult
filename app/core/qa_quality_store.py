@@ -6,6 +6,20 @@ from app.core.answer_feedback import issue_token
 
 _RELEASE_PATH=Path(__file__).resolve().parents[2]/'data'/'qa_corpus_release.json'
 
+_clients = {}
+
+def quality_client():
+    key=os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not key:
+        return None
+    identity=(os.getenv("SUPABASE_URL"),key)
+    if identity not in _clients:
+        from app.core.storage import make_supabase_client
+        _clients.clear()
+        _clients[identity]=make_supabase_client(key=key,postgrest_timeout=5.0)
+    return _clients[identity]
+
+
 def release_versions():
     if _RELEASE_PATH.is_file():
         release=json.loads(_RELEASE_PATH.read_text())

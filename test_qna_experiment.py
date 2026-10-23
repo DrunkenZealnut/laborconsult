@@ -30,6 +30,12 @@ class ExperimentTests(unittest.TestCase):
         wrapped.query(namespace="laborlaw-v2",vector=[0.1],top_k=5)
         self.assertEqual([r["namespace"] for r in seen],["qa-eval-fixed-counsel","qa-eval-fixed-law"])
 
+    def test_official_evidence_fetch_uses_frozen_namespace_too(self):
+        seen=[]
+        wrapped=self.q.EvaluationIndex(SimpleNamespace(fetch=lambda **kw: seen.append(kw)),"qa-eval-before",frozen_namespaces={"laborlaw-v2":"qa-eval-fixed-law"})
+        wrapped.fetch(ids=["id"],namespace="laborlaw-v2")
+        self.assertEqual(seen[0]["namespace"],"qa-eval-fixed-law")
+
     def test_sparse_exclusion_keeps_other_qa_sources(self):
         docs = [{"id":"a","text":"연차","source_type":"qa","corpus_origin":"nodong_qna"},
                 {"id":"b","text":"연차","source_type":"qa","corpus_origin":"legal_cases"}]

@@ -30,6 +30,12 @@ class EvaluationIndex:
             kwargs["namespace"] = self.frozen_namespaces[kwargs["namespace"]]
         return self.index.query(**kwargs)
 
+    def fetch(self, **kwargs):
+        namespace = kwargs.get("namespace")
+        kwargs["namespace"] = self.namespace if namespace == "qa" else self.frozen_namespaces.get(namespace, namespace)
+        return self.index.fetch(**kwargs)
+
+
 def include_sparse_document(doc: dict) -> bool:
     return os.getenv("QNA_EVAL_MODE") != "without" or not is_nodong_qa(doc)
 

@@ -24,7 +24,7 @@ def build_trace(candidates: list[dict], selected: list[dict]) -> dict:
             score = 0
         items.append({
             "chunk_id": chunk_id, "source_type": hit.get("source_type", "unknown"),
-            "corpus_origin": meta.get("corpus_origin", "unknown"),
+            "corpus_origin": meta.get("corpus_origin") or ("counsel" if hit.get("source_type") == "counsel" else "unknown"),
             "post_id": meta.get("post_id"), "posted_at": meta.get("posted_at"),
             "document_version": meta.get("document_version"),
             "retrieval_score": score if math.isfinite(score) else 0,

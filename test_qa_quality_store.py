@@ -13,6 +13,15 @@ class QualityStoreTests(unittest.TestCase):
         with patch.dict(os.environ,{'QA_QUALITY_ENABLED':'true'}):
             self.assertIsNone(record_quality(None,'id','sid',{},'model',synthetic=True))
 
+    def test_private_client_requires_server_role_key(self):
+        from app.core import qa_quality_store as store
+        self.assertTrue(hasattr(store,"quality_client"),"private service client missing")
+        with patch.dict(os.environ,{"SUPABASE_SERVICE_ROLE_KEY":"","SUPABASE_KEY":"public-key"}):
+            self.assertIsNone(store.quality_client())
+        with patch.dict(os.environ,{"SUPABASE_SERVICE_ROLE_KEY":"server-role"}), patch("app.core.storage.make_supabase_client",return_value="private-client") as factory:
+            self.assertEqual(store.quality_client(),"private-client")
+            self.assertEqual(factory.call_args.kwargs["key"],"server-role")
+
     def test_private_trace_and_signed_versions(self):
         self.assertIsNotNone(importlib.util.find_spec('app.core.qa_quality_store'))
         from app.core.qa_quality_store import record_quality
