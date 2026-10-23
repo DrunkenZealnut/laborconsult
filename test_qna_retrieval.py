@@ -43,6 +43,14 @@ class ProvenanceTests(unittest.TestCase):
         self.assertIn("답변 없는 질문",context)
         self.assertEqual(meta[0].get("answer_status"),"unanswered")
 
+    def test_legacy_dense_version_matches_deployed_snapshot_without_reembedding(self):
+        import app.core.provenance as prov
+        legacy={"source_type":"qa","url":"https://www.nodong.kr/qna/123","date":"2026.03.04"}
+        self.assertTrue(hasattr(prov,"legacy_versions"),"deployed legacy version map missing")
+        with patch.object(prov,"legacy_versions",return_value={"123":"legacy-frozen"}):
+            self.assertEqual(prov.provenance(legacy)["document_version"],"legacy-frozen")
+            self.assertEqual(prov.provenance({**legacy,"document_version":"new"})["document_version"],"new")
+
     def test_missing_provenance_does_not_invent_dates(self):
         context, meta = rag.format_pinecone_hits([{"id":"legacy", "title":"상담", "section":"답변",
             "source_type":"qa", "content":"내용", "score":0.8}])

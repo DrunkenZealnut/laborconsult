@@ -38,7 +38,7 @@ def make_vectors(record: dict, chunks: list[dict], embeddings: list[list[float]]
             raise ValueError("invalid embedding dimension or values")
         meta = {
             "source_type": "qa", "source": "laborconsult", "corpus_origin": "nodong_qna",
-            "post_id": record["post_id"], "url": record["canonical_url"],
+            "post_id": record["post_id"], "url": record["canonical_url"], "namespace": "qa",
             "title": chunk["title"][:200], "category": chunk["category"][:50],
             "section": chunk["section"][:100], "chunk_index": chunk["chunk_index"],
             "text": chunk["chunk_text"], "chunk_text": chunk["chunk_text"], "contextualized": False,

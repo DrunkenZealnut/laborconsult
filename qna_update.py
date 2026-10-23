@@ -49,6 +49,17 @@ def prepare(crawl:Path,candidate:Path):
     return output
 
 
+def merge_manifest(crawl:Path,output:Path):
+    if not read(crawl/"report.json").get("complete"):
+        raise ValueError("incomplete collection")
+    merged=read(crawl/"baseline-manifest.json")
+    for pid,result in read(crawl/"state.json")["posts"].items():
+        if result["status"]=="ok":
+            merged[pid]=read(crawl/"records"/f"{pid}.json")
+    save(output,merged)
+    return {"documents":len(merged),"manifest_version":digest(merged),"meaning":"collected, not necessarily deployed"}
+
+
 def _read_vectors(path):
     with gzip.open(path,'rt',encoding='utf-8') as f:return json.load(f)
 
@@ -110,16 +121,23 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
     p=sub.add_parser('prepare');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--candidate',type=Path,required=True)
+    p=sub.add_parser('manifest');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p=sub.add_parser('embed');p.add_argument('--candidate',type=Path,required=True)
     p=sub.add_parser('apply');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--production',action='store_true');p.add_argument('--gate',type=Path)
     p=sub.add_parser('build');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--snapshot',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p=sub.add_parser('restore');p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--post-id',required=True);p.add_argument('--production',action='store_true')
     args=parser.parse_args()
     if args.command=='prepare':result=prepare(args.crawl,args.candidate)
+    elif args.command=='manifest':result=merge_manifest(args.crawl,args.output)
     elif args.command=='build':
-        from qna_snapshot import build_sparse
+        from qna_snapshot import build_sparse, legacy_versions
         result=build_sparse(args.snapshot,replacements(args.candidate),args.output)
         save(args.output.with_suffix('.report.json'),result)
+        versions_path=args.output.parent/"qa_legacy_versions.json.gz"
+        tmp=versions_path.with_suffix(".tmp")
+        with gzip.open(tmp,"wt",encoding="utf-8") as stream:
+            json.dump(legacy_versions(args.snapshot),stream,separators=(",",":"))
+        tmp.replace(versions_path)
     else:
         from dotenv import load_dotenv
         load_dotenv()

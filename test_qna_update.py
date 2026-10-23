@@ -33,6 +33,18 @@ class UpdateTests(unittest.TestCase):
             self.assertGreater(report['embedding_tokens'],0)
             self.assertEqual(report['contextualization_tokens'],0)
 
+    def test_next_collection_manifest_keeps_current_answers_and_unvisited_legacy(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t);self.crawl(root/"crawl")
+            baseline=self.q.read(root/"crawl/baseline-manifest.json")
+            baseline["9"]={**baseline["1"],"post_id":"9"}
+            self.q.save(root/"crawl/baseline-manifest.json",baseline)
+            self.assertTrue(hasattr(self.q,"merge_manifest"),"next-run manifest missing")
+            self.q.merge_manifest(root/"crawl",root/"current.json")
+            merged=self.q.read(root/"current.json")
+            self.assertEqual(set(merged),{"1","2","3","9"})
+            self.assertEqual(merged["3"]["status"],"answered")
+
     def test_incomplete_collection_cannot_be_materialized(self):
         with tempfile.TemporaryDirectory() as t:
             root=Path(t);self.crawl(root/'crawl')

@@ -71,6 +71,15 @@ class TransactionTests(unittest.TestCase):
                     self.q.replace_document(index, "qa-eval-test", "123", vectors, Path(tmp))
             self.assertEqual(len(index.rows), 3)
 
+    def test_restore_refuses_a_later_unrelated_revision(self):
+        index=Index()
+        with tempfile.TemporaryDirectory() as tmp:
+            self.q.replace_document(index,"qa-eval-test","123",self.vectors(),Path(tmp))
+            index.rows["ctx_qa_123_c0"]["metadata"]["document_version"]="later-release"
+            with self.assertRaises(ValueError):
+                self.q.restore_document(index,"qa-eval-test","123",Path(tmp))
+            self.assertEqual(index.rows["ctx_qa_123_c0"]["metadata"]["document_version"],"later-release")
+
     def test_production_namespace_requires_explicit_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):

@@ -141,7 +141,9 @@ class PoliteFetcher:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-dir", type=Path, action="append", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--source-dir", type=Path, action="append")
+    source.add_argument("--baseline-manifest", type=Path)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--since", default="2026-03-01")
     parser.add_argument("--until", default=None)
@@ -157,7 +159,7 @@ def main() -> int:
     if baseline_path.exists():
         baseline = json.loads(baseline_path.read_text())
     else:
-        baseline = inventory(args.source_dir)
+        baseline = json.loads(args.baseline_manifest.read_text()) if args.baseline_manifest else inventory(args.source_dir)
         save(baseline_path, baseline)
     report = {"files": sum(len(v["local_paths"]) for v in baseline.values()),
               "unique_ids": len(baseline), "statuses": dict(Counter(v["status"] for v in baseline.values())),

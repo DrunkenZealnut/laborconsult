@@ -70,6 +70,12 @@ def verify_vectors(index, namespace: str, expected: dict, *, attempts: int = 5):
             time.sleep(2 ** attempt)
     raise RuntimeError("vector fetch verification failed")
 
+def _guard_revision(current: dict, old: dict, new: dict):
+    for key,row in current.items():
+        if not any(key in allowed and _matches({key:row},{key:allowed[key]}) for allowed in (old,new)):
+            raise ValueError("document changed after this transaction; refusing to overwrite a later revision")
+
+
 def _verify_ids(index, namespace: str, prefix: str, expected: set[str]):
     for attempt in range(5):
         if set(list_ids(index, namespace, prefix)) == expected:
@@ -115,6 +121,12 @@ def replace_document(index, namespace: str, post_id: str, vectors: list[dict],
         before = json.loads(before_path.read_text())
         if before["namespace"] != namespace or before["post_id"] != post_id:
             raise ValueError("preimage identity mismatch")
+    old_vectors = json.loads(before_path.read_text())["vectors"]
+    current = fetch_vectors(index, namespace, current_ids)
+    if set(current) != set(current_ids):
+        raise RuntimeError("current document fetch incomplete")
+    _guard_revision(current, old_vectors, expected)
+    _write(ledger/"replacement.json", expected)
     _write(tx_path, identity)
     (ledger/"complete.json").unlink(missing_ok=True)
     for start in range(0, len(vectors), 100):
@@ -142,6 +154,12 @@ def restore_document(index, namespace: str, post_id: str, ledger_dir: Path, *,
     pattern = re.compile(rf"ctx_qa_{post_id}_c[0-9]+")
     if any(not pattern.fullmatch(key) for key in expected):
         raise ValueError("preimage IDs outside document scope")
+    replacement = json.loads((ledger/"replacement.json").read_text())
+    current_ids = list_ids(index, namespace, f"ctx_qa_{post_id}_c")
+    current = fetch_vectors(index, namespace, current_ids)
+    if set(current) != set(current_ids):
+        raise RuntimeError("rollback current fetch incomplete")
+    _guard_revision(current, expected, replacement)
     for start in range(0, len(expected), 100):
         rows = list(expected.values())[start:start+100]
         index.upsert(vectors=rows, namespace=namespace)
