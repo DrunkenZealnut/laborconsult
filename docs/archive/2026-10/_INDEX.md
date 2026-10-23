@@ -11,6 +11,7 @@
 | calc-card-followups | 95.6% ※※※※ | 2026-10-16 | [Plan](calc-card-followups/calc-card-followups.plan.md), [Design](calc-card-followups/calc-card-followups.design.md), [Analysis](calc-card-followups/calc-card-followups.analysis.md), [Report](calc-card-followups/calc-card-followups.report.md) |
 | calc-card-consistency | 98.4% ※※※※※ | 2026-10-21 | [Plan](calc-card-consistency/calc-card-consistency.plan.md), [Design](calc-card-consistency/calc-card-consistency.design.md), [Analysis](calc-card-consistency/calc-card-consistency.analysis.md), [Report](calc-card-consistency/calc-card-consistency.report.md) |
 | chat-submission-lock | 99.4% ※※※※※※ | 2026-10-23 | [Plan](chat-submission-lock/chat-submission-lock.plan.md), [Design](chat-submission-lock/chat-submission-lock.design.md), [Analysis](chat-submission-lock/chat-submission-lock.analysis.md), [Report](chat-submission-lock/chat-submission-lock.report.md) |
+| monthly-base-unification | 100% ※※※※※※※ | 2026-10-23 | [Plan](monthly-base-unification/monthly-base-unification.plan.md), [Design](monthly-base-unification/monthly-base-unification.design.md), [Analysis](monthly-base-unification/monthly-base-unification.analysis.md), [Report](monthly-base-unification/monthly-base-unification.report.md) |
 
 ※ **Design 후 중단.** 9-27 재빌드가 anthropic SDK 1.8.0을 받아 Claude 답변이 전량 폴백된 사고의
 후속으로 SDK 1.x 대응을 설계했으나, "API만 쓰는데 SDK를 왜 올리나"라는 판단으로 중단했다 —
@@ -41,3 +42,5 @@
 기준 월액 단일화(고정수당 f1·f2, 휴업수당 f4).
 
 ※※※※※※ **완료 조건 6개 모두 충족이다**(보고서 §5). 다만 1·5번은 실행 기록에 기대는데, 수정 전 실패 확인·브라우저 확인·CI 28단계가 그 기록이다. 브라우저 확인은 PR 리뷰 반영(`.trim()` 복원, 진행 중 FAQ 예약 전송) 이전 코드 기준이고, 두 수정은 행동 테스트 L8·L11이 고정한다. Check 뒤에는 테스트 사례만 더했고 전체 변이 재실행은 하지 않았다(저장소 밖 스크립트 유실, M9·M10만 사본에서 확인). 후속 후보: 진행 중 FAQ가 써 둔 초안을 덮는 문제(DG-1), 드래그앤드롭 첨부의 잠금 무시(DG-3), 한글 IME 조합 중 Enter, 답변 중지 버튼, `?q=` 외부 링크 자동 전송.
+
+※※※※※※※ **완료 조건 6개 모두 충족이다**(보고서 §5). 2번은 Design D11이 의도된 변경 축에 포괄임금 명세 총액·공휴일 수당 월 환산을 더한 뒤의 판정이고(Plan v0.2에 반영), 실업급여·산재 평균임금 분모 변경(3개월 총일수)도 의도된 변경이다. Live(계산 카드 금지 수치 5/5 → 0/0 두 회차, 지식iN 필수 조문 0.950 → 1.000)는 PR #123 최종 코드 기준이고 답변 모델은 gpt-6-sol rev 12다. Check(Match Rate 100%)가 설계 밖에서 찾은 PR #123의 회귀 둘 — '세금 포함'·'4대보험 포함' 앞의 수당을 월급 총액 안으로 보고 빼 세전 30만 원 과소(Medium), 연봉 2,200만 원 근로장려금 1원(월액 반올림 × 12) — 은 핫픽스 PR #124로 고쳤고, 핫픽스 뒤 Live는 다시 재지 않았다(바뀐 경로가 fixture에 없어 오프라인 회귀로 확인). 후속 후보: 의도분석이 연 상여를 월 수당으로 뽑는 문제(고정수당 주기 필드 부재 — 단일화로 평균임금 계열까지 번짐, 4회 중 2회)와 채팅 경로의 연 상여 미전달, DC형·근로장려금의 연 상여 미포함, 탄력 연장 임금의 월 총액 단독 반영, 공개 휴업수당 흐름도의 '월급 ÷ 30'.
