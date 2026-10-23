@@ -132,6 +132,59 @@ class UnexecutedCardTests(unittest.TestCase):
         analysis = AnalysisResult(consultation_type="labor_law", consultation_topic="임금")
         self.assertTrue(_consultation_allowed(analysis, card(["일할계산급여"]), None, {}))
 
+    def test_retirement_label_and_unrecognized_label_do_not_default_to_minimum(self):
+        for label in ("중도퇴사 급여", "대지급금", "알수없는계산"):
+            with self.subTest(label=label):
+                self.assertHeld(card([label], f"월급 300만원입니다. {label} 계산해주세요"))
+
+    def test_empty_analysis_label_cannot_complete_unsupported_only_request(self):
+        analysis = AnalysisResult(requires_calculation=True, calculation_types=[],
+                                  extracted_info={"wage_type": "월급", "monthly_wage": 3000000})
+        self.assertHeld(_run_calculator(_analysis_to_extract_params(analysis), "연말정산 환급액만 계산해주세요"))
+
+    def test_insurance_payment_history_is_not_a_separate_calculation_request(self):
+        self.assertHeld(card(["4대보험"], "국민연금과 건강보험을 매달 냈습니다. 연말정산 환급액만 계산해주세요"))
+
+    def test_negated_selective_regime_preserves_overtime(self):
+        text = card(["연장수당"], "선택적 근로시간제가 아닙니다. 일반 근로자의 연장수당을 계산해주세요",
+                    weekly_overtime_hours=5, premium_paid_separately=True)
+        self.assertNotIn("계산 보류", text)
+        self.assertIn("연장/야간/휴일수당(월)", text)
+
+    def test_separately_requested_regular_hours_are_preserved(self):
+        text = card(["선택적 근로시간제", "근로시간"],
+                    "선택적 근로시간제 정산과 별도로 일반 근로자의 주5일 하루8시간 소정근로시간도 계산해주세요")
+        self.assertIn("계산 보류", text)
+        self.assertIn("월 소정근로시간", text)
+
+    def test_compound_supported_labels_preserve_both_outcomes(self):
+        for labels in (["일할계산급여/4대보험"], ["4대보험/일할계산급여"], ["연말정산·4대보험"]):
+            with self.subTest(labels=labels):
+                text = card(labels)
+                self.assertIn("계산 보류", text)
+                self.assertIn("세전 월 급여", text)
+
+    def test_platform_filter_does_not_replace_requested_proration_with_insurance(self):
+        self.assertHeld(card(["일할계산급여"], is_platform_worker=True))
+
+    def test_platform_auto_insurance_does_not_complete_missing_arrears(self):
+        self.assertHeld(card(["임금체불"], is_platform_worker=True))
+
+    def test_unknown_request_keeps_independent_known_request(self):
+        text = card(["대지급금", "4대보험"])
+        self.assertIn("대지급금", text)
+        self.assertIn("계산 보류", text)
+        self.assertIn("세전 월 급여", text)
+
+    def test_explicit_unsupported_analyzer_type_preserves_valid_mixed_request(self):
+        analysis = AnalysisResult(requires_calculation=True,
+            calculation_types=["year_end_settlement", "insurance"],
+            extracted_info={"wage_type": "월급", "monthly_wage": 3000000})
+        text = _run_calculator(_analysis_to_extract_params(analysis))
+        self.assertIn("계산 보류", text)
+        self.assertIn("연말정산", text)
+        self.assertIn("세전 월 급여", text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

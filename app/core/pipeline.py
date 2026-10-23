@@ -26,7 +26,7 @@ from app.models.schemas import AnalysisResult
 from app.core.storage import save_conversation, save_session_data, upload_attachment, classify_category, infer_calc_types, ConversationRecord
 from app.models.session import Session
 from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
-from wage_calculator.facade.registry import resolve_calc_type_strict, unsupported_calc_reason, CALC_TYPES
+from wage_calculator.facade.registry import resolve_calc_type_strict, unsupported_calc_reason, split_calc_labels, CALC_TYPES
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize, HourSplit
 from wage_calculator.result import format_result, format_skipped_calculations, SKIPPED_CALCULATION_MARK
 from wage_calculator.calculators.shared import (
@@ -2320,11 +2320,6 @@ def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[
                     calc_types, inferred)
         return inferred
 
-    if has_wage:
-        logger.info("계산 유형 미확정(labels=%r) — 임금 정보 존재, 최저임금 검증만 실행",
-                    calc_types)
-        return ["minimum_wage"]
-
     logger.info("계산 유형 미확정(labels=%r) — 계산기 미실행, 상담 경로로 진행", calc_types)
     return None
 
@@ -2358,6 +2353,22 @@ def _normalize_reference_date(value) -> str | None:
         return None
 
 
+def _affirmative_calculation_mention(query: str, pattern: str) -> bool:
+    """지원 범위 가드용 긍정 표현. 제도를 명시적으로 부정하는 문장은 제외한다."""
+    return any(not re.match(r"(?:제|이|가|는|은|를|을|에|대해서는){0,3}(?:아니|아닙|아닌|제외)",
+                            query[match.end():]) for match in re.finditer(pattern, query))
+
+
+def _independent_supported_request(query: str, pattern: str, unsupported: str) -> bool:
+    """다른 계산의 명칭과 연산 요청을 함께 확인한다. 미지원 연산을 요청한 동사를 빌려 쓰지 않는다."""
+    parts = re.split(unsupported + r"|[.!?\n]", query)
+    operation = r"(?:공제액|부담액|실수령액|얼마|계산|산정|알려)"
+    if any(re.search(pattern + r".{0,35}?" + operation, part) for part in parts):
+        return True
+    # 두 목적어 뒤에 동사가 한 번만 있는 공동 요청(4대보험과 연말정산을 계산).
+    return bool(re.search(pattern + r"(?:과|와|및)" + unsupported + r".{0,20}" + operation, query))
+
+
 def _run_calculator(params: dict, query: str = "") -> str | None:
     """지원하지 않는 정산의 안내를 보존한 뒤 실행 가능한 요청을 계산한다."""
     if not params or not params.get("needs_calculation"):
@@ -2367,8 +2378,10 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     notes = {}
     supported = []
     # 구분자로 묶인 복수 요청도 각각 보존한다(미지원 항목 때문에 전체가 사라지지 않음).
-    for label in [part.strip() for label in labels for part in re.split(r"[/,、]", label) if part.strip()]:
+    for label in [part for label in labels for part in split_calc_labels(label)]:
         reason = unsupported_calc_reason(label)
+        if not reason and resolve_calc_type_strict(label) is None:
+            reason = "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목과 필요한 입력을 확인해주세요."
         if reason:
             notes[label] = reason
         else:
@@ -2377,22 +2390,26 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     # 분석기의 제한된 유형 목록이 연말정산을 insurance, 선택근로 정산을 working_hours로
     # 바꿔도 다른 계산의 숫자를 내보내지 않는다. 별도로 요청한 일반 계산은 보존한다.
     compact = "".join(query.split())
-    if "연말정산" in compact:
+    if _affirmative_calculation_mention(compact, r"연말정산"):
         notes["연말정산"] = unsupported_calc_reason("연말정산")
-        if not re.search(r"4대보험|사대보험|국민연금|건강보험|고용보험|월.*(?:실수령|원천징수)", compact):
+        if not _independent_supported_request(compact,
+                r"(?:4대보험|사대보험|국민연금|건강보험|고용보험|원천징수)", r"연말정산"):
             supported = [label for label in supported
                          if resolve_calc_type_strict(label) != ["insurance"]]
-    if "선택적근로" in compact or "선택근로" in compact:
+        supported = [label for label in supported if label not in ("임금계산", "임금 계산", "임금", "해당없음")]
+    if _affirmative_calculation_mention(compact, r"선택적?근로시간제"):
         notes["선택적 근로시간제"] = unsupported_calc_reason("선택적 근로시간제")
+        separate_hours = bool(re.search(r"(?:별도|일반|다른).{0,60}(?:소정근로시간|월근로시간|연장수당).{0,20}(?:계산|산정|알려)", compact))
+        blocked = {"flexible_work"} if separate_hours else {"working_hours", "flexible_work", "overtime"}
         supported = [label for label in supported if not set(resolve_calc_type_strict(label) or [])
-                     .intersection({"working_hours", "flexible_work", "overtime"})]
+                     .intersection(blocked)]
+    routed = dict(params, calculation_types_kr=supported)
     if not notes:
-        return _run_supported_calculator(params, query)
+        return _run_supported_calculator(routed, query)
     notice = format_skipped_calculations([
         {"section": label, "reason": reason} for label, reason in notes.items()])
     if not supported:
         return notice
-    routed = dict(params, calculation_types_kr=supported)
     text = _run_supported_calculator(routed, query)
     return f"{notice}\n\n{text}" if text else notice
 
@@ -2586,7 +2603,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         [params["calculation_type"]] if params.get("calculation_type") else [])
     targets = _resolve_targets(calc_types, query, has_wage)
     if not targets:
-        return None
+        return format_skipped_calculations([{"section": "계산 유형",
+            "reason": "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목을 확인해주세요."}])
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
     holiday_hours_block = None
@@ -2619,6 +2637,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         targets = wageless
 
     # 특수고용직: 근로기준법 미적용 계산기 제외 + insurance/legal_hints 자동 추가
+    platform_skipped = []
+    platform_auxiliary = []
     if inp.is_platform_worker:
         _pw_exclude = {
             "overtime", "weekly_holiday", "annual_leave", "dismissal",
@@ -2626,9 +2646,15 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
             "shutdown_allowance", "weekly_hours_check",
             "retirement_tax", "retirement_pension",
         }
+        platform_skipped = [{"target": t, "section": CALC_TYPES[t],
+            "reason": "노무제공자 입력에서는 이 계산을 실행하지 않습니다. 근로자성 및 적용 범위 확인이 필요합니다."}
+            for t in targets if t in _pw_exclude]
         targets = [t for t in targets if t not in _pw_exclude]
+        if not [t for t in targets if t != "legal_hints"]:
+            return format_skipped_calculations(platform_skipped)
         if "insurance" not in targets:
             targets.append("insurance")
+            platform_auxiliary.append("insurance")
         if "legal_hints" not in targets:
             targets.append("legal_hints")
 
@@ -2664,7 +2690,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                                    excess=regime[1], mode="held", reason=regime[0])
     split = apply_hour_split(inp)
     # 묻지 않았지만 카드 금액을 맞추려고 더한 계산 — facade의 '시도한 계산이 전부 보류면 요청 보류' 판정에서 세지 않는다(리뷰 M2)
-    auxiliary = []
+    auxiliary = list(platform_auxiliary)
     if split.mode == "applied" and has_wage and "overtime" not in targets:
         targets.append("overtime")
         auxiliary.append("overtime")
@@ -2842,6 +2868,10 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         calc = WageCalculator()
         result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant,
                                 auxiliary=tuple(auxiliary))
+        if platform_skipped:
+            result.calculation_skipped.extend(platform_skipped)
+            if result.calculation_status == "complete":
+                result.calculation_status = "partial"
         if composition_unknown:
             result.monthly_total = 0.0
             result.warnings = [_composition_unknown_note(inp), *result.warnings]
@@ -3093,6 +3123,8 @@ def _analysis_to_extract_params(analysis) -> dict:
         "unemployment": "실업급여", "insurance": "4대보험",
         "parental_leave": "육아휴직", "maternity_leave": "출산휴가",
         "prorated": "일할계산급여",
+        "year_end_settlement": "연말정산", "selective_work_settlement": "선택적 근로시간제",
+        "arrears_principal": "임금체불액",
         "wage_arrears": "임금체불", "compensatory_leave": "보상휴가",
         "flexible_work": "탄력근무", "comprehensive": "포괄임금제",
         "eitc": "근로장려금",
@@ -3105,9 +3137,8 @@ def _analysis_to_extract_params(analysis) -> dict:
         "retirement_tax": "퇴직소득세", "retirement_pension": "퇴직연금",
     }
     # 전체 계산 유형을 라벨로 변환 — 첫 유형만 계산되던 결함 수정 (CALC-2)
-    labels = [REVERSE_CALC_MAP[ct] for ct in (analysis.calculation_types or [])
-              if ct in REVERSE_CALC_MAP]
-    calc_type = labels[0] if labels else "임금계산"
+    labels = [REVERSE_CALC_MAP.get(ct, ct) for ct in (analysis.calculation_types or [])]
+    calc_type = labels[0] if labels else "계산 유형 미확인"
 
     params = {
         "needs_calculation": analysis.requires_calculation,

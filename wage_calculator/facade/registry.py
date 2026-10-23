@@ -4,6 +4,8 @@
 facade.py 에서 분리 (Phase D)
 """
 
+import re
+
 from ..calculators.annual_leave import calc_annual_leave
 from ..calculators.average_wage import calc_average_wage
 from ..calculators.compensatory_leave import calc_compensatory_leave
@@ -154,6 +156,7 @@ CALC_TYPE_MAP = {
     "시급환산":            ["ordinary_wage"],
     "중도입사 급여":        ["prorated"],
     "일할계산급여":         ["prorated"],
+    "중도퇴사 급여":        ["prorated"],
     "소정근로시간":         ["working_hours"],
     "근로시간":             ["working_hours"],
     "근로시간 계산":        ["working_hours"],
@@ -180,23 +183,26 @@ def unsupported_calc_reason(label: str) -> str | None:
     return None
 
 
+def split_calc_labels(label: str) -> list[str]:
+    return [part.strip() for part in re.split(r"[/,·、]", label) if part.strip()]
+
+
 def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
     """
     CALC_TYPE_MAP 정확 매칭 → 구분자 분리 → 키워드 fallback.
     모든 단계 매칭 실패 시 None — 묵시적 기본값 없음 (웹 파이프라인 라우팅용).
     """
+    parts = split_calc_labels(calc_type_str)
+    if len(parts) > 1:
+        resolved = [resolve_calc_type_strict(part) for part in parts]
+        return (list(dict.fromkeys(t for targets in resolved for t in (targets or [])))
+                if any(targets is not None for targets in resolved) else None)
     if unsupported_calc_reason(calc_type_str):
         return []
+    if calc_type_str in CALC_TYPES:
+        return [calc_type_str]
     if calc_type_str in CALC_TYPE_MAP:
         return CALC_TYPE_MAP[calc_type_str]
-
-    # 슬래시/콤마로 분리 후 개별 매칭 시도
-    for sep in ["/", ",", "·", "、"]:
-        if sep in calc_type_str:
-            parts = [p.strip() for p in calc_type_str.split(sep)]
-            for part in parts:
-                if part in CALC_TYPE_MAP:
-                    return CALC_TYPE_MAP[part]
 
     # 키워드 우선순위 fallback (구체적 키워드가 앞, generic이 뒤)
     _keyword_map = [
