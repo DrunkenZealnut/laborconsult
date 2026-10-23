@@ -2557,6 +2557,11 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
             inp.start_date = start
     if params.get("end_date"):
         inp.end_date = params["end_date"]
+    # 연차 입력을 숫자 변환으로 덮거나 누락시키지 않는다. 범위·날짜 검증은 계산기에서 보류 사유와 함께 수행한다.
+    from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+    for key in ANNUAL_INPUT_FIELDS:
+        if params.get(key) is not None:
+            setattr(inp, key, params[key])
 
     # 특수고용직(노무제공자) 판별
     if params.get("is_platform_worker"):
@@ -3194,6 +3199,8 @@ def _analysis_to_extract_params(analysis) -> dict:
         "shutdown_days": info.get("shutdown_days"),
         "public_holiday_days": info.get("public_holiday_days"),
     }
+    from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+    params.update({key: info[key] for key in ANNUAL_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

@@ -131,8 +131,14 @@ def _pop_annual_leave(r, result):
     result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
     result.summary["연차수당"] = f"{r.annual_leave_pay:,.0f}원"
     result.summary["미사용 연차"] = f"{r.remaining_days:.1f}일"
+    if r.is_eligible:
+        result.summary["연차 시간"] = f"발생 {r.accrued_hours:g}시간 · 사용 {r.used_hours:g}시간 · 잔여 {r.remaining_hours:g}시간"
+        result.summary["연차수당 정산 상태"] = ("퇴직 시 현재 기간 잔여분 (당시 임금·기지급 확인 필요)" if r.pay_due
+                                                else "입력 임금 기준 평가액 · 사용기간 만료/퇴직 전 확정 지급액 아님")
+    if r.first_year_settlement_days is not None:
+        result.summary["별도 첫해 미사용분"] = f"{r.first_year_settlement_days:g}일 (당해 발생분·수당에 합산하지 않음)"
     if r.deducted_days > 0:
-        result.summary["2년차 차감"] = f"{r.deducted_days:.1f}일 (제60조③)"
+        result.summary["개정 전 사건의 첫해 공제"] = f"{r.deducted_days:.1f}일 (2017-05-30 전 입사)"
     if r.is_part_time_ratio:
         result.summary["단시간 비례"] = f"×{r.part_time_ratio:.2f}"
     if r.fiscal_year_gap > 0:

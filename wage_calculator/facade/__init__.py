@@ -168,6 +168,11 @@ class WageCalculator:
             try:
                 with used_scope():        # 보류된 섹션이 읽은 기준은 provenance에서 제외
                     value = run()
+                    if getattr(value, "held_reason", ""):
+                        result.calculation_skipped.append({
+                            "target": target, "section": section, "reason": value.held_reason})
+                        blocked_targets.add(target)
+                        return None
                     result.calculation_executed.append(target)
                     return value
             except RuleUnavailable as exc:
