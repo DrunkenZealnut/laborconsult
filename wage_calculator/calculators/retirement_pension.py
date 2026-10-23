@@ -55,6 +55,12 @@ def _calc_db(
     """DB형: 퇴직금과 동일 공식"""
     legal.append("근로자퇴직급여보장법 제15조 (확정급여형퇴직연금제도의 급여 수준)")
 
+    if severance_result is None:
+        from .severance import calc_severance
+        severance_result = calc_severance(inp, ow)
+    if severance_result.held_reason:
+        return RetirementPensionResult(held_reason=severance_result.held_reason,
+                                       warnings=severance_result.warnings)
     if severance_result is not None and not severance_result.is_eligible:
         # 'DB형 = 퇴직금과 동일'이 이 계산의 전제다 — 퇴직금이 발생하지 않으면 DB형도 0이다. 통상시급으로 따로 추정하면
         # 계속근로 7개월에 없는 퇴직연금 1,821,300원이 나왔다(Act-2 재검토 N2).

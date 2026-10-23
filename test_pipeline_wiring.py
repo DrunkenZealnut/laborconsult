@@ -155,11 +155,14 @@ def main() -> None:
     # ── W13. 출산 유형 배선: 다태아·미숙아가 휴가 일수를 바꾼다 ──
     # 두 필드는 계산기·흐름도만 지원하고 상담 경로에는 배선이 없어, 챗봇이 다태아
     # 질문에도 90일로 답했다(실측 2026-09-23). 일수는 급여 총액을 직접 바꾼다.
-    base = {"wage_type": "월급", "monthly_wage": 5_000_000, "reference_year": 2026}
+    base = {"wage_type": "월급", "monthly_wage": 5_000_000, "reference_year": 2026,
+            "family_leave_days": 90, "family_leave_used_days": 0, "family_leave_start_date": "2026-05-01",
+            "family_leave_end_date": "2026-07-29", "family_leave_insured_days": 180,
+            "family_leave_eligible": True, "is_priority_support_company": True}
     r90 = run(["maternity_leave"], base)
-    r120 = run(["maternity_leave"], {**base, "is_multiple_birth": True})
+    r120 = run(["maternity_leave"], {**base, "is_multiple_birth": True, "family_leave_days": 120, "family_leave_end_date": "2026-08-28"})
     r100 = run(["maternity_leave"], {**base, "is_premature_birth": True,
-                                     "reference_date": "2026-05-01"})
+                                     "reference_date": "2026-05-01", "family_leave_days": 100, "family_leave_end_date": "2026-08-08"})
     assert r90 and "90일" in r90, f"W13 실패(단태아 90일 누락):\n{r90}"
     assert r120 and "120일" in r120, f"W13 실패(다태아 배선 없음):\n{r120}"
     assert r100 and "100일" in r100, f"W13 실패(미숙아 배선 없음):\n{r100}"

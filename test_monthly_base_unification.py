@@ -156,7 +156,7 @@ END_DATES = ("2026-10-01", "2026-03-01")   # 산정기간 92일·90일
 
 def grid_input(wage, allowance, overtime, bonus, end):
     return wage_input(overtime=overtime, start_date="2023-04-01", end_date=end, fixed_allowances=list(ALLOWANCES[allowance]),
-                      annual_bonus_total=bonus, shutdown_start_date=end, shutdown_days=10, pension_type="DC",
+                      annual_bonus_total=bonus, annual_bonus_allowance_ids=[], monthly_total_bonus_included=0, shutdown_start_date=end, shutdown_days=10, pension_type="DC",
                       **WAGES[wage])
 
 
@@ -340,7 +340,7 @@ class ReviewFindingsTest(unittest.TestCase):
     def test_m3_excluded_period_does_not_inflate_the_estimate(self):
         """추정 총액에서 제외 기간의 몫은 일수 비율로 뺀다(받은 금액만 빼면 평소 임금이 남는다). 산정기간 밖 제외 기간은 세지 않는다."""
         inp = wage_input(wage_type=WageType.MONTHLY, monthly_wage=3000000, start_date="2023-04-01", end_date="2026-10-01",
-                         excluded_periods=[{"start": "2026-08-01", "end": "2026-08-30", "paid": 0}])
+                         excluded_periods=[{"start": "2026-08-01", "end": "2026-08-30", "reason": "사용자귀책휴업", "paid": 0}])
         self.assertEqual(unemployment(inp).avg_daily_wage, 97826)
         moved = replace(inp, annual_bonus_total=6000000, shutdown_days=10, shutdown_start_date="2026-03-01")
         ow = calc_ordinary_wage(moved)
@@ -384,10 +384,10 @@ class UnemploymentFormulaTest(unittest.TestCase):
 
     def test_u11_actual_wages_and_excluded_periods(self):
         _, text = self.formulas(wage_type=WageType.MONTHLY, monthly_wage=3000000, end_date="2026-10-01",
-                                last_3m_wages=[3000000, 3000000, 2000000], annual_bonus_total=6000000)
+                                last_3m_wages=[3000000, 3000000, 2000000], annual_bonus_total=6000000, last_3m_bonus_included=0)
         self.assertIn("평균임금 일액: (8,000,000원 + 상여금 1,500,000원 + 연차수당 0원) ÷ 92일 = 103,260.9원", text)
         _, text = self.formulas(wage_type=WageType.MONTHLY, monthly_wage=3000000, end_date="2026-10-01",
-                                excluded_periods=[{"start": "2026-08-01", "end": "2026-08-30", "paid": 0}])
+                                excluded_periods=[{"start": "2026-08-01", "end": "2026-08-30", "reason": "사용자귀책휴업", "paid": 0}])
         self.assertIn("산정기간 제외: 30일, 제외 임금: 2,934,783원 (추정 총액의 그 기간 몫, 근기법 시행령 제2조)", text)
         self.assertIn("(3개월 임금총액 6,065,217원(제외 임금 차감 후)) ÷ 62일 = 97,826.1원", text)
 

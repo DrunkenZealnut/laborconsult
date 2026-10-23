@@ -456,12 +456,4 @@ def _get_base_monthly(inp: WageInput, monthly_hours: float) -> float:
 
 def _monthly_amount_fa(a) -> float:
     """수당 월 환산 금액 — FixedAllowance 속성 접근"""
-    amount = a.amount
-    cycle = a.payment_cycle
-    if a.annual or cycle == "연":
-        return amount / 12
-    elif cycle == "분기":
-        return amount / 3
-    elif cycle == "반기":
-        return amount / 6
-    return amount
+    return a.monthly_amount

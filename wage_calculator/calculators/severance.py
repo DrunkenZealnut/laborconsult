@@ -112,6 +112,8 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
 
     # A. 3개월 평균임금 — average_wage 모듈 재사용
     avg_result = calc_average_wage(inp, ow)
+    if avg_result.held_reason:
+        return SeveranceResult(held_reason=avg_result.held_reason, warnings=avg_result.warnings)
     avg_daily_3m = avg_result.avg_daily_3m
 
     # B. 1년 평균임금 (대법원 2023다302579)

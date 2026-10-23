@@ -1401,10 +1401,10 @@ def _add_composition_alternative(result, calc, inp, targets) -> None:
     pay_targets = [t for t in targets if t in _PAY_ESTIMATE_TARGETS]
     if not pay_targets:
         return
-    alt_inp = _composition_alternative_input(inp)
-    if alt_inp is None:
-        return
     try:
+        alt_inp = _composition_alternative_input(inp)
+        if alt_inp is None:
+            return
         alt = calc.calculate(alt_inp, pay_targets)
     except Exception:  # noqa: BLE001 — 대안 계산이 실패해도 원래 카드는 그대로 낸다
         logger.warning("D4 대안 구성 계산 실패", exc_info=True)
@@ -2579,7 +2579,9 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
     from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
-    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS:
+    from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+    from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
     _complete_explicit_reduced_calendar_month(inp, query)
@@ -2635,6 +2637,34 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     if not targets:
         return format_skipped_calculations([{"section": "계산 유형",
             "reason": "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목을 확인해주세요."}])
+
+    if "maternity_leave" in targets:
+        # Analyzer aliases and legacy labels both select the requested subtype.
+        if inp.maternity_leave_type is None:
+            compact = "".join(" ".join(calc_types).split())
+            if "난임" in compact:
+                inp.maternity_leave_type = "infertility"
+            elif "배우자" in compact and ("유산" in compact or "사산" in compact):
+                inp.maternity_leave_type = "spouse_miscarriage"
+            elif "배우자" in compact:
+                inp.maternity_leave_type = "spouse_birth"
+            else:
+                inp.maternity_leave_type = "maternity"
+        specific_types = set()
+        for label in [part for value in calc_types for part in split_calc_labels(value)]:
+            compact_label = "".join(label.split())
+            if "난임" in compact_label:
+                specific_types.add("infertility")
+            elif "배우자" in compact_label and ("유산" in compact_label or "사산" in compact_label):
+                specific_types.add("spouse_miscarriage")
+            elif "배우자" in compact_label and "출산" in compact_label:
+                specific_types.add("spouse_birth")
+            elif "출산" in compact_label:
+                specific_types.add("maternity")
+        if len(specific_types) > 1:
+            inp.maternity_leave_type = "multiple"
+        if "is_priority_support_company" not in params:
+            inp.is_priority_support_company = None
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
     holiday_hours_block = None
@@ -2930,7 +2960,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                         f"월급 중 기본급·산입 수당 외 몫(연장수당 등) {stated_premium_part:,.0f}원이 위에서 계산한 연장·야간·휴일 근로 임금 "
                         f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
         requested_amounts = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears"}:
+        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave"}:
             # 구성 보정이 기초 월급을 급여·이자 요청의 지급액으로 되살리지 않도록 한다.
             result.monthly_total = result.monthly_net = 0.0
         if (composition_hold or comprehensive_total) and held_is_total:
@@ -3229,7 +3259,9 @@ def _analysis_to_extract_params(analysis) -> dict:
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
     from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
-    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS if key in info})
+    from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+    from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

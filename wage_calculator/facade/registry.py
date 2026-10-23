@@ -180,6 +180,8 @@ CALC_TYPE_MAP = {
 def unsupported_calc_reason(label: str) -> str | None:
     """구현이 없는 정산을 이름이 비슷한 계산기로 대체하지 않는다."""
     compact = "".join(label.split())
+    if ("유산" in compact or "사산" in compact) and "배우자" not in compact:
+        return "본인 유산·사산 휴가급여 계산은 아직 지원하지 않습니다. 임신 기간별 휴가일수를 확인해야 합니다."
     if "연말정산" in compact:
         return "연말정산 환급·추가납부액 계산은 아직 지원하지 않습니다. 월별 4대보험·원천징수 계산과 구분해야 합니다."
     if "선택적근로" in compact or "선택근로" in compact:
@@ -190,7 +192,8 @@ def unsupported_calc_reason(label: str) -> str | None:
 
 
 def split_calc_labels(label: str) -> list[str]:
-    return [part.strip() for part in re.split(r"[/,·、]", label) if part.strip()]
+    protected = re.sub(r"(유산)\s*[·/、]\s*(사산)", r"\1∎\2", label)
+    return [part.strip().replace("∎", "·") for part in re.split(r"[/,·、]", protected) if part.strip()]
 
 
 def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
@@ -215,6 +218,7 @@ def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
         # ── 구체적 키워드 (generic 규칙보다 우선) ──
         (["육아기 근로시간 단축", "육아기근로시간단축", "육아기 단축", "육아기단축"], ["reduced_work_benefit"]),
         (["지연이자", "체불이자", "퇴직금 이자"], ["wage_arrears"]),
+        (["난임", "배우자 유산", "배우자유산", "배우자 사산", "배우자사산"], ["maternity_leave"]),
         (["공휴일"],               ["public_holiday"]),
         (["소정근로시간", "월근로시간", "월 소정"], ["working_hours"]),
         (["통상임금", "통상시급"],  ["ordinary_wage"]),
