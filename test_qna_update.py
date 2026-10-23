@@ -45,6 +45,19 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(set(merged),{"1","2","3","9"})
             self.assertEqual(merged["3"]["status"],"answered")
 
+    def test_explicit_quarantine_keeps_failed_source_out_of_candidate(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t);self.crawl(root/"crawl")
+            report={"complete":False,"failed_ids":["2"],"failed_pages":[],"unvisited_ids":[],"date_unknown":[]}
+            self.q.save(root/"crawl/report.json",report)
+            state=self.q.read(root/"crawl/state.json");state["posts"]["2"]={"status":"failed"}
+            self.q.save(root/"crawl/state.json",state)
+            result=self.q.prepare(root/"crawl",root/"candidate",quarantine_ids=["2"])
+            self.assertEqual(set(result["documents"]),{"3"})
+            self.assertEqual(result["quarantined_ids"],["2"])
+            self.assertFalse(result["collection_report"]["complete"])
+            with self.assertRaises(ValueError):self.q.prepare(root/"crawl",root/"other",quarantine_ids=["9"])
+
     def test_incomplete_collection_cannot_be_materialized(self):
         with tempfile.TemporaryDirectory() as t:
             root=Path(t);self.crawl(root/'crawl')

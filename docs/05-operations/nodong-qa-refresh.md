@@ -15,6 +15,8 @@ python crawl_qna_refresh.py \
 
 처음의 종료 시각이 state에 고정된다. 동일 명령으로 재개하면 성공한 페이지·글은 건너뛰고 실패를 다시 시도한다. `report.json.complete=false`, 실패 페이지·ID, 날짜 불명, 미방문 ID는 정상 갱신으로 처리하지 않는다. 접근 실패는 글 삭제가 아니다.
 
+재시도 후에도 원문을 확인할 수 없는 글은 실패로 남긴다. 운영자가 실패 ID 전부를 명시한 `--quarantine-id ID`를 prepare/manifest에 넘기면 그 글의 기존 원문·벡터를 유지한 채 성공 문서만 후보로 만들 수 있다. 페이지 실패·미방문·날짜 불명에는 이 예외를 허용하지 않는다. 격리 목록은 후보 manifest와 보고서에 남으며 원본 수집 report의 complete=false를 바꾸지 않는다.
+
 완료 후 다음 수집의 기준 manifest를 만든다. **수집 완료와 검색 배포 완료는 별도 상태다.**
 
 ```bash

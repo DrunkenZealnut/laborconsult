@@ -16,10 +16,19 @@ def read(path): return json.loads(Path(path).read_text())
 def save(path,obj): atomic_write_json(str(path),obj)
 
 
-def prepare(crawl:Path,candidate:Path):
+def _validate_collection(report,quarantine_ids):
+    allowed=set(quarantine_ids)
+    if allowed and allowed != set(report.get("failed_ids",[])):
+        raise ValueError("quarantine must explicitly match every failed ID")
+    exception=bool(allowed) and not report.get("failed_pages") and not report.get("unvisited_ids")
+    if (not report.get("complete") and not exception) or report.get("date_unknown"):
+        raise ValueError("incomplete collection or unknown dates")
+    return sorted(allowed)
+
+
+def prepare(crawl:Path,candidate:Path,*,quarantine_ids=()):
     report=read(crawl/'report.json')
-    if not report.get('complete') or report.get('date_unknown'):
-        raise ValueError('incomplete collection or unknown dates')
+    quarantined=_validate_collection(report,quarantine_ids)
     baseline=read(crawl/'baseline-manifest.json')
     state=read(crawl/'state.json')
     selected={}
@@ -29,7 +38,7 @@ def prepare(crawl:Path,candidate:Path):
         if record.get('change') in {'new','changed'} or baseline.get(pid,{}).get('status')=='unanswered':
             selected[pid]=record
     candidate.mkdir(parents=True,exist_ok=True)
-    identity={'documents':{pid:digest(record) for pid,record in selected.items()},
+    identity={'documents':{pid:digest(record) for pid,record in selected.items()},'quarantined_ids':quarantined,
               'embedding_model':EMBED_MODEL,'embedding_dimensions':EMBED_DIM,
               'chunking_version':CHUNK_VERSION,'redaction_version':REDACTION_VERSION}
     identity['candidate_version']=digest(identity)
@@ -50,9 +59,8 @@ def prepare(crawl:Path,candidate:Path):
     return output
 
 
-def merge_manifest(crawl:Path,output:Path):
-    if not read(crawl/"report.json").get("complete"):
-        raise ValueError("incomplete collection")
+def merge_manifest(crawl:Path,output:Path,*,quarantine_ids=()):
+    _validate_collection(read(crawl/"report.json"),quarantine_ids)
     merged=read(crawl/"baseline-manifest.json")
     for pid,result in read(crawl/"state.json")["posts"].items():
         if result["status"]=="ok":
@@ -137,15 +145,15 @@ def apply(candidate,index,namespace,ledger,*,production=False,gate=None,workers:
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
-    p=sub.add_parser('prepare');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--candidate',type=Path,required=True)
-    p=sub.add_parser('manifest');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
+    p=sub.add_parser('prepare');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--candidate',type=Path,required=True);p.add_argument('--quarantine-id',action='append',default=[])
+    p=sub.add_parser('manifest');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--quarantine-id',action='append',default=[])
     p=sub.add_parser('embed');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--workers',type=int,choices=[1,2,4,8],default=4)
     p=sub.add_parser('apply');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--production',action='store_true');p.add_argument('--gate',type=Path);p.add_argument('--workers',type=int,choices=[1,2,4,8],default=4)
     p=sub.add_parser('build');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--snapshot',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p=sub.add_parser('restore');p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--post-id',required=True);p.add_argument('--production',action='store_true')
     args=parser.parse_args()
-    if args.command=='prepare':result=prepare(args.crawl,args.candidate)
-    elif args.command=='manifest':result=merge_manifest(args.crawl,args.output)
+    if args.command=='prepare':result=prepare(args.crawl,args.candidate,quarantine_ids=args.quarantine_id)
+    elif args.command=='manifest':result=merge_manifest(args.crawl,args.output,quarantine_ids=args.quarantine_id)
     elif args.command=='build':
         from qna_snapshot import build_sparse, legacy_versions
         result=build_sparse(args.snapshot,replacements(args.candidate),args.output)
