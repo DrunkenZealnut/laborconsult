@@ -286,7 +286,18 @@ class WageInput:
     use_fiscal_year: bool = False          # 회계연도(1/1) 기준 여부
     leave_use_promotion: bool = False      # 사용촉진제도 실시 여부 (근기법 제61조)
                                            # True면 미사용 연차수당 지급 의무 면제 가능
-    first_year_leave_used: float = 0.0    # 1년 미만 기간 중 사용한 연차 (제60조③ 2년차 차감용)
+    first_year_leave_used: Optional[float] = None  # 첫해 사용 일수. None=미확인, 현행 다음 연도 15일과 별도
+    first_year_leave_used_hours: Optional[float] = None  # 첫해 발생분의 실제 차감 시간(단축 중 일수와 구분)
+    annual_full_attendance_months: Optional[int] = None  # 현재 산정기간 실제 월 개근 수
+    first_year_full_attendance_months: Optional[int] = None  # 과거 첫해 개근 수(현재 출근율로 추정하지 않음)
+    annual_scheduled_days: Optional[float] = None  # 현재 산정기간 소정근로일수
+    annual_attended_days: Optional[float] = None  # 출근 간주를 더하기 전 출근일수
+    annual_deemed_periods: list = field(default_factory=list)  # 사유·기간·해당 소정일수(단축시간을 일수로 바꾸지 않음)
+    annual_original_weekly_hours: Optional[float] = None  # 법정 단축 전 주 소정시간
+    annual_original_daily_hours: Optional[float] = None  # 법정 단축 전 1일 소정시간
+    annual_leave_used_hours: Optional[float] = None  # 실제 차감한 시간. 일수보다 우선
+    fiscal_year_granted_days: Optional[float] = None  # 회사 규정으로 해당 회계연도에 실제 부여한 일수
+    last_employed_date: Optional[str] = None  # 근로관계가 존재한 마지막 날(포함)
 
     # ── 해고예고 계산용 ──────────────────────────────────────────────────────
     notice_days_given: int = 0             # 실제 해고예고일수

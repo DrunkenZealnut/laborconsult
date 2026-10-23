@@ -8,6 +8,251 @@ from wage_calculator.models import WageInput, WageType
 from wage_calculator.result import format_result, format_result_json
 from app.models.schemas import AnalysisResult
 from app.core.pipeline import _analysis_to_extract_params, _calculation_context_heading, _consultation_allowed
+from wage_calculator.models import BusinessSize, WorkSchedule
+from wage_calculator.calculators.annual_leave import calc_annual_leave
+from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
+
+
+def annual(**kwargs):
+    data = dict(wage_type=WageType.HOURLY, hourly_wage=10000,
+                business_size=BusinessSize.OVER_5, reference_year=2026,
+                reference_date="2026-10-23", start_date="2025-01-01", end_date="2026-07-01")
+    data.update(kwargs)
+    inp = WageInput(**data)
+    return calc_annual_leave(inp, calc_ordinary_wage(inp))
+
+
+class AnnualLeaveUpdateTests(unittest.TestCase):
+    def test_effective_rule_slices_are_half_open_and_reject_gaps(self):
+        from datetime import date as D
+        from wage_calculator.effective_rules import EffectiveRule, split_effective_periods
+        rules = [EffectiveRule("old", D(2024, 1, 1), D(2025, 1, 1), {}, ("source",)),
+                 EffectiveRule("new", D(2025, 1, 1), None, {}, ("source",))]
+        slices = split_effective_periods(D(2024, 12, 31), D(2025, 1, 2), rules)
+        self.assertEqual([(s.start, s.end_exclusive, s.rule.rule_id) for s in slices],
+                         [(D(2024,12,31),D(2025,1,1),"old"), (D(2025,1,1),D(2025,1,2),"new")])
+        for start,end,rs in ((D(2025,1,1),D(2025,1,1),rules),
+                             (D(2025,1,2),D(2025,1,1),rules),
+                             (D(2023,1,1),D(2025,1,2),rules),
+                             (D(2024,1,1),D(2025,1,2),rules+rules[:1])):
+            with self.assertRaises(ValueError):
+                split_effective_periods(start,end,rs)
+
+    def test_annual_first_year_used_not_deducted(self):
+        r = annual(first_year_leave_used=5)
+        self.assertEqual((r.accrued_days, r.deducted_days), (15, 0))
+        self.assertEqual(r.schedule[-1]["days"], 15)
+        text = str((r.breakdown, r.legal_basis, r.schedule))
+        self.assertNotIn("제60조 제3항", text)
+        self.assertNotIn("2년차 차감", text)
+
+    def test_historical_deduction_retained_only_before_hire_cutoff(self):
+        for hire, deduction in (("2017-05-29", 5), ("2017-05-30", 0)):
+            r = annual(start_date=hire, end_date="2018-07-01", first_year_leave_used=5)
+            self.assertEqual((r.accrued_days, r.deducted_days), (15-deduction, deduction))
+
+    def test_under_five_and_under_fifteen_do_not_accrue(self):
+        for data in (dict(business_size=BusinessSize.UNDER_5),
+                     dict(schedule=WorkSchedule(daily_work_hours=2.8, weekly_work_days=5))):
+            r = annual(**data)
+            self.assertEqual((r.accrued_days, r.annual_leave_pay), (0, 0))
+            self.assertFalse(r.is_eligible)
+        self.assertEqual(annual(schedule=WorkSchedule(daily_work_hours=3, weekly_work_days=5)).accrued_hours, 45)
+
+    def test_exact_year_contract_and_anniversary(self):
+        r = annual(start_date="2025-01-01", end_date="2026-01-01", last_employed_date="2025-12-31")
+        self.assertEqual(r.accrued_days, 11)
+        self.assertEqual(len([s for s in r.schedule if s["kind"] == "annual"]), 0)
+        self.assertEqual(annual(end_date="2026-01-01").accrued_days, 15)
+        # A leap day must not turn day 365 into a completed calendar year.
+        self.assertEqual(annual(start_date="2024-01-01", end_date="2024-12-31").accrued_days, 11)
+        self.assertEqual(annual(start_date="2023-01-01", end_date="2026-01-01").accrued_days, 16)
+
+    def test_low_attendance_requires_actual_completed_months(self):
+        r = annual(attendance_rate=.79, annual_full_attendance_months=7)
+        self.assertEqual(r.accrued_days, 7)
+        self.assertEqual(r.schedule[-1]["days"], 7)
+        self.assertEqual(annual(attendance_rate=.8).accrued_days, 15)
+        self.assertTrue(annual(attendance_rate=.79).held_reason)
+        self.assertEqual(annual(end_date="2025-07-01", attendance_rate=.9,
+                                annual_full_attendance_months=4).accrued_days, 4)
+
+    def test_annual_deemed_attendance_periods(self):
+        facts = dict(annual_scheduled_days=250, annual_attended_days=150,
+                     annual_full_attendance_months=6)
+        p = dict(kind="childcare_leave", start_date="2025-07-01", end_date="2025-12-31",
+                 scheduled_days=100, application_date="2025-06-01")
+        self.assertEqual(annual(**facts, annual_deemed_periods=[p]).accrued_days, 15)
+        self.assertEqual(annual(**facts).accrued_days, 6)
+        self.assertTrue(annual(**facts, annual_deemed_periods=[p, p]).held_reason)
+
+    def test_deemed_period_requires_count_in_assessment_period(self):
+        p = dict(kind="childcare_leave", start_date="2024-07-01", end_date="2025-06-30",
+                 scheduled_days=100, application_date="2024-06-01")
+        r = annual(annual_scheduled_days=250, annual_attended_days=150, annual_deemed_periods=[p])
+        self.assertTrue(r.held_reason)
+        self.assertIn("산정기간", r.held_reason)
+
+    def test_reduced_hours_after_amendment_keep_accrual_hours(self):
+        p = dict(kind="childcare_reduced", start_date="2025-01-01", end_date="2025-12-31")
+        r = annual(schedule=WorkSchedule(daily_work_hours=5, weekly_work_days=5),
+                   annual_deemed_periods=[p], annual_original_weekly_hours=40,
+                   annual_original_daily_hours=8, annual_leave_used_hours=5)
+        self.assertEqual((r.accrued_days, r.accrued_hours, r.remaining_hours), (15, 120, 115))
+        self.assertEqual(r.annual_leave_pay, 1150000)
+        # Starting before the amendment does not switch automatically during use.
+        p["start_date"] = "2024-10-21"
+        self.assertTrue(annual(annual_deemed_periods=[p]).held_reason)
+
+    def test_short_childcare_deemed_attendance_effective_boundary(self):
+        for start, end, held in (("2026-08-19", "2026-08-25", True),
+                                 ("2026-08-20", "2026-08-26", False)):
+            r = annual(start_date="2025-10-01", end_date="2026-10-01",
+                       annual_scheduled_days=250, annual_attended_days=195,
+                       annual_deemed_periods=[dict(kind="short_childcare_leave",
+                           start_date=start, end_date=end, scheduled_days=5,
+                           application_date="2026-08-01")])
+            self.assertEqual(bool(r.held_reason), held)
+            if not held:
+                self.assertEqual(r.accrued_days, 15)
+
+    def test_first_year_usage_and_current_usage_are_separate(self):
+        r = annual(first_year_leave_used=5, first_year_full_attendance_months=11, annual_leave_used=2)
+        self.assertEqual((r.accrued_days, r.used_days, r.remaining_days), (15, 2, 13))
+        self.assertEqual((r.first_year_accrued_days, r.first_year_remaining_days), (11, 6))
+        self.assertEqual(r.first_year_settlement_days, 6)
+        self.assertFalse(r.pay_due)
+        self.assertIn("평가액", str(r.breakdown))
+
+    def test_part_time_rounds_up_hours_not_days(self):
+        r = annual(schedule=WorkSchedule(daily_work_hours=3.1, weekly_work_days=3),
+                   annual_original_weekly_hours=None)
+        self.assertEqual(r.accrued_hours, 0)  # 9.3h/week, excluded
+        r = annual(schedule=WorkSchedule(daily_work_hours=5.1, weekly_work_days=3))
+        self.assertEqual(r.accrued_hours, 46)  # ceil(15 * 15.3/40 * 8), not rounded days × 5.1
+        self.assertEqual(r.annual_leave_pay, 460000)
+
+    def test_calendar_anniversary_for_february_29_and_month_end(self):
+        self.assertEqual(annual(start_date="2024-02-29", end_date="2025-02-28").accrued_days, 11)
+        self.assertEqual(annual(start_date="2024-02-29", end_date="2025-03-01").accrued_days, 15)
+        self.assertEqual(annual(start_date="2025-01-31", end_date="2025-02-28").accrued_days, 0)
+        self.assertEqual(annual(start_date="2025-01-31", end_date="2025-03-01").accrued_days, 1)
+
+    def test_part_time_monthly_grants_and_actual_fiscal_days(self):
+        r = annual(end_date="2025-07-01", schedule=WorkSchedule(daily_work_hours=5.1,weekly_work_days=3))
+        self.assertEqual(r.accrued_hours, 24)  # monthly ceil(3.06) × six separate grants
+        fiscal = annual(use_fiscal_year=True, fiscal_year_granted_days=10,
+                        schedule=WorkSchedule(daily_work_hours=5.1,weekly_work_days=3))
+        self.assertEqual(fiscal.accrued_hours, 51)  # actual company grant already expressed in employee days
+
+    def test_old_monthly_expiry_and_low_attendance_annual_grant_date(self):
+        r = annual(start_date="2019-10-01", end_date="2020-10-01")
+        monthly = [s for s in r.schedule if s["kind"]=="monthly"]
+        self.assertEqual(monthly[0]["pay_trigger_date"], "2020-11-01")
+        self.assertEqual(monthly[5]["pay_trigger_date"], "2020-10-01")
+        low = annual(attendance_rate=.7, annual_full_attendance_months=6)
+        self.assertEqual(low.pay_trigger_date, "2027-01-01")
+        self.assertEqual(low.schedule[-1]["accrual_date"], "2026-01-01")
+        self.assertFalse(low.schedule[-1]["conditional"])
+
+    def test_first_year_part_time_ledger_uses_employee_hours(self):
+        schedule = WorkSchedule(daily_work_hours=8,weekly_work_days=3)
+        r = annual(schedule=schedule,first_year_full_attendance_months=11,first_year_leave_used=2)
+        self.assertEqual((r.first_year_accrued_hours,r.first_year_used_hours,r.first_year_remaining_hours),(55,16,39))
+        self.assertEqual(r.first_year_settlement_days,39/8)
+        at_first_end = annual(end_date="2025-12-31",schedule=schedule,annual_leave_used=2)
+        self.assertEqual(r.first_year_remaining_hours,at_first_end.remaining_hours)
+        self.assertEqual(at_first_end.first_year_used_days,2)
+
+    def test_low_attendance_part_time_is_one_annual_grant(self):
+        r = annual(attendance_rate=.7, annual_full_attendance_months=7,
+                   schedule=WorkSchedule(daily_work_hours=8,weekly_work_days=3))
+        self.assertEqual(r.accrued_hours,34)  # annual ceil(7×24/40×8)
+
+    def test_company_grant_is_not_labelled_statutory(self):
+        r = WageCalculator().calculate(WageInput(wage_type=WageType.HOURLY,hourly_wage=10000,
+            start_date="2025-01-01",end_date="2026-07-01",use_fiscal_year=True,fiscal_year_granted_days=10),["annual_leave"])
+        self.assertNotIn("법정 연차 발생일수",r.summary)
+        self.assertEqual(r.summary["회사 부여 연차일수"],"10일")
+
+    def test_historical_part_time_deducts_actual_used_hours(self):
+        r = annual(start_date="2017-01-01",end_date="2018-01-01",first_year_leave_used=2,
+                   schedule=WorkSchedule(daily_work_hours=8,weekly_work_days=3))
+        self.assertEqual((r.accrued_hours,r.accrued_days),(56,7))
+
+    def test_unsupported_historical_grant_is_held_even_if_query_is_later(self):
+        self.assertTrue(annual(start_date="2012-10-01",end_date="2014-07-01",
+                               first_year_leave_used=5).held_reason)
+
+    def test_unknown_first_year_usage_does_not_mean_zero(self):
+        r = annual(first_year_full_attendance_months=11)
+        self.assertEqual(r.first_year_accrued_days,11)
+        self.assertIsNone(r.first_year_remaining_days)
+        self.assertIsNone(r.first_year_settlement_days)
+
+    def test_historical_first_year_does_not_collapse_expiry_to_anniversary(self):
+        r = annual(start_date="2019-10-01",end_date="2020-02-01",first_year_leave_used=0)
+        self.assertEqual(r.pay_trigger_date,"")
+        self.assertIn("월별",r.breakdown["정산 시점"])
+        self.assertNotIn("2020-10-01",r.breakdown["정산 시점"])
+
+    def test_historical_low_attendance_schedule_matches_current_grant(self):
+        r = annual(start_date="2017-01-01",end_date="2018-01-01",attendance_rate=.7,
+                   annual_full_attendance_months=6,first_year_leave_used=5)
+        self.assertEqual((r.accrued_days,r.schedule[-1]["days"],r.schedule[-1]["hours"]),(6,6,48))
+
+    def test_reduced_first_year_usage_alias_requires_actual_hours(self):
+        data = dict(end_date="2025-07-01",schedule=WorkSchedule(daily_work_hours=5,weekly_work_days=5),
+                    annual_original_weekly_hours=40,annual_original_daily_hours=8,
+                    annual_deemed_periods=[dict(kind="childcare_reduced",start_date="2025-01-01",end_date="2025-07-01")])
+        self.assertTrue(annual(**data,first_year_leave_used=1).held_reason)
+        r = annual(**data,first_year_leave_used=1,annual_leave_used_hours=5)
+        self.assertEqual((r.used_hours,r.remaining_hours),(5,43))
+        same = annual(**data,first_year_leave_used_hours=5)
+        self.assertEqual((same.used_hours,same.remaining_hours),(5,43))
+
+    def test_first_year_reduced_usage_requires_its_own_hours(self):
+        data = dict(schedule=WorkSchedule(daily_work_hours=5,weekly_work_days=5),
+                    annual_original_weekly_hours=40,annual_original_daily_hours=8,
+                    annual_deemed_periods=[dict(kind="childcare_reduced",start_date="2025-01-01",end_date="2025-12-31")],
+                    first_year_full_attendance_months=11,first_year_leave_used=1)
+        self.assertIsNone(annual(**data).first_year_settlement_days)
+        r = annual(**data,first_year_leave_used_hours=5)
+        self.assertEqual((r.first_year_accrued_hours,r.first_year_remaining_hours),(88,83))
+
+    def test_schema_covers_all_annual_fields(self):
+        from app.templates.prompts import ANALYZE_TOOL
+        from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+        self.assertTrue(set(ANNUAL_INPUT_FIELDS) <= set(ANALYZE_TOOL["input_schema"]["properties"]))
+
+    def test_invalid_dates_and_counts_are_held(self):
+        for data in (dict(end_date="2026-02-30"), dict(annual_leave_used=-1),
+                     dict(attendance_rate=1.1), dict(annual_full_attendance_months=13, attendance_rate=.7),
+                     dict(annual_scheduled_days=250, annual_attended_days=251)):
+            with self.subTest(data=data):
+                self.assertTrue(annual(**data).held_reason)
+
+    def test_fiscal_policy_missing_not_invented(self):
+        self.assertTrue(annual(use_fiscal_year=True).held_reason)
+        r = annual(use_fiscal_year=True, fiscal_year_granted_days=16, annual_leave_used=5)
+        self.assertEqual((r.accrued_days, r.remaining_days), (16, 11))
+        self.assertIn("회사", str(r.breakdown))
+
+    def test_pipeline_preserves_annual_facts_and_holds_missing_months(self):
+        from app.core.analyzer import _build_analysis_result
+        raw = dict(requires_calculation=True, calculation_types=["annual_leave"],
+                   wage_type="시급", wage_amount=10000, business_size="5인이상",
+                   daily_work_hours=8, weekly_work_days=5, start_date="2025-01-01",
+                   end_date="2026-07-01", reference_date="2026-10-23",
+                   attendance_rate=.7, annual_full_attendance_months=6, annual_leave_used=2)
+        params = _analysis_to_extract_params(_build_analysis_result(raw, "2025년 입사"))
+        text = _run_calculator(params, "연차 계산")
+        self.assertIn("6.0일", text)
+        self.assertIn("4.0일", text)
+        raw.pop("annual_full_attendance_months")
+        held = _run_calculator(_analysis_to_extract_params(_build_analysis_result(raw, "2025년 입사")), "연차 계산")
+        self.assertIn("계산 보류", held)
+        self.assertNotIn("월 총 예상 수령액", held)
 
 
 def card(labels, query="", **extra):

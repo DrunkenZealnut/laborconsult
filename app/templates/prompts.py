@@ -143,6 +143,37 @@ ANALYZE_TOOL = {
 }
 
 # 법률상담 분류 필드 추가
+ANALYZE_TOOL["input_schema"]["properties"].update({
+    "annual_leave_used": {"type": "number", "description": "현재 계산 대상 발생분에서 사용한 연차일수. 과거 첫해 사용분과 더하지 않음. 미기재는 생략"},
+    "first_year_leave_used": {"type": "number", "description": "입사 1년 미만에 발생한 휴가의 사용일수. 현재 연차 15일에서 차감하지 않음"},
+    "first_year_leave_used_hours": {"type": "number", "description": "첫해 발생분에서 실제 차감된 시간. 단축 중 사용 일수를 원래 8시간으로 추정하지 않음. 현재 연도 사용시간과 별도"},
+    "attendance_rate": {"type": "number", "description": "연차 산정기간 출근율 0~1. 일수 기준이며 육아기/임신기 단축시간을 결근율로 환산하지 않음. 질문에서 확인된 경우만"},
+    "annual_full_attendance_months": {"type": "integer", "description": "현재 산정기간의 실제 월 개근 수. 1년 미만 또는 연간 출근율 80% 미만에 필요. 전체 출근율로 추정 금지"},
+    "first_year_full_attendance_months": {"type": "integer", "description": "과거 첫해 실제 개근 개월 수(0~11). 현재 연도 출근율로 추정하지 않음"},
+    "annual_scheduled_days": {"type": "number", "description": "해당 연차 산정기간 소정근로일수. 역일수 아님"},
+    "annual_attended_days": {"type": "number", "description": "해당 산정기간 실제 출근일수. 휴직 출근 간주일수는 제외하고, 단축근무일은 출근으로 포함"},
+    "annual_deemed_periods": {
+        "type": "array",
+        "description": "해당 연차 산정기간의 법정 휴직·단축 구간. 질문에 나온 사실만. 개인 휴직·일반 결근은 포함 금지",
+        "items": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["occupational_injury", "maternity_leave", "childcare_leave",
+                                                "short_childcare_leave", "childcare_reduced", "pregnancy_reduced"]},
+            "start_date": {"type": "string", "description": "휴직/단축 시작일 YYYY-MM-DD. 개정 적용 판단용 원래 시작일 보존"},
+            "end_date": {"type": "string", "description": "종료일 YYYY-MM-DD (포함)"},
+            "application_date": {"type": "string", "description": "육아휴직 최초 신청일. 시작일로 추정하지 않음"},
+            "scheduled_days": {"type": "number", "description": "해당 휴직 구간의 소정근로일수. 단축시간을 일수로 바꿔 넣지 않음"},
+        }, "required": ["kind", "start_date", "end_date"]},
+    },
+    "annual_original_weekly_hours": {"type": "number", "description": "법정 단축 전 주 소정시간. 산정기간의 기준시간이 동일한 경우"},
+    "annual_original_daily_hours": {"type": "number", "description": "법정 단축 전 1일 소정시간. 발생 일수의 시간 단위"},
+    "annual_leave_used_hours": {"type": "number", "description": "현재 발생분에서 실제 차감된 연차시간. 단축근무 중 사용 일수만으로 추정 금지"},
+    "use_fiscal_year": {"type": "boolean", "description": "회사 회계연도 기준으로 발생·사용 정산하는 경우"},
+    "fiscal_year_granted_days": {"type": "number", "description": "회사가 해당 회계연도에 실제 부여한 휴가일수. 입사월만으로 계산·추정 금지"},
+    "leave_use_promotion": {"type": "boolean", "description": "법정 서면 사용촉진 절차가 적법하게 완료되고 실제 사용 기회가 보장된 사실이 확인된 경우만 true"},
+    "last_employed_date": {"type": "string", "description": "근로관계가 존재한 마지막 날(포함). '12월31일까지 재직'처럼 명시된 경우만. 퇴직 효력일·일반적인 퇴사일에서 임의로 하루 빼거나 더하지 않음"},
+})
+
+# 법률상담 분류 필드 추가
 ANALYZE_TOOL["input_schema"]["properties"]["consultation_type"] = {
     "type": "string",
     "enum": [

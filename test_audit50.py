@@ -910,7 +910,7 @@ class WageCompositionTest(unittest.TestCase):
                      ["주휴: min(8h, 8h) = 8h"]),
             "연차수당": (dict(base, calculation_types_kr=["연차수당"], **self.DATES), self.HOLD_Q,
                      ["연차수당"], [], ["  연차수당: ", "미사용 연차수당:"],
-                     ["  법정 연차 발생일수: 16.0일", "  미사용 연차: 16.0일", "사용촉진제도 미실시"]),
+                     ["  법정 연차 발생일수: 16.0일", "  미사용 연차: 16.0일", "사용촉진·사용자 귀책·이월 약정은 별도 확인"]),
             "해고예고수당": (dict(base, calculation_types_kr=["해고예고수당"], **self.DATES), self.HOLD_Q,
                        ["해고예고수당"], [], ["  해고예고수당: "], []),
             # 퇴직소득세·퇴직연금은 퇴직금 결과로 계산한다 — 함께 보류한다
@@ -994,7 +994,12 @@ class WageCompositionTest(unittest.TestCase):
             with self.subTest(name):
                 out = _run_calculator(params, self.HOLD_Q)
                 self.assertNotIn(zero_line, out)
-                self.assertIn(f"통상임금(시급·일급·월액)으로 계산하는 항목({label})", out)
+                if name == "입사일 미기재":
+                    self.assertIn("계산 보류", out)
+                    self.assertIn("입사일", out)
+                    self.assertNotIn("월 총 예상 수령액", out)
+                else:
+                    self.assertIn(f"통상임금(시급·일급·월액)으로 계산하는 항목({label})", out)
 
     def test_t5_held_formulas_drop_zero_lines_with_inflated_figures(self):
         """금액 보류 섹션은 결론이 0원인 계산식도 뺀다 — '과세표준: 2,865,414 - 2,865,414 = 0원'은 부풀린 퇴직금으로 낸

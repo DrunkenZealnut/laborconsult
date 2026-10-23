@@ -146,7 +146,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
 <button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
 <button onclick="showTab(1)" id="t1">발생일수 산정</button>
-<button onclick="showTab(2)" id="t2">2년차 차감</button>
+<button onclick="showTab(2)" id="t2">발생분별 정산</button>
 <button onclick="showTab(3)" id="t3">단시간·사용촉진</button>
 <button onclick="showTab(4)" id="t4">수당 시뮬레이션</button>
 </div>
@@ -191,9 +191,9 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <!-- Step 4 -->
 <g class="c-gray">
 <rect x="120" y="350" width="440" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="372" text-anchor="middle" dominant-baseline="central">Step 4. 2년차 차감 적용 (해당시)</text>
-<text class="ts" x="340" y="392" text-anchor="middle" dominant-baseline="central">2년차 연차 = 기본 발생일수 − 1년차 사용일수</text>
-<text class="ts" x="340" y="410" text-anchor="middle" dominant-baseline="central">→ "2년차 차감" 탭에서 상세 확인</text>
+<text class="th" x="340" y="372" text-anchor="middle" dominant-baseline="central">Step 4. 발생분별 사용·잔여 확인</text>
+<text class="ts" x="340" y="392" text-anchor="middle" dominant-baseline="central">첫해 사용분과 다음 연도 15일은 별도 관리</text>
+<text class="ts" x="340" y="410" text-anchor="middle" dominant-baseline="central">→ "발생분별 정산" 탭에서 상세 확인</text>
 </g>
 <line x1="340" y1="426" x2="340" y2="456" class="arr" marker-end="url(#ar)"/>
 
@@ -201,7 +201,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <g class="c-coral">
 <rect x="120" y="456" width="440" height="56" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="476" text-anchor="middle" dominant-baseline="central">Step 5. 사용촉진 절차 확인</text>
-<text class="ts" x="340" y="494" text-anchor="middle" dominant-baseline="central">제61조 절차 완료 시 → 미사용 수당 0원</text>
+<text class="ts" x="340" y="494" text-anchor="middle" dominant-baseline="central">적법 절차·실제 사용 기회 보장 시 면제 검토</text>
 </g>
 <line x1="340" y1="512" x2="340" y2="542" class="arr" marker-end="url(#ar)"/>
 
@@ -209,7 +209,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <g class="c-purple">
 <rect x="80" y="542" width="520" height="76" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="564" text-anchor="middle" dominant-baseline="central">Step 6. 미사용 연차수당 산출</text>
-<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="596" text-anchor="middle" dominant-baseline="central">미사용 연차수당 = 통상시급 × 8시간 × 미사용 일수</text>
+<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="596" text-anchor="middle" dominant-baseline="central">미사용 평가액 = 통상시급 × 남은 휴가시간</text>
 </g>
 
 <!-- 예시 -->
@@ -235,7 +235,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <text class="th" x="185" y="44" text-anchor="middle" dominant-baseline="central">1년 미만</text>
 <text class="ts" x="185" y="68" text-anchor="middle" dominant-baseline="central">매월 개근 시 1일씩 발생</text>
 <text class="ts" x="185" y="88" text-anchor="middle" dominant-baseline="central">최대 11일 (12개월 − 1)</text>
-<text class="ts" x="185" y="108" text-anchor="middle" dominant-baseline="central">출근율에 비례</text>
+<text class="ts" x="185" y="108" text-anchor="middle" dominant-baseline="central">월별 개근 여부로 판단</text>
 </g>
 
 <!-- 1년 이상 -->
@@ -269,64 +269,26 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-top:12px">
 <p style="font-size:13px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출근율 80% 미만이면?</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">해당 연도의 연차 발생일수가 0일이 됩니다. 단, 1년 미만 기간의 월별 연차는 별도 판단합니다.</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">1개월 개근 시 1일 발생합니다. 전체 출근율만으로 개근 개월 수를 추정하지 않습니다. 법정 출근 간주 기간·시간도 확인합니다.</p>
 </div>
 </div>
 
-<!-- TAB 2: 2년차 차감 -->
+<!-- TAB 2: 발생분별 정산 -->
 <div id="tab2" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">2년차 차감 — 가장 혼동되는 규칙</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제60조 제3항 | 1년차에 쓴 연차가 2년차에서 빠진다</p>
-</div>
-<svg width="100%" viewBox="0 0 680 560">
-<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<text class="th" x="340" y="24" text-anchor="middle">왜 차감하는가?</text>
-<rect x="40" y="38" width="600" height="56" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="ts" x="340" y="58" text-anchor="middle">1년차(매월 1일씩 최대 11일)와 2년차(기본 15일)가 중복 발생하므로</text>
-<text class="ts" x="340" y="78" text-anchor="middle">1년차에 사용한 일수만큼 2년차에서 차감하여 중복 방지</text>
-
-<line x1="340" y1="94" x2="340" y2="124" class="arr" marker-end="url(#a2)"/>
-
-<g class="c-coral">
-<rect x="100" y="124" width="480" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="144" text-anchor="middle" dominant-baseline="central">차감 공식</text>
-<text class="ts" x="340" y="164" text-anchor="middle" dominant-baseline="central">2년차 연차 = max(0, 기본 15일 − 1년차 사용일수)</text>
-</g>
-
-<line x1="340" y1="180" x2="340" y2="210" class="arr" marker-end="url(#a2)"/>
-
-<g class="c-amber">
-<rect x="140" y="210" width="400" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="232" text-anchor="middle" dominant-baseline="central">단, 1년차 사용 최대 11일까지만 차감</text>
-</g>
-
-<!-- 사례 비교 -->
-<rect x="40" y="280" width="290" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="304" text-anchor="middle">사례 A: 1년차 3일 사용</text>
-<text class="ts" x="60" y="330">1년차 발생: 11일, 사용: 3일</text>
-<text class="ts" x="60" y="350">잔여 미사용: 8일 → 수당 정산</text>
-<text class="ts" x="60" y="378">2년차 연차 = 15 − 3 = 12일</text>
-<text style="font-size:12px;fill:var(--color-text-success);font-weight:500" x="60" y="400">총 확보: 8일(수당) + 12일(새연차)</text>
-
-<rect x="350" y="280" width="290" height="150" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="304" text-anchor="middle">사례 B: 1년차 11일 전부 사용</text>
-<text class="ts" x="370" y="330">1년차 발생: 11일, 사용: 11일</text>
-<text class="ts" x="370" y="350">잔여 미사용: 0일 → 수당 없음</text>
-<text class="ts" x="370" y="378">2년차 연차 = 15 − 11 = 4일</text>
-<text style="font-size:12px;fill:var(--color-text-warning);font-weight:500" x="370" y="400">총 확보: 0일(수당) + 4일(새연차)</text>
-
-<rect x="40" y="450" width="290" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="185" y="474" text-anchor="middle">사례 C: 1년차 0일 사용</text>
-<text class="ts" x="60" y="500">미사용: 11일 → 수당 정산</text>
-<text class="ts" x="60" y="520">2년차 연차 = 15 − 0 = 15일(풀)</text>
-
-<rect x="350" y="450" width="290" height="90" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text style="font-size:13px;fill:var(--color-text-primary);font-weight:500" x="495" y="474" text-anchor="middle">핵심 포인트</text>
-<text class="ts" x="370" y="500">1년차에 많이 쓸수록</text>
-<text class="ts" x="370" y="520">2년차 연차가 줄어드는 구조</text>
-</svg>
+<section style="padding:1.25rem;background:var(--color-background-secondary);border-radius:var(--border-radius-lg);line-height:1.8">
+<h2 style="font-size:18px">첫해 발생분과 다음 연도 발생분을 나눠 봅니다</h2>
+<p>2017년 5월 30일 이후 입사자는 첫해 월별 개근으로 발생한 휴가를 사용해도 다음 연도 15일에서 빼지 않습니다.</p>
+<table style="width:100%;border-collapse:collapse;text-align:left">
+<thead><tr><th>발생분</th><th>사용 예시</th><th>잔여분</th></tr></thead>
+<tbody><tr><td>첫해 월별 개근 11일</td><td>5일 사용</td><td>6일 별도 정산</td></tr>
+<tr><td>1년 후 발생 15일</td><td>당해 2일 사용</td><td>13일</td></tr></tbody></table>
+<p>15일 발생에는 1년간 80% 이상 출근하고 다음 날에도 근로관계가 계속되어야 합니다. 정확히 1년만 근무하고 종료하는 계약은 최대 11일입니다.</p>
+<p>2020년 3월 31일 이후 발생한 첫해 월별 휴가는 최초 1년의 근로가 끝날 때까지 사용합니다. 이전 발생분은 각각 발생일부터 1년 규정을 적용합니다. 사용자 귀책이나 이월 약정은 별도 확인합니다.</p>
+<p>연차수당은 사용기간 만료·퇴직, 사용촉진 절차, 이미 지급한 수당과 해당 시점 임금을 확인해 정산합니다. 아래 시뮬레이션은 잔여분의 평가액입니다.</p>
+<p>육아휴직은 법정 출근 간주 조건을 확인합니다. 육아기·임신기 단축은 2024년 10월 22일 이후 시작분의 단축 전 시간을 반영하며, 사용한 휴가시간은 별도로 확인합니다. 단기 육아휴직은 2026년 8월 20일 이후 법정 사용분을 구분합니다.</p>
+<p style="font-size:12px"><a href="https://www.moel.go.kr/news/cardinfo/view.do?bbs_seq=20180800738" target="_blank" rel="noopener">고용노동부 개정 안내</a> ·
+<a href="https://www.law.go.kr/법령/근로기준법/제60조" target="_blank" rel="noopener">근로기준법 제60조</a></p>
+</section>
 </div>
 
 <!-- TAB 3: 단시간·사용촉진 -->
@@ -394,7 +356,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div id="tab4" style="display:none">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
 <p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">연차수당 시뮬레이션</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근속연수와 사용일수를 입력하면 발생·잔여·수당을 실시간 계산합니다</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">5인 이상·1년 이상 계속근로·출근율 80% 이상·동일 소정시간을 가정한 현행 입사일 기준 예시입니다. 회계연도·단축근무·과거 사건·첫해 월별 발생은 별도 확인합니다.</p>
 </div>
 
 <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
@@ -405,7 +367,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 </div>
 <div style="display:flex;align-items:center;gap:12px">
 <label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">근속연수</label>
-<input type="range" min="0" max="25" value="3" step="1" id="years" oninput="calc()" style="flex:1">
+<input type="range" min="1" max="25" value="3" step="1" id="years" oninput="calc()" style="flex:1">
 <span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="yearsOut">3년</span>
 </div>
 <div style="display:flex;align-items:center;gap:12px">
@@ -415,12 +377,12 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 </div>
 <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
 <label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">사용촉진</label>
-<button id="btnNo" onclick="setPromo(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">미완료 (수당 지급)</button>
-<button id="btnYes" onclick="setPromo(true);calc()">완료 (지급 면제)</button>
+<button id="btnNo" onclick="setPromo(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">미완료 (평가액 산출)</button>
+<button id="btnYes" onclick="setPromo(true);calc()">적법 완료 (면제 가정)</button>
 </div>
 <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
 <label style="font-size:13px;color:var(--color-text-secondary);min-width:100px">근로 유형</label>
-<button id="btnFull" onclick="setPartTime(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">정규직 (주40h)</button>
+<button id="btnFull" onclick="setPartTime(false);calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">주40h</button>
 <button id="btnPart" onclick="setPartTime(true);calc()">단시간</button>
 </div>
 </div>
@@ -458,7 +420,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <p style="font-size:18px;font-weight:500;margin:0;color:var(--color-text-warning)" id="unusedDays">0일</p>
 </div>
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px">
-<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">미사용 수당</p>
+<p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 4px">미사용 평가액</p>
 <p style="font-size:18px;font-weight:500;margin:0;color:var(--color-text-info)" id="payAmt">0원</p>
 </div>
 </div>
@@ -491,7 +453,7 @@ function buildYearTable(){
   var tb=document.getElementById('yearTable');
   var rows='';
   var data=[
-    ['1년 미만','최대 11일','매월 개근 시 1일 (출근율 비례)'],
+    ['1년 미만','최대 11일','매월 개근 시 1일'],
     ['1~2년','15일','기본 발생'],
     ['3~4년','16일','15 + ⌊(3−1)÷2⌋ = 15+1'],
     ['5~6년','17일','15 + ⌊(5−1)÷2⌋ = 15+2'],
@@ -527,7 +489,7 @@ function calc(){
 
   // 단시간 비례
   var ratio=1;
-  var ratioNote='정규직';
+  var ratioNote='주 40시간';
   var paidH=8;
   if(partTime){
     var ptW=parseInt(document.getElementById('ptWeekly').value);
@@ -537,21 +499,29 @@ function calc(){
     ratio=(ptW/40)*(8/ptD);
     ratioNote='비례계수 '+ratio.toFixed(2);
     paidH=ptD;
-    baseDays=Math.floor(baseDays*ratio);
+    baseDays=Math.ceil(baseDays*ptW/40*8)/ptD;
   }
 
   // 사용일수 제한
-  var actualUsed=Math.min(used,baseDays);
+  var actualUsed=used;
+  if(used>baseDays){
+    document.getElementById('genDays').textContent=baseDays.toFixed(2)+'일';
+    document.getElementById('usedDays').textContent=used+'일';
+    document.getElementById('unusedDays').textContent='확인 필요';
+    document.getElementById('payAmt').textContent='계산 보류';
+    document.getElementById('formula').textContent='사용분이 발생분을 초과합니다. 이월·선사용 또는 다른 기간 사용분인지 확인해주세요.';
+    return;
+  }
   var unused=Math.max(0,baseDays-actualUsed);
 
   // 수당
   var pay=0;
   if(!promo){pay=w*paidH*unused;}
 
-  document.getElementById('genDays').textContent=baseDays+'일';
+  document.getElementById('genDays').textContent=baseDays.toFixed(2)+'일';
   document.getElementById('genNote').textContent=ratioNote;
   document.getElementById('usedDays').textContent=actualUsed+'일';
-  document.getElementById('unusedDays').textContent=unused+'일';
+  document.getElementById('unusedDays').textContent=unused.toFixed(2)+'일';
   document.getElementById('payAmt').textContent=fmt(pay)+'원';
 
   // 산식
@@ -566,12 +536,13 @@ function calc(){
   }
   fl.push('<p style="margin:2px 0">미사용 = '+baseDays+' − '+actualUsed+' = '+unused+'일</p>');
   if(promo){
-    fl.push('<p style="margin:2px 0;color:var(--color-text-warning)">사용촉진 완료 → 수당 지급 면제 (0원)</p>');
+    fl.push('<p style="margin:2px 0;color:var(--color-text-warning)">적법한 사용촉진 완료와 사용 기회 보장을 전제로 면제 (0원)</p>');
   } else {
     fl.push('<p style="margin:6px 0 0;font-weight:500;color:var(--color-text-primary)">수당 = '+fmt(w)+'원 × '+paidH+'h × '+unused+'일 = '+fmt(pay)+'원</p>');
   }
   document.getElementById('formula').innerHTML=fl.join('');
 
+  document.getElementById('formula').innerHTML += '<p>사용기간이 남아 있으면 현재 확정 지급액이 아닙니다. 퇴직·만료 시점의 임금과 실제 잔여시간으로 정산합니다.</p>';
   // 차트
   drawChart(y);
 }

@@ -1,478 +1,414 @@
+"""연차 발생·사용·미사용 평가액. 현재 기간과 첫해 월별 발생분을 분리한다.
+
+과거 출근 자료가 없는 일정은 조건부 참고값이며 실제 누적 채권으로 합산하지 않는다.
 """
-연차수당 계산기 (근로기준법 제60조)
-
-수요: 81건 (3.1%)
-
-핵심 규칙:
-- 1년 미만: 매월 개근 시 1일 발생 (최대 11일)
-- 1년 이상: 15일 기본 + 매 2년마다 1일 추가 (최대 25일)
-- 2년차 차감: 1년 미만 사용분을 15일에서 공제 (제60조③)
-- 연차수당 = 1일 통상임금(통상시급 × 1일 소정근로시간) × 미사용 연차일수
-- 5인 미만 사업장: 연차휴가 미적용 (근로기준법 제11조)
-- 단시간근로자: 비례 연차 (근기법 제18조③)
-- 회계기준일(1.1) 기준 계산 지원
-
-사용촉진제도 (근로기준법 제61조):
-- 사용자가 규정 절차에 따라 사용촉진 조치를 한 경우,
-  근로자가 미사용한 연차에 대해 수당 지급 의무 면제
-- 절차: ① 만료 6개월 전 서면 통보 → ② 근로자 10일 이내 시기 지정
-       → ③ 미지정 시 사용자가 시기 지정(만료 2개월 전까지)
-- 1년 미만 발생 연차: 만료 3개월 전 통보 기준 적용
-- leave_use_promotion=True이면 수당 지급 의무 없음으로 처리
-"""
-
+import calendar
 import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..base import BaseCalculatorResult
-from ..utils import parse_date, fmt_hours
+from ..effective_rules import EffectiveRule, split_effective_periods
+from ..legal_rules import resolve_reference_date
 from ..models import WageInput, BusinessSize
+from ..constants import FULL_TIME_DAILY_HOURS, FULL_TIME_WEEKLY_HOURS
 from .ordinary_wage import OrdinaryWageResult
-from .shared import DateRange
-from ..constants import (
-    ANNUAL_LEAVE_BASE_DAYS,
-    ANNUAL_LEAVE_MAX_DAYS,
-    ANNUAL_LEAVE_ADD_YEARS,
-    ANNUAL_LEAVE_ADD_MAX,
-    ANNUAL_LEAVE_FIRST_YEAR_MAX,
-    PART_TIME_MIN_WEEKLY_HOURS,
-    FULL_TIME_WEEKLY_HOURS,
-    FULL_TIME_DAILY_HOURS,
+
+ANNUAL_INPUT_FIELDS = (
+    "annual_leave_used", "attendance_rate", "use_fiscal_year", "leave_use_promotion",
+    "first_year_leave_used", "first_year_leave_used_hours", "annual_full_attendance_months", "first_year_full_attendance_months",
+    "annual_scheduled_days", "annual_attended_days", "annual_deemed_periods",
+    "annual_original_weekly_hours", "annual_original_daily_hours", "annual_leave_used_hours",
+    "fiscal_year_granted_days", "last_employed_date",
+)
+LSA_URL = "https://www.law.go.kr/법령/근로기준법/제60조"
+HISTORY_URL = "https://opinion.lawmaking.go.kr/nl4li/lsItptEmp/396414"
+REDUCED_URL = "https://1350.moel.go.kr/rtmview.do?id=1000320803"
+# 제17185호 부칙 제2조: 개정 전에 이미 발생한 휴가는 종전 소멸 규정 유지.
+MONTHLY_EXPIRY_RULES = (
+    EffectiveRule("monthly-expiry-1year", date(2014, 7, 1), date(2020, 3, 31),
+                  {"first_anniversary": False}, (LSA_URL, "법률 제12325호 제60조⑦")),
+    EffectiveRule("monthly-expiry-first-year", date(2020, 3, 31), None,
+                  {"first_anniversary": True}, (LSA_URL, "법률 제17185호 부칙 제2조")),
 )
 
 
 @dataclass
 class AnnualLeaveResult(BaseCalculatorResult):
-    accrued_days: float = 0.0        # 발생 연차 일수 (현재 기간)
-    used_days: float = 0.0           # 사용 연차 일수
-    remaining_days: float = 0.0      # 미사용 연차 일수
-    annual_leave_pay: float = 0.0    # 미사용 연차수당 (원)
-    service_years: float = 0.0       # 재직 연수
-
-    # G1: 2년차 차감
-    deducted_days: float = 0.0       # 제60조③ 차감 일수
-
-    # G3: 연도별 발생 스케줄
+    accrued_days: float = 0.0
+    used_days: float = 0.0
+    remaining_days: float = 0.0
+    annual_leave_pay: float = 0.0  # 現 잔여분의 입력 시급 평가액. 지급채권 여부는 pay_due
+    service_years: float = 0.0
+    deducted_days: float = 0.0    # 검증된 개정 전 사건의 호환 필드
     schedule: list = field(default_factory=list)
-
-    # G4: 단시간근로자 비례
     is_part_time_ratio: bool = False
     part_time_ratio: float = 1.0
+    fiscal_year_gap: float = 0.0  # 자료 없는 누적 비교액을 임의로 만들지 않음
+    is_eligible: bool | None = None
+    accrued_hours: float = 0.0
+    used_hours: float = 0.0
+    remaining_hours: float = 0.0
+    day_hours: float = 8.0
+    effective_attendance_rate: float = 1.0
+    assessment_start: str = ""
+    assessment_end: str = ""
+    pay_due: bool = False
+    pay_trigger_date: str = ""
+    first_year_accrued_days: float | None = None
+    first_year_used_days: float | None = None
+    first_year_remaining_days: float | None = None
+    first_year_settlement_days: float | None = None
+    first_year_accrued_hours: float | None = None
+    first_year_used_hours: float | None = None
+    first_year_remaining_hours: float | None = None
+    accrual_basis: str = "statutory"
 
-    # G5: 퇴직 시 회계기준일 vs 입사일 차이
-    fiscal_year_gap: float = 0.0
+
+def _date(value, label):
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+    raise ValueError(f"{label}을 YYYY-MM-DD 형식의 유효한 날짜로 입력해주세요")
+
+
+def _number(value, label, lo=0, hi=None, integer=False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{label}에 유효한 숫자가 필요합니다")
+    if value < lo or (hi is not None and value > hi) or (integer and int(value) != value):
+        raise ValueError(f"{label}의 범위를 확인해주세요")
+    return value
+
+
+def _safe_date(start, years_add):
+    year = start.year + years_add
+    last = calendar.monthrange(year, start.month)[1]
+    # 민법 제160조: 대응일 없는 달은 말일까지 근로한 뒤 다음날 권리 발생.
+    return date(year, start.month, min(start.day, last)) + timedelta(days=int(start.day > last))
+
+
+def _month(start, months):
+    year, month0 = divmod(start.year * 12 + start.month - 1 + months, 12)
+    last = calendar.monthrange(year, month0+1)[1]
+    return date(year, month0+1, min(start.day, last)) + timedelta(days=int(start.day > last))
+
+
+def _count_complete_months(start, end):
+    months = (end.year-start.year)*12 + end.month-start.month
+    return max(0, months - (_month(start, months) > end))
+
+
+def _years(start, end):
+    years = end.year-start.year
+    return max(0, years - (_safe_date(start, years) > end))
+
+
+def _annual_base(years):
+    return min(25, 15 + max(0, years-1)//2)
+
+
+def _monthly_count(inp, limit, rate):
+    value = inp.annual_full_attendance_months
+    if value is None:
+        if rate < 1:
+            raise ValueError("출근율만으로 월별 개근 수를 알 수 없습니다. 산정기간 중 개근한 개월 수를 알려주세요")
+        return limit
+    return _number(value, "월별 개근 수", hi=limit, integer=True)
+
+
+def _attendance(inp, start, end):
+    """일수는 소정근로일 기준. 단축시간은 출근일수에 더하지 않는다."""
+    rate = _number(inp.attendance_rate, "출근율(0~1)", hi=1)
+    scheduled, attended = inp.annual_scheduled_days, inp.annual_attended_days
+    if (scheduled is None) != (attended is None):
+        raise ValueError("출근율 산정을 위해 소정근로일수와 출근일수를 함께 알려주세요")
+    if scheduled is not None:
+        scheduled = _number(scheduled, "소정근로일수", lo=1, hi=(end-start).days+1)
+        attended = _number(attended, "출근일수", hi=scheduled)
+    periods = inp.annual_deemed_periods
+    if not isinstance(periods, list):
+        raise ValueError("출근 간주 기간은 사유와 날짜가 있는 목록으로 입력해주세요")
+    intervals, credited, reduced = [], 0, False
+    for p in periods:
+        if not isinstance(p, dict):
+            raise ValueError("출근 간주 기간의 사유와 날짜가 필요합니다")
+        a, b = _date(p.get("start_date"), "휴직·단축 시작일"), _date(p.get("end_date"), "휴직·단축 종료일")
+        if a > b:
+            raise ValueError("휴직·단축 시작일과 종료일의 순서를 확인해주세요")
+        kind = p.get("kind")
+        if kind in ("childcare_reduced", "pregnancy_reduced"):
+            if a < date(2024,10,22):
+                raise ValueError("2024-10-22 전에 시작한 단축은 종전 기간별 소정근로시간 자료로 별도 산정해야 합니다")
+            if b < start or a > end:
+                raise ValueError("단축 기간이 현재 연차 산정기간과 겹치지 않습니다")
+            reduced = True
+            if p.get("scheduled_days") not in (None, 0):
+                raise ValueError("단축시간을 결근일수로 환산하지 않습니다. 단축일은 출근일수에 포함해주세요")
+        elif kind in ("childcare_leave", "short_childcare_leave", "occupational_injury", "maternity_leave"):
+            if kind in ("childcare_leave", "short_childcare_leave"):
+                applied = _date(p.get("application_date"), "육아휴직 최초 신청일")
+                if applied > a or applied < date(2018,5,29):
+                    raise ValueError("2018-05-29 이후 최초 신청한 법정 육아휴직인지 확인해주세요. 종전 휴직은 별도 산정이 필요합니다")
+            if kind == "short_childcare_leave" and (a < date(2026,8,20) or (b-a).days+1 not in (7,14)):
+                raise ValueError("단기 육아휴직은 2026-08-20 이후의 1주 또는 2주 법정 사용기간인지 확인해주세요")
+            if a < start or b > end:
+                raise ValueError("연차 산정기간 안에 해당하는 휴직 구간과 그 구간의 소정근로일수를 나눠 입력해주세요")
+            if scheduled is None:
+                raise ValueError("휴직 출근 간주를 반영하려면 산정기간의 소정근로일수·실제 출근일수·휴직 중 소정근로일수가 필요합니다")
+            credited += _number(p.get("scheduled_days"), "휴직 중 소정근로일수", hi=(b-a).days+1)
+        else:
+            raise ValueError("출근 간주 사유를 확인해주세요. 일반 결근·개인 휴직을 법정 출근 간주로 바꾸지 않습니다")
+        overlap_a, overlap_b = max(a, start), min(b, end)
+        if any(overlap_a <= y and overlap_b >= x for x,y in intervals):
+            raise ValueError("출근 간주 기간이 중복됩니다. 같은 날을 두 번 더하지 않도록 나눠주세요")
+        intervals.append((overlap_a, overlap_b))
+    if scheduled is not None:
+        if attended + credited > scheduled:
+            raise ValueError("실제 출근일수와 출근 간주일수의 합이 소정근로일수를 초과합니다")
+        rate = (attended+credited)/scheduled
+    return rate, reduced
+
+
+def _hours(inp, reduced):
+    daily = _number(inp.schedule.daily_work_hours, "1일 소정근로시간", lo=.01, hi=24)
+    weekly = daily * _number(inp.schedule.weekly_work_days, "주 소정근로일수", lo=.01, hi=7)
+    if reduced:
+        daily = _number(inp.annual_original_daily_hours, "단축 전 1일 소정근로시간", lo=.01, hi=8)
+        weekly = _number(inp.annual_original_weekly_hours, "단축 전 주 소정근로시간", lo=.01, hi=40)
+    return daily, weekly
+
+
+def _leave_hours(days, weekly, daily):
+    # 시행령 별표2 제4호: 단시간 연차는 시간 단위, 1시간 미만 올림.
+    hours = days*daily if weekly >= FULL_TIME_WEEKLY_HOURS else math.ceil(
+        round(days*weekly/FULL_TIME_WEEKLY_HOURS*FULL_TIME_DAILY_HOURS, 10))
+    return hours, hours/daily
+
+
+def _first_year_schedule(start, end):
+    rows = []
+    anniversary = _safe_date(start,1)
+    for month in range(1,12):
+        grant = _month(start,month)
+        if grant > end:
+            break
+        rule = split_effective_periods(grant,grant+timedelta(days=1),MONTHLY_EXPIRY_RULES)[0].rule
+        expiry = anniversary if rule.values["first_anniversary"] else _safe_date(grant,1)
+        rows.append(dict(period=f"첫해 {month}개월", kind="monthly", accrual_date=grant.isoformat(),
+                         days=1, pay_trigger_date=expiry.isoformat(), expires_on=(expiry-timedelta(days=1)).isoformat(),
+                         note="해당 월 개근 시 발생(월별 출근 자료 확인 필요)", conditional=True))
+    return rows
 
 
 def calc_annual_leave(inp: WageInput, ow: OrdinaryWageResult) -> AnnualLeaveResult:
-    """연차 발생 및 미사용 연차수당 계산"""
-    hourly = ow.hourly_ordinary_wage
-    warnings = []
-    formulas = []
     legal = ["근로기준법 제60조 (연차 유급휴가)"]
-
-    # 5인 미만 적용 제외
     if inp.business_size == BusinessSize.UNDER_5:
-        warnings.append("5인 미만 사업장: 연차휴가 규정 미적용 (근로기준법 제11조)")
-
-    # 재직기간 계산
-    dr = DateRange(inp.start_date, inp.end_date)
-
-    if not dr.is_valid:
-        return AnnualLeaveResult(
-            accrued_days=0, used_days=0, remaining_days=0, annual_leave_pay=0,
-            service_years=0,
-            breakdown={"오류": "입사일(start_date)을 입력해주세요"},
-            formulas=[], warnings=["입사일 미입력"], legal_basis=legal,
-        )
-
-    start = dr.start
-    end = dr.end
-    service_days = dr.days
-    service_years = dr.years
-
-    # 출근율 확인
-    if inp.attendance_rate < 0.8:
-        warnings.append(
-            f"출근율 {inp.attendance_rate*100:.0f}% < 80% — 연차 비례 적용 또는 미발생"
-        )
-
-    # G4: 단시간근로자 판정
-    weekly_hours = inp.schedule.daily_work_hours * inp.schedule.weekly_work_days
-    pt_accrued, pt_ratio, is_part_time = _apply_part_time_ratio(1.0, inp.schedule)
-    if is_part_time and weekly_hours < PART_TIME_MIN_WEEKLY_HOURS:
-        legal.append("근로기준법 제18조 제3항 (단시간근로자 연차)")
-        warnings.append(
-            f"주 소정근로시간 {weekly_hours:.0f}시간 < 15시간 — 연차 미발생"
-        )
-        return AnnualLeaveResult(
-            accrued_days=0, used_days=0, remaining_days=0, annual_leave_pay=0,
-            service_years=round(service_years, 2),
-            is_part_time_ratio=True, part_time_ratio=0.0,
-            breakdown={
-                "재직기간": f"{service_days}일 ({service_years:.1f}년)",
-                "주 소정근로시간": f"{weekly_hours:.0f}시간 (15시간 미만)",
-                "연차": "미발생",
-            },
-            formulas=[], warnings=warnings, legal_basis=legal,
-        )
-
-    # 연차 발생 계산
-    deducted_days = 0.0
-    if inp.use_fiscal_year:
-        # G2: 회계기준일(1.1) 기준
-        accrued = _calc_fiscal_year_leave(start, end, inp.attendance_rate)
-        legal.append("행정해석: 회계기준일(1.1) 방식 허용 (입사일 기준 이상 보장)")
-    else:
-        # 입사일 기준 (G1 차감 포함)
-        accrued, deducted_days = _calc_accrued_days(
-            service_days, service_years, inp.attendance_rate,
-            start, end, inp.first_year_leave_used,
-        )
-        if deducted_days > 0:
-            legal.append("근로기준법 제60조 제3항 (최초 1년간 사용 연차 차감)")
-
-    # G4: 단시간 비례 적용
-    if is_part_time:
-        original_accrued = accrued
-        accrued, pt_ratio, _ = _apply_part_time_ratio(accrued, inp.schedule)
-        legal.append("근로기준법 제18조 제3항 (단시간근로자 연차)")
-        formulas.append(
-            f"단시간 비례: {original_accrued:.1f}일 × "
-            f"({fmt_hours(weekly_hours)}h/40h) × (8h/{fmt_hours(inp.schedule.daily_work_hours)}h) "
-            f"= {accrued:.1f}일"
-        )
-
-    # 연차수당 계산
-    used = inp.annual_leave_used
-    remaining = max(0.0, accrued - used)
-    # 1일 통상임금 = 시간급 × 1일 소정근로시간(시행령 제6조 제3항). 단시간 비례 일수는 이미 '그 근로자의 1일'(위 8h/1일 소정
-    # 환산) 단위라 8시간을 곱하면 2배다 — 주 5일 × 4h가 1,200,000원, 별표 2 제4호(15일 × 20h/40h × 8시간 = 60시간)로는
-    # 600,000원이었다(calc-card-followups F2)
-    daily_hours = ow.daily_hours_used
-    daily_wage = hourly * daily_hours      # 원 단위로 반올림한 1일 통상임금이 아니라 시급 × 시간 — 중간 반올림을 더하지 않는다
-
-    # 사용촉진제도 실시 여부 확인 (근로기준법 제61조)
-    promotion_applied = getattr(inp, "leave_use_promotion", False)
-    if promotion_applied and remaining > 0:
-        legal.append("근로기준법 제61조 (연차 유급휴가의 사용 촉진)")
-        warnings.append(
-            f"사용촉진제도 실시: 미사용 연차 {remaining:.1f}일에 대해 "
-            f"수당 지급 의무 없음 (절차 적법 이행 전제)"
-        )
-        leave_pay = 0.0
-        breakdown_promotion = "면제 — 사용촉진 절차 이행 (근기법 제61조)"
-    else:
-        leave_pay = daily_wage * remaining
-        breakdown_promotion = None
-        if not promotion_applied and remaining > 0:
-            warnings.append(
-                f"사용촉진제도 미실시: 미사용 연차 {remaining:.1f}일 → "
-                f"수당 지급 의무 있음"
-            )
-            legal.append("근로기준법 제61조 (연차 유급휴가의 사용 촉진)")
-
-    formulas.append(
-        f"미사용 연차수당: {hourly:,.0f}원 × {fmt_hours(daily_hours)}h × {remaining:.1f}일 = {leave_pay:,.0f}원"
-        + (" (사용촉진으로 면제)" if promotion_applied and remaining > 0 else "")
-    )
-
-    # G5: 퇴직 시 입사일/회계기준일 비교 정산
-    fiscal_year_gap = 0.0
-    if inp.use_fiscal_year:
-        hire_based, _ = _calc_accrued_days(
-            service_days, service_years, inp.attendance_rate,
-            start, end, inp.first_year_leave_used,
-        )
-        if is_part_time:
-            hire_based, _, _ = _apply_part_time_ratio(hire_based, inp.schedule)
-        if hire_based > accrued:
-            fiscal_year_gap = hire_based - accrued
-            gap_pay = daily_wage * fiscal_year_gap
-            warnings.append(
-                f"퇴직 시 정산: 입사일 기준({hire_based:.1f}일) > "
-                f"회계기준일({accrued:.1f}일) → 차이 {fiscal_year_gap:.1f}일 × "
-                f"{daily_wage:,.0f}원 = {gap_pay:,.0f}원 추가 지급 필요"
-            )
-
-    # G3 + G6: 연도별 스케줄
-    schedule = _build_accrual_schedule(start, end, inp.use_fiscal_year,
-                                       inp.first_year_leave_used)
-
-    # 1년 미만일 때 역월 달 수 표시
-    months_note = ""
-    if service_years < 1 and start and end:
-        cm = _count_complete_months(start, end)
-        months_note = f" (완성 달 수: {cm}개월)"
-
-    breakdown = {
-        "재직기간": f"{service_days}일 ({service_years:.1f}년){months_note}",
-        "발생 연차": f"{accrued:.1f}일",
-        "사용 연차": f"{used:.1f}일",
-        "미사용 연차": f"{remaining:.1f}일",
-        "1일 통상임금": f"{daily_wage:,.0f}원",
-        "연차수당 합계": f"{leave_pay:,.0f}원",
-    }
-    if deducted_days > 0:
-        breakdown["2년차 차감 (제60조③)"] = (
-            f"1년 미만 사용 {inp.first_year_leave_used:.0f}일 차감 → "
-            f"부여 {accrued:.1f}일"
-        )
-    if is_part_time:
-        breakdown["단시간 비례"] = f"비례계수 ×{pt_ratio:.2f} (주 {weekly_hours:.0f}시간)"
-    if fiscal_year_gap > 0:
-        breakdown["퇴직 시 추가 지급"] = f"{fiscal_year_gap:.1f}일분"
-    if breakdown_promotion:
-        breakdown["사용촉진제도"] = breakdown_promotion
-    if schedule:
-        sched_lines = []
-        for s in schedule:
-            sched_lines.append(f"{s['period']}: {s['days']}일 (수당발생: {s['pay_trigger_date']})")
-        breakdown["연도별 발생 스케줄"] = " | ".join(sched_lines)
-
-    return AnnualLeaveResult(
-        accrued_days=round(accrued, 1),
-        used_days=used,
-        remaining_days=round(remaining, 1),
-        annual_leave_pay=round(leave_pay, 0),
-        service_years=round(service_years, 2),
-        deducted_days=round(deducted_days, 1),
-        schedule=schedule,
-        is_part_time_ratio=is_part_time,
-        part_time_ratio=round(pt_ratio, 4),
-        fiscal_year_gap=round(fiscal_year_gap, 1),
-        breakdown=breakdown,
-        formulas=formulas,
-        warnings=warnings,
-        legal_basis=legal,
-    )
-
-
-# ── G1: 입사일 기준 연차 발생 (2년차 차감 포함) ──────────────────────────
-
-def _calc_accrued_days(
-    service_days: int,
-    service_years: float,
-    attendance_rate: float,
-    start: "date | None" = None,
-    end: "date | None" = None,
-    first_year_leave_used: float = 0.0,
-) -> tuple[float, float]:
-    """연차 발생일수 계산
-
-    Returns: (accrued_days, deducted_days)
-    """
-    deducted = 0.0
-
-    if service_years < 1:
-        # 1년 미만: 매월 개근 시 1일 (최대 11일)
-        if start and end:
-            months_worked = _count_complete_months(start, end)
-        else:
-            months_worked = service_days // 30
-        accrued = min(months_worked, ANNUAL_LEAVE_FIRST_YEAR_MAX)
-        if attendance_rate < 1.0:
-            accrued = int(accrued * attendance_rate)
-    else:
-        # 1년 이상: 15일 + 2년마다 1일 추가 (최대 25일)
-        extra_years = int(service_years - 1)
-        extra_days = min(extra_years // ANNUAL_LEAVE_ADD_YEARS, ANNUAL_LEAVE_ADD_MAX)
-        base = min(ANNUAL_LEAVE_BASE_DAYS + extra_days, ANNUAL_LEAVE_MAX_DAYS)
-
-        # G1: 제60조③ — 2년차(extra_years==0)일 때 1년 미만 사용분 차감
-        if extra_years == 0 and first_year_leave_used > 0:
-            deducted = min(first_year_leave_used, float(ANNUAL_LEAVE_FIRST_YEAR_MAX))
-            base = max(0, base - deducted)
-
-        # 출근율 80% 미만이면 발생 안 함
-        if attendance_rate < 0.8:
-            base = 0
-            deducted = 0.0
-
-        accrued = base
-
-    return float(accrued), deducted
-
-
-# ── G2: 회계기준일(1.1) 기준 연차 ────────────────────────────────────────
-
-def _calc_fiscal_year_leave(start: date, end: date, attendance_rate: float) -> float:
-    """회계기준일(1.1~12.31) 기준 연차 계산
-
-    - 입사 첫해: 잔여 월수 비례 (올림)
-    - 2년째 이후: 입사년도 기준 근속연수로 산정
-    """
-    hire_year = start.year
-    calc_year = end.year
-
-    if hire_year == calc_year:
-        # 입사 첫해: 잔여 월수 비례
-        remaining_months = 12 - start.month + (1 if start.day == 1 else 0)
-        remaining_months = min(remaining_months, 12)
-        accrued = math.ceil(ANNUAL_LEAVE_BASE_DAYS * remaining_months / 12)
-    else:
-        years_since_hire = calc_year - hire_year
-        if years_since_hire <= 1:
-            accrued = ANNUAL_LEAVE_BASE_DAYS  # 15일
-        else:
-            extra = min(
-                (years_since_hire - 1) // ANNUAL_LEAVE_ADD_YEARS,
-                ANNUAL_LEAVE_ADD_MAX,
-            )
-            accrued = min(ANNUAL_LEAVE_BASE_DAYS + extra, ANNUAL_LEAVE_MAX_DAYS)
-
-    if attendance_rate < 0.8:
-        accrued = 0
-
-    return float(accrued)
-
-
-# ── G3 + G6: 연도별 연차 발생 스케줄 ─────────────────────────────────────
-
-def _build_accrual_schedule(
-    start: date,
-    end: date,
-    use_fiscal_year: bool = False,
-    first_year_leave_used: float = 0.0,
-) -> list[dict]:
-    """입사일~계산일까지의 연도별 연차 발생 스케줄 생성"""
-    schedule = []
-
-    if use_fiscal_year:
-        return _build_fiscal_schedule(start, end)
-
-    # 입사일 기준 스케줄
-    service_days = (end - start).days
-    one_year = date(start.year + 1, start.month, start.day) if _safe_date(start, 1) else start + timedelta(days=365)
-
-    # 1년 미만
-    if service_days > 0:
-        first_year_end = min(one_year - timedelta(days=1), end)
-        months = _count_complete_months(start, first_year_end)
-        first_year_days = min(months, ANNUAL_LEAVE_FIRST_YEAR_MAX)
-        pay_date = one_year
-        schedule.append({
-            "period": "1년 미만",
-            "accrual_date": f"{start.isoformat()} ~ {first_year_end.isoformat()}",
-            "days": first_year_days,
-            "pay_trigger_date": pay_date.isoformat(),
-            "note": f"매월 개근 시 1일 (최대 {ANNUAL_LEAVE_FIRST_YEAR_MAX}일)",
-        })
-
-    # 2년차 이후
-    year_num = 2
-    current_start = one_year
-    while current_start <= end:
-        next_start = _safe_date(start, year_num) or (start + timedelta(days=365 * year_num))
-        extra_years = year_num - 2  # 2년차=0, 3년차=1, ...
-        extra_days = min(extra_years // ANNUAL_LEAVE_ADD_YEARS, ANNUAL_LEAVE_ADD_MAX)
-        base = min(ANNUAL_LEAVE_BASE_DAYS + extra_days, ANNUAL_LEAVE_MAX_DAYS)
-
-        # G1: 2년차 차감
-        deduction_note = ""
-        if year_num == 2 and first_year_leave_used > 0:
-            deducted = min(first_year_leave_used, float(ANNUAL_LEAVE_FIRST_YEAR_MAX))
-            base = max(0, base - deducted)
-            deduction_note = f" (15일 - {first_year_leave_used:.0f}일 차감, 제60조③)"
-
-        schedule.append({
-            "period": f"{year_num}년차",
-            "accrual_date": current_start.isoformat(),
-            "days": base,
-            "pay_trigger_date": next_start.isoformat(),
-            "note": f"{base}일{deduction_note}",
-        })
-
-        current_start = next_start
-        year_num += 1
-
-    return schedule
-
-
-def _build_fiscal_schedule(start: date, end: date) -> list[dict]:
-    """회계기준일 기준 스케줄"""
-    schedule = []
-    hire_year = start.year
-
-    for year in range(hire_year, end.year + 1):
-        if year == hire_year:
-            remaining_months = 12 - start.month + (1 if start.day == 1 else 0)
-            remaining_months = min(remaining_months, 12)
-            days = math.ceil(ANNUAL_LEAVE_BASE_DAYS * remaining_months / 12)
-            period = f"{year}년 (입사 첫해)"
-            note = f"비례 부여: 15 × {remaining_months}/12 = {days}일"
-            pay_date = date(year + 1, 1, 1)
-        else:
-            years_since = year - hire_year
-            if years_since <= 1:
-                days = ANNUAL_LEAVE_BASE_DAYS
-            else:
-                extra = min(
-                    (years_since - 1) // ANNUAL_LEAVE_ADD_YEARS,
-                    ANNUAL_LEAVE_ADD_MAX,
-                )
-                days = min(ANNUAL_LEAVE_BASE_DAYS + extra, ANNUAL_LEAVE_MAX_DAYS)
-            period = f"{year}년 ({years_since + 1}년차)"
-            note = f"{days}일"
-            pay_date = date(year + 1, 1, 1)
-
-        schedule.append({
-            "period": period,
-            "accrual_date": f"{year}-01-01",
-            "days": days,
-            "pay_trigger_date": pay_date.isoformat(),
-            "note": note,
-        })
-
-    return schedule
-
-
-# ── G4: 단시간근로자 비례 ─────────────────────────────────────────────────
-
-def _apply_part_time_ratio(accrued: float, schedule) -> tuple[float, float, bool]:
-    """단시간근로자 비례 연차 적용
-
-    공식: 통상근로자 연차 × (주소정근로시간/40) × (8h/1일소정근로시간)
-
-    Returns: (adjusted_days, ratio, is_part_time)
-    """
-    weekly_hours = schedule.daily_work_hours * schedule.weekly_work_days
-    daily_hours = schedule.daily_work_hours
-
-    if weekly_hours >= FULL_TIME_WEEKLY_HOURS:
-        return accrued, 1.0, False
-
-    if weekly_hours < PART_TIME_MIN_WEEKLY_HOURS:
-        return 0.0, 0.0, True
-
-    if daily_hours <= 0:
-        return accrued, 1.0, False
-
-    ratio = (weekly_hours / FULL_TIME_WEEKLY_HOURS) * (FULL_TIME_DAILY_HOURS / daily_hours)
-    adjusted = round(accrued * ratio, 1)
-
-    return adjusted, round(ratio, 4), True
-
-
-# ── 유틸리티 ──────────────────────────────────────────────────────────────
-
-def _count_complete_months(start: "date", end: "date") -> int:
-    """역월(曆月) 기준 완성된 달 수 계산
-
-    예: 2024-01-01 ~ 2024-07-15 → 6개월 완성 (7월은 진행 중)
-        2024-01-01 ~ 2024-07-01 → 6개월 완성 (7월 1일 시작 = 완성 아님)
-        2024-01-15 ~ 2024-07-15 → 6개월 완성
-    """
-    months = (end.year - start.year) * 12 + (end.month - start.month)
-    if end.day < start.day:
-        months -= 1
-    return max(0, months)
-
-
-def _safe_date(start: date, years_add: int) -> "date | None":
-    """start로부터 years_add년 후 날짜 반환 (2/29 등 예외 처리)"""
+        return AnnualLeaveResult(is_eligible=False, breakdown={"법정 연차": "5인 미만 사업장 적용 제외"},
+                                 warnings=["별도 약정휴가는 취업규칙·근로계약을 확인해주세요"],
+                                 legal_basis=legal+["근로기준법 제11조"])
     try:
-        return date(start.year + years_add, start.month, start.day)
-    except ValueError:
-        # 2/29 입사 → 2/28로 조정
-        return date(start.year + years_add, start.month, start.day - 1)
+        return _calculate(inp,ow,legal)
+    except ValueError as exc:
+        return AnnualLeaveResult(held_reason=str(exc), warnings=[str(exc)], legal_basis=legal)
+
+
+def _calculate(inp, ow, legal):
+    start = _date(inp.start_date, "입사일")
+    end = _date(inp.end_date, "계산 종료일") if inp.end_date else _date(
+        resolve_reference_date(inp.reference_date, inp.reference_year), "계산 기준일")
+    last = _date(inp.last_employed_date, "마지막 재직일") if inp.last_employed_date else None
+    if last and last < start:
+        raise ValueError("마지막 재직일이 입사일보다 빠릅니다")
+    if last:
+        end = min(end,last)
+    if end < start:
+        raise ValueError("계산 종료일이 입사일보다 빠릅니다")
+    if end < date(2014,7,1):
+        raise ValueError("2014-07-01 이전 연차는 검증된 법령 판본을 확인한 뒤 별도 산정해야 합니다")
+    years = _years(start,end)
+    grant = _safe_date(start,years)
+    if years and grant < date(2014,7,1):
+        raise ValueError("실제 연차 발생일이 2014-07-01 전입니다. 해당 발생일의 법령 판본 확인이 필요합니다")
+    if not years and _month(start,1) < date(2014,7,1):
+        raise ValueError("첫해 월별 발생분에 2014-07-01 전 기간이 포함됩니다. 당시 판본 확인이 필요합니다")
+    assessment_start = _safe_date(start,years-1) if years else start
+    assessment_end = grant-timedelta(days=1) if years else end
+    if inp.use_fiscal_year:
+        if inp.fiscal_year_granted_days is None:
+            raise ValueError("회사 회계연도 규정으로 해당 연도에 실제 부여한 연차일수가 필요합니다. 입사일 기준 법정 발생분과 퇴직 시 누적 대조도 필요합니다")
+        assessment_start, assessment_end = max(start,date(end.year-1,1,1)), date(end.year,1,1)-timedelta(days=1)
+        if assessment_end < assessment_start:
+            assessment_start, assessment_end = start,end
+    rate, reduced = _attendance(inp,assessment_start,assessment_end)
+    daily,weekly = _hours(inp,reduced)
+    if weekly < 15:
+        return AnnualLeaveResult(is_eligible=False,is_part_time_ratio=True,part_time_ratio=0,
+            breakdown={"법정 연차": "4주 평균 주 소정근로시간 15시간 미만: 미발생"},
+            warnings=["입력한 소정근로시간이 산정기간에 동일하다는 전제입니다"],
+            legal_basis=legal+["근로기준법 제18조 제3항"])
+    used = _number(inp.annual_leave_used,"현재 기간 사용 연차")
+    first_used = (_number(inp.first_year_leave_used,"첫해 사용 연차")
+                  if inp.first_year_leave_used is not None else None)
+    first_input_hours = (_number(inp.first_year_leave_used_hours,"첫해 실제 사용 연차시간")
+                         if inp.first_year_leave_used_hours is not None else None)
+    if first_input_hours is not None:
+        first_used = first_input_hours/daily
+    first_count = inp.first_year_full_attendance_months
+    if first_count is not None:
+        _number(first_count,"첫해 개근 수",hi=min(11,_count_complete_months(start,end)),integer=True)
+    deducted = 0
+    if inp.use_fiscal_year:
+        days = _number(inp.fiscal_year_granted_days,"회사 부여 연차",hi=366)
+        pay_date = date(end.year+1,1,1)
+    elif years == 0:
+        days = _monthly_count(inp,min(11,_count_complete_months(start,end)),rate)
+        first_count = days
+        pay_date = _safe_date(start,1)
+    elif rate < .8:
+        days = _monthly_count(inp,12,rate)
+        # 법제처24-0674: 전년도 개근 월 수에 따른 휴가는 다음 연도에 발생.
+        pay_date = _safe_date(start,years+1)
+        legal += ["법제처 법령해석 24-0674 (2024-11-04)", "https://opinion.lawmaking.go.kr/nl4li/lsItptEmp/444315"]
+    else:
+        days = _annual_base(years)
+        pay_date = _safe_date(start,years+1)
+        if years == 1 and start < date(2017,5,30):
+            if first_used is None:
+                raise ValueError("개정 전 최초 1년분 계산에는 실제 첫해 사용분이 필요합니다")
+            deducted = first_used
+            legal += ["개정 전 근로기준법 제60조 제3항 (2017-05-30 전 입사자의 최초 1년분)", HISTORY_URL]
+    accrued_hours,accrued_days = _leave_hours(days,weekly,daily)
+    monthly_grants = not inp.use_fiscal_year and years == 0
+    if monthly_grants:
+        accrued_hours = _leave_hours(1,weekly,daily)[0]*days
+        accrued_days = accrued_hours/daily
+    if inp.use_fiscal_year:
+        accrued_days, accrued_hours = days, days*daily
+    if deducted:
+        if deducted*daily > accrued_hours:
+            raise ValueError("개정 전 첫해 사용분이 발생 한도를 초과합니다")
+        accrued_hours -= deducted*daily
+        accrued_days = accrued_hours/daily
+    current_input_hours = inp.annual_leave_used_hours
+    if years == 0 and first_input_hours is not None:
+        if current_input_hours is not None and current_input_hours != first_input_hours:
+            raise ValueError("첫해 실제 사용 연차시간이 두 입력에서 다릅니다")
+        current_input_hours = first_input_hours
+    if current_input_hours is not None:
+        used_hours = _number(current_input_hours,"실제 사용 연차시간")
+        used = used_hours/daily
+    else:
+        if years == 0 and first_used:
+            if used and used != first_used:
+                raise ValueError("첫해 사용 연차가 두 입력에서 다릅니다. 동일한 첫해 사용분을 확인해주세요")
+            used = first_used
+        if reduced and used:
+            raise ValueError("단축 중 사용 연차는 실제 차감한 시간을 알려주세요. 발생 1일과 사용 1일의 시간이 다를 수 있습니다")
+        used_hours = used*daily
+    if used_hours > accrued_hours:
+        raise ValueError("사용 연차가 현재 기간 발생분보다 많습니다. 이월·선사용 또는 다른 기간의 사용분인지 확인해주세요")
+    remaining_hours = accrued_hours-used_hours
+    if years == 0:
+        first_used = used  # 동일 첫해 장부. 호환 입력 둘을 중복 합산하지 않음
+    first_hours = first_count*_leave_hours(1,weekly,daily)[0] if first_count is not None else None
+    if years == 0:
+        first_used_hours = used_hours
+    elif inp.first_year_leave_used_hours is not None:
+        first_used_hours = _number(inp.first_year_leave_used_hours,"첫해 실제 사용 연차시간")
+        first_used = first_used_hours/daily
+    else:
+        first_used_hours = first_used*daily if first_used is not None and not reduced else None
+    if first_hours is not None and first_used_hours is not None and first_used_hours > first_hours:
+        raise ValueError("첫해 사용분이 첫해 발생분을 초과합니다. 이월·선사용 여부를 확인해주세요")
+    rows = _first_year_schedule(start,end) if start >= date(2014,7,1) else []
+    if years == 0 and not inp.use_fiscal_year:
+        expiry_dates = {r["pay_trigger_date"] for r in rows}
+        pay_date = _date(next(iter(expiry_dates)),"월별 소멸일") if len(expiry_dates) == 1 else None
+    for y in range(1,years+1):
+        if _safe_date(start,y) < date(2014,7,1):
+            continue
+        row_days = _annual_base(y)
+        old = (first_used or 0) if y == 1 and start < date(2017,5,30) else 0
+        current = y == years and not inp.use_fiscal_year
+        if current:
+            row_days = days
+        row_hours,row_equiv = _leave_hours(row_days,weekly,daily)
+        if old:
+            row_hours = max(0,row_hours-old*daily)
+            row_equiv = row_hours/daily
+        if current:
+            row_hours,row_equiv = accrued_hours,accrued_days
+        rows.append(dict(period=f"{y+1}년차",kind="annual",accrual_date=_safe_date(start,y).isoformat(),
+                         days=round(row_equiv,2), hours=row_hours,
+                         pay_trigger_date=_safe_date(start,y+1).isoformat(),
+                         note=("현재 산정기간 출근자료 반영" if current else "출근율 80% 이상·동일 소정시간 가정의 참고값"),
+                         conditional=not current))
+    if inp.use_fiscal_year:
+        rows.append(dict(period=f"{end.year}년 회사 부여",kind="company",days=accrued_days,
+                         hours=accrued_hours,accrual_date="",pay_trigger_date=str(pay_date),
+                         conditional=False,note="입력한 회사 실제 부여분. 법정 기준 충족 판정은 별도"))
+    warnings = ["사용촉진·사용자 귀책·이월 약정은 별도 확인이 필요합니다",
+                "연도별 과거 행은 해당 연도 출근·시간 자료가 없는 경우 조건부 참고값이며 실제 누적 채권이 아닙니다"]
+    if years == 0 and rate < 1:
+        for row in rows:
+            row["days"] = None
+            row["note"] = "개근한 월의 날짜가 없어 개별 발생·소멸일 확정 보류"
+    if reduced:
+        legal += ["근로기준법 제60조 제6항 제4·5호, 법률 제20520호 부칙 제6조",REDUCED_URL]
+        warnings.append("단축 전 소정시간이 산정기간의 기준이라는 전제입니다. 단축시간은 결근일수로 환산하지 않습니다")
+    if inp.annual_deemed_periods:
+        legal.append("근로기준법 제60조 제6항 (출근 간주)")
+    if not pay_date:
+        warnings.append("단일 정산일로 표시할 수 없습니다. 월별 발생·소멸 일정과 사용 귀속을 확인해주세요")
+    if weekly < 40:
+        legal.append("근로기준법 시행령 별표 2 제4호 (시간 비례·1시간 미만 올림)")
+    pay_due = last is not None and end == last
+    if pay_due:
+        pay_date = last+timedelta(days=1)
+    leave_pay = remaining_hours*ow.hourly_ordinary_wage
+    if inp.leave_use_promotion:
+        leave_pay = 0
+        warnings.append("법정 사용촉진 절차가 적법하게 완료되고 사용 기회가 보장된 경우에 한해 수당 면제 가정")
+    if not pay_due:
+        warnings.append("현재 잔여분의 입력 통상시급 기준 평가액입니다. 사용기간 만료·퇴직 전 확정 지급채권으로 보지 않습니다")
+    if inp.use_fiscal_year:
+        warnings.append("회사 부여일수를 사용했습니다. 퇴직 시 입사일 기준과 회사 기준의 누적 발생·사용·기지급 내역을 대조해야 합니다")
+    first_remaining_hours = (first_hours-first_used_hours
+                             if first_hours is not None and first_used_hours is not None else None)
+    first_days = first_hours/daily if first_hours is not None else None
+    first_remaining = first_remaining_hours/daily if first_remaining_hours is not None else None
+    first_settlement = (first_remaining if first_remaining is not None and
+                        start >= date(2020,3,1) and end >= _safe_date(start,1) else None)
+    breakdown = {
+        "발생 연차": f"{accrued_days:.1f}일 ({accrued_hours:g}시간)",
+        "사용 연차": f"{used:.1f}일 ({used_hours:g}시간)",
+        "미사용 연차": f"{remaining_hours/daily:.1f}일 ({remaining_hours:g}시간)",
+        "일수의 단위": f"발생 기준 1일 = {daily:g}시간",
+        "출근율 산정기간": f"{assessment_start} ~ {assessment_end}",
+        "법정 출근 간주 반영 출근율": f"{rate*100:.2f}%",
+        "연차수당 평가액" if not pay_due else "퇴직 시 현재 기간 미사용수당": f"{leave_pay:,.0f}원",
+        "정산 시점": (str(pay_date) if pay_date else "월별 발생·소멸 일정과 사용 귀속 확인 필요") + " (사용촉진·귀책·이월 및 당시 임금 확인 필요)",
+    }
+    if first_remaining is not None and years:
+        breakdown["별도 첫해 장부"] = f"발생 {first_days:g}일({first_hours:g}시간) · 사용 {first_used:g}일({first_used_hours:g}시간) · 잔여 {first_remaining:g}일({first_remaining_hours:g}시간) (현재 기간에서 다시 차감하지 않음)"
+    elif years:
+        breakdown["별도 첫해 장부"] = "첫해 월별 개근·사용 자료가 부족해 미사용 정산분 확정 보류"
+    if inp.use_fiscal_year:
+        breakdown["발생 기준"] = "회사 회계연도 규정의 실제 부여일수"
+    if deducted:
+        breakdown["과거 규정 공제"] = f"첫해 사용 {deducted:g}일 (2017-05-30 전 입사)"
+    return AnnualLeaveResult(
+        accrued_days=round(accrued_days,2), used_days=round(used,2), remaining_days=round(remaining_hours/daily,2),
+        accrued_hours=accrued_hours,used_hours=used_hours,remaining_hours=remaining_hours,day_hours=daily,
+        annual_leave_pay=round(leave_pay),service_years=round((end-start).days/365.2425,2),
+        deducted_days=deducted,schedule=rows,is_part_time_ratio=weekly<40,
+        part_time_ratio=round(accrued_days/days,4) if days else 1,is_eligible=True,
+        effective_attendance_rate=rate,assessment_start=str(assessment_start),assessment_end=str(assessment_end),
+        pay_due=pay_due,pay_trigger_date=str(pay_date) if pay_date else "",first_year_accrued_days=first_days,
+        first_year_used_days=first_used,first_year_remaining_days=first_remaining,first_year_settlement_days=first_settlement,
+        first_year_accrued_hours=first_hours,first_year_used_hours=first_used_hours,
+        first_year_remaining_hours=first_remaining_hours,accrual_basis="company" if inp.use_fiscal_year else "statutory",
+        breakdown=breakdown,formulas=[f"미사용 연차수당: {ow.hourly_ordinary_wage:,.0f}원 × {remaining_hours:g}시간 = {leave_pay:,.0f}원"],
+        warnings=warnings,legal_basis=legal)
