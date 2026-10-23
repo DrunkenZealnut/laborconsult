@@ -1768,7 +1768,7 @@ class ScheduleHoursTest(unittest.TestCase):
         # 임금체불 지연이자는 시간과 무관하다
         out = _run_calculator(dict(hourly, wage_amount=12000, calculation_types_kr=["임금체불"],
                                    arrear_amount=1000000, arrear_due_date="2026-01-10"), q)
-        self.assertIn("임금체불 지연이자", out)
+        self.assertIn("임금체불 누적 지연이자", out)
         # 월급: 근무일수가 없거나 주 5일 이상이면 주 40시간 관행(주 6일은 1일 40 ÷ 6시간 — 예전 기본값은 48시간이었다), 그 사실을
         # [기준시간]에 밝힌다. 주 5일 미만(단시간)은 관행이 없어 보류
         for extra, hours in (({}, "208.5714h"), ({"weekly_work_days": 5}, "208.5714h"), ({"weekly_work_days": 6}, "202.7778h")):
@@ -1783,7 +1783,7 @@ class ScheduleHoursTest(unittest.TestCase):
         for extra in ({"weekly_work_days": 3}, {"wage_type": "일급", "wage_amount": 90000}):
             out = _run_calculator(dict(monthly, calculation_types_kr=["임금체불", "최저임금"], arrear_amount=1000000,
                                        arrear_due_date="2026-01-10", **extra), q)
-            self.assertIn("임금체불 지연이자", out)
+            self.assertIn("임금체불 누적 지연이자", out)
             self.assertNotIn("통상시급:", out)
             self.assertNotIn("11,250", out)
             self.assertIn("[기준시간] 소정근로시간 미확인 — 월 환산·통상시급은 계산하지 않음", out)
