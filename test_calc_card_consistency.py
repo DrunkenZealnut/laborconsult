@@ -120,12 +120,15 @@ class MonthlyBasisCapture:
         self._patches = []
         for name in BASIS_MODULES:
             module = importlib.import_module(f"wage_calculator.calculators.{name}")
+            # 연 단위 소비처(DC형)는 annual_wage_total(= 기준 월액 × 12, 연봉 반올림 보정)을 부른다 — 월액으로 되돌려 잡는다
+            func = "monthly_wage_total" if hasattr(module, "monthly_wage_total") else "annual_wage_total"
+            months = 1 if func == "monthly_wage_total" else 12
 
-            def wrapped(inp, ow, *, premium=True, _name=name):
-                value = shared.monthly_wage_total(inp, ow, premium=premium)
-                self.values.append((_name, value))
+            def wrapped(inp, ow, *, premium=True, _name=name, _func=func, _months=months):
+                value = getattr(shared, _func)(inp, ow, premium=premium)
+                self.values.append((_name, value / _months))
                 return value
-            patch = mock.patch.object(module, "monthly_wage_total", wrapped)
+            patch = mock.patch.object(module, func, wrapped)
             patch.start()
             self._patches.append(patch)
         return self

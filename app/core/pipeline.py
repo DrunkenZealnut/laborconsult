@@ -1299,15 +1299,26 @@ _HELD_INSURANCE_BASIS_RE = re.compile(r"^(세전 월 급여: [\d,]+원) \(통상
 _NOT_INCLUDED_RE = re.compile(r"포함(?:되|하|돼|이|해)?\s*(?:있)?지\s*않|포함\s*(?:안|X)|미포함|불포함|제외|별도|따로")
 
 
+# 임금 구성이 아닌 '포함' — "세금 포함 실수령액"·"4대보험 포함해서 계산"은 그 앞의 수당이 월급 총액 안에 있다는 말이 아니다
+_NON_PAY_INCLUDE_RE = re.compile(r"(?:세금|세액|소득세|4\s*대\s*보험|보험료?|공제|실수령(?:액)?|세후|세전|부가세|VAT)\s*(?:까지\s*|도\s*|을\s*|를\s*)?$",
+                                 re.IGNORECASE)
+
+
 def _stated_included_items(text: str) -> set[str]:
     """'포함'이라고 말한 문장에서 그 '포함' **앞에** 적힌 수당 이름(공백 제거) — "월급 270만 원에 식대 20만 원과 연장수당이 모두
     포함"의 식대는 말한 총액 안에 있다. '포함' 뒤에 오는 이름("월급 270만 원(연장수당 포함), 식대 20만 원")은 총액 밖일 수 있어
-    고르지 않고, 부정·별도 표지가 있는 문장은 보지 않는다."""
+    고르지 않고, 부정·별도 표지가 있는 문장은 보지 않는다. 세금·4대보험·공제·실수령 바로 뒤의 '포함'은 임금 구성이 아니라 건너뛴다 —
+    마지막 '포함'만 보면 "직책수당 30만 원을 받는데 세금 포함 실수령액"에서 직책수당을 총액 안으로 보고 빼 세전이 30만 원 줄었다
+    (Check S1)."""
     names: set[str] = set()
     for sentence in _SENTENCE_RE.split(text or ""):
-        cut = sentence.rfind("포함")
-        if cut < 0 or _NOT_INCLUDED_RE.search(sentence):
+        if _NOT_INCLUDED_RE.search(sentence):
             continue
+        cuts = [m.start() for m in re.finditer("포함", sentence)
+                if not _NON_PAY_INCLUDE_RE.search(sentence[max(0, m.start() - 12):m.start()])]
+        if not cuts:
+            continue
+        cut = cuts[-1]
         masked = _EXCLUDED_ITEM_RE.sub(lambda m: " " * len(m.group(0)), sentence[:cut])
         names.update(re.sub(r"\s+", "", m.group(1)) for m in _PAY_ITEM_RE.finditer(masked))
     return names

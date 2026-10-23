@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from ..base import BaseCalculatorResult
 from ..models import WageInput, WageType
 from .ordinary_wage import OrdinaryWageResult
-from .shared import monthly_wage_total
+from .shared import annual_wage_total
 from ..constants import (
     get_eitc_params,
     EITC_ASSET_UPPER,
@@ -108,14 +108,17 @@ def calc_eitc(inp: WageInput, ow: OrdinaryWageResult) -> EitcResult:
     # ── 2. 연간 총소득 결정 ───────────────────────────────────────────────
     income = max(0.0, inp.annual_total_income)
     if income == 0:
-        monthly = monthly_wage_total(inp, ow)   # 기준 월액 — 시급제도 추정한다(예전에는 월급만 봐 '소득 정보 없음')
-        if monthly:
-            income = monthly * 12
-            warnings.append(
-                f"연간 총소득 미입력 — {'월 임금총액' if inp.monthly_total_pay else '월급' if inp.wage_type == WageType.MONTHLY else '월 임금'} "
-                f"{monthly:,.0f}원 x 12 = "
-                f"{income:,.0f}원으로 추정합니다."
-            )
+        annual = annual_wage_total(inp, ow)   # 기준 월액 × 12 — 시급제도 추정한다(예전에는 월급만 봐 '소득 정보 없음')
+        if annual:
+            income = annual
+            if inp.wage_type == WageType.ANNUAL and not inp.monthly_total_pay:
+                warnings.append(f"연간 총소득 미입력 — 연봉 기준 {income:,.0f}원으로 추정합니다.")
+            else:
+                pay_label = '월 임금총액' if inp.monthly_total_pay else '월급' if inp.wage_type == WageType.MONTHLY else '월 임금'
+                warnings.append(f"연간 총소득 미입력 — {pay_label} {annual / 12:,.0f}원 x 12 = {income:,.0f}원으로 추정합니다.")
+        elif inp.annual_wage:
+            # 임금 형태와 금액 필드가 어긋난 직접 호출(월급제 + 연봉만) — 예전 폴백을 그대로 둔다(Check G-2)
+            income = inp.annual_wage
         else:
             return _ineligible(
                 "소득 정보 없음 — 연간 총소득 또는 월급 정보가 필요합니다.",

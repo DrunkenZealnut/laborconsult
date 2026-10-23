@@ -1092,7 +1092,7 @@ class WageCompositionTest(unittest.TestCase):
             if path.stem in ("ordinary_wage", "shared", "__init__"):
                 continue
             # 기준 월액(shared.monthly_wage_total)도 통상임금 월액을 읽는다 — 그 함수를 부르는 계산기는 간접 독자다
-            if re.search(r"\bow\.(?:hourly|daily|monthly)_ordinary_wage\b|\bmonthly_wage_total\(",
+            if re.search(r"\bow\.(?:hourly|daily|monthly)_ordinary_wage\b|\b(?:monthly|annual)_wage_total\(",
                          path.read_text(encoding="utf-8")):
                 readers.add(path.stem)
         self.assertEqual(readers - _ORDINARY_BASED_TARGETS - set(self.KEPT_ORDINARY_READERS), set())

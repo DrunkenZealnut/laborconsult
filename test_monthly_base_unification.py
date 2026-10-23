@@ -14,6 +14,7 @@
 - U9 구조 — 옛 경로가 없고, 소비처가 두 함수만 부른다
 - U10 독립 리뷰 지적(보류 기본급 표기·D4 B·제외기간 추정·총액 안 수당·괄호)
 - U11 실업급여 평균임금 줄의 모양·경고
+- U12 Check 지적(세금·4대보험 '포함', 연봉 반올림·폴백, 월급 표기, 포괄 명세 표기)
 """
 from __future__ import annotations
 
@@ -398,6 +399,55 @@ class UnemploymentFormulaTest(unittest.TestCase):
         self.assertNotIn("통상임금(시급·일급·월액)으로 계산하는 항목", note)
 
 
+class CheckFindingsTest(unittest.TestCase):
+    """U12 — Check(갭 분석)가 찾은 것: 임금 구성이 아닌 '포함'(S1), 연봉 반올림(S3), 연봉 폴백(G-2), 월급 표기(G-1), 포괄 명세 표기(S6)."""
+
+    def test_s1_tax_or_insurance_inclusion_is_not_a_pay_composition(self):
+        """"세금 포함 실수령액"·"4대보험 포함해서"의 '포함'은 그 앞의 수당이 월급 총액 안에 있다는 말이 아니다."""
+        from app.core.pipeline import _stated_included_items
+        params = dict(wage_amount=2700000, calculation_types_kr=["4대보험"], fixed_allowances=[{"name": "직책수당", "amount": 300000}])
+        for query in ("월급 270만 원(연장수당 포함)에 직책수당 30만 원을 받는데 세금 포함 실수령액이 얼마인가요?",
+                      "월급 270만 원에 연장수당 포함, 직책수당 30만 원은 매달 나오고 4대보험 포함해서 계산해 주세요."):
+            with self.subTest(query):
+                self.assertEqual(_stated_included_items(query), set())
+                self.assertIn("세전 월 급여: 3,000,000원", pipeline_card(params, query))
+        self.assertEqual(_stated_included_items("월급 270만 원에 식대 20만 원과 연장수당이 모두 포함돼 있습니다."), {"식대"})
+
+    def test_s3_annual_salary_is_not_rounded_through_the_monthly_wage(self):
+        """연봉 2,200만 원은 단독가구 근로장려금 상한(2,200만 원 이상 수급 불가)에 걸린다 — 월 1,833,333원 × 12 = 21,999,996원으로
+        세면 1원이 나왔다."""
+        for annual, credit in ((22000000, 0), (20000000, 253846)):
+            inp = wage_input(wage_type=WageType.ANNUAL, annual_wage=annual)
+            ow = calc_ordinary_wage(inp)
+            r = calc_eitc(inp, ow)
+            with self.subTest(annual):
+                self.assertEqual((r.annual_income, r.total_credit), (annual, credit))
+                self.assertIn(f"연간 총소득 미입력 — 연봉 기준 {annual:,}원으로 추정합니다.", r.warnings)
+        dc = calc_retirement_pension(replace(inp, pension_type="DC", start_date="2024-01-01", end_date="2026-01-01"), ow)
+        self.assertEqual(dc.annual_contributions[0]["annual_wage"], 20000000)
+
+    def test_g2_monthly_type_with_only_an_annual_wage_keeps_the_fallback(self):
+        inp = wage_input(wage_type=WageType.MONTHLY, annual_wage=30000000)
+        self.assertEqual(calc_eitc(inp, calc_ordinary_wage(inp)).annual_income, 30000000)
+
+    def test_eitc_reason_keeps_the_household_label(self):
+        """근로장려금 소득 표기 변수가 가구유형 이름표를 덮어 '(월 임금 기준)'이 찍히지 않게."""
+        inp = wage_input(wage_type=WageType.HOURLY, hourly_wage=12000)
+        self.assertIn("(단독가구 기준)", calc_eitc(inp, calc_ordinary_wage(inp)).ineligible_reason)
+
+    def test_g1_monthly_salary_label_is_kept_without_ordinary_allowances(self):
+        plain = wage_input(wage_type=WageType.MONTHLY, monthly_wage=3000000, end_date="2026-10-01")
+        self.assertIn("9,000,000원 (월급 × 3 추정)", " / ".join(calc_average_wage(plain, calc_ordinary_wage(plain)).formulas))
+        allowance = replace(plain, fixed_allowances=[{"name": "직책수당", "amount": 200000}])
+        self.assertIn("(통상임금 × 3 추정)", " / ".join(calc_average_wage(allowance, calc_ordinary_wage(allowance)).formulas))
+
+    def test_s6_comprehensive_breakdown_label_names_the_allowances_outside(self):
+        from wage_calculator.calculators.shared import monthly_wage_note
+        inp = wage_input(wage_type=WageType.COMPREHENSIVE, monthly_wage=3000000, fixed_allowances=[{"name": "식대", "amount": 200000}],
+                         comprehensive_breakdown={"base": 2200000, "overtime_pay": 800000})
+        self.assertEqual(monthly_wage_note(inp, calc_ordinary_wage(inp)), "포괄임금 총액 + 고정수당 200,000원")
+
+
 def calls(path: Path) -> set[str]:
     names = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -422,8 +472,8 @@ class StructureTest(unittest.TestCase):
 
     def test_u9_consumers_call_the_single_sources(self):
         for module in ("insurance", "average_wage", "severance", "eitc", "retirement_pension", "unemployment"):
-            with self.subTest(module):
-                self.assertIn("monthly_wage_total", calls(CALC / f"{module}.py"))
+            with self.subTest(module):   # 연 단위 소비처는 annual_wage_total(= monthly_wage_total × 12, 연봉 반올림 보정)
+                self.assertTrue({"monthly_wage_total", "annual_wage_total"} & calls(CALC / f"{module}.py"))
         for module in ("severance", "unemployment", "shutdown_allowance", "industrial_accident"):
             with self.subTest(module):
                 self.assertIn("calc_average_wage", calls(CALC / f"{module}.py"))
