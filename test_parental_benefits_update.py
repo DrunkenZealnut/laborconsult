@@ -1,0 +1,187 @@
+"""C1+C7: dated payment schedules, qualification and end-to-end input preservation."""
+import unittest
+
+from wage_calculator.models import WageInput, WageType
+from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
+from wage_calculator.calculators.parental_leave import calc_parental_leave
+
+
+def benefit(reduced=False, **changes):
+    inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=3_000_000,
+                    reference_year=2026, reference_date="2026-10-24")
+    fields = dict(childcare_example=True, parental_leave_months=12,
+                  childcare_insured_days=180, childcare_child_age=1,
+                  reduced_weekly_hours_before=40, reduced_weekly_hours_after=30,
+                  reduced_months=1)
+    fields.update(changes)
+    for k,v in fields.items(): setattr(inp,k,v)
+    if reduced:
+        from wage_calculator.calculators.reduced_work_benefit import calc_reduced_work_benefit
+        return calc_reduced_work_benefit(inp,calc_ordinary_wage(inp))
+    return calc_parental_leave(inp,calc_ordinary_wage(inp))
+
+
+class ParentalBenefitsUpdateTests(unittest.TestCase):
+    def test_resume_special_uses_first_start_not_resumption_age(self):
+        r=benefit(childcare_example=False,parental_leave_start="2026-09-01",parental_leave_months=1,
+                  parental_prior_months=3,parental_first_leave_start="2025-03-01",
+                  childcare_child_birth_date="2025-01-01",parental_scheme="six_plus_six",
+                  parental_same_child=True,parental_other_parent_start="2025-06-01",parental_other_parent_months=6)
+        self.assertFalse(r.held_reason,r.held_reason)
+        self.assertEqual(r.total_benefit,3_000_000)
+
+    def test_explicit_invalid_fields_and_conflicting_periods_are_held(self):
+        for data in [dict(childcare_example="false"),dict(parental_leave_months=1.5),
+                     dict(parental_leave_start="2026-01-01",parental_leave_end="2026-01-31",parental_leave_months=2),
+                     dict(parental_leave_periods=[dict(start_date="2026-01-01",end_date="2026-01-31")],parental_leave_months=2)]:
+            with self.subTest(data=data): self.assertTrue(benefit(**data).held_reason)
+
+    def test_short_leave_requires_born_child_care(self):
+        r=benefit(childcare_example=False,childcare_reason="pregnant_self",parental_leave_months=0,
+                  parental_leave_periods=[dict(start_date="2026-09-01",end_date="2026-09-07",kind="short")],
+                  short_parental_reason_eligible=True,short_parental_used_this_year=False)
+        self.assertTrue(r.held_reason)
+
+    def test_parental_parts_reconcile_to_rounded_payment(self):
+        for wage in [950_003,1_000_002,1_530_012,2_000_003]:
+            r=benefit(monthly_wage=wage,childcare_example=False,parental_leave_start="2024-12-15",parental_leave_months=1)
+            for row in r.monthly_schedule:
+                self.assertEqual(row['gross'],row['payment']+row['deferred']+row['employer_reduction'])
+
+    def test_unverified_midmonth_partial_does_not_exceed_full_month(self):
+        # 17/31 + 13/28 would exceed one month's pay for a 30-day partial month.
+        r=benefit(childcare_example=False,parental_leave_start="2026-01-15",
+                  parental_leave_end="2026-02-13",parental_leave_months=0)
+        self.assertTrue(r.held_reason)
+
+    def test_parental_2026_general_12_months(self):
+        r=benefit()
+        self.assertEqual(r.total_benefit,23_100_000)
+        self.assertEqual(r.total_deferred,0)
+        self.assertEqual([x['payment'] for x in r.monthly_schedule],
+                         [2_500_000]*3+[2_000_000]*3+[1_600_000]*6)
+
+    def test_parental_crosses_20250101(self):
+        r=benefit(childcare_example=False,parental_leave_start="2024-10-01",parental_leave_months=6)
+        self.assertEqual([x['month_index'] for x in r.monthly_schedule],list(range(1,7)))
+        self.assertEqual([x['payment'] for x in r.monthly_schedule],[1_125_000]*3+[2_000_000]*3)
+        self.assertEqual(r.total_deferred,1_125_000)
+
+    def test_old_floor_applies_to_actual_payment(self):
+        for wage,gross,paid,deferred in [(500_000,700_000,700_000,0),(1_000_000,800_000,700_000,100_000)]:
+            r=benefit(monthly_wage=wage,reference_date="2024-01-01",parental_leave_months=1)
+            self.assertEqual((r.monthly_benefit_before_deferred,r.total_benefit,r.total_deferred),(gross,paid,deferred))
+
+    def test_six_plus_six_matches_parent_durations(self):
+        r=benefit(monthly_wage=5_000_000,parental_scheme="six_plus_six",
+                  parental_other_parent_months=4,parental_same_child=True,
+                  childcare_child_birth_date="2025-01-01",parental_other_parent_start="2025-06-01",
+                  childcare_example=False,parental_leave_start="2025-03-01",parental_leave_months=6)
+        self.assertEqual([x['payment'] for x in r.monthly_schedule],
+                         [2_500_000,2_500_000,3_000_000,3_500_000,2_000_000,2_000_000])
+        self.assertTrue(benefit(parental_scheme="six_plus_six").held_reason)
+        self.assertTrue(benefit(is_second_parent=True).held_reason)
+
+    def test_single_parent_and_extension_are_separate(self):
+        r=benefit(parental_scheme="single_parent",parental_single_parent_eligible=True,parental_leave_months=18)
+        self.assertEqual(r.total_benefit,34_200_000)
+        self.assertEqual(len(r.monthly_schedule),18)
+        self.assertTrue(benefit(parental_leave_months=18).held_reason)
+        self.assertEqual(len(benefit(parental_leave_months=18,parental_disabled_child_eligible=True).monthly_schedule),18)
+        self.assertTrue(benefit(parental_leave_months=19,parental_disabled_child_eligible=True).held_reason)
+
+    def test_missing_and_invalid_dates_do_not_become_today(self):
+        self.assertTrue(benefit(childcare_example=False).held_reason)
+        self.assertTrue(benefit(childcare_example=False,parental_leave_start="2026-02-30").held_reason)
+        self.assertTrue(benefit(parental_leave_months=0).held_reason)
+        self.assertTrue(benefit(reference_date="bad").held_reason)
+
+    def test_child_age_or_grade_and_pregnancy(self):
+        self.assertTrue(benefit(childcare_child_age=9,childcare_child_grade=3).held_reason)
+        self.assertFalse(benefit(childcare_child_age=9,childcare_child_grade=2).held_reason)
+        self.assertFalse(benefit(childcare_child_age=None,childcare_reason="pregnant_self").held_reason)
+        self.assertTrue(benefit(childcare_reason="pregnant_spouse",reference_date="2026-09-17",childcare_spouse_risk_eligible=True).held_reason)
+        self.assertFalse(benefit(childcare_reason="pregnant_spouse",reference_date="2026-09-18",childcare_spouse_risk_eligible=True).held_reason)
+        self.assertTrue(benefit(childcare_insured_days=179).held_reason)
+
+    def test_short_parental_7_14_days(self):
+        for days in [7,14]:
+            r=benefit(childcare_example=False,parental_leave_months=0,
+                      parental_leave_periods=[dict(start_date="2026-09-01",end_date=f"2026-09-{days:02d}",kind="short")],
+                      short_parental_reason_eligible=True,short_parental_used_this_year=False)
+            self.assertFalse(r.held_reason,r.held_reason)
+            self.assertEqual(r.total_benefit,round(2_500_000*days/30))
+        for start,end,extra in [("2026-08-19","2026-08-25",{}),("2026-09-01","2026-09-08",{}),
+                                ("2026-09-01","2026-09-07",{'childcare_insured_days':179}),
+                                ("2026-09-01","2026-09-07",{'short_parental_used_this_year':True})]:
+            kwargs=dict(childcare_example=False,parental_leave_months=0,
+                        parental_leave_periods=[dict(start_date=start,end_date=end,kind="short")],
+                        short_parental_reason_eligible=True,short_parental_used_this_year=False)
+            kwargs.update(extra);self.assertTrue(benefit(**kwargs).held_reason)
+
+    def test_full_midmonth_and_partial_month(self):
+        r=benefit(childcare_example=False,parental_leave_start="2026-01-15",parental_leave_months=1)
+        self.assertEqual(r.total_benefit,2_500_000)
+        r=benefit(childcare_example=False,parental_leave_start="2026-01-01",parental_leave_end="2026-02-10",parental_leave_months=0)
+        self.assertEqual(r.total_benefit,2_500_000+round(2_500_000*10/28))
+
+    def test_split_periods_preserve_month_index_and_reject_overlap(self):
+        periods=[dict(start_date="2026-01-01",end_date="2026-03-31"),dict(start_date="2026-07-01",end_date="2026-09-30")]
+        r=benefit(childcare_example=False,parental_leave_periods=periods,parental_leave_months=0)
+        self.assertEqual([x['payment'] for x in r.monthly_schedule],[2_500_000]*3+[2_000_000]*3)
+        self.assertTrue(benefit(childcare_example=False,parental_leave_periods=periods+periods[:1],parental_leave_months=0).held_reason)
+
+    def test_parental_employer_payment_offset(self):
+        r=benefit(parental_leave_months=1,childcare_employer_monthly_payment=1_000_000)
+        self.assertEqual(r.total_benefit,2_000_000)
+        self.assertEqual(r.monthly_schedule[0]['employer_reduction'],500_000)
+
+    def test_reduced_40_to_30_2026(self):
+        r=benefit(True)
+        self.assertEqual(r.total_benefit,625_000)
+        self.assertEqual(r.monthly_schedule[0]['first_part'],625_000)
+        self.assertEqual(r.monthly_schedule[0]['remaining_part'],0)
+
+    def test_reduced_over_ten_hours_and_floors(self):
+        self.assertEqual(benefit(True,reduced_weekly_hours_after=20).total_benefit,1_025_000)
+        self.assertEqual(benefit(True,monthly_wage=400_000).total_benefit,125_000)
+        self.assertTrue(benefit(True,reduced_weekly_hours_after=14).held_reason)
+        self.assertTrue(benefit(True,reduced_weekly_hours_after=36).held_reason)
+
+    def test_reduced_crosses_20260101(self):
+        r=benefit(True,childcare_example=False,reduced_start="2025-12-01",reduced_end="2026-01-31",reduced_months=0)
+        self.assertEqual([x['payment'] for x in r.monthly_schedule],[550_000,625_000])
+        r=benefit(True,childcare_example=False,reduced_start="2024-06-01",reduced_end="2024-07-31",reduced_months=0)
+        self.assertEqual([x['payment'] for x in r.monthly_schedule],[437_500,500_000])
+
+    def test_reduced_partial_and_employer_offset(self):
+        r=benefit(True,childcare_example=False,reduced_start="2026-01-01",reduced_end="2026-02-10",reduced_months=0)
+        self.assertEqual(r.total_benefit,625_000+round(625_000*10/28))
+        r=benefit(True,childcare_employer_monthly_payment=2_500_000,reduced_offset_monthly_ordinary_wage=3_000_000)
+        self.assertEqual(r.total_benefit,500_000)
+
+    def test_reduced_duration_uses_only_unused_normal_year(self):
+        self.assertEqual(len(benefit(True,reduced_months=36,reduced_unused_parental_months=12).monthly_schedule),36)
+        self.assertTrue(benefit(True,reduced_months=37,reduced_unused_parental_months=12).held_reason)
+        self.assertTrue(benefit(True,reduced_months=36,reduced_unused_parental_months=18).held_reason)
+        self.assertTrue(benefit(True,reduced_months=13).held_reason)
+        self.assertFalse(benefit(True,childcare_child_age=13,childcare_child_grade=6).held_reason)
+
+    def test_reduced_standalone_no_parental_months(self):
+        from app.core.pipeline import _analysis_to_extract_params,_run_calculator
+        from app.models.schemas import AnalysisResult
+        from wage_calculator.facade.registry import resolve_calc_type_strict
+        from app.core.analyzer import _build_analysis_result
+        info=dict(wage_type="월급",wage_amount=3_000_000,reference_date="2026-10-24",reference_year=2026,
+                  childcare_example=True,reduced_months=1,reduced_weekly_hours_before=40,reduced_weekly_hours_after=30)
+        a=_build_analysis_result(dict(info,requires_calculation=True,calculation_types=['reduced_work_benefit']))
+        params=_analysis_to_extract_params(a)
+        self.assertEqual(params['reduced_weekly_hours_before'],40)
+        text=_run_calculator(params,"통상임금 300만원, 2026년 주 40시간에서 30시간 단축 시 한 달 급여 예시")
+        self.assertIn("625,000",text)
+        self.assertNotIn("육아휴직 총 수령액",text)
+        self.assertEqual(resolve_calc_type_strict("육아기 근로시간 단축급여"),['reduced_work_benefit'])
+
+
+if __name__ == '__main__':
+    unittest.main()

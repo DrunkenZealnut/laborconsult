@@ -16,6 +16,7 @@ from app.core import llm_gateway
 from app.models.schemas import AnalysisResult
 from app.templates.prompts import ANALYZE_TOOL, ANALYZER_SYSTEM
 from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ _INFO_KEYS = {
     "is_probation", "contract_months", "occupation_code",
     "is_platform_worker",
 }
-_INFO_KEYS.update(ANNUAL_INPUT_FIELDS)
+_INFO_KEYS.update(set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS)
 
 
 def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:

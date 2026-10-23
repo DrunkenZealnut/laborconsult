@@ -1,5 +1,6 @@
 """2026-10 계산기 갱신 회귀: 사용자 요청이 실제 계산 결과에 대응해야 한다."""
 import unittest
+from test_parental_benefits_update import ParentalBenefitsUpdateTests
 
 from app.core.pipeline import _run_calculator
 from wage_calculator.facade import WageCalculator

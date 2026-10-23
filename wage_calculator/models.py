@@ -347,9 +347,41 @@ class WageInput:
     voluntary_quit_reason: str = ""        # 자발적 이직 예외 사유 (임금체불/통근불가/간호 등)
 
     # ── 육아휴직급여 계산용 ───────────────────────────────────────────────────
-    parental_leave_months: int = 0              # 육아휴직 신청 개월 수 (최대 12개월)
-    is_second_parent: bool = False              # 두 번째 육아휴직자 여부 (아빠 보너스 적용)
-    reduced_work_hours_per_day: float = 0.0    # 육아기 근로시간 단축 시간/일 (0이면 미사용)
+    parental_leave_months: int = 0              # 이번 계산 기간; 기사용분은 별도
+    is_second_parent: bool = False              # 호환 입력; 이것만으로 특례 판정 불가
+    reduced_work_hours_per_day: float = 0.0      # 호환 입력; 주시간으로 추정하지 않음
+    childcare_example: bool = False            # 날짜 없는 기준일 제도 예시
+    childcare_child_birth_date: Optional[str] = None
+    childcare_child_age: Optional[int] = None   # 각 개시일 현재 만 나이
+    childcare_child_grade: Optional[int] = None # 각 개시일 초등 학년
+    childcare_reason: str = "child"             # child/pregnant_self/pregnant_spouse
+    childcare_spouse_risk_eligible: Optional[bool] = None
+    childcare_insured_days: Optional[int] = None # 피보험 단위기간; 달 수와 다름
+    childcare_employer_monthly_payment: Optional[float] = None # 월 환산 지급액; 일부월은 비례
+    parental_leave_start: Optional[str] = None
+    parental_first_leave_start: Optional[str] = None # 재사용 때 6+6 연령 확인용 최초 개시일
+    parental_leave_end: Optional[str] = None    # 포함
+    parental_leave_periods: Optional[list] = None # start_date,end_date,kind=regular/short
+    parental_prior_months: int = 0
+    parental_prior_days: int = 0
+    parental_scheme: str = "general"            # general/six_plus_six/single_parent
+    parental_same_child: Optional[bool] = None
+    parental_other_parent_months: Optional[int] = None
+    parental_other_parent_start: Optional[str] = None
+    parental_other_parent_periods: Optional[list] = None
+    parental_single_parent_eligible: Optional[bool] = None
+    parental_disabled_child_eligible: Optional[bool] = None
+    short_parental_reason_eligible: Optional[bool] = None
+    short_parental_used_this_year: Optional[bool] = None
+    reduced_weekly_hours_before: Optional[float] = None
+    reduced_weekly_hours_after: Optional[float] = None
+    reduced_start: Optional[str] = None
+    reduced_end: Optional[str] = None
+    reduced_periods: Optional[list] = None
+    reduced_months: int = 0
+    reduced_prior_months: int = 0
+    reduced_unused_parental_months: Optional[float] = None # 기본 12개월 중 미사용분
+    reduced_offset_monthly_ordinary_wage: Optional[float] = None # 감액 기준: 직전월/인상 후 통상임금
 
     # ── 출산전후휴가급여 계산용 ───────────────────────────────────────────────
     is_priority_support_company: bool = True    # 우선지원대상기업(중소기업) 여부

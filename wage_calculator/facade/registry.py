@@ -20,6 +20,7 @@ from ..calculators.minimum_wage import calc_minimum_wage
 from ..calculators.overtime import calc_overtime
 from ..calculators.weekly_holiday import calc_weekly_holiday
 from ..calculators.parental_leave import calc_parental_leave
+from ..calculators.reduced_work_benefit import calc_reduced_work_benefit
 from ..calculators.prorated import calc_prorated
 from ..calculators.public_holiday import calc_public_holiday
 from ..calculators.retirement_pension import calc_retirement_pension
@@ -37,7 +38,7 @@ from .helpers import (
     _pop_dismissal, _pop_comprehensive, _pop_prorated, _pop_public_holiday,
     _pop_average_wage, _pop_severance, _pop_shutdown_allowance,
     _pop_unemployment, _pop_insurance, _pop_employer_insurance,
-    _pop_compensatory_leave, _pop_parental_leave, _pop_maternity_leave,
+    _pop_compensatory_leave, _pop_parental_leave, _pop_reduced_work_benefit, _pop_maternity_leave,
     _pop_flexible_work, _pop_eitc, _pop_industrial_accident,
     _pop_ordinary_wage, _pop_working_hours,
 )
@@ -83,6 +84,7 @@ CALC_TYPES = {
     "compensatory_leave":  "보상휴가 환산",
     "wage_arrears":        "임금체불 지연이자",
     "parental_leave":      "육아휴직급여",
+    "reduced_work_benefit": "육아기 단축급여",
     "maternity_leave":     "출산전후휴가급여",
     "flexible_work":       "탄력적 근로시간제 연장수당",
     "weekly_hours_check":  "주 52시간 준수 여부 체크",
@@ -110,6 +112,8 @@ CALC_TYPE_MAP = {
     "임금계산":   ["overtime", "minimum_wage", "weekly_holiday"],
     "해당없음":   ["minimum_wage"],
     "육아휴직":   ["parental_leave"],
+    "육아기 근로시간 단축급여": ["reduced_work_benefit"],
+    "육아기 단축급여": ["reduced_work_benefit"],
     "출산휴가":   ["maternity_leave"],
     "임금체불":   ["wage_arrears"],
     "보상휴가":   ["compensatory_leave", "overtime"],
@@ -209,6 +213,7 @@ def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
     # 키워드 우선순위 fallback (구체적 키워드가 앞, generic이 뒤)
     _keyword_map = [
         # ── 구체적 키워드 (generic 규칙보다 우선) ──
+        (["육아기 근로시간 단축", "육아기근로시간단축", "육아기 단축", "육아기단축"], ["reduced_work_benefit"]),
         (["공휴일"],               ["public_holiday"]),
         (["소정근로시간", "월근로시간", "월 소정"], ["working_hours"]),
         (["통상임금", "통상시급"],  ["ordinary_wage"]),
@@ -271,6 +276,7 @@ _STANDARD_CALCS = [
     ("employer_insurance", calc_employer_insurance,  "사업주 4대보험 부담금", _pop_employer_insurance,  None),
     ("compensatory_leave", calc_compensatory_leave,  "보상휴가 환산",        _pop_compensatory_leave,  None),
     ("parental_leave",     calc_parental_leave,      "육아휴직급여",         _pop_parental_leave,      None),
+    ("reduced_work_benefit",calc_reduced_work_benefit,"육아기 단축급여",      _pop_reduced_work_benefit,None),
     ("maternity_leave",    calc_maternity_leave,     "출산전후휴가급여",     _pop_maternity_leave,     None),
     ("flexible_work",      calc_flexible_work,       "탄력적 근로시간제",    _pop_flexible_work,
      lambda inp: getattr(inp, "flexible_work_unit", "")),

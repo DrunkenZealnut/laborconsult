@@ -61,7 +61,7 @@ SUPPORTED_EXPECTED_LABELS = {
     "expected_calculation": frozenset({
         "overtime", "minimum_wage", "weekly_holiday", "annual_leave", "dismissal",
         "severance", "unemployment", "insurance", "comprehensive", "parental_leave",
-        "maternity_leave", "prorated", "wage_arrears", "flexible_work",
+        "maternity_leave", "reduced_work_benefit", "prorated", "wage_arrears", "flexible_work",
         "compensatory_leave", "eitc", "average_wage", "shutdown_allowance",
         "working_hours", "public_holiday", "ordinary_wage", "retirement_tax",
         "retirement_pension",
