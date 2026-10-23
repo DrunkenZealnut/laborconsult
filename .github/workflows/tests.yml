@@ -117,6 +117,9 @@ jobs:
       - name: 기준 월액·평균임금 일액 단일 출처(고정수당 격자·등가·휴업 하한)
         run: python3 test_monthly_base_unification.py
 
+      - name: 2026년 10월 계산기 갱신(미실행 카드·입력 연결)
+        run: python3 test_wage_update_2026.py
+
       # 메모리는 사람이 기억해서 재는 값이었고, 그래서 RSS가 Vercel 한도의
       # 119%가 될 때까지 아무도 몰랐다. 초과 시 하이브리드 검색이 조용히
       # Dense-only로 떨어진다 — 경고가 아니라 실패로 둔다.

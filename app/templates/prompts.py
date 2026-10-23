@@ -29,6 +29,8 @@ ANALYZE_TOOL = {
                         "eitc", "average_wage",
                         "shutdown_allowance", "working_hours", "public_holiday",
                         "ordinary_wage", "retirement_tax", "retirement_pension",
+                        # 지원하지 않는 요청도 의도를 보존해 다른 계산으로 대체하지 않는다.
+                        "year_end_settlement", "selective_work_settlement", "arrears_principal",
                     ],
                 },
                 "description": "필요한 계산 유형 (복수 가능)",
@@ -204,6 +206,12 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 
 분석 규칙:
 1. 임금/수당/퇴직금 등 수치 계산이 필요하면 requires_calculation=true
+   - 연말정산 환급·추가납부액은 year_end_settlement, 월별 보험료·원천징수는 insurance로 구분하세요.
+   - 선택적 근로시간제 정산은 selective_work_settlement, 일반 소정근로시간은 working_hours입니다.
+   - 미지급 임금 원금·차액 산정은 arrears_principal, 확정 원금의 지연이자는 wage_arrears입니다.
+   - 중도입사·중도퇴사·휴복직 급여 일할계산은 prorated입니다. 일반 임금계산으로 대신하지 마세요.
+   - 사용자가 요청한 계산만 유형에 넣으세요. 과거 보험 납부 사실·제도 부정 표현은 계산 요청이 아닙니다.
+     복합 질문에서는 지원 여부와 관계없이 각 요청을 별도 유형으로 보존하세요.
 2. 질문에서 추출 가능한 정보는 최대한 추출 (임금액, 근무시간, 근무기간 등)
 3. 추출 불가능하지만 계산에 필수인 정보는 missing_info에 추가
 4. 관련 법조문을 relevant_laws에 키워드로 추출 (예: "근로기준법 제56조")

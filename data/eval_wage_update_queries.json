@@ -1,0 +1,220 @@
+[
+  {
+    "id": "ww26-01",
+    "category": "육아휴직 현행",
+    "question": "2026년 1월 1일부터 일반 육아휴직을 12개월 사용합니다. 만 3세 자녀이고 월 통상임금은 300만원, 주 40시간 근무했으며 고용보험 피보험 단위기간은 180일 이상입니다. 배우자 특례는 해당 없습니다. 월별 지급액과 복직 후 사후지급액은 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "total_benefit": 23100000,
+      "deferred_payment": 0
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-02",
+    "category": "육아기 단축 현행",
+    "question": "2026년 10월 한 달, 만 5세 자녀 양육을 위해 주 40시간에서 주 30시간으로 단축합니다. 월 통상임금은 300만원이고 고용보험 가입기간은 충분합니다. 고용보험 단축급여만 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "monthly_reduced_benefit": 625000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-03",
+    "category": "재직 중 체불 현행",
+    "question": "상사채무에 해당하는 회사에 재직 중입니다. 2026년 9월 25일 지급하기로 한 확정 임금 300만원을 아직 못 받았습니다. 지연이자 제외 사유는 없고, 2026년 10월 25일까지 이자만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "delay_days": 30,
+      "annual_rate": 0.2,
+      "interest_amount": 49315
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-04",
+    "category": "현행 연차 차감 금지",
+    "question": "2024년 1월 1일 입사해 계속 근무 중입니다. 2024년 출근율은 100%이고 첫해에 발생한 월별 연차 중 5일을 썼습니다. 2025년 1월 1일 발생한 연차에서 그 5일을 차감하나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 15,
+      "deducted_first_year_days": 0
+    },
+    "required_notices": [],
+    "forbidden_claims": [
+      "re:15일\\s*[-−]\\s*5일\\s*=\\s*10일"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-05",
+    "category": "중도퇴사 일할계산",
+    "question": "월급 300만원, 주5일 하루8시간, 2024년 1월 1일 입사했습니다. 2026년 10월 16일까지 재직하고 다음날 퇴직 효력이 발생합니다. 역일수 기준 약정이고 10월 급여를 일할계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 1548387,
+      "worked_days": 16,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-06",
+    "category": "연말정산 미지원",
+    "question": "월급 300만원입니다. 2026년 연말정산 환급액을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-07",
+    "category": "선택적 근로시간 정산",
+    "question": "선택적 근로시간제에서 2026년 10월 정산기간의 초과근로수당을 계산해주세요. 월급은 300만원입니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-08",
+    "category": "혼합 계산",
+    "question": "월급 300만원, 주5일 하루8시간, 직원10명입니다. 2026년 10월의 4대보험 공제액과 연말정산 환급액을 각각 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  }
+]
