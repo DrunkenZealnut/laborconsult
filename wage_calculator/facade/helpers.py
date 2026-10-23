@@ -170,7 +170,10 @@ def _pop_comprehensive(r, result):
 def _pop_prorated(r, result):
     """result.summary에 일할계산 임금·근무일수 추가. 반환: 0."""
     result.summary["일할계산 임금"] = f"{r.prorated_wage:,.0f}원"
-    result.summary["근무 일수(역일)"] = f"{r.worked_days}일 / {r.total_days}일"
+    result.summary["정산 대상월·방식"] = f"{r.settlement_month} · {r.method}"
+    result.summary["일할 비율"] = f"{r.worked_days}/{r.total_days}일"
+    result.summary["산정에 포함한 날짜"] = ", ".join(r.included_dates) or "없음"
+    result.summary["확정 무급 제외 날짜"] = ", ".join(r.excluded_dates) or "없음"
     return 0
 
 

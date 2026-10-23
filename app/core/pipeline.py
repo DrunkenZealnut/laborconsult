@@ -846,6 +846,15 @@ WAGE_CALC_TOOL = {
 }
 
 
+# 분석기 장애 시의 대체 추출도 동일한 정산 계약을 표현한다.
+from app.templates.prompts import ANALYZE_TOOL
+from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+WAGE_CALC_TOOL["input_schema"]["properties"].update({
+    key: ANALYZE_TOOL["input_schema"]["properties"][key] for key in PRORATION_INPUT_FIELDS
+})
+WAGE_CALC_TOOL["input_schema"]["properties"]["calculation_type"]["description"] += "/일할계산급여"
+
+
 HARASSMENT_TOOL = {
     "name": "harassment_params",
     "description": (
@@ -1160,7 +1169,7 @@ _KNOWLEDGE_MODULES = [
 
 # 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반 + 독립 계산)
 # wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
-_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
+_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears", "prorated"}
 
 # 월급 구성 진술(audit-50-legal-accuracy §5). 질문이 "월급에 연장·야간·휴일·연차수당이 포함"이라고 밝혔는데
 # 그 총액으로 최저임금을 판정하면 결정적 카드가 '✅ 충족'을 낸다 — 이 수당들은 최저임금 산입에서 빠진다
@@ -1995,7 +2004,7 @@ def _note_rejected_hours(analysis, params) -> None:
 
 # 소정근로시간을 몰라도 계산되는 것 — 그 밖의 계산은 시간을 가정해야 금액이 나온다. 법률 힌트는 남기되 미확인 모드는 1일
 # 시간을 0으로 넘겨 주간 합계(52시간·뇌심혈관 기준)가 질문에 나온 연장·휴일시간만 보게 한다
-_SCHEDULE_FREE_TARGETS = frozenset({"wage_arrears", "business_size", "legal_hints"})
+_SCHEDULE_FREE_TARGETS = frozenset({"wage_arrears", "business_size", "legal_hints", "prorated"})
 # 시급제(고정수당 없음)는 시급이 곧 통상시급이라 최저임금 판정과 연장·야간·휴일수당(시급 × 가산율 × 질문의 시간)이 남는다
 _HOURLY_SCHEDULE_FREE_TARGETS = frozenset({"minimum_wage", "overtime"})
 
@@ -2581,7 +2590,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
     from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
     from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
-    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS:
+    from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
     _complete_explicit_reduced_calendar_month(inp, query)
@@ -2681,8 +2691,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         wageless = [t for t in targets if t in _WAGELESS_TARGETS]
         if schedule_unknown:
             # 근무일수만 있고 시간이 없으면 소정근로시간 산정·52시간 체크는 기본 8시간을 넣은 값이다(주 6일 → 243시간, 리뷰 H3)
-            held = [t for t in wageless if t != "wage_arrears"]
-            wageless = [t for t in wageless if t == "wage_arrears"]
+            held = [t for t in wageless if t not in {"wage_arrears", "prorated"}]
+            wageless = [t for t in wageless if t in {"wage_arrears", "prorated"}]
             holiday = "weekly_holiday" in targets and not inp.is_platform_worker
             holiday_hours_block = _unknown_schedule_block(
                 None, params.get("weekly_work_days"), holiday, held, _rejected_span_hours(query, params), regime,
@@ -2748,10 +2758,11 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     if regime:
         inp.hour_split = HourSplit(daily_hours, schedule.weekly_work_days, daily_hours, schedule.weekly_work_days,
                                    excess=regime[1], mode="held", reason=regime[0])
+    settlement_only = set(targets) - {"legal_hints"} == {"prorated"}
     split = apply_hour_split(inp)
     # 묻지 않았지만 카드 금액을 맞추려고 더한 계산 — facade의 '시도한 계산이 전부 보류면 요청 보류' 판정에서 세지 않는다(리뷰 M2)
     auxiliary = list(platform_auxiliary)
-    if split.mode == "applied" and has_wage and "overtime" not in targets:
+    if split.mode == "applied" and has_wage and not settlement_only and "overtime" not in targets:
         targets.append("overtime")
         auxiliary.append("overtime")
 
@@ -2767,7 +2778,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     stated_premium_part = None  # 정확 경로: 말한 총액 중 기본급·산입 수당 외 몫(연장 등) — 계산한 연장수당과 비교한다
     held_unit = "월급"         # 보류 카드의 금액 단위 — 일급 보류는 이름표·안내를 일급으로(리뷰 H3)
     annual_note = ""
-    if (has_wage and inp.wage_type == WageType.ANNUAL and inp.annual_wage and not unknown_mode
+    if (has_wage and not settlement_only and inp.wage_type == WageType.ANNUAL and inp.annual_wage and not unknown_mode
             and _stated_wage_composition(query)[0]):
         # 연봉도 '연장수당 포함' 진술이면 월급과 같은 구성 판정을 받는다 — 진술을 무시하고 연장분을 더해 퇴직금을 냈다(독립 리뷰
         # H3: 연봉 3,600만 원 + '연장수당 포함' → 11,555,707원). 12로 나눈 월급으로 아래 구성 경로를 그대로 탄다
@@ -2775,7 +2786,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         inp.monthly_wage = inp.annual_wage / 12
         inp.annual_wage = 0.0
         inp.wage_type = WageType.MONTHLY
-    if (has_wage and inp.monthly_wage and inp.wage_type in (WageType.MONTHLY, WageType.COMPREHENSIVE)
+    if (has_wage and not settlement_only and inp.monthly_wage and inp.wage_type in (WageType.MONTHLY, WageType.COMPREHENSIVE)
             and not unknown_mode):
         includes_excluded, base = _stated_wage_composition(query)
         # 포괄임금제는 연장·야간수당 등이 포함된 총액이다 — 약정 연장시간을 모르면 역산이 연장 0시간으로 나눠 시급을 부풀리고
@@ -2870,7 +2881,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                         composition_skipped.append("minimum_wage")
                     targets = [t for t in targets if t != "minimum_wage"]
 
-    if (has_wage and inp.wage_type == WageType.DAILY and not unknown_mode and not inp.wage_composition_known
+    if (has_wage and not settlement_only and inp.wage_type == WageType.DAILY and not unknown_mode and not inp.wage_composition_known
             and _stated_wage_composition(query)[0]):
         # 일급도 '연장수당 포함' 진술이면 월급(기본급 없음)과 같은 보류다 — "일당 12만원에 연장근무 수당까지 다 포함"에 연장분을 더해
         # 퇴직금 12,050,950원을 냈다(리뷰 H3). 통상임금으로 내는 금액은 빼고, 최저임금은 그 일급으로도 미달일 때만 판정한다
@@ -2889,7 +2900,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     if annual_note and composition_note:
         composition_note = annual_note + composition_note
     # 연장 등을 따로 받는다고 했으면 구성이 'A(연장 별도)'로 정해졌다 — D4의 두 구성을 보지 않는다(리뷰 M1)
-    if (has_wage and not inp.wage_composition_known and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
+    if (has_wage and not settlement_only and not inp.wage_composition_known and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
             and _states_premium_paid_separately(query)):
         inp.premium_paid_separately = True
 
@@ -2897,7 +2908,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     # 소정근로시간으로 나눠 '충족'을 냈다(Act-4 리뷰 H4 — 270만 원 + 주 10시간 연장: 12,945원 '충족' vs 역산 9,863원 '미달').
     # 의도분석 라벨 '포괄임금제'가 매핑에 없어 다른 라벨이 있으면 역산이 빠졌다. 정확 경로는 월급제로 바꿔 여기 오지 않는다
     if (inp.wage_type == WageType.COMPREHENSIVE and not composition_hold and not inp.comprehensive_breakdown
-            and has_wage and _has_premium_hours(inp) and not unknown_mode):
+            and has_wage and not settlement_only and _has_premium_hours(inp) and not unknown_mode):
         # 이 경로의 '통상임금'도 연장·야간·휴일수당이 섞인 총액이다 — 그 시급에 '통상시급' 이름을 붙이지 않고(Plan P0-5)
         # 그 시급으로 낸 금액은 보류한다(Act-2와 같은 원칙). 역산 판정은 연장시간을 반영하므로 '충족'도 믿는다
         comprehensive_total = held_is_total = True
@@ -2915,7 +2926,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
 
     # 일급·월급·연봉에 연장·야간·휴일 근로가 있고 임금 구성을 모른다(D4) — 최저임금은 계산기가 '연장 별도'와 '연장 포함 역산'을
     # 함께 보고, 카드 총액은 싣지 않는다(총액이 월급 + 연장수당인지 월급 하나인지 모른다)
-    composition_unknown = (has_wage and not unknown_mode and not inp.wage_composition_known
+    composition_unknown = (has_wage and not settlement_only and not unknown_mode and not inp.wage_composition_known
                            and not inp.premium_paid_separately and not inp.is_platform_worker
                            and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
                            and not inp.comprehensive_breakdown and _has_premium_hours(inp))
@@ -2924,7 +2935,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     # 빠지면 '월 총 예상 수령액'에 그 몫이 없어 같은 카드의 세전 월 급여·평균임금과 갈렸다(4대보험만: 월 총 2,502,857원 vs 세전
     # 3,285,000원, 세후 2,885,875원). 위의 파생 연장 규칙과 같은 뜻이다. 구성 판정 뒤라야 한다 — 그 임금이 이미 든 금액(포괄·
     # 구성 진술)은 추정이 더하지 않아 대상이 아니고, 보류 경로의 amount_hold는 이 규칙보다 먼저 정해진다
-    premium_added = has_wage and not unknown_mode and "overtime" not in targets and adds_premium_pay(inp)
+    premium_added = has_wage and not settlement_only and not unknown_mode and "overtime" not in targets and adds_premium_pay(inp)
     if premium_added:
         targets.append("overtime")
         auxiliary.append("overtime")
@@ -2960,7 +2971,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                         f"월급 중 기본급·산입 수당 외 몫(연장수당 등) {stated_premium_part:,.0f}원이 위에서 계산한 연장·야간·휴일 근로 임금 "
                         f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
         requested_amounts = set(targets) - set(auxiliary) - {"legal_hints"}
-        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave"}:
+        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave", "prorated"}:
             # 구성 보정이 기초 월급을 급여·이자 요청의 지급액으로 되살리지 않도록 한다.
             result.monthly_total = result.monthly_net = 0.0
         if (composition_hold or comprehensive_total) and held_is_total:
@@ -3261,7 +3272,8 @@ def _analysis_to_extract_params(analysis) -> dict:
     from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
     from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
     from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
-    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS if key in info})
+    from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

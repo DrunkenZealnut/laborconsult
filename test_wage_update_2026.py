@@ -3,6 +3,7 @@ import unittest
 from test_parental_benefits_update import ParentalBenefitsUpdateTests
 from test_arrears_interest_update import ArrearsInterestUpdateTests
 from test_pay_input_update import PayInputUpdateTests
+from test_proration_update import ProrationUpdateTests
 
 from app.core.pipeline import _run_calculator
 from wage_calculator.facade import WageCalculator
@@ -339,7 +340,8 @@ class UnexecutedCardTests(unittest.TestCase):
 
     def test_supported_proration_still_executes(self):
         result = WageCalculator().calculate(WageInput(
-            wage_type=WageType.MONTHLY, monthly_wage=3100000, join_date="2026-10-16"), ["prorated"])
+            wage_type=WageType.MONTHLY, monthly_wage=3100000, join_date="2026-10-16",
+            settlement_month="2026-10",proration_method="calendar",proration_all_items_proportional=True), ["prorated"])
         self.assertIn("1,600,000", format_result(result))
         self.assertNotIn("계산 보류", format_result(result))
 

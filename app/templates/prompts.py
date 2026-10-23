@@ -151,6 +151,23 @@ _PAY_PROPS["fixed_allowances"]["items"]["properties"].update({
     "source_id": {"type": "string", "description": "질문 속 동일 수당의 식별자. 같은 금액의 서로 다른 수당은 다른 ID"},
 })
 _PAY_PROPS.update({
+    "settlement_month": {"type": "string", "description": "임금 정산 대상월 YYYY-MM. 입사월·오늘로 대체하지 않음"},
+    "proration_method": {"type": "string", "enum": ["calendar","scheduled"], "description": "약정한 일할 방식. 역일수=calendar, 소정근로일 및 유급처리일=scheduled. 방식 미확인은 생략"},
+    "join_date": {"type": "string", "description": "실제 입사일 YYYY-MM-DD. 퇴직·복직일을 넣지 않음"},
+    "proration_retirement_effective_date": {"type": "string", "description": "명시한 퇴직 효력일 YYYY-MM-DD. 이 날 제외. 마지막 재직일은 last_employed_date에 그대로 보존"},
+    "proration_employed_at_month_start": {"type": "boolean", "description": "정산월 월초부터 재직 중임을 사용자가 명시한 경우 true. 실제 입사일을 모를 때 사용"},
+    "proration_all_items_proportional": {"type": "boolean", "description": "월급액에 일할 약정을 명시하면 true. 단일 월급액을 제시하며 역일수 약정이라고 한 경우도 그 금액의 비례 약정이다. 수당별 조건이 다르거나 미확인이라고 명시하면 true 금지. true이면 proration_items는 생략"},
+    "proration_items_complete": {"type": "boolean", "description": "요청 정산의 전체 급여항목·지급조건이 proration_items에 들어 있음을 명시한 경우 true"},
+    "proration_scheduled_dates": {"type": "array", "items": {"type":"string"}, "description": "scheduled 방식의 해당 월 전체 분모 날짜 목록 YYYY-MM-DD. 소정근로일·유급 처리일 포함. 평일을 임의 생성하지 말 것"},
+    "proration_unpaid_periods": {"type":"array", "items":{"type":"object","properties":{
+        "start":{"type":"string"},"end":{"type":"string"},"reason":{"type":"string"},
+        "confirmed":{"type":"boolean"}}}, "description":"확정 무급 기간, 시작·종료일 모두 포함. 휴직 종료 다음날 복직. 결근일만으로 주휴일까지 추가 공제 금지"},
+    "proration_items": {"type":"array", "items":{"type":"object","properties":{
+        "id":{"type":"string"},"name":{"type":"string"},"amount":{"type":"number"},
+        "payment_cycle":{"type":"string","enum":["매월","분기","반기","연"]},
+        "policy":{"type":"string","enum":["prorate","full","actual"]},
+        "actual_amount":{"type":"number"}}},
+        "description":"급여항목별 확정 지급 조건. prorate=월 계약액 비례, full=이 달 전액 지급 확인, actual=별도로 산정된 실제 금액(actual_amount 필수). 실제수당을 다시 비례하지 말 것. 연 상여 월 환산액을 월 지급액으로 추정 금지"},
     "average_wage_date": {"type": "string", "description": "평균임금 산정 사유 발생일(YYYY-MM-DD). 퇴직을 말하지 않아도 사유 발생일·산정일을 명시하면 반드시 추출. 조회 기준일(reference_date)과 다르며 오늘 날짜로 추정 금지"},
     "monthly_total_pay": {"type": "number", "description": "명시된 월 총액·월 환산 총액. 기본급이 따로 있으면 wage_amount에는 기본급, 여기에 총액. 연 상여 포함액은 monthly_total_bonus_included로 구분"},
     "annual_bonus_total": {"type": "number", "description": "직전 12개월 실제 평균임금 산입 대상 연 상여 총액. 계약상 장래 상여를 실제 지급액으로 추정 금지. 정기적·일률적 연 상여로 명시되면 통상임금 비교를 위해 같은 항목을 fixed_allowances에도 연 주기로 보존하고 annual_bonus_allowance_ids로 연결. 다른 수당 없음은 해당 상여를 제외한다는 뜻이 아님"},
@@ -286,6 +303,7 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
    - 선택적 근로시간제 정산은 selective_work_settlement, 일반 소정근로시간은 working_hours입니다.
    - 미지급 임금 원금·차액 산정은 arrears_principal, 확정 원금의 지연이자는 wage_arrears입니다.
    - 중도입사·중도퇴사·휴복직 급여 일할계산은 prorated입니다. 일반 임금계산으로 대신하지 마세요.
+   - 일할계산은 정산월·약정 방식·항목별 지급 조건·무급 기간을 보존하세요. 'N일까지 재직'은 last_employed_date, 'N일 퇴직 효력'은 proration_retirement_effective_date입니다. 단순 '퇴사일'의 뜻은 확인하세요. 단일 월급액에 역일수 등 일할 약정을 명시하면 그 금액의 proration_all_items_proportional=true이며 proration_items는 생략합니다. 수당별 지급 조건이 다르거나 미확인이라고 명시되면 전체 비례를 추정하지 말고 항목별 조건을 보존하세요. 실제 지급 확정 수당은 proration_items의 actual로 넣고 정기 고정수당으로 중복 생성하지 마세요.
    - 사용자가 요청한 계산만 유형에 넣으세요. 과거 보험 납부 사실·제도 부정 표현은 계산 요청이 아닙니다.
      복합 질문에서는 지원 여부와 관계없이 각 요청을 별도 유형으로 보존하세요.
 2. 질문에서 추출 가능한 정보는 최대한 추출 (임금액, 근무시간, 근무기간 등)
