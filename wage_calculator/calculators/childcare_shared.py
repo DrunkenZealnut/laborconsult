@@ -66,8 +66,14 @@ def periods_from_input(inp, reduced=False):
     months=number(getattr(inp,'reduced_months' if reduced else 'parental_leave_months'),
                   '사용 개월 수',maximum=36,integer=True)
     if raw is not None:
-        if start or end: raise ValueError('사용 구간 목록과 단일 시작·종료일 중 한 방식을 입력해주세요')
         if not isinstance(raw,list) or not 1<=len(raw)<=40: raise ValueError('실제 사용 구간 목록을 확인해주세요')
+        if start or end:
+            # 분석기가 같은 단일 구간을 두 형식으로 전달해도 날짜가 일치하면
+            # 정보 충돌이 아니다. short 등의 구간 속성은 목록 쪽을 보존한다.
+            if (len(raw)!=1 or not isinstance(raw[0],dict)
+                    or (start and start!=raw[0].get('start_date'))
+                    or (end and end!=raw[0].get('end_date'))):
+                raise ValueError('사용 구간 목록과 단일 시작·종료일이 서로 다릅니다. 실제 사용 기간을 확인해주세요')
     elif start:
         s=day(start,'사용 시작일')
         if end:

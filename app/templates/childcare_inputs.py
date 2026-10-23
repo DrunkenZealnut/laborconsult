@@ -38,7 +38,7 @@ for _kind,_fields in {
         'parental_leave_end':'이번 휴직 마지막 날 YYYY-MM-DD(포함)',
         'parental_other_parent_start':'상대 부모의 같은 자녀 육아휴직 개시일 YYYY-MM-DD',
         'childcare_child_birth_date':'자녀 생년월일 YYYY-MM-DD',
-        'reduced_start':'육아기 단축 실제 개시일 YYYY-MM-DD. 휴직 시작일과 별도',
+        'reduced_start':'육아기 단축 실제 개시일 YYYY-MM-DD. 휴직 시작일과 별도. 예: 2026년 10월 한 달 전체 사용은 2026-10-01~2026-10-31을 뜻함',
         'reduced_end':'육아기 단축 마지막 날 YYYY-MM-DD(포함)',
     },
 }.items():

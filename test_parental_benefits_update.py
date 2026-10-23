@@ -22,6 +22,30 @@ def benefit(reduced=False, **changes):
 
 
 class ParentalBenefitsUpdateTests(unittest.TestCase):
+    def test_identical_single_period_dates_are_redundant_not_conflicting(self):
+        fields=dict(childcare_example=False,parental_leave_months=0,
+                    parental_leave_start='2026-09-01',parental_leave_end='2026-09-07',
+                    parental_leave_periods=[dict(start_date='2026-09-01',end_date='2026-09-07',kind='short')],
+                    short_parental_reason_eligible=True,short_parental_used_this_year=False)
+        self.assertEqual(benefit(**fields).total_benefit,583_333)
+        fields['parental_leave_end']='2026-09-14'
+        self.assertTrue(benefit(**fields).held_reason)
+
+    def test_explicit_full_calendar_month_survives_missing_analyzer_dates(self):
+        from app.core.pipeline import _run_calculator
+        params=dict(needs_calculation=True,calculation_types_kr=['육아기 단축급여'],
+                    wage_type='월급',wage_amount=3_000_000,
+                    reference_date='2026-10-24',reference_year=2026,
+                    reduced_weekly_hours_before=40,reduced_weekly_hours_after=30,reduced_months=1)
+        question='2026년 10월 한 달, 만 5세 자녀 양육을 위해 주 40시간에서 주 30시간으로 단축합니다.'
+        self.assertIn('625,000',_run_calculator(dict(params),question))
+        for q in ['2026년 10월에 단축할 예정인데 시작일은 미정입니다.',
+                  '2026년 10월 한 달 근무했고 11월에 단축합니다.',
+                  '2026년 10월 한 달은 단축하지 않습니다.',
+                  '2026년 10월 한 달 육아휴직하고 11월에는 단축합니다.']:
+            with self.subTest(q=q):
+                self.assertNotIn('625,000',_run_calculator(dict(params),q))
+
     def test_prenatal_six_plus_six_checks_both_parents(self):
         fields=dict(monthly_wage=5_000_000,childcare_example=False,parental_leave_start='2024-01-01',
                     parental_leave_months=6,childcare_reason='pregnant_self',childcare_child_birth_date='2024-02-01',

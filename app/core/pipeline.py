@@ -2369,6 +2369,24 @@ def _independent_supported_request(query: str, pattern: str, unsupported: str) -
     return bool(re.search(pattern + r"(?:과|와|및)" + unsupported + r".{0,20}" + operation, query))
 
 
+def _complete_explicit_reduced_calendar_month(inp, query):
+    """명시된 달 전체 단축만 날짜로 정규화한다. 부분월·상대월은 추정하지 않는다."""
+    if inp.reduced_start or inp.reduced_end or inp.reduced_periods is not None:
+        return
+    sentence = re.split(r"[.!?\n]", query or "", maxsplit=1)[0]
+    match = re.match(r"^\s*(20\d{2})년\s*(\d{1,2})월\s*(?:한\s*달|전체)(?:\s|,)", sentence)
+    if (not match or len(re.findall(r"\d+\s*월", sentence)) != 1
+            or "육아휴직" in sentence or re.search(r"않|아니|미정", sentence)
+            or not re.search(r"단축(?:근무)?(?:을|근무를)?\s*(?:합니다|해요|했습니다|중|할)", sentence)):
+        return
+    import calendar
+    year, month = map(int, match.groups())
+    if not 1 <= month <= 12:
+        return
+    inp.reduced_start = f"{year:04d}-{month:02d}-01"
+    inp.reduced_end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+
+
 def _run_calculator(params: dict, query: str = "") -> str | None:
     """지원하지 않는 정산의 안내를 보존한 뒤 실행 가능한 요청을 계산한다."""
     if not params or not params.get("needs_calculation"):
@@ -2563,6 +2581,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
+    _complete_explicit_reduced_calendar_month(inp, query)
 
     # 특수고용직(노무제공자) 판별
     if params.get("is_platform_worker"):
