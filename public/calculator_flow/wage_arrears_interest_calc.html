@@ -141,440 +141,97 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <a id="site-home-link" href="/" target="_top"
    style="display:none;padding:10px 14px;background:#1B2A4A;color:#F7F5F2;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;text-decoration:none">← 기초 노동상담 — 무료 AI 노동상담·임금계산</a>
 <script>if(window.self===window.top){document.getElementById("site-home-link").style.display="block";}</script>
-
-<div style="padding:1rem 0">
-<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">계산 흐름</button>
-<button onclick="showTab(1)" id="t1">이자율 분기</button>
-<button onclick="showTab(2)" id="t2">소멸시효</button>
-<button onclick="showTab(3)" id="t3">청구액 시뮬레이션</button>
-</div>
-
-<!-- TAB 0: 전체 흐름 -->
-<div id="tab0">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">임금체불 지연이자 — 전체 계산 흐름</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제37조, 상법 제54조·제49조 | WageInput 없이 독립 호출</p>
-</div>
-<svg width="100%" viewBox="0 0 680 700">
-<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<rect x="40" y="16" width="600" height="36" rx="6" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="ts" x="340" y="38" text-anchor="middle">이 계산기는 통상임금·평균임금에 의존하지 않는 독립 함수입니다</text>
-
-<!-- Step 1 -->
-<g class="c-gray">
-<rect x="140" y="72" width="400" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="92" text-anchor="middle" dominant-baseline="central">Step 1. 입력값 확인</text>
-<text class="ts" x="340" y="110" text-anchor="middle" dominant-baseline="central">체불금액, 지급예정일, 계산기준일</text>
-</g>
-
-<line x1="340" y1="128" x2="340" y2="158" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 2 -->
-<g class="c-amber">
-<rect x="140" y="158" width="400" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="178" text-anchor="middle" dominant-baseline="central">Step 2. 소멸시효 확인</text>
-<text class="ts" x="340" y="196" text-anchor="middle" dominant-baseline="central">시효 만료일 = 지급예정일 + 3년</text>
-</g>
-
-<line x1="440" y1="214" x2="560" y2="240" class="arr" marker-end="url(#ar)"/>
-<text class="ts" x="510" y="222">만료</text>
-<line x1="340" y1="214" x2="340" y2="254" class="arr" marker-end="url(#ar)"/>
-<text class="ts" x="354" y="234">유효</text>
-
-<g>
-<rect x="470" y="240" width="170" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
-<text style="font-size:13px;fill:#791F1F;font-weight:500" x="555" y="266" text-anchor="middle" dominant-baseline="central">시효 만료 경고</text>
-</g>
-
-<!-- Step 3 -->
-<g class="c-purple">
-<rect x="140" y="254" width="300" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="290" y="274" text-anchor="middle" dominant-baseline="central">Step 3. 이자율 결정</text>
-<text class="ts" x="290" y="292" text-anchor="middle" dominant-baseline="central">재직 중 6% vs 퇴직 후 20%</text>
-</g>
-
-<line x1="290" y1="310" x2="290" y2="344" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 4 -->
-<g class="c-teal">
-<rect x="100" y="344" width="480" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="366" text-anchor="middle" dominant-baseline="central">Step 4. 지연일수 산정</text>
-<text class="ts" x="340" y="388" text-anchor="middle" dominant-baseline="central">지연일수 = max(0, 계산기준일 - 지급예정일)</text>
-<text class="ts" x="340" y="404" text-anchor="middle" dominant-baseline="central">지급예정일이 아직 안 지났으면 0일 (이자 없음)</text>
-</g>
-
-<line x1="340" y1="420" x2="340" y2="454" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 5 -->
-<g class="c-coral">
-<rect x="100" y="454" width="480" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="476" text-anchor="middle" dominant-baseline="central">Step 5. 지연이자 계산</text>
-<text class="ts" x="340" y="498" text-anchor="middle" dominant-baseline="central">지연이자 = 체불금액 x 이자율 x (지연일수 / 365)</text>
-<text class="ts" x="340" y="516" text-anchor="middle" dominant-baseline="central">일할 계산 (1년 = 365일 기준)</text>
-</g>
-
-<line x1="340" y1="530" x2="340" y2="564" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 6 -->
-<g class="c-gray">
-<rect x="140" y="564" width="400" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="584" text-anchor="middle" dominant-baseline="central">Step 6. 총 청구액</text>
-<text class="ts" x="340" y="602" text-anchor="middle" dominant-baseline="central">= 체불금액 + 지연이자</text>
-</g>
-
-<!-- 예시 -->
-<line x1="340" y1="620" x2="340" y2="650" class="arr" marker-end="url(#ar)"/>
-<g class="c-gray">
-<rect x="80" y="650" width="520" height="36" rx="8" stroke-width="0.5"/>
-<text class="ts" x="340" y="672" text-anchor="middle" dominant-baseline="central">예: 500만원 체불, 퇴직 후 200일 → 500만 x 20% x 200/365 = 547,945원</text>
-</g>
-</svg>
-</div>
-
-<!-- TAB 1: 이자율 분기 -->
-<div id="tab1" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">이자율 분기 — 재직 vs 퇴직이 핵심</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">같은 체불이라도 퇴직 여부에 따라 이자율이 3배 이상 차이납니다</p>
-</div>
-<svg width="100%" viewBox="0 0 680 540">
-<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<g class="c-gray">
-<rect x="200" y="20" width="280" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">현재 재직 상태는?</text>
-</g>
-
-<line x1="240" y1="64" x2="160" y2="100" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="186" y="78">재직 중</text>
-<line x1="440" y1="64" x2="520" y2="100" class="arr" marker-end="url(#a1)"/>
-<text class="ts" x="492" y="78">퇴직 후</text>
-
-<!-- 재직 중 -->
-<g class="c-teal">
-<rect x="40" y="100" width="240" height="120" rx="8" stroke-width="0.5"/>
-<text class="th" x="160" y="124" text-anchor="middle" dominant-baseline="central">재직 중 체불</text>
-<text style="font-size:28px;font-weight:500;fill:#0F6E56" x="160" y="164" text-anchor="middle" dominant-baseline="central">연 6%</text>
-<text class="ts" x="160" y="198" text-anchor="middle" dominant-baseline="central">상법 제54조 (상사법정이율)</text>
-</g>
-
-<!-- 퇴직 후 -->
-<g class="c-coral">
-<rect x="400" y="100" width="240" height="120" rx="8" stroke-width="0.5"/>
-<text class="th" x="520" y="124" text-anchor="middle" dominant-baseline="central">퇴직 후 14일 초과</text>
-<text style="font-size:28px;font-weight:500;fill:#993C1D" x="520" y="164" text-anchor="middle" dominant-baseline="central">연 20%</text>
-<text class="ts" x="520" y="198" text-anchor="middle" dominant-baseline="central">근로기준법 제37조</text>
-</g>
-
-<!-- 비교 -->
-<rect x="40" y="250" width="600" height="140" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="th" x="340" y="274" text-anchor="middle">동일 조건 비교: 500만원 체불, 1년 경과</text>
-
-<rect x="70" y="294" width="250" height="66" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
-<text style="font-size:13px;fill:#085041;font-weight:500" x="195" y="314" text-anchor="middle" dominant-baseline="central">재직 중 (6%)</text>
-<text style="font-size:13px;fill:#085041" x="195" y="338" text-anchor="middle" dominant-baseline="central">500만 x 6% x 1년 = 30만원</text>
-
-<rect x="360" y="294" width="250" height="66" rx="6" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
-<text style="font-size:13px;fill:#712B13;font-weight:500" x="485" y="314" text-anchor="middle" dominant-baseline="central">퇴직 후 (20%)</text>
-<text style="font-size:13px;fill:#712B13" x="485" y="338" text-anchor="middle" dominant-baseline="central">500만 x 20% x 1년 = 100만원</text>
-
-<text class="ts" x="340" y="378" text-anchor="middle">같은 금액·기간이라도 퇴직 후 이자가 3.3배 높습니다</text>
-
-<!-- 퇴직 후 14일 규칙 -->
-<rect x="40" y="416" width="600" height="100" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="th" x="340" y="440" text-anchor="middle">퇴직 후 14일 유예 규칙</text>
-<text class="ts" x="340" y="464" text-anchor="middle">퇴직일로부터 14일 이내에 지급하면 → 지연이자 없음</text>
-<text class="ts" x="340" y="484" text-anchor="middle">14일을 초과하면 → 퇴직일 다음날부터 연 20% 이자 발생</text>
-<text class="ts" x="340" y="504" text-anchor="middle">당사자 합의로 기한 연장 가능 (근로기준법 제36조 단서)</text>
-</svg>
-</div>
-
-<!-- TAB 2: 소멸시효 -->
-<div id="tab2" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">소멸시효 — 3년이 지나면 청구권 소멸</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제49조</p>
-</div>
-<svg width="100%" viewBox="0 0 680 480">
-<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<!-- 타임라인 시각화 -->
-<text class="th" x="340" y="28" text-anchor="middle">소멸시효 타임라인</text>
-
-<!-- 축 -->
-<line x1="80" y1="80" x2="600" y2="80" stroke="var(--b)" stroke-width="1.5"/>
-
-<!-- 지급예정일 -->
-<line x1="120" y1="60" x2="120" y2="100" stroke="#185FA5" stroke-width="2"/>
-<circle cx="120" cy="80" r="5" fill="#185FA5"/>
-<text style="font-size:12px;fill:#0C447C;font-weight:500" x="120" y="50" text-anchor="middle">지급예정일</text>
-
-<!-- 1년 -->
-<line x1="280" y1="68" x2="280" y2="92" stroke="var(--b)" stroke-width="1" stroke-dasharray="3 3"/>
-<text class="ts" x="280" y="114" text-anchor="middle">1년</text>
-
-<!-- 2년 -->
-<line x1="400" y1="68" x2="400" y2="92" stroke="var(--b)" stroke-width="1" stroke-dasharray="3 3"/>
-<text class="ts" x="400" y="114" text-anchor="middle">2년</text>
-
-<!-- 3년 = 시효만료 -->
-<line x1="520" y1="60" x2="520" y2="100" stroke="#A32D2D" stroke-width="2"/>
-<circle cx="520" cy="80" r="5" fill="#A32D2D"/>
-<text style="font-size:12px;fill:#791F1F;font-weight:500" x="520" y="50" text-anchor="middle">시효 만료</text>
-
-<!-- 구간 표시 -->
-<rect x="120" y="72" width="400" height="16" rx="4" fill="#E1F5EE" opacity="0.7"/>
-<text style="font-size:11px;fill:#085041" x="320" y="84" text-anchor="middle" dominant-baseline="central">청구 가능 기간 (3년)</text>
-
-<rect x="520" y="72" width="80" height="16" rx="4" fill="#FCEBEB" opacity="0.7"/>
-<text style="font-size:11px;fill:#791F1F" x="560" y="84" text-anchor="middle" dominant-baseline="central">소멸</text>
-
-<!-- 공식 -->
-<g class="c-gray">
-<rect x="100" y="146" width="480" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="168" text-anchor="middle" dominant-baseline="central">소멸시효 판정 공식</text>
-<text class="ts" x="340" y="190" text-anchor="middle" dominant-baseline="central">시효 만료일 = 지급예정일 + 3년</text>
-<text class="ts" x="340" y="208" text-anchor="middle" dominant-baseline="central">시효 만료 = (계산기준일 > 시효 만료일)</text>
-</g>
-
-<!-- 시효 중단 사유 -->
-<rect x="40" y="250" width="600" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="th" x="340" y="274" text-anchor="middle">시효 중단 사유 (민법 제168조)</text>
-
-<rect x="70" y="292" width="160" height="36" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#0C447C;font-weight:500" x="150" y="314" text-anchor="middle" dominant-baseline="central">재판상 청구</text>
-
-<rect x="250" y="292" width="160" height="36" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#0C447C;font-weight:500" x="330" y="314" text-anchor="middle" dominant-baseline="central">압류·가압류</text>
-
-<rect x="430" y="292" width="170" height="36" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#0C447C;font-weight:500" x="515" y="314" text-anchor="middle" dominant-baseline="central">채무 승인 (각서 등)</text>
-
-<text class="ts" x="340" y="358" text-anchor="middle">위 사유 발생 시 시효가 중단되고 새로 3년이 시작됩니다</text>
-
-<!-- 실무 팁 -->
-<rect x="40" y="404" width="600" height="60" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="th" x="340" y="426" text-anchor="middle">실무 팁</text>
-<text class="ts" x="340" y="448" text-anchor="middle">시효 임박 시, 노동청 진정·고소를 통해 시효를 중단시킬 수 있습니다</text>
-</svg>
-</div>
-
-<!-- TAB 3: 시뮬레이션 -->
-<div id="tab3" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">임금체불 청구액 시뮬레이션</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">체불금액과 날짜를 입력하면 지연이자와 총 청구액을 계산합니다</p>
-</div>
-
-<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-<div style="display:flex;align-items:center;gap:12px">
-<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">체불금액</label>
-<input type="range" min="50" max="5000" value="500" step="50" id="amount" oninput="calc()" style="flex:1">
-<span style="font-size:14px;font-weight:500;min-width:90px;text-align:right" id="amountOut">500만원</span>
-</div>
-<div style="display:flex;align-items:center;gap:12px">
-<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">지연일수</label>
-<input type="range" min="0" max="1095" value="200" step="1" id="delayDays" oninput="calc()" style="flex:1">
-<span style="font-size:14px;font-weight:500;min-width:90px;text-align:right" id="delayOut">200일</span>
-</div>
-<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-<label style="font-size:13px;color:var(--color-text-secondary);min-width:90px">상태</label>
-<button id="btnWork" onclick="setStatus('work');calc()">재직 중 (6%)</button>
-<button id="btnQuit" onclick="setStatus('quit');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">퇴직 후 (20%)</button>
-</div>
-</div>
-
-<!-- 시효 바 -->
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px">
-<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">소멸시효 진행률</p>
-<div style="position:relative;height:24px;background:var(--color-border-tertiary);border-radius:12px;overflow:hidden">
-<div id="barFill" style="height:100%;border-radius:12px;transition:width 0.3s,background 0.3s"></div>
-</div>
-<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-text-secondary);margin-top:4px">
-<span>지급예정일</span>
-<span id="barLabel">200일 / 1,095일</span>
-<span>3년 (1,095일)</span>
-</div>
-</div>
-
-<!-- 결과 카드 -->
-<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">체불금액</p>
-<p style="font-size:20px;font-weight:500;margin:0" id="principal">0원</p>
-</div>
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">지연이자</p>
-<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-danger)" id="interest">0원</p>
-</div>
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 청구액</p>
-<p style="font-size:20px;font-weight:500;margin:0;color:var(--color-text-info)" id="totalClaim">0원</p>
-</div>
-</div>
-
-<div id="statusMsg" style="border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
-
-<!-- 산식 -->
-<div id="formula" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;margin-bottom:12px"></div>
-
-<!-- 월별 이자 누적 그래프 -->
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">월별 이자 누적 추이</p>
-<div style="position:relative;height:160px" id="chartWrap">
-<canvas id="chart"></canvas>
-</div>
-</div>
-</div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<main>
+  <header><p class="eyebrow">지급기일과 사건 날짜로 계산</p><h1>임금체불 지연이자</h1><p>확정된 체불 원금에 붙는 이자를 날짜별로 확인합니다.</p></header>
+  <nav class="tabs" aria-label="계산 설명"><button id="t0" onclick="showTab(0)" aria-pressed="true">계산 흐름</button><button id="t1" onclick="showTab(1)" aria-pressed="false">날짜별 계산</button><button id="t2" onclick="showTab(2)" aria-pressed="false">청구·시효 확인</button></nav>
+  <section id="tab0">
+    <ol class="flow">
+      <li><strong>원금과 원래 지급기일 확인</strong><p>정기지급 임금인지 퇴직급여 일시금인지 구분합니다. 여러 달의 임금은 각 지급기일을 유지합니다.</p></li>
+      <li><strong>개정 적용 대상 확인</strong><p>정기지급일 다음 날이 <b>2025년 10월 23일 이후</b>이면 재직 중에도 연 20%가 적용됩니다. 10월 22일 지급기일은 포함됩니다. 더 이른 체불금이 시행일에 자동으로 20%로 바뀌지는 않습니다.</p></li>
+      <li><strong>퇴직 후 지급기한 확인</strong><p>마지막 재직일 다음 날 0시를 퇴직 효력일로 봅니다. 효력일부터 14일을 계산하고 말일이 토요일·공휴일이면 조정합니다. 그 다음 날부터 연 20%를 적용합니다. 이미 정기지급일에 따라 20%가 발생했다면 퇴직 후에도 계속 계산합니다.</p></li>
+      <li><strong>적용 이율과 잔액을 기간별로 나누기</strong><p>20% 적용 전이나 법정 제외 기간의 민사채무는 연 5%, 상사채무는 연 6%입니다. 상인 여부를 모르면 두 조건을 함께 확인합니다. 부분 지급은 확인된 원금 충당액만 지급일 다음 날부터 차감합니다.</p></li>
+      <li><strong>원금·이자·합계 대조</strong><p>구간별 이자 = 남은 원금 × 연 이율 × 지연일수 ÷ 365. 지급한 날까지 계산하며, 구간별 이자를 합산한 뒤 원 단위로 반올림합니다.</p></li>
+    </ol>
+    <aside>단순 자금난이나 소송 중이라는 사실만으로 연 20% 적용 제외가 확정되지는 않습니다. 근로기준법 제37조·시행령 제18조의 법정 사유와 존속 기간을 확인해야 합니다.</aside>
+  </section>
+  <section id="tab1" hidden>
+    <h2>단일 채권 계산</h2><p class="muted">부분 변제·적용 제외 기간이 없는 한 건의 채권을 계산합니다. 복수 채권이나 부분 지급은 상담에서 채권별 명세와 원금 충당액을 알려주세요.</p>
+    <form id="interest-form" onsubmit="event.preventDefault();calc()">
+      <div class="fields">
+        <label>채권 종류<select id="kind"><option value="regular_wage">정기지급 임금</option><option value="retirement_lump_sum">퇴직급여 일시금</option></select></label>
+        <label>확정 체불 원금 (원)<input id="amount" type="number" min="1" max="1000000000000" step="1" value="3000000" required></label>
+        <label>원래 지급기일<input id="due" type="date" value="2026-01-01"><small>퇴직급여는 비우면 아래 퇴직일로 계산합니다.</small></label>
+        <label>계산 마지막 날<input id="end" type="date" value="2026-01-31" required></label>
+        <label>퇴직 효력일 (퇴직한 경우)<input id="retirement" type="date"><small>마지막 재직일 다음 날 0시. 재직 중이면 비워둡니다.</small></label>
+        <label>민사·상사 채무 여부<select id="merchant"><option value="unknown">미확인 — 두 조건 확인</option><option value="true">상행위로 생긴 채무 (연 6%)</option><option value="false">민사채무 (연 5%)</option></select></label>
+      </div>
+      <label>퇴직 지급기한의 공휴일 조정<input id="holidays" type="text" placeholder="미확인 / 없음 / 2026-01-19, 2026-01-20"><small>필요한 법정·대체공휴일 날짜를 입력하세요. 없음을 확인했으면 ‘없음’, 모르면 비워두세요. 토·일요일은 자동 조정합니다.</small></label>
+      <label class="check"><input id="assumption" type="checkbox" checked> 부분 변제와 연 20% 법정 적용 제외 사유가 없다는 조건으로 계산합니다.</label>
+      <button class="primary" type="submit">기간별 이자 계산</button>
+    </form>
+    <div id="result" aria-live="polite"></div>
+  </section>
+  <section id="tab2" hidden>
+    <h2>청구 전에 확인할 내용</h2>
+    <ul class="notes"><li>확정된 원금과 실제 지급액, 각 지급기일, 퇴직일의 의미를 확인하세요. 이 화면은 미지급 임금 원금 자체를 산정하지 않습니다.</li><li>일부 돈을 받았다면 지급 총액과 원금 충당액을 구분하세요. 비용·이자·원본의 변제충당 순서가 적용될 수 있습니다.</li><li>임금채권은 각 정기지급일, 퇴직급여는 권리를 행사할 수 있게 된 시점부터 소멸시효를 검토합니다. 퇴직 후 14일 지급기한과 시효 기산일은 다릅니다.</li><li>단순히 3년이 지났다는 이유로 권리 소멸을 확정하지 않습니다. 승인·재판상 청구 등 중단·정지 사유와 기간 말일을 확인해야 합니다.</li><li>지연이자 청구는 민사절차로 검토합니다. 임금체불 진정과 이자 지급 의무 위반의 형사처벌은 구분됩니다.</li><li>판결·약정 이율, 소송촉진법상 이율, DC 퇴직연금 부담금 이자는 별도 검토가 필요합니다.</li></ul>
+    <aside><strong>공식 근거 · 2026-10-24 검토</strong><p><a href="https://www.law.go.kr/법령/근로기준법/제37조" target="_blank" rel="noopener">근로기준법 제37조</a> · <a href="https://www.law.go.kr/법령/근로기준법시행령/제18조" target="_blank" rel="noopener">시행령 제17·18조</a> · <a href="https://1350.moel.go.kr/rtmview.do?id=1000309035" target="_blank" rel="noopener">개정 적용일 안내</a> · <a href="https://www.law.go.kr/법령/민법" target="_blank" rel="noopener">민법 제157·161·379·397·479조</a> · <a href="https://www.law.go.kr/법령/상법/제54조" target="_blank" rel="noopener">상법 제54조</a></p></aside>
+  </section>
+</main>
+<style>
+main{max-width:850px;margin:0 auto;line-height:1.7}header{padding:28px 0 16px}h1{font-size:28px;line-height:1.4}h2{font-size:21px;margin:10px 0}.eyebrow{font-size:13px;color:var(--p);font-weight:700}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 24px}.tabs button{padding:9px 14px;color:var(--color-text-primary)}.tabs button[aria-pressed=true]{background:var(--color-background-info);border-color:var(--p);color:var(--p)}.flow{list-style:none;counter-reset:step;display:grid;gap:12px}.flow li{counter-increment:step;background:var(--bg2);padding:18px 20px;border-radius:10px}.flow strong:before{content:counter(step) '. ';color:var(--p)}.flow p{margin-top:4px;font-size:14px}aside{margin:20px 0;padding:16px 20px;border-left:3px solid var(--p);background:var(--color-background-info);font-size:14px}a{color:var(--p)}.muted,small{color:var(--color-text-secondary);font-size:13px}label{display:flex;flex-direction:column;gap:5px;font-size:14px;margin:10px 0}input,select{font:inherit;color:var(--color-text-primary);background:var(--color-background-primary);border:1px solid var(--b);border-radius:6px;padding:10px;width:100%;min-width:0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}.check{flex-direction:row;align-items:flex-start;gap:8px}.check input{width:auto;margin-top:6px}.primary{padding:10px 18px;background:var(--p);color:var(--color-background-primary);font-weight:600;font-size:15px}.result-card{padding:18px;margin:20px 0;border:1px solid var(--b);border-radius:10px}.amount{font-size:28px;font-weight:700;color:var(--p)}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--b);white-space:nowrap}.notes{padding-left:22px}.notes li{margin:12px 0}.error{color:var(--color-text-danger);padding:16px 0}@media(max-width:540px){.fields{grid-template-columns:1fr}h1{font-size:24px}.flow li{padding:14px}header{padding-top:20px}}
+</style>
 <script>
-var status='quit';
-var myChart=null;
-
-function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
-function setStatus(s){status=s;setBtn('btnWork',s==='work');setBtn('btnQuit',s==='quit');}
-function fmt(n){return Math.round(n).toLocaleString('ko-KR');}
-
+// Single-claim display uses the same dated contract as the server calculator.
+function calculateInterest(input){
+ const day=86400000,parse=(text,label)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(text||''))throw Error(label+' 날짜를 확인해주세요.');const n=Date.parse(text+'T00:00:00Z');if(!Number.isFinite(n)||new Date(n).toISOString().slice(0,10)!==text)throw Error(label+' 날짜를 확인해주세요.');return n;};
+ const iso=n=>new Date(n).toISOString().slice(0,10);
+ const round=n=>{const floor=Math.floor(n),fraction=n-floor;return fraction===.5?(floor%2===0?floor:floor+1):Math.round(n);};
+ const amount=Number(input.amount),end=parse(input.end,'계산일'),kind=input.kind;
+ if(!Number.isFinite(amount)||amount<=0||amount>1e12)throw Error('원금 범위를 확인해주세요.');
+ if(!['regular_wage','retirement_lump_sum'].includes(kind))throw Error('채권 종류를 확인해주세요.');
+ if(![null,true,false].includes(input.merchant))throw Error('민사·상사 채무 여부를 확인해주세요.');
+ let retirement=null,deadline=null;const notices=[];
+ if(input.retirement){
+  retirement=parse(input.retirement,'퇴직 효력일');deadline=retirement+13*day;
+  if(input.holidays!==null&&!Array.isArray(input.holidays))throw Error('공휴일 목록을 확인해주세요.');
+  const holidays=new Set((input.holidays||[]).map(d=>parse(d,'공휴일')));
+  while([0,6].includes(new Date(deadline).getUTCDay())||holidays.has(deadline))deadline+=day;
+  if(input.holidays===null)notices.push('퇴직 지급기한은 토·일요일만 조정했습니다. 법정·대체공휴일 여부에 따라 날짜와 이자가 달라질 수 있습니다.');
+ }
+ if(kind==='retirement_lump_sum'&&retirement===null)throw Error('퇴직급여는 퇴직 효력일이 필요합니다.');
+ const due=input.due?parse(input.due,'원래 지급기일'):kind==='retirement_lump_sum'?deadline:null;
+ if(due===null)throw Error('정기지급 임금의 원래 지급기일이 필요합니다.');
+ if(kind==='retirement_lump_sum'&&due<retirement)throw Error('퇴직급여 지급기일이 퇴직 효력일보다 빠릅니다.');
+ if(due+day<Date.UTC(2005,6,1))throw Error('2005년 7월 1일 전 지급사유는 당시 규칙 확인이 필요합니다.');
+ let special=kind==='regular_wage'&&due+day>=Date.UTC(2025,9,23)?due+day:null;
+ if(deadline!==null)special=special===null?deadline+day:Math.min(special,deadline+day);
+ const start=special===null?due+day:Math.min(due+day,special),stop=end+day;
+ const points=[start];if(special!==null&&special>start&&special<stop)points.push(special);points.push(stop);
+ const scenarios=(input.merchant===null?[false,true]:[input.merchant]).map(merchant=>{
+  const rows=[];for(let i=0;i<points.length-1;i++){
+   const a=points[i],b=points[i+1];if(a>=b)continue;
+   const statutory=special!==null&&a>=special,rate=statutory?.2:merchant?.06:.05,days=(b-a)/day;
+   rows.push({start:iso(a),end:iso(b-day),days,rate,principal:amount,interest:amount*rate*days/365});
+  }
+  const interest=round(rows.reduce((sum,row)=>sum+row.interest,0));return {merchant,rows,interest,total:round(amount+interest)};
+ });
+ const conditional=scenarios.length===2&&JSON.stringify(scenarios[0].rows)!==JSON.stringify(scenarios[1].rows);
+ return {amount,due:iso(due),deadline:deadline===null?null:iso(deadline),conditional,scenarios:conditional?scenarios:scenarios.slice(0,1),notices};
+}
+</script>
+<script>
+function showTab(n){for(let i=0;i<3;i++){document.getElementById('tab'+i).hidden=i!==n;document.getElementById('t'+i).setAttribute('aria-pressed',String(i===n));}}
 function calc(){
-  var amt=parseInt(document.getElementById('amount').value);
-  var days=parseInt(document.getElementById('delayDays').value);
-  document.getElementById('amountOut').textContent=amt+'만원';
-  document.getElementById('delayOut').textContent=days+'일';
-
-  var amtWon=amt*10000;
-  var rate=status==='quit'?0.20:0.06;
-  var rateLabel=status==='quit'?'20%':'6%';
-  var interest=amtWon*rate*(days/365);
-  var total=amtWon+interest;
-
-  document.getElementById('principal').textContent=fmt(amtWon)+'원';
-  document.getElementById('interest').textContent=fmt(interest)+'원';
-  document.getElementById('totalClaim').textContent=fmt(total)+'원';
-
-  // 시효 바
-  var pct=Math.min(days/1095*100,100);
-  var barFill=document.getElementById('barFill');
-  barFill.style.width=pct+'%';
-  if(days>1095){
-    barFill.style.background='var(--color-text-danger)';
-  } else if(days>900){
-    barFill.style.background='var(--color-text-warning)';
-  } else {
-    barFill.style.background='var(--color-text-info)';
-  }
-  document.getElementById('barLabel').textContent=fmt(days)+'일 / 1,095일';
-
-  // 상태 메시지
-  var el=document.getElementById('statusMsg');
-  if(days>1095){
-    el.style.background='var(--color-background-danger)';
-    el.style.color='var(--color-text-danger)';
-    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">소멸시효 만료</p><p style="margin:0;font-size:13px">지급예정일로부터 3년(1,095일)이 경과했습니다. 시효 중단 사유가 없으면 청구권이 소멸됩니다.</p>';
-  } else if(days>900){
-    el.style.background='var(--color-background-warning)';
-    el.style.color='var(--color-text-warning)';
-    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">시효 임박 주의</p><p style="margin:0;font-size:13px">잔여 '+(1095-days)+'일. 빠른 진정·소제기로 시효를 중단시키는 것을 권장합니다.</p>';
-  } else if(days===0){
-    el.style.background='var(--color-background-secondary)';
-    el.style.color='var(--color-text-secondary)';
-    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:14px">지급기한 미도래</p><p style="margin:0;font-size:13px">아직 지급예정일이 지나지 않아 지연이자가 발생하지 않습니다.</p>';
-  } else {
-    el.style.background='var(--color-background-success)';
-    el.style.color='var(--color-text-success)';
-    el.innerHTML='<p style="font-weight:500;margin:0 0 4px;font-size:16px">청구 가능</p><p style="margin:0;font-size:13px">시효 잔여 '+(1095-days)+'일. 총 청구액 '+fmt(total)+'원입니다.</p>';
-  }
-
-  // 산식
-  var fLines=[
-    '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">계산 산식</p>',
-    '<p style="margin:2px 0">체불금액: '+fmt(amtWon)+'원</p>',
-    '<p style="margin:2px 0">적용 이자율: '+rateLabel+' ('+(status==='quit'?'퇴직 후 14일 초과':'재직 중')+')</p>',
-    '<p style="margin:2px 0">지연일수: '+days+'일</p>',
-    '<p style="margin:2px 0">지연이자 = '+fmt(amtWon)+' x '+rateLabel+' x ('+days+' / 365) = <span style="font-weight:500;color:var(--color-text-primary)">'+fmt(interest)+'원</span></p>',
-    '<p style="margin:2px 0;font-weight:500;color:var(--color-text-primary)">총 청구액 = '+fmt(amtWon)+' + '+fmt(interest)+' = '+fmt(total)+'원</p>'
-  ];
-  document.getElementById('formula').innerHTML=fLines.join('');
-
-  // 차트
-  var labels=[];
-  var dataInt=[];
-  var dataTot=[];
-  var maxM=Math.min(Math.ceil(days/30),36);
-  if(maxM<1)maxM=1;
-  for(var m=0;m<=maxM;m++){
-    var d=m*30;
-    if(d>days)d=days;
-    labels.push(m+'개월');
-    var ii=amtWon*rate*(d/365);
-    dataInt.push(Math.round(ii));
-    dataTot.push(Math.round(amtWon+ii));
-  }
-
-  var dark=matchMedia('(prefers-color-scheme:dark)').matches;
-  var gridC=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)';
-  var txtC=dark?'#9c9a92':'#73726c';
-
-  if(myChart){myChart.destroy();}
-  var ctx=document.getElementById('chart').getContext('2d');
-  myChart=new Chart(ctx,{
-    type:'line',
-    data:{
-      labels:labels,
-      datasets:[
-        {label:'총 청구액',data:dataTot,borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:2},
-        {label:'지연이자',data:dataInt,borderColor:'#D85A30',backgroundColor:'rgba(216,90,48,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:2}
-      ]
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'top',labels:{font:{size:11,family:'Anthropic Sans,sans-serif'},color:txtC,boxWidth:12,padding:8}}},
-      scales:{
-        x:{grid:{display:false},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,maxTicksLimit:8}},
-        y:{grid:{color:gridC},ticks:{font:{size:10,family:'Anthropic Sans,sans-serif'},color:txtC,callback:function(v){return (v/10000).toLocaleString('ko-KR')+'만'}},beginAtZero:true}
-      },
-      interaction:{mode:'index',intersect:false}
-    }
-  });
+ const get=id=>document.getElementById(id),money=n=>n.toLocaleString('ko-KR')+'원';
+ try{
+  if(!get('assumption').checked)throw Error('부분 변제·법정 제외 기간이 있으면 상담에서 구간별 자료를 알려주세요.');
+  const holidays=get('holidays').value.trim(),merchant=get('merchant').value;
+  const result=calculateInterest({amount:get('amount').value,kind:get('kind').value,due:get('due').value,end:get('end').value,retirement:get('retirement').value,merchant:merchant==='unknown'?null:merchant==='true',holidays:!holidays||holidays==='미확인'?null:holidays==='없음'?[]:holidays.split(',').map(s=>s.trim())});
+  get('result').innerHTML=(result.conditional?'<aside>상인 여부가 미확인되어 두 조건을 표시합니다. 어느 하나를 확정 금액으로 고르지 마세요.</aside>':'')+result.scenarios.map(s=>'<div class="result-card"><h2>'+(result.conditional?(s.merchant?'상사채무 조건':'민사채무 조건'):'누적 지연이자')+'</h2><p class="amount">'+money(s.interest)+'</p><p>남은 원금 '+money(result.amount)+' · 원금과 이자 합계 <b>'+money(s.total)+'</b></p><div class="table-scroll"><table><thead><tr><th>포함 날짜</th><th>일수</th><th>연 이율</th><th>구간 이자</th></tr></thead><tbody>'+s.rows.map(r=>'<tr><td>'+r.start+' ~ '+r.end+'</td><td>'+r.days+'일</td><td>'+Math.round(r.rate*100)+'%</td><td>'+r.interest.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2})+'원</td></tr>').join('')+'</tbody></table></div><p class="muted">원금 × 연 이율 × 일수 ÷ 365. 구간 이자를 합산 후 원 단위 반올림.</p></div>').join('')+result.notices.map(n=>'<aside>'+n+'</aside>').join('')+'<p class="muted">부분 변제·법정 적용 제외 사유가 없다는 조건의 추정입니다. 실제 지급내역과 자격을 확인해주세요.</p>';
+ }catch(e){get('result').textContent=e.message;get('result').className='error';return;}
+ get('result').className='';
 }
 calc();
-
-function showTab(n){
-  for(var i=0;i<4;i++){
-    document.getElementById('tab'+i).style.display=i===n?'block':'none';
-    setBtn('t'+i,i===n);
-  }
-  if(n===3)calc();
-}
 </script>
-
-
-<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
-<script>
-// Mobile: wrap SVGs in scrollable containers
-(function(){
-  if(window.innerWidth>680)return;
-  var svgs=document.querySelectorAll('svg[viewBox]');
-  if(!svgs.length)return;
-  // Add hint once
-  var hint=document.createElement('span');
-  hint.className='scroll-hint';
-  hint.textContent='좌우로 스크롤하세요';
-  svgs[0].parentNode.insertBefore(hint,svgs[0]);
-  // Wrap each SVG
-  svgs.forEach(function(svg){
-    if(svg.closest('.svg-scroll-wrap'))return;
-    var w=document.createElement('div');
-    w.className='svg-scroll-wrap';
-    svg.parentNode.insertBefore(w,svg);
-    w.appendChild(svg);
-  });
-})();
-</script>
-<script type="module" src="/analytics.js"></script>
 </body>
 </html>

@@ -444,5 +444,116 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-17",
+    "category": "체불이자 개정 경계",
+    "question": "정기지급 임금 300만원의 확정 지급기일은 2025년 10월 22일입니다. 아직 재직 중이고 부분 지급과 법정 이자 적용 제외 사유는 없습니다. 2025년 10월 31일까지의 지연이자를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "interest_amount": 14795
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-18",
+    "category": "체불이자 상인 여부 미확인",
+    "question": "정기지급 임금 300만원의 확정 지급기일은 2025년 10월 21일입니다. 계속 재직 중이고 부분 지급과 법정 이자 적용 제외 사유는 없습니다. 채무가 상행위로 생겼는지는 확인되지 않았습니다. 2025년 10월 31일까지 지연이자를 조건별로 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "civil_interest": 4110,
+      "commercial_interest": 4932
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-19",
+    "category": "퇴직급여 14일 경계",
+    "question": "2024년 5월 31일까지 재직했고 퇴직 효력은 2024년 6월 1일 0시입니다. 확정 퇴직급여 일시금은 300만원, 지급기한은 2024년 6월 14일이며 기한 말일 공휴일은 없습니다. 전혀 지급받지 않았고 법정 적용 제외 사유도 없습니다. 2024년 6월 15일까지의 지연이자만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "interest_amount": 1644
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-20",
+    "category": "체불이자 부분 원금 변제",
+    "question": "정기지급 임금 300만원의 지급기일은 2026년 1월 1일입니다. 재직 중이며 1월 15일에 받은 돈 중 이자 충당과 별도로 원금 100만원에 충당한 사실이 합의서로 확인됩니다. 그 외 지급과 법정 적용 제외 사유는 없습니다. 2026년 1월 31일까지 남은 원금과 누적 지연이자, 합계를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 2000000,
+      "interest_amount": 40548,
+      "total_claim": null
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
   }
 ]

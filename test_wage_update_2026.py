@@ -1,6 +1,7 @@
 """2026-10 계산기 갱신 회귀: 사용자 요청이 실제 계산 결과에 대응해야 한다."""
 import unittest
 from test_parental_benefits_update import ParentalBenefitsUpdateTests
+from test_arrears_interest_update import ArrearsInterestUpdateTests
 
 from app.core.pipeline import _run_calculator
 from wage_calculator.facade import WageCalculator
@@ -305,7 +306,7 @@ class UnexecutedCardTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 text = card(["임금체불"], **extra)
                 self.assertHeld(text)
-                self.assertIn("지급기일", text)
+                self.assertIn("지급기일" if extra.get("arrear_amount") else "원금", text)
 
     def test_year_end_settlement_is_not_monthly_insurance(self):
         for labels in (["연말정산"], ["4대보험"], []):

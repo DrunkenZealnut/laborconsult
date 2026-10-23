@@ -214,6 +214,7 @@ def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
     _keyword_map = [
         # ── 구체적 키워드 (generic 규칙보다 우선) ──
         (["육아기 근로시간 단축", "육아기근로시간단축", "육아기 단축", "육아기단축"], ["reduced_work_benefit"]),
+        (["지연이자", "체불이자", "퇴직금 이자"], ["wage_arrears"]),
         (["공휴일"],               ["public_holiday"]),
         (["소정근로시간", "월근로시간", "월 소정"], ["working_hours"]),
         (["통상임금", "통상시급"],  ["ordinary_wage"]),

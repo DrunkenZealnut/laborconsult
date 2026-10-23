@@ -379,16 +379,19 @@ TEST_CASES = [
     },
     {
         "id": 25,
-        "desc": "임금체불 지연이자 — 퇴직 후 2개월 미지급 (연 20%), 원금 200만원",
-        # 지연이자: 2,000,000 × 20% × (60/365) = 65,753원
-        # 총 청구액: 2,065,753원
+        "desc": "퇴직급여 지연이자 — 2025-01-01 퇴직 효력, 01-14 기한, 원금 200만원",
+        # 01-15~03-01: 2,000,000 × 20% × (46/365) = 50,411원
+        # 남은 원금과 이자 합계: 2,050,411원
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=2_000_000,
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
             arrear_amount=2_000_000,
-            arrear_due_date="2024-12-31",
+            arrear_due_date="2025-01-14",
+            arrear_claim_kind="retirement_lump_sum",
+            arrear_retirement_effective_date="2025-01-01",
+            arrear_deadline_holidays=[],
             is_post_retirement_arrear=True,
             arrear_calc_date="2025-03-01",
         ),

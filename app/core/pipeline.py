@@ -2578,7 +2578,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     # 연차 입력을 숫자 변환으로 덮거나 누락시키지 않는다. 범위·날짜 검증은 계산기에서 보류 사유와 함께 수행한다.
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
     from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
-    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS:
+    from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
     _complete_explicit_reduced_calendar_month(inp, query)
@@ -2614,10 +2615,6 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     # 해고예고·육아휴직·임금체불 — 배선 누락으로 계산이 조용히 skip되던 필드 (CALC-1)
     if params.get("notice_days_given") is not None:
         inp.notice_days_given = int(params["notice_days_given"])
-    if params.get("arrear_amount"):
-        inp.arrear_amount = float(params["arrear_amount"])
-    if params.get("arrear_due_date"):
-        inp.arrear_due_date = str(params["arrear_due_date"])
 
     # 고정수당 — facade가 dict 항목을 그대로 지원 (CALC-1)
     if params.get("fixed_allowances"):
@@ -2677,7 +2674,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
             "overtime", "weekly_holiday", "annual_leave", "dismissal",
             "severance", "comprehensive", "prorated", "public_holiday",
             "shutdown_allowance", "weekly_hours_check",
-            "retirement_tax", "retirement_pension",
+            "retirement_tax", "retirement_pension", "wage_arrears",
         }
         platform_skipped = [{"target": t, "section": CALC_TYPES[t],
             "reason": "노무제공자 입력에서는 이 계산을 실행하지 않습니다. 근로자성 및 적용 범위 확인이 필요합니다."}
@@ -2932,6 +2929,10 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                     result.warnings.append(
                         f"월급 중 기본급·산입 수당 외 몫(연장수당 등) {stated_premium_part:,.0f}원이 위에서 계산한 연장·야간·휴일 근로 임금 "
                         f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
+        requested_amounts = set(targets) - set(auxiliary) - {"legal_hints"}
+        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears"}:
+            # 구성 보정이 기초 월급을 급여·이자 요청의 지급액으로 되살리지 않도록 한다.
+            result.monthly_total = result.monthly_net = 0.0
         if (composition_hold or comprehensive_total) and held_is_total:
             _label_held_total(result, held_unit)
         if composition_hold and not result.minimum_wage_state:
@@ -3046,8 +3047,8 @@ _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
     ],
     "wage_arrears": [
-        ({"arrear_amount"}, "체불 임금액"),
-        ({"arrear_due_date"}, "체불 발생일 (원래 급여일)"),
+        ({"arrear_amount", "arrear_claims"}, "확정 체불 원금 또는 채권별 명세"),
+        ({"arrear_due_date", "arrear_claims", "arrear_retirement_effective_date", "arrear_last_employed_date"}, "원래 지급기일 또는 퇴직급여 지급사유 날짜"),
     ],
     "compensatory_leave": [
         (_WAGE_FIELDS, "임금 (시급/월급)"),
@@ -3227,7 +3228,8 @@ def _analysis_to_extract_params(analysis) -> dict:
     }
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
     from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
-    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS if key in info})
+    from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 
