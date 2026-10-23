@@ -294,6 +294,7 @@ ANALYZE_TOOL["input_schema"]["properties"]["precedent_keywords"] = {
 
 # 체불 원금 정산: 현재 월급으로 과거 채권이나 세후 지급액을 추정하지 않는다.
 _PAY_PROPS.update({
+    "weekly_attendance_days":{"type":"number","description":"확인된 주 소정근로일 중 실제 출근 일수. 주휴 채권의 개근 여부 보존. 미확인은 생략"},
     "wage_claim_scope_complete": {"type":"boolean","description":"사용자가 요청한 월·항목 범위의 의무액과 지급 내역이 명시되면 true. 다른 채권까지 모두 포함한다는 뜻 아님. 미지급은 paid_amount=0, 지급 내역 미상은 생략"},
     "wage_claim_amount_basis": {"type":"string","enum":["gross","net","unknown"],"description":"의무액과 지급 원금이 같은 세전 기준이면 gross. 세후 통장 입금만 알면 net/unknown. 세전 의무액에서 세후 입금액을 바로 차감 금지"},
     "wage_claim_calc_date": {"type":"string","description":"명시된 원금 잔액 기준일 YYYY-MM-DD"},
@@ -314,7 +315,7 @@ _PAY_PROPS.update({
         "holiday_overtime_hours":{"type":"number","description":"휴일별 8시간 초과분으로 확정된 월 합계, hours는 8시간 이내 부분"},
         "weeks":{"type":"integer","description":"개근 등 동일 조건으로 주휴 자격이 확인된 완전한 주 수"},
         "monthly_hours":{"type":"number","description":"minimum_wage의 명시된 월 유급시간(예:209). 명시한 209를 평균 주수로 재환산하지 않음"},
-        "exclusions":{"type":"array","items":{"type":"object"},"description":"C2 계약과 같은 확인된 법정 지연이자 제외 기간. 사유 없으면 생략"}
+        "exclusions":ARREARS_PROPERTIES["arrear_exclusions"]
     }}},
     "wage_claim_payments":{"type":"array","description":"실제 지급 건별 전체 금액과 항목별 충당. 귀속 불명이면 allocation_confirmed=false로 보존해 보류하며 날짜순 자동 배분 금지","items":{"type":"object","properties":{
         "id":{"type":"string"},"date":{"type":"string"},"amount":{"type":"number"},"allocation_confirmed":{"type":"boolean"},
@@ -336,9 +337,10 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 1. 임금/수당/퇴직금 등 수치 계산이 필요하면 requires_calculation=true
    - 연말정산 환급·추가납부액은 year_end_settlement, 월별 보험료·원천징수는 insurance로 구분하세요.
    - 선택적 근로시간제 정산은 selective_work_settlement, 일반 소정근로시간은 working_hours입니다.
-   - 미지급 임금 원금·차액 산정은 arrears_principal이며 wage_claim_items에 의무액·기지급 원금을 분리합니다. 차액을 대신 계산해 넣지 마세요. 원금과 그 이자를 함께 요청하면 wage_claim_include_interest=true로 하고 별도 arrear_amount/arrear_claims는 생성하지 마세요. 이미 확정된 체불 원금의 이자만 요청하면 기존 wage_arrears입니다.
+   - 미지급 임금 원금·차액 산정은 arrears_principal이며 wage_claim_items에 의무액·기지급 원금을 분리합니다. 차액을 대신 계산해 넣지 마세요. 원금과 그 이자를 함께 요청하면 wage_claim_include_interest=true로 하고 별도 arrear_amount/arrear_claims는 생성하지 마세요. 이미 확정된 체불 원금의 이자만 요청하면 기존 wage_arrears입니다. 새 정산과 별개인 기존 채권 이자를 명시적으로 요청하면 wage_claim_include_interest=false와 기존 arrear 입력을 함께 보존하세요. 관계 미상은 생략하며 임의 분리하지 마세요. 이자 제외 기간은 적용되는 wage_claim_items의 exclusions에 보존하고 귀속 미상은 상위 arrear_exclusions에 남겨 보류하세요.
    - 체불 차액만 묻는 경우 기초 산출인 연장·최저임금·일할은 wage_claim_items.source로 연결하고 독립 계산 유형에 중복 추가하지 마세요. 파생 항목의 month는 상위 settlement_month와 같아야 합니다. 실제 월 20시간은 hours=20이며 주 20시간으로 바꾸지 마세요. 주휴 source는 질문의 개근 여부를 weekly_attendance_days로 보존하세요.
    - 월급 계약이 최저임금보다 낮고 일부만 지급됐다면 source=minimum_wage 한 행에 계약 임금은 상위 wage_amount, 실제 지급액은 paid_amount로 넣습니다. 월 209시간 등 명시 유급시간은 monthly_hours로 보존합니다. 계약 미지급분과 최저임금 미달분을 별도 중복 행으로 만들지 마세요.
+   - 긴 정산 명세를 요약·생략하거나 일부 행만 전체 범위로 표시하지 마세요. 전체 항목·지급을 보존할 수 없으면 wage_claim_scope_complete=false로 하고 분할 명세를 요청하세요.
    - 초과 지급은 해당 월 원금 지급액으로 보존하며 다른 월의 체불에서 자동 차감하지 마세요. 세전 기준·요청 범위와 지급 귀속이 명시되면 scope_complete와 amount_basis를 보존하세요.
    - 중도입사·중도퇴사·휴복직 급여 일할계산은 prorated입니다. 일반 임금계산으로 대신하지 마세요.
    - 일할계산은 정산월·약정 방식·항목별 지급 조건·무급 기간을 보존하세요. 'N일까지 재직'은 last_employed_date, 'N일 퇴직 효력'은 proration_retirement_effective_date입니다. 단순 '퇴사일'의 뜻은 확인하세요. 단일 월급액에 역일수 등 일할 약정을 명시하면 그 금액의 proration_all_items_proportional=true이며 proration_items는 생략합니다. 수당별 지급 조건이 다르거나 미확인이라고 명시되면 전체 비례를 추정하지 말고 항목별 조건을 보존하세요. 실제 지급 확정 수당은 proration_items의 actual로 넣고 정기 고정수당으로 중복 생성하지 마세요.

@@ -12,6 +12,7 @@ from .shared import monthly_wage_total,normalize_allowances
 
 CLAIM_INPUT_FIELDS=frozenset({'wage_claim_items','wage_claim_scope_complete','wage_claim_amount_basis',
     'wage_claim_calc_date','wage_claim_payments','wage_claim_adjustments','wage_claim_include_interest'})
+CLAIM_DEPENDENCY_FIELDS=frozenset({'weekly_attendance_days'})
 COMPONENTS={'regular','weekly_holiday','overtime','night','holiday','annual_leave','retirement'}
 SOURCES={'explicit','ordinary_hours','overtime','night','holiday','weekly_holiday',
          'minimum_wage','prorated','monthly_estimate'}
@@ -49,6 +50,23 @@ def claims_are_independent(inp):
     return (isinstance(inp.wage_claim_items,list) and bool(inp.wage_claim_items)
             and all(isinstance(x,dict) and x.get('source','explicit')=='explicit' for x in inp.wage_claim_items))
 
+def _contract_components(inp):
+    # Aggregate sources include these actual contract components even if the caller omits them.
+    from .shared import AllowanceClassifier
+    result={'regular','weekly_holiday'}
+    for allowance in normalize_allowances(inp.fixed_allowances):
+        if not allowance.monthly_amount:continue
+        if AllowanceClassifier.is_overtime_related(allowance.name):result.update({'overtime','night','holiday'})
+        elif '연차' in allowance.name:result.add('annual_leave')
+        else:
+            ident=re.sub(r'[\s:]+','_',allowance.source_id or allowance.name)[:80]
+            result.update({'other:'+ident,'bonus:'+ident})
+    if inp.comprehensive_breakdown:
+        if any(inp.comprehensive_breakdown.get(k,0) for k in ('overtime_pay','night_pay','holiday_pay')):
+            result.update({'overtime','night','holiday'})
+    return result
+
+
 def _amount(row,inp,ow):
     source=row.get('source','explicit')
     if source not in SOURCES:raise ValueError('지급 의무액의 산출 출처를 확인해주세요.')
@@ -62,7 +80,7 @@ def _amount(row,inp,ow):
         if result.held_reason:raise ValueError(result.held_reason)
         found=[x for x in result.item_rows if x['id']==row.get('source_item_id')]
         if len(found)!=1:raise ValueError('일할 명세의 원본 항목 ID를 확인해주세요.')
-        components={'regular','weekly_holiday'} if found[0]['id']=='monthly_contract' else set()
+        components=_contract_components(inp) if found[0]['id']=='monthly_contract' else set()
         return found[0]['payable_amount'],components,False
     from .shared import ordinary_wage_from_total
     if source in {'ordinary_hours','overtime','night','holiday','weekly_holiday'} and ordinary_wage_from_total(inp):
@@ -71,8 +89,14 @@ def _amount(row,inp,ow):
         v=getattr(inp,attr)
         if v is not None:money(v,'계산 기초 임금')
     if inp.reference_year!=int(row['month'][:4]):raise ValueError('계산 기준 연도와 귀속월 연도를 일치시켜주세요.')
-    if inp.wage_type!=WageType.HOURLY and (inp.schedule.daily_work_hours<=0 or inp.schedule.weekly_work_days<=0):
-        raise ValueError('통상시급 계산에 필요한 소정근로시간을 확인해주세요.')
+    wage_attr={WageType.HOURLY:'hourly_wage',WageType.DAILY:'daily_wage',WageType.MONTHLY:'monthly_wage',
+               WageType.COMPREHENSIVE:'monthly_wage',WageType.ANNUAL:'annual_wage'}[inp.wage_type]
+    base=getattr(inp,wage_attr)
+    if base is None or money(base,'계산 기초 임금')<=0:
+        raise ValueError('해당 월의 시급·기본급 등 계산 기초 임금액을 확인해주세요.')
+    needs_schedule=inp.wage_type!=WageType.HOURLY or bool(inp.fixed_allowances) or source=='weekly_holiday'
+    if needs_schedule and (inp.schedule.daily_work_hours<=0 or inp.schedule.weekly_work_days<=0):
+        raise ValueError('통상시급·주휴 계산에 필요한 소정근로시간을 확인해주세요.')
     if source=='ordinary_hours':
         h=_hours(row.get('hours'),'확정 실제 시간')
         return _won(ow.hourly_ordinary_wage*h),{'regular'},False
@@ -91,14 +115,17 @@ def _amount(row,inp,ow):
         from .weekly_holiday import calc_weekly_holiday
         weeks=row.get('weeks')
         if isinstance(weeks,bool) or not isinstance(weeks,int) or not 1<=weeks<=6:raise ValueError('동일 조건으로 확정된 주휴 대상 주 수를 확인해주세요.')
-        if inp.weekly_attendance_days is None:raise ValueError('주휴 대상 주의 개근 여부를 확인해주세요.')
+        attendance=inp.weekly_attendance_days
+        if (isinstance(attendance,bool) or not isinstance(attendance,(int,float))
+                or attendance!=inp.schedule.weekly_work_days or not 0<attendance<=7):
+            raise ValueError('확정 주휴 대상 주의 개근 일수와 소정근로일수를 확인해주세요. 미개근 주를 전액 채권으로 만들지 않습니다.')
         result=calc_weekly_holiday(replace(inp,end_date=None),ow)
         if result.held_reason:raise ValueError(result.held_reason)
         return _won(result.weekly_holiday_pay*weeks),{'weekly_holiday'},False
     if any(a.annual or a.payment_cycle!='매월' for a in normalize_allowances(inp.fixed_allowances)):
         raise ValueError('연·분기 상여의 월 환산액을 채권으로 만들지 않습니다. 실제 지급월·금액·기일을 입력해주세요.')
     contract=monthly_wage_total(inp,ow,premium=source=='monthly_estimate')
-    components={'regular','weekly_holiday'}
+    components=_contract_components(inp)
     if source=='minimum_wage':
         from .minimum_wage import calc_minimum_wage
         if inp.wage_type!=WageType.MONTHLY or any((inp.schedule.weekly_overtime_hours,inp.schedule.weekly_night_hours,inp.schedule.weekly_holiday_hours)):
@@ -109,7 +136,7 @@ def _amount(row,inp,ow):
             if hours<=0:raise ValueError('월 유급시간은 0보다 커야 합니다.')
             minimum_basis=replace(ow,monthly_base_hours=hours)
         result=calc_minimum_wage(inp,minimum_basis)
-        if result.undetermined or result.not_applicable:raise ValueError('최저임금 산입 범위·적용 조건이 미확인되어 의무액을 확정할 수 없습니다.')
+        if result.undetermined or result.shortage_undetermined or result.not_applicable:raise ValueError('최저임금 산입 범위·적용 조건이 미확인되어 의무액을 확정할 수 없습니다.')
         return _won(contract+result.shortage_monthly),components,False
     if inp.schedule.weekly_overtime_hours:components.add('overtime')
     if inp.schedule.weekly_night_hours:components.add('night')
@@ -125,12 +152,16 @@ def _calculate(inp,ow):
     if not isinstance(raw,list) or not 1<=len(raw)<=100:raise ValueError('월별 지급 의무액·기지급액·지급기일의 항목 명세가 필요합니다.')
     r=WageClaimsResult(calc_date=asof.isoformat(),legal_basis=['근로기준법 제43조 (임금 지급)',
         '민법 제476조~제479조 (변제충당)','최저임금법 제6조 (최저임금의 효력)'])
+    from .wage_arrears import _retirement
+    _,retirement_deadline=_retirement(inp.arrear_retirement_effective_date or inp.proration_retirement_effective_date,
+        inp.arrear_last_employed_date or inp.last_employed_date,inp.is_post_retirement_arrear,inp.arrear_deadline_holidays,r.warnings)
     prepared={};covered=set();derived=set()
     for row in raw:
         if not isinstance(row,dict):raise ValueError('급여 항목 명세를 확인해주세요.')
         ident=_text(row.get('id'),'항목 ID');name=_text(row.get('name'),'항목 이름');month=_month(row.get('month'))
         if ident in prepared:raise ValueError('급여 항목 ID가 중복됩니다.')
         due=strict_date(row.get('due_date'),'지급기일')
+        effective_due=min(due,retirement_deadline) if retirement_deadline else due
         components=row.get('components')
         if not isinstance(components,list) or not components or len(components)>50:raise ValueError('항목 간 포함·중복 관계를 확인해주세요.')
         for c in components:
@@ -149,7 +180,7 @@ def _calculate(inp,ow):
             derived.add(key)
         r.is_estimate |= estimate
         prepared[ident]=dict(id=ident,name=name,month=month,due_date=due.isoformat(),components=sorted(elements),
-            source=source,original_obligation=amount,adjustment=0,obligation=amount,raw=row,payments=[])
+            source=source,effective_due_date=effective_due.isoformat(),original_obligation=amount,adjustment=0,obligation=amount,raw=row,payments=[])
     adjustments=inp.wage_claim_adjustments or []
     if not isinstance(adjustments,list) or len(adjustments)>100:raise ValueError('의무액 정정 목록을 확인해주세요.')
     ids=set()
@@ -206,7 +237,7 @@ def _calculate(inp,ow):
                 if paid or interest:x['payments'].append(dict(date=d.isoformat(),principal_amount=paid,interest_amount=interest,allocation_confirmed=True))
             elif paid or interest:interest_holds.append('실제 지급일이 없어 이자 기간을 계산할 수 없습니다.')
         x.update(paid_principal=paid,remaining=max(0,x['obligation']-paid),overpayment=max(0,paid-x['obligation']),
-                 overdue=strict_date(x['due_date'],'지급기일')<asof)
+                 overdue=strict_date(x['effective_due_date'],'적용 지급기일')<asof)
         r.items.append(x)
         r.total_obligation+=x['obligation'];r.total_paid+=paid;r.remaining_principal+=x['remaining'];r.overpayment+=x['overpayment']
         if x['overdue']:r.overdue_principal+=x['remaining']
@@ -227,7 +258,7 @@ def _calculate(inp,ow):
     if r.is_estimate:interest_holds.append('월 평균 추정 의무액은 확정 채권이 아닙니다. 실제 월별 의무액을 확인해야 이자를 계산할 수 있습니다.')
     r.interest_held_reason=' '.join(dict.fromkeys(interest_holds))
     r.breakdown={'월별·항목별 원금 명세':r.items,'잔액 기준일':r.calc_date}
-    r.warnings=['명시한 정산 범위의 세전 금액입니다. 목록에 없는 퇴직급여·연차수당·공제를 자동 합산하지 않습니다.',
+    r.warnings+=['명시한 정산 범위의 세전 금액입니다. 목록에 없는 퇴직급여·연차수당·공제를 자동 합산하지 않습니다.',
                 '초과 지급은 다른 항목의 체불과 자동 상계하지 않습니다. 지급 의무와 변제충당이 확인된 사실을 전제로 합니다.']
     if r.is_estimate:r.warnings.append('월 평균 조건으로 산출한 추정 원금이 포함되어 있습니다. 실제 월별 채권으로 확정하지 마세요.')
     if r.not_yet_due:r.warnings.append('지급기일 당일 또는 아직 기일이 지나지 않은 금액은 체불 원금·이자 청구 합계와 구분합니다.')
@@ -243,6 +274,8 @@ def calc_claim_interest(inp,claims_result):
     from .wage_arrears import calc_wage_arrears,WageArrearsResult
     if claims_result is None:return WageArrearsResult(held_reason='원금 명세가 보류되어 연결할 이자 채권을 확정할 수 없습니다.')
     if claims_result.interest_held_reason:return WageArrearsResult(held_reason=claims_result.interest_held_reason)
+    if inp.arrear_exclusions:
+        return WageArrearsResult(held_reason='공통 이자 제외 기간의 채권별 적용 범위를 확인해주세요. 각 항목의 exclusions에 귀속을 명시해야 합니다.')
     if inp.arrear_amount or inp.arrear_due_date or inp.arrear_claims or inp.arrear_payments:
         return WageArrearsResult(held_reason='산정한 임금 채권과 별도 확정 체불 입력이 함께 있습니다. 같은 채권의 중복 여부를 확인해주세요.')
     if inp.arrear_calc_date and inp.arrear_calc_date!=claims_result.calc_date:

@@ -196,4 +196,156 @@ class WageClaimsUpdateTests(unittest.TestCase):
         self.assertTrue(r.is_estimate)
         self.assertTrue(r.interest_held_reason)
 
+    def test_retirement_deadline_precedes_original_payday(self):
+        from wage_calculator.facade import WageCalculator
+        inp=WageInput(wage_claim_items=[item(due_date='2026-11-10')],wage_claim_scope_complete=True,
+            wage_claim_amount_basis='gross',wage_claim_calc_date='2026-10-24',wage_claim_include_interest=True,
+            arrear_retirement_effective_date='2026-10-01',arrear_deadline_holidays=[])
+        r=WageCalculator().calculate(inp,['arrears_principal'])
+        self.assertEqual(r.summary.get('지급기일 경과 체불 원금'),'3,000,000원')
+        self.assertEqual(r.summary.get('남은 원금·이자 합계'),'3,016,438원')
+        self.assertIn('2026-10-14',str(r.summary))
+
+    def test_weekly_attendance_survives_both_extractors(self):
+        from app.core.analyzer import _build_analysis_result
+        from app.core.pipeline import _analysis_to_extract_params,_run_calculator,WAGE_CALC_TOOL
+        from app.templates.prompts import ANALYZE_TOOL
+        row=item(source='weekly_holiday',amount=None,weeks=4,basis_confirmed=True,components=['weekly_holiday'])
+        data=dict(requires_calculation=True,calculation_types=['arrears_principal'],wage_type='시급',wage_amount=15000,
+            weekly_work_days=5,daily_work_hours=8,weekly_attendance_days=5,settlement_month='2026-09',
+            wage_claim_items=[row],wage_claim_scope_complete=True,wage_claim_amount_basis='gross',wage_claim_calc_date='2026-10-24')
+        for schema in [ANALYZE_TOOL,WAGE_CALC_TOOL]:self.assertIn('weekly_attendance_days',schema['input_schema']['properties'])
+        params=_analysis_to_extract_params(_build_analysis_result(data,'주휴 원금'))
+        self.assertEqual(params.get('weekly_attendance_days'),5)
+        for p in [params,dict(data,needs_calculation=True,calculation_types_kr=['arrears_principal'])]:
+            self.assertIn('480,000원',_run_calculator(p,'주5일 하루8시간 시급15000원 주휴 원금'))
+
+    def test_fallback_advertises_actual_claim_dependencies(self):
+        from app.core.pipeline import WAGE_CALC_TOOL
+        props=WAGE_CALC_TOOL['input_schema']['properties']
+        exclusions=props['wage_claim_items']['items']['properties']['exclusions']['items']
+        self.assertTrue({'start_date','end_date','reason','eligible'} <= set(exclusions.get('properties',{})))
+        for k in ['fixed_allowances','monthly_total_pay','arrear_retirement_effective_date','arrear_deadline_holidays',
+                  'is_post_retirement_arrear','debtor_is_merchant','arrear_exclusions','weekly_attendance_days']:
+            with self.subTest(k=k):self.assertIn(k,props)
+
+    def test_nonattendance_cannot_create_confirmed_weekly_debt(self):
+        for attendance in [4,-1,6,True]:
+            with self.subTest(attendance=attendance):
+                r=calculate([item(source='weekly_holiday',amount=None,weeks=4,basis_confirmed=True,components=['weekly_holiday'])],
+                    wage_type=WageType.HOURLY,hourly_wage=15000,settlement_month='2026-09',weekly_attendance_days=attendance)
+                self.assertTrue(r.held_reason)
+
+    def test_derived_claim_requires_wage_and_schedule_for_monthly_allowance(self):
+        from app.core.analyzer import _build_analysis_result
+        from app.core.pipeline import _analysis_to_extract_params,_run_calculator
+        row=item(source='overtime',amount=None,hours=20,basis_confirmed=True,components=['overtime'])
+        common=dict(requires_calculation=True,calculation_types=['arrears_principal'],settlement_month='2026-09',
+            wage_claim_items=[row],wage_claim_scope_complete=True,wage_claim_amount_basis='gross',wage_claim_calc_date='2026-10-24')
+        for extra in [{},{'wage_type':'시급','wage_amount':15000,'fixed_allowances':[dict(name='직책수당',amount=300000,payment_cycle='매월')]}]:
+            with self.subTest(extra=extra):
+                card=_run_calculator(_analysis_to_extract_params(_build_analysis_result(common|extra,'연장 체불 원금')),'연장 체불 원금')
+                self.assertIn('보류',card)
+                self.assertNotIn('미지급 원금 합계:',card)
+        # An explicitly supplied hourly rate alone needs no schedule divisor.
+        card=_run_calculator(_analysis_to_extract_params(_build_analysis_result(common|dict(wage_type='시급',wage_amount=15000),'연장 체불 원금')),'연장 체불 원금')
+        self.assertIn('450,000원',card)
+
+    def test_aggregate_contract_knows_included_fixed_overtime(self):
+        allowance=dict(name='고정연장수당',amount=500000,payment_cycle='매월')
+        for source in ['minimum_wage','prorated']:
+            extra=dict(settlement_month='2026-09',monthly_wage=2000000,fixed_allowances=[allowance])
+            row=item(source=source,amount=None,basis_confirmed=True,monthly_hours=209,source_item_id='monthly_contract')
+            if source=='prorated':extra.update(proration_employed_at_month_start=True,proration_all_items_proportional=True,proration_method='calendar')
+            r=calculate([row,item('ot',amount=450000,components=['overtime'])],**extra)
+            with self.subTest(source=source):self.assertTrue(r.held_reason)
+
+    def test_aggregate_monthly_bonus_component_cannot_be_claimed_twice(self):
+        row=item(source='minimum_wage',amount=None,basis_confirmed=True,monthly_hours=209)
+        r=calculate([row,item('bonus',amount=200000,components=['bonus:monthlybonus'])],settlement_month='2026-09',
+            fixed_allowances=[dict(name='정기상여',source_id='monthlybonus',amount=200000,payment_cycle='매월')])
+        self.assertTrue(r.held_reason)
+
+    def test_unknown_probation_amount_holds_even_when_both_rates_fail(self):
+        row=item(source='minimum_wage',amount=None,basis_confirmed=True,monthly_hours=209)
+        r=calculate([row],monthly_wage=1700000,settlement_month='2026-09',is_probation=True)
+        self.assertTrue(r.held_reason)
+        r=calculate([row],monthly_wage=1700000,settlement_month='2026-09',is_probation=True,contract_months=6)
+        self.assertFalse(r.held_reason)  # explicitly ineligible for reduction
+        self.assertEqual(r.total_obligation,2156880)
+
+    def test_facade_uses_resolved_size_and_normalized_schedule_for_sources(self):
+        from wage_calculator.facade import WageCalculator
+        from wage_calculator.models import BusinessSizeInput
+        inp=WageInput(wage_type=WageType.HOURLY,hourly_wage=15000,reference_year=2026,settlement_month='2026-09',
+            wage_claim_scope_complete=True,wage_claim_amount_basis='gross',wage_claim_calc_date='2026-10-24',
+            wage_claim_items=[item(source='overtime',amount=None,hours=20,basis_confirmed=True,components=['overtime'])],
+            business_size_input=BusinessSizeInput(event_date='2026-10-01',daily_headcount={'2026-09-01':4}))
+        r=WageCalculator().calculate(inp,['business_size','arrears_principal'])
+        self.assertEqual(r.summary.get('사업장 규모'),'5인미만')
+        self.assertEqual(r.summary.get('지급 의무액 합계'),'300,000원')
+        inp=WageInput(monthly_wage=1700000,schedule=WorkSchedule(daily_work_hours=10,weekly_work_days=5),
+            settlement_month='2026-09',reference_year=2026,wage_claim_items=[item(source='minimum_wage',amount=None,basis_confirmed=True)],
+            wage_claim_scope_complete=True,wage_claim_amount_basis='gross',wage_claim_calc_date='2026-10-24')
+        r=WageCalculator().calculate(inp,['arrears_principal'])
+        self.assertEqual(r.calculation_status,'not_run')
+
+    def test_unassigned_global_exclusions_hold_interest_only(self):
+        from wage_calculator.facade import WageCalculator
+        inp=WageInput(wage_claim_items=[item()],wage_claim_scope_complete=True,wage_claim_amount_basis='gross',
+            wage_claim_calc_date='2026-10-24',wage_claim_include_interest=True,debtor_is_merchant=False,
+            arrear_exclusions=[dict(start_date='2026-10-11',end_date='2026-10-24',reason='insolvency',eligible=True)])
+        r=WageCalculator().calculate(inp,['arrears_principal'])
+        self.assertEqual(r.summary.get('미지급 원금 합계'),'3,000,000원')
+        self.assertNotIn('남은 원금·이자 합계',r.summary)
+        self.assertTrue(any(x['target']=='wage_arrears' for x in r.calculation_skipped))
+        inp.wage_claim_items[0]['exclusions']=inp.arrear_exclusions;inp.arrear_exclusions=None
+        r=WageCalculator().calculate(inp,['arrears_principal'])
+        self.assertEqual(r.summary.get('남은 지연이자'),'5,753원')
+
+    def test_explicit_separate_interest_request_is_preserved(self):
+        from wage_calculator.facade import WageCalculator
+        inp=WageInput(wage_claim_items=[item()],wage_claim_scope_complete=True,wage_claim_amount_basis='gross',
+            wage_claim_calc_date='2026-10-24',wage_claim_include_interest=False,arrear_amount=1000000,
+            arrear_due_date='2026-08-10',arrear_calc_date='2026-10-24')
+        r=WageCalculator().calculate(inp,['arrears_principal','wage_arrears'])
+        self.assertEqual(r.summary.get('미지급 원금 합계'),'3,000,000원')
+        self.assertEqual(r.summary.get('남은 체불 원금'),'1,000,000원')
+        self.assertEqual(r.calculation_status,'complete')
+        inp.wage_claim_include_interest=None
+        self.assertEqual(WageCalculator().calculate(inp,['arrears_principal','wage_arrears']).calculation_status,'partial')
+
+    def test_extraction_budget_covers_ledger_with_a_bound(self):
+        from app.core import llm_gateway as gw
+        from unittest.mock import Mock,patch
+        from types import SimpleNamespace as NS
+        self.assertGreaterEqual(gw.extraction_budget('36개월 체불 원금 정산 '+('지급 내역 '*500)),8192)
+        self.assertLessEqual(gw.extraction_budget('체불 '+('월급 '*100000)),32768)
+    def test_each_provider_rejects_truncated_valid_tool_arguments(self):
+        from app.core import llm_gateway as gw
+        from unittest.mock import Mock,patch
+        from types import SimpleNamespace as NS
+        c=Mock();c.with_options.return_value=c
+        c.messages.create.return_value=NS(stop_reason='max_tokens',content=[NS(type='tool_use',name='ledger',input={'wage_claim_scope_complete':True})])
+        with self.subTest(provider='claude'),self.assertRaises(ValueError):gw._claude_tool(NS(claude_client=c),'m',None,[],[],None,8192,10)
+        c.chat.completions.create.return_value=NS(choices=[NS(finish_reason='length',message=NS(tool_calls=[NS(function=NS(name='ledger',arguments='{"wage_claim_scope_complete":true}'))]))])
+        with self.subTest(provider='openai'),self.assertRaises(ValueError):gw._openai_tool(NS(openai_client=c),'m',None,[],[],None,8192,10)
+        c.generate_content.return_value=NS(candidates=[NS(finish_reason=2,content=NS(parts=[]))])
+        with self.subTest(provider='gemini'),patch.object(gw,'_gemini_model',return_value=c),self.assertRaises(ValueError):
+            gw._gemini_tool(NS(),'m',None,[],[],None,8192,10)
+
+    def test_analyzer_and_fallback_request_ledger_sized_budget(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace as NS
+        from app.core.analyzer import analyze_intent
+        from app.core.pipeline import _extract_params
+        from app.core import llm_gateway as gw
+        data=dict(requires_calculation=True,calculation_types=['arrears_principal'],wage_claim_items=[item()])
+        with patch.object(gw,'tool',return_value=('OpenAI','analyze_labor_question',data)) as call:
+            analyze_intent('36개월 체불 원금 정산',[],NS())
+            self.assertGreaterEqual(call.call_args.kwargs['max_tokens'],8192)
+        with patch.object(gw,'tool',return_value=('OpenAI','wage_params',dict(needs_calculation=True))) as call:
+            _extract_params('36개월 체불 원금 정산',NS())
+            self.assertGreaterEqual(call.call_args.kwargs['max_tokens'],8192)
+
 if __name__=='__main__':unittest.main()

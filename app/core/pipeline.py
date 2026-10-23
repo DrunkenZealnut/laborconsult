@@ -849,9 +849,11 @@ WAGE_CALC_TOOL = {
 # 분석기 장애 시의 대체 추출도 동일한 정산 계약을 표현한다.
 from app.templates.prompts import ANALYZE_TOOL
 from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
-from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS
+from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS, CLAIM_DEPENDENCY_FIELDS
 WAGE_CALC_TOOL["input_schema"]["properties"].update({
-    key: ANALYZE_TOOL["input_schema"]["properties"][key] for key in PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS
+    key: ANALYZE_TOOL["input_schema"]["properties"][key] for key in PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | {"fixed_allowances"}
 })
 WAGE_CALC_TOOL["input_schema"]["properties"]["calculation_type"]["description"] += "/일할계산급여/임금체불액"
 
@@ -935,7 +937,7 @@ def _extract_params(query: str, config: AppConfig) -> tuple[str, dict | None]:
         # 임계경로 타임아웃 (DB-6) — 지연 시 폴백 경로로 진행
         _provider, name, params = llm_gateway.tool(
             config, system=None, purpose="파라미터 추출",
-            tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL], max_tokens=512,
+            tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL], max_tokens=llm_gateway.extraction_budget(query,default=512),
             timeout=EXTRACT_TIMEOUT, attempts=2,
             messages=[{
                 "role": "user",
@@ -2592,7 +2594,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
     from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
     from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
-    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS:
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
     _complete_explicit_reduced_calendar_month(inp, query)
@@ -3278,7 +3280,7 @@ def _analysis_to_extract_params(analysis) -> dict:
     from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
     from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
     from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
-    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS if key in info})
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

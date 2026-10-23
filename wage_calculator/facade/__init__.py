@@ -221,6 +221,12 @@ class WageCalculator:
             result.summary["법 적용 여부"] = "적용" if bs.is_law_applicable else "미적용"
             _merge(result, "상시근로자 수 판정", bs, all_w, all_l)
 
+        # 원본 금액의 음수 검증은 유지하고, 파생 채권은 확정된 분류·정규화된 시간을 사용한다.
+        from dataclasses import replace
+        claims_input=replace(settlement_input,business_size=inp.business_size,
+                             schedule=deepcopy(inp.schedule),hour_split=inp.hour_split)
+        claims_ow=calc_ordinary_wage(inp) if 'arrears_principal' in targets else ow
+
         # ── 표준 계산기 디스패처 ─────────────────────────────────────────────
         _claims_result = None
         _severance_cache = None
@@ -234,7 +240,7 @@ class WageCalculator:
                 from ..calculators.family_leave import FAMILY_LABELS
                 section = FAMILY_LABELS.get(inp.maternity_leave_type, section)
             mark = used_mark()
-            r = guarded(key, section, lambda: func(settlement_input if key in {"prorated", "arrears_principal"} else inp, ow))
+            r = guarded(key, section, lambda: func(claims_input, claims_ow) if key == "arrears_principal" else func(settlement_input if key == "prorated" else inp, ow))
             if r is None:
                 continue
             if key == "arrears_principal":
@@ -273,7 +279,9 @@ class WageCalculator:
 
         # ── 특수 계산기: 임금체불 (독립 함수, WageInput 미사용) ───────────────
         if "wage_arrears" in targets:
-            if "arrears_principal" in targets:
+            independent_interest=(inp.wage_claim_include_interest is False and
+                                  bool(inp.arrear_amount or inp.arrear_claims))
+            if "arrears_principal" in targets and not independent_interest:
                 from ..calculators.wage_claims import calc_claim_interest
                 wa = guarded("wage_arrears", "임금체불 지연이자", lambda: calc_claim_interest(inp, _claims_result))
             else:
@@ -292,6 +300,8 @@ class WageCalculator:
                     is_employee=not inp.is_platform_worker,
                 ))
             if wa is not None:
+                if "arrears_principal" in targets and independent_interest:
+                    all_w.append('지연이자와 원금·이자 합계는 별도로 입력한 기존 채권에만 해당합니다. 새 원금 정산과 자동 합산하지 않습니다.')
                 result.summary["남은 체불 원금"] = f"{wa.arrear_amount:,.0f}원"
                 if wa.conditional_scenarios:
                     for scenario in wa.conditional_scenarios:

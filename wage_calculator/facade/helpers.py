@@ -178,6 +178,7 @@ def _pop_wage_claims(r, result):
     for row in r.items:
         result.summary[f"{row['month']} {row['name']} [{row['id']}]"] = (
             f"의무액 {row['obligation']:,.0f}원 − 기지급 원금 {row['paid_principal']:,.0f}원 = 미지급 {row['remaining']:,.0f}원; 지급기일 {row['due_date']}"
+            + (f"; 퇴직 후 적용 지급기한 {row['effective_due_date']}" if row['effective_due_date'] != row['due_date'] else "")
             + (f"; 초과 지급 {row['overpayment']:,.0f}원 별도" if row['overpayment'] else ""))
     return 0
 

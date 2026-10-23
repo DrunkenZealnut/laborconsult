@@ -170,8 +170,8 @@ from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
 from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
 from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
 from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
-from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS
-_INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS)
+from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS, CLAIM_DEPENDENCY_FIELDS
+_INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS)
 
 
 def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:
@@ -255,7 +255,7 @@ def analyze_intent(
     # temperature는 보내지 않는다 — Sonnet 5 이후는 거부(400). tool 강제 + 스키마로 결정성 유지.
     provider, _name, inp = llm_gateway.tool(
         config, system=system_prompt, messages=messages, tools=[ANALYZE_TOOL],
-        choice=ANALYZE_TOOL["name"], purpose="의도분석", max_tokens=1024,
+        choice=ANALYZE_TOOL["name"], purpose="의도분석", max_tokens=llm_gateway.extraction_budget(messages),
         timeout=(INTENT_TIMEOUT, INTENT_FALLBACK_TIMEOUT),
         attempts=2 if INTENT_FALLBACK_ENABLED else 1,
     )
