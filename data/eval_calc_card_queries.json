@@ -531,5 +531,201 @@
     "1주 소정근로시간이 15시간이면 주휴시간은 3시간이고, 시급 11,000원 × 3시간 = 33,000원입니다."
    ]
   }
+ },
+ {
+  "id": "calc-15",
+  "category": "계산카드·기준월액",
+  "question": "시급 12,000원을 받고 하루 8시간씩 주 5일 일합니다. 매달 고정연장수당 20만 원을 따로 받는데 실제 연장근로는 거의 없어요. 직원은 10명입니다. 4대보험을 떼면 한 달 실수령액은 얼마이고, 세전 월급은 얼마인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:(?:세전|월\\s*총|총\\s*수령|월급(?:은|이))(?:(?!통상|기본)[^.\\n]){0,12}2,502,857",
+   "2,232,199"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:monthly-base-unification",
+  "detector_examples": {
+   "positive": [
+    "세전 월급은 2,502,857원입니다.",
+    "세전 월 급여: 2,502,857원",
+    "한 달 실수령액은 약 2,232,199원입니다."
+   ],
+   "negative": [
+    "세전 월급은 통상임금 2,502,857원에 고정연장수당 200,000원을 더한 2,702,857원입니다.",
+    "통상임금 월 2,502,857원(시급 12,000원 × 208.57시간)입니다.",
+    "세후 실수령액은 약 2,408,232원입니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-16",
+  "category": "계산카드·기준월액",
+  "question": "월급 250만 원에 직책수당 20만 원을 받고, 매주 연장근로를 10시간씩 했습니다. 연장근로수당은 따로 받았어요. 2024년 10월 1일에 입사해서 2026년 10월 1일에 퇴사했습니다. 직원은 10명입니다. 퇴직금은 얼마인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "10,031,251",
+   "109,035",
+   "6,542,120",
+   "6,533,159"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:monthly-base-unification",
+  "detector_examples": {
+   "positive": [
+    "1일 평균임금은 109,035원입니다.",
+    "퇴직금은 약 6,542,120원입니다.",
+    "3개월 임금총액: 10,031,251원"
+   ],
+   "negative": [
+    "3개월 임금총액은 (2,700,000원 + 843,750원) × 3 = 10,631,250원입니다.",
+    "1일 평균임금 115,557원 × 30일 × (730일 ÷ 365) = 6,933,424원",
+    "직책수당 20만 원도 평균임금에 들어갑니다."
+   ]
+  }
+ },
+ {
+  "id": "calc-17",
+  "category": "계산카드·기준월액",
+  "question": "시급 12,000원을 받고 하루 8시간씩 주 5일 일하는데, 회사 사정으로 10일 동안 휴업했습니다. 직원은 10명입니다. 휴업수당은 얼마를 받아야 하나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "474,783",
+   "47,478",
+   "67,826"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:monthly-base-unification",
+  "detector_examples": {
+   "positive": [
+    "휴업수당은 474,783원입니다.",
+    "1일 평균임금 67,826원의 70%인 47,478원입니다."
+   ],
+   "negative": [
+    "평균임금이 통상임금보다 적으면 통상임금 96,000원을 평균임금으로 하므로 1일 67,200원, 10일 672,000원입니다.",
+    "휴업수당 총액: 67,200원 × 10일 = 672,000원"
+   ]
+  }
+ },
+ {
+  "id": "calc-18",
+  "category": "계산카드·기준월액",
+  "question": "월급 300만 원에 연 상여금 600만 원을 받습니다. 회사 사정으로 10일 동안 휴업했어요. 직원은 30명입니다. 휴업수당은 얼마인가요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "684,783",
+   "68,478"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:monthly-base-unification",
+  "detector_examples": {
+   "positive": [
+    "휴업수당은 약 684,783원입니다.",
+    "평균임금 97,826원 × 70% = 68,478원"
+   ],
+   "negative": [
+    "상여금 3/12를 더한 3개월 평균임금은 114,130원으로 통상임금 115,068원보다 적어 115,068원을 평균임금으로 합니다.",
+    "휴업수당 총액: 80,548원 × 10일 = 805,476원"
+   ]
+  }
+ },
+ {
+  "id": "calc-19",
+  "category": "계산카드·기준월액",
+  "question": "시급 12,000원으로 하루 8시간씩 주 5일 일하는 1인 가구입니다. 다른 소득이나 재산은 없어요. 근로장려금을 받을 수 있나요?",
+  "expected_intent": "",
+  "expected_topic": null,
+  "required_laws": [],
+  "allowed_sources": [
+   "law_article",
+   "precedent",
+   "interpretation",
+   "regulation",
+   "counsel",
+   "qa",
+   "textbook",
+   "nlrc_case",
+   "graph"
+  ],
+  "expected_calculation": null,
+  "expected_values": {},
+  "required_notices": [],
+  "forbidden_claims": [
+   "re:소득\\s*(?:정보|자료)\\s*(?:가\\s*)?(?:없|부족)"
+  ],
+  "risk_level": "high",
+  "source_ref": "synthetic:monthly-base-unification",
+  "detector_examples": {
+   "positive": [
+    "근로장려금: 수급 불가 — 소득 정보 없음",
+    "소득 정보가 없어 판정할 수 없습니다."
+   ],
+   "negative": [
+    "연간 총소득 미입력 — 월 임금 2,502,857원 x 12 = 30,034,284원으로 추정합니다.",
+    "총소득 30,034,284원이 단독가구 상한 2,200만 원 이상이라 수급 대상이 아닙니다."
+   ]
+  }
  }
 ]
