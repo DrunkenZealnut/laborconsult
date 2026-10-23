@@ -2393,24 +2393,34 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     if _affirmative_calculation_mention(compact, r"연말정산"):
         notes["연말정산"] = unsupported_calc_reason("연말정산")
         if not _independent_supported_request(compact,
-                r"(?:4대보험|사대보험|국민연금|건강보험|고용보험|원천징수)", r"연말정산"):
+                r"(?:4대보험|사대보험|국민연금|건강보험|고용보험|원천징수|(?:매?월|한달)실수령액?)", r"연말정산"):
             supported = [label for label in supported
                          if resolve_calc_type_strict(label) != ["insurance"]]
         supported = [label for label in supported if label not in ("임금계산", "임금 계산", "임금", "해당없음")]
-    if _affirmative_calculation_mention(compact, r"선택적?근로시간제"):
+    if _affirmative_calculation_mention(compact, r"선택적?근로(?:시간제)?"):
         notes["선택적 근로시간제"] = unsupported_calc_reason("선택적 근로시간제")
         separate_hours = bool(re.search(r"(?:별도|일반|다른).{0,60}(?:소정근로시간|월근로시간|연장수당).{0,20}(?:계산|산정|알려)", compact))
         blocked = {"flexible_work"} if separate_hours else {"working_hours", "flexible_work", "overtime"}
         supported = [label for label in supported if not set(resolve_calc_type_strict(label) or [])
                      .intersection(blocked)]
     routed = dict(params, calculation_types_kr=supported)
+    def run_supported():
+        try:
+            return _run_supported_calculator(routed, query)
+        finally:
+            # 기존 호출 계약: 시간 입력 검증/가정 플래그는 호출자가 캐시·추가 질문에 사용한다.
+            # 요청 라벨만 별도 라우팅하고, 검증으로 삭제·보정된 입력은 원 params에도 반영한다.
+            for key in set(params) - set(routed):
+                del params[key]
+            params.update({key: value for key, value in routed.items()
+                           if key not in {"calculation_type", "calculation_types_kr"}})
     if not notes:
-        return _run_supported_calculator(routed, query)
+        return run_supported()
     notice = format_skipped_calculations([
         {"section": label, "reason": reason} for label, reason in notes.items()])
     if not supported:
         return notice
-    text = _run_supported_calculator(routed, query)
+    text = run_supported()
     return f"{notice}\n\n{text}" if text else notice
 
 
@@ -2696,6 +2706,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         auxiliary.append("overtime")
 
     composition_note = None
+    composition_skipped = []
     composition_hold = False
     held_is_total = False      # 보류 경로에서 계산 금액이 월급 '총액'일 때만 True — 총액 이름표·경고·함께 보류의 조건
     amount_hold = ()           # 총액 보류에서 금액만 뺄 계산(facade가 계산은 하고 금액만 뺀다)
@@ -2788,6 +2799,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                 # 아니다 — 총액 이름표와 경고가 사용자 진술(기본급)을 뒤집는다(Act-1 코드 리뷰 재현: 금액 2,090,000 + 질문
                 # 기본급 2,096,270). 허용폭은 C8과 같다.
                 if comprehensive_unknown_hours:
+                    if "comprehensive" in targets:
+                        composition_skipped.append("comprehensive")
                     targets = [t for t in targets if t != "comprehensive"]
                 held_is_total = not base or amount - base > 1000
                 if held_is_total:
@@ -2803,6 +2816,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                     composition_note += _HELD_TOTAL_NOTE
                 else:
                     # 금액이 기본급이면(산입 여부가 갈리는 수당이 남음) 기본급만으로 낸 판정은 어느 쪽도 확정이 아니다
+                    if "minimum_wage" in targets:
+                        composition_skipped.append("minimum_wage")
                     targets = [t for t in targets if t != "minimum_wage"]
 
     if (has_wage and inp.wage_type == WageType.DAILY and not unknown_mode and not inp.wage_composition_known
@@ -2920,6 +2935,12 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
                 if annual_note:
                     composition_note = annual_note + composition_note
         if composition_note:
+            if composition_skipped:
+                result.calculation_skipped = [item for item in result.calculation_skipped if item["target"]]
+                result.calculation_skipped.extend({"target": target, "section": CALC_TYPES[target],
+                    "reason": composition_note} for target in composition_skipped)
+                if result.calculation_status == "complete":
+                    result.calculation_status = "partial"
             # 보류 목록은 실제로 금액을 뺀 계산만 적는다 — 자격 판정으로 0인 결과(퇴직금 미발생 등)는 그대로 실렸다
             result.warnings = [composition_note + _held_targets_note(result.amount_held), *result.warnings]
         if not has_wage:

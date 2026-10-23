@@ -26,9 +26,12 @@ class UnexecutedCardTests(unittest.TestCase):
         self.assertNotIn("월 실수령액", text)
         self.assertNotIn("통상시급:", text)
 
-    def test_retirement_proration_without_supported_inputs(self):
-        self.assertHeld(card(["일할계산급여"], "10월 16일 퇴사합니다. 10월 급여 일할계산",
-                             start_date="2024-01-01", end_date="2026-10-16"))
+    def test_prorated_unexecuted_hides_monthly_total(self):
+        text = card(["일할계산급여"], "10월 16일 퇴사합니다. 10월 급여 일할계산",
+                    start_date="2024-01-01", end_date="2026-10-16")
+        self.assertHeld(text)
+        self.assertNotIn("입사일(join_date)이 없습니다", text)
+        self.assertIn("중도퇴사", text)
 
     def test_direct_skipped_result_has_no_amounts_in_text_or_json(self):
         result = WageCalculator().calculate(
@@ -184,6 +187,17 @@ class UnexecutedCardTests(unittest.TestCase):
         self.assertIn("계산 보류", text)
         self.assertIn("연말정산", text)
         self.assertIn("세전 월 급여", text)
+
+    def test_monthly_net_is_preserved_alongside_year_end_settlement(self):
+        text = card(["연말정산", "4대보험"], "연말정산 환급액과 매월 실수령액을 각각 계산해주세요")
+        self.assertIn("계산 보류", text)
+        self.assertIn("월 실수령액", text)
+
+    def test_short_selective_regime_names_are_held(self):
+        for query in ("선택근로 정산기간의 초과근로를 계산해주세요", "선택적 근로 정산기간의 초과수당을 계산해주세요"):
+            for labels in (["근로시간"], ["연장수당"]):
+                with self.subTest(query=query, labels=labels):
+                    self.assertHeld(card(labels, query))
 
 
 if __name__ == "__main__":

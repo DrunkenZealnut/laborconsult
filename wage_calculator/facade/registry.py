@@ -157,6 +157,8 @@ CALC_TYPE_MAP = {
     "중도입사 급여":        ["prorated"],
     "일할계산급여":         ["prorated"],
     "중도퇴사 급여":        ["prorated"],
+    "주52시간":             ["weekly_hours_check"],
+    "주 52시간":            ["weekly_hours_check"],
     "소정근로시간":         ["working_hours"],
     "근로시간":             ["working_hours"],
     "근로시간 계산":        ["working_hours"],

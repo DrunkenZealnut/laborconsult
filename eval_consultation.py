@@ -65,6 +65,7 @@ SUPPORTED_EXPECTED_LABELS = {
         "compensatory_leave", "eitc", "average_wage", "shutdown_allowance",
         "working_hours", "public_holiday", "ordinary_wage", "retirement_tax",
         "retirement_pension",
+        "year_end_settlement", "selective_work_settlement", "arrears_principal",
     }),
 }
 DISCLAIMER_MARKER = "법적 효력"

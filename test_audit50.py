@@ -813,7 +813,9 @@ class WageCompositionTest(unittest.TestCase):
         out = _run_calculator(dict(base, wage_type="포괄임금제", calculation_types_kr=["최저임금", "포괄임금제"]),
                               "포괄임금제로 월 270만원 받습니다. 주 40시간입니다. 최저임금 위반인가요?")
         self.assertIn("최저임금 충족: ⏸ 판정 보류", out)
-        self.assertNotIn("역산", out)
+        # C4a는 생략한 역산의 이름과 사유를 알린다. 역산 결과 수치를 싣지는 않는다.
+        self.assertIn("포괄임금제 역산: 포괄임금제는", out)
+        self.assertNotIn("포괄임금 역산 시급:", out)
         # M-D — 총액으로도 미달이라 남긴 최저임금 줄은 총액을 기본급·실질시급이라 부르지 않는다
         out = _run_calculator(dict(base, wage_amount=2000000), "월급 200만원에 연장수당이 포함되어 있습니다. 최저임금 위반인가요?")
         self.assertIn("최저임금 충족: ❌ 미달", out)
@@ -1159,9 +1161,8 @@ class WageCompositionTest(unittest.TestCase):
         self.assertIn("연장/야간/휴일수당(월)", out)
         self.assertNotIn("금액 보류:", out)
 
-    def test_t5_held_card_keeps_ordinary_names_when_the_amount_is_not_a_total(self):
-        """의도분석이 질문의 기본급(만 원 단위 반올림 포함)을 임금으로 뽑았으면 그 값은 총액이 아니다 — '월급 총액(… 기본급
-        아님)' 이름표가 사용자 진술(기본급 2,000,000원)을 뒤집었다(Act-1 코드 리뷰 재현). 판정은 여전히 보류다."""
+    def test_t5_held_only_card_does_not_replace_verdict_with_ordinary_amount(self):
+        """기본급만으로 최저임금 판정을 실행할 수 없으면 사유를 보존하고 기반 시급도 결과로 대체하지 않는다(C4a)."""
         from app.core.pipeline import _run_calculator
         # 식대 금액이 없어 기본급으로 판정하지 않는다(보류). 금액이 있으면 Act-3 정확 경로다
         other_pay = ("월급 260만 원(기본급 2,000,000원, 식대와 고정연장수당 포함)입니다. "
@@ -1178,9 +1179,13 @@ class WageCompositionTest(unittest.TestCase):
         for name, (params, query, won, amount) in cases.items():
             with self.subTest(name):
                 out = _run_calculator(params, query)
-                self.assertIn("최저임금 충족: ⏸ 판정 보류", out)
-                self.assertIn(f"통상시급: {won}원", out)
-                self.assertIn(f"[통상임금] 월 기본급: {amount}원", out)
+                # C4a: 유일한 요청인 최저임금 판정을 실행하지 못했으면 기반 시급도
+                # 계산 결과로 대체 표시하지 않는다. 수당 구성 확인 사유는 보존한다.
+                self.assertIn("계산 보류", out)
+                self.assertIn("최저임금", out)
+                self.assertIn("산입", out)
+                self.assertNotIn("통상시급:", out)
+                self.assertNotIn("월 총 예상 수령액", out)
                 self.assertNotIn("월급 총액", out)
                 self.assertNotIn("위 시급은", out)
 

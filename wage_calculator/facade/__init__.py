@@ -319,7 +319,9 @@ class WageCalculator:
         for target in dict.fromkeys(targets):
             if target in requested and target not in result.calculation_executed and target not in blocked_targets:
                 reasons = {
-                    "prorated": "일할계산에 필요한 입사일(join_date)이 없습니다. 중도퇴사·휴복직 정산은 아직 지원하지 않습니다.",
+                    "prorated": ("현재 일할계산은 중도입사월만 지원합니다. 중도퇴사·휴복직 정산은 아직 지원하지 않아 계산하지 않았습니다."
+                                 if inp.end_date else
+                                 "중도입사 일할계산에 유효한 입사일이 필요합니다. 중도퇴사·휴복직 정산은 아직 지원하지 않습니다."),
                     "wage_arrears": "확정된 체불 원금과 원래 지급기일이 필요합니다. 이 계산은 원금 산정이 아닌 지연이자 계산입니다.",
                     "comprehensive": "포괄임금제 입력이 필요합니다.",
                     "public_holiday": "계산할 유급 공휴일 수가 필요합니다.",

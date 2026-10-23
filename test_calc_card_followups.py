@@ -195,7 +195,7 @@ class RegimeSignalTest(unittest.TestCase):
         self.assertIn("[기준시간] 주 소정근로: 8h×5일 = 40h", out)
 
     def test_t4_signal_words_in_the_evaluation_sets(self):
-        """평가 질문 148개(점검 14·지식iN 20·상담 60·구어 18·코퍼스 12·검색 24) 중 신호어 출현은 셋 — 모두 그 제도를 묻는 질문이다."""
+        """기존 평가 질문과 2026-10 갱신 fixture의 제도 신호어 — 모두 해당 제도를 묻는 질문이다."""
         from app.core.pipeline import _hour_regime_signal
         hits = set()
         for path in sorted((ROOT / "data").glob("eval_*.json")):
@@ -206,7 +206,7 @@ class RegimeSignalTest(unittest.TestCase):
             for item in items:
                 if isinstance(item, dict) and _hour_regime_signal(item.get("question") or item.get("query") or ""):
                     hits.add(item.get("id"))
-        self.assertEqual(hits, {"hours-08", "q14", "q15"})
+        self.assertEqual(hits, {"hours-08", "q14", "q15", "ww26-07"})
 
 
 class PeriodWageCompositionTest(unittest.TestCase):
