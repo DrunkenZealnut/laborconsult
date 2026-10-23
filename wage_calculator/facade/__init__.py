@@ -318,6 +318,10 @@ class WageCalculator:
         # 선행조건 때문에 조용히 건너뛴 계산도 결과로 보고한다. 통상임금 기반 계산이나
         # 호출자가 추가한 연장수당만으로 요청 계산이 완료된 것으로 간주하지 않는다.
         requested = set(targets) - set(auxiliary) - {"legal_hints"}
+        if requested and requested <= {"parental_leave", "reduced_work_benefit"}:
+            # 휴직/단축 전 통상임금은 보험 급여의 기초액이다. 회사가 실제로
+            # 지급하는 임금 또는 휴직 중 월 총수령액으로 표시하지 않는다.
+            result.monthly_total = result.monthly_net = 0.0
         if not targets:
             result.calculation_skipped.append({"target": "", "section": "계산 유형",
                 "reason": "실행할 계산 유형이 없습니다. 지원하는 계산 유형을 지정해주세요."})

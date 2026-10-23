@@ -1,246 +1,187 @@
-"""
-육아휴직급여 계산기 (고용보험법 제70~73조)
-
-핵심 계산식:
-  육아휴직급여 = 통상임금 × 80%
-    상한: 1,500,000원/월
-    하한: 700,000원/월
-    사후지급금(25%): 복직 6개월 후 일괄 지급
-
-  아빠 육아휴직 보너스 (같은 자녀, 배우자가 먼저 육아휴직 사용 후 두 번째 사용자 첫 3개월):
-    통상임금 100%, 상한 2,500,000원/월
-
-  육아기 근로시간 단축급여:
-    = (단축 전 통상임금 - 단축 후 통상임금) 차액 + 단축시간에 대한 보전 급여
-
-※ 2025년 기준. 급여 상·하한액은 연도별 변동 가능.
-"""
-
-from dataclasses import dataclass
+"""육아휴직급여: 지급 대상 기간의 규칙과 누적 월차를 별도로 보존한다."""
+from dataclasses import dataclass, field
+from datetime import date
 
 from ..base import BaseCalculatorResult
+from ..effective_rules import PARENTAL_RULES
+from ..legal_rules import RuleUnavailable
 from ..models import WageInput
 from .ordinary_wage import OrdinaryWageResult
-
-# ── 2025년 기준 상·하한액 ────────────────────────────────────────────────────
-# 고용노동부 고시 기준 (매년 변동)
-PARENTAL_LEAVE_LIMITS = {
-    2024: {"upper": 1_500_000, "lower": 700_000, "bonus_upper": 2_500_000},
-    2025: {"upper": 1_500_000, "lower": 700_000, "bonus_upper": 2_500_000},
-    2026: {"upper": 1_500_000, "lower": 700_000, "bonus_upper": 2_500_000},
-}
-
-# 사후지급금 비율 (매월 지급분 중 일부를 복직 후 지급)
-DEFERRED_RATIO = 0.25  # 25%는 복직 6개월 후 일괄 지급
+from .childcare_shared import (windows, common_checks, number, day, month_after,
+                              employer_payment)
 
 
 @dataclass
 class ParentalLeaveResult(BaseCalculatorResult):
-    # 월 급여
-    monthly_ordinary_wage: float = 0.0             # 월 통상임금 (계산 기반)
-    monthly_benefit_before_deferred: float = 0.0   # 월 지급액 (사후지급금 공제 전)
-    monthly_benefit_actual: float = 0.0            # 실제 매월 수령액 (75%)
-    monthly_deferred: float = 0.0                  # 사후지급금 (복직 후 지급, 25%)
-
-    # 전체 육아휴직 기간 합계
-    total_months: int = 0                          # 육아휴직 기간 (개월)
-    total_benefit: float = 0.0                     # 총 급여 합계 (원)
-    total_deferred: float = 0.0                    # 총 사후지급금 (원)
-
-    # 아빠 보너스 (해당 시)
-    has_bonus: bool = False                        # 아빠 보너스 적용 여부
-    bonus_months: int = 0                          # 보너스 적용 개월 (최대 3개월)
-    monthly_bonus_benefit: float = 0.0             # 보너스 기간 월 급여
-
-    # 육아기 근로시간 단축급여 (해당 시)
-    reduced_work_monthly_benefit: float = 0.0      # 단축급여 (원/월)
-
-    # 상·하한 적용 여부
+    monthly_ordinary_wage: float = 0.0
+    monthly_benefit_before_deferred: float = 0.0 # 첫 지급 월의 호환 값
+    monthly_benefit_actual: float = 0.0
+    monthly_deferred: float = 0.0
+    total_months: float = 0.0
+    total_benefit: float = 0.0
+    total_deferred: float = 0.0
+    has_bonus: bool = False
+    bonus_months: int = 0
+    monthly_bonus_benefit: float = 0.0
+    reduced_work_monthly_benefit: float = 0.0
     upper_limit_applied: bool = False
     lower_limit_applied: bool = False
+    monthly_schedule: list = field(default_factory=list)
+    scheme: str = 'general'
+
+
+def _other_parent(inp):
+    months=inp.parental_other_parent_months
+    start=inp.parental_other_parent_start
+    if inp.parental_other_parent_periods is not None:
+        from dataclasses import replace
+        other=replace(inp,parental_leave_periods=inp.parental_other_parent_periods,
+                      parental_leave_start=None,parental_leave_end=None,parental_leave_months=0,
+                      parental_prior_months=0,parental_prior_days=0)
+        ws,_,_=windows(other,PARENTAL_RULES)
+        if any(w.fraction!=1 for w in ws):
+            raise ValueError('상대 부모의 1개월 미만 사용분은 6+6 대응 지급 내역을 확인해주세요')
+        actual=len(ws)
+        if months is not None and months!=actual: raise ValueError('상대 부모 사용 개월 수와 구간이 다릅니다')
+        if start and start!=ws[0].start.isoformat(): raise ValueError('상대 부모 개시일과 사용 구간이 다릅니다')
+        months=actual;start=ws[0].start.isoformat()
+    return (None if months is None else number(months,'상대 부모 사용 개월 수',maximum=18,integer=True)),start
+
+
+def _scheme(inp,ws,reference):
+    scheme=inp.parental_scheme
+    if scheme not in ('general','single_parent','six_plus_six'): raise ValueError('육아휴직급여 유형을 확인해주세요')
+    if inp.is_second_parent and scheme=='general':
+        raise ValueError('두 번째 사용자라는 사실만으로 특례를 판정할 수 없습니다. 같은 자녀·양쪽 개시일과 사용 기간을 확인해주세요')
+    other,start=_other_parent(inp)
+    if inp.parental_single_parent_eligible is True and scheme=='general': scheme='single_parent'
+    if scheme=='single_parent' and inp.parental_single_parent_eligible is not True:
+        raise ValueError('한부모가족지원법상 한부모 자격을 확인해주세요')
+    matched=0
+    if scheme=='six_plus_six':
+        if inp.parental_same_child is not True or other is None or other<=0 or not start:
+            raise ValueError('6+6은 같은 자녀에 대한 양쪽 부모의 개시일·사용 기간 확인이 필요합니다')
+        first=ws[0].start
+        if first is None: raise ValueError('6+6은 양쪽 부모의 실제 개시일이 필요합니다')
+        starts=[(day(w.period['start_date'],'본인 구간 개시일'),
+                 w.period.get('reason',inp.childcare_reason),inp.childcare_spouse_risk_eligible)
+                for w in ws if w.start==day(w.period['start_date'],'본인 구간 개시일')]
+        if inp.parental_prior_months and not inp.parental_first_leave_start:
+            raise ValueError('6+6 재사용은 같은 자녀에 대한 본인 최초 개시일을 확인해주세요')
+        if inp.parental_first_leave_start:
+            initial=day(inp.parental_first_leave_start,'최초 육아휴직 개시일')
+            if initial>first: raise ValueError('최초 개시일이 재사용 개시일보다 늦습니다')
+            starts.append((initial,inp.parental_first_leave_reason or inp.childcare_reason,
+                           inp.childcare_spouse_risk_eligible))
+        if inp.parental_other_parent_periods:
+            starts.extend((day(p['start_date'],'상대 부모 구간 개시일'),
+                           p.get('reason',inp.parental_other_parent_reason),
+                           inp.parental_other_parent_spouse_risk_eligible)
+                          for p in inp.parental_other_parent_periods)
+        else:
+            starts.append((day(start,'상대 부모 개시일'),inp.parental_other_parent_reason,
+                           inp.parental_other_parent_spouse_risk_eligible))
+        if not inp.childcare_child_birth_date:
+            raise ValueError('6+6은 양쪽 부모의 개시일 요건을 확인할 자녀 생년월일이 필요합니다')
+        birth=day(inp.childcare_child_birth_date,'자녀 생년월일')
+        for d,reason,risk in starts:
+            if reason not in ('child','pregnant_self','pregnant_spouse'):
+                raise ValueError('부모 각각의 사용 구간별 육아휴직 사유를 확인해주세요')
+            if d>month_after(birth,18):
+                raise ValueError('6+6은 부모 각각의 개시일에 자녀가 생후 18개월 이내여야 합니다')
+            if d<birth and reason=='child':
+                raise ValueError('출생 전 개시한 부모의 모성보호 또는 법정 임신 배우자 돌봄 사유를 확인해주세요')
+            if reason=='pregnant_spouse' and (d<date(2026,9,18) or risk is not True):
+                raise ValueError('임신 배우자 돌봄은 해당 부모의 2026-09-18 이후 개시와 법정 위험 요건이 필요합니다')
+            if reason!='child' and d>birth:
+                raise ValueError('출생 후 개시일과 임신 중 사용 사유가 서로 다릅니다')
+        matched=min(6,other)
+    return scheme,matched,other
+
+
+def _validate_periods(inp,ws,reference,prior,other):
+    extended=(inp.parental_single_parent_eligible is True or inp.parental_disabled_child_eligible is True or
+              (inp.parental_same_child is True and other is not None and other>=3 and prior+sum(w.fraction for w in ws)>=3))
+    seen_short=set();normal_days=0
+    for w in ws:
+        start=w.start or reference
+        if w.month_index>12 and (not extended or start<date(2025,2,23)):
+            raise ValueError('12개월 초과는 2025-02-23 이후 부모 각각 3개월 사용·법정 한부모·장애아동 부모 중 연장 자격 확인이 필요합니다')
+        if w.month_index>18: raise ValueError('육아휴직 총 사용 기간은 연장 대상도 18개월 이내입니다')
+        if w.kind=='short':
+            if inp.childcare_reason!='child': raise ValueError('단기 육아휴직은 출생한 자녀의 법정 돌봄 사유를 확인해주세요')
+            days=(w.end-w.start).days
+            if start<date(2026,8,20) or days not in (7,14):
+                raise ValueError('단기 육아휴직은 2026-08-20 이후 연 1회 7일 또는 14일입니다')
+            if inp.short_parental_reason_eligible is not True or inp.short_parental_used_this_year is not False:
+                raise ValueError('단기 육아휴직의 법정 사유와 해당 연도 기사용 여부를 확인해주세요')
+            if inp.childcare_insured_days is None: raise ValueError('단기 급여는 피보험 단위기간 180일 확인이 필요합니다')
+            if start.year in seen_short: raise ValueError('단기 육아휴직은 연 1회입니다')
+            seen_short.add(start.year)
+        elif w.start: normal_days+=(w.end-w.start).days
+    if ws[0].start and normal_days and normal_days+sum((w.end-w.start).days for w in ws if w.kind=='short')<30:
+        raise ValueError('일반 육아휴직급여는 합산 30일 이상 부여 요건을 확인해주세요')
 
 
 def calc_parental_leave(inp: WageInput, ow: OrdinaryWageResult) -> ParentalLeaveResult:
-    """
-    육아휴직급여 계산
-
-    Args:
-        inp: 임금 입력 데이터
-          - parental_leave_months: 육아휴직 신청 개월 수
-          - is_second_parent: 두 번째 육아휴직자 여부 (아빠 보너스)
-          - reduced_work_hours_per_day: 육아기 단축 시간/일 (0이면 미사용)
-        ow: 통상임금 계산 결과
-    """
-    warnings = []
-    formulas = []
-    legal = [
-        "고용보험법 제70조 (육아휴직급여)",
-        "고용보험법 제71조 (육아휴직급여 지급 기간)",
-        "고용보험법 제73조 (육아기 근로시간 단축급여)",
-    ]
-
-    year = inp.reference_year
-    limits = PARENTAL_LEAVE_LIMITS.get(year, PARENTAL_LEAVE_LIMITS[2025])
-    upper  = limits["upper"]
-    lower  = limits["lower"]
-    bonus_upper = limits["bonus_upper"]
-
-    leave_months = getattr(inp, "parental_leave_months", 0) or 0
-    is_second    = getattr(inp, "is_second_parent", False) or False
-    reduced_hrs  = getattr(inp, "reduced_work_hours_per_day", 0.0) or 0.0
-
-    if leave_months <= 0:
-        leave_months = 1
-        warnings.append("육아휴직 개월 수 미입력 — 1개월 기준으로 계산")
-
-    if leave_months > 12:
-        warnings.append(f"육아휴직 최대 12개월 초과 입력 ({leave_months}개월) — 12개월로 조정")
-        leave_months = 12
-
-    monthly_ow = ow.monthly_ordinary_wage
-
-    # ── 기본 육아휴직급여 (80%) ──────────────────────────────────────────
-    raw_benefit = monthly_ow * 0.80
-    upper_applied = raw_benefit > upper
-    lower_applied = raw_benefit < lower
-
-    monthly_benefit = max(lower, min(raw_benefit, upper))
-
-    if upper_applied:
-        formulas.append(
-            f"육아휴직급여: {monthly_ow:,.0f}원 × 80% = {raw_benefit:,.0f}원 → 상한 {upper:,}원 적용"
-        )
-    elif lower_applied:
-        formulas.append(
-            f"육아휴직급여: {monthly_ow:,.0f}원 × 80% = {raw_benefit:,.0f}원 → 하한 {lower:,}원 적용"
-        )
-    else:
-        formulas.append(
-            f"육아휴직급여: {monthly_ow:,.0f}원 × 80% = {monthly_benefit:,.0f}원"
-        )
-
-    # ── 사후지급금 계산 (25%) ──────────────────────────────────────────
-    monthly_deferred = round(monthly_benefit * DEFERRED_RATIO)
-    monthly_actual   = round(monthly_benefit - monthly_deferred)
-
-    formulas.append(
-        f"매월 지급: {monthly_benefit:,.0f}원 × 75% = {monthly_actual:,.0f}원"
-    )
-    formulas.append(
-        f"사후지급금: {monthly_benefit:,.0f}원 × 25% = {monthly_deferred:,.0f}원 (복직 6개월 후 일괄)"
-    )
-
-    # ── 아빠 보너스 (두 번째 사용자 첫 3개월) ──────────────────────────
-    has_bonus = is_second
-    bonus_months = 0
-    monthly_bonus = 0.0
-
-    if has_bonus:
-        bonus_months = min(3, leave_months)
-        raw_bonus = monthly_ow * 1.0  # 100%
-        monthly_bonus = min(raw_bonus, bonus_upper)
-        if raw_bonus > bonus_upper:
-            formulas.append(
-                f"아빠 보너스(첫 {bonus_months}개월): {monthly_ow:,.0f}원 × 100% = {raw_bonus:,.0f}원 "
-                f"→ 상한 {bonus_upper:,}원 적용"
-            )
-        else:
-            formulas.append(
-                f"아빠 보너스(첫 {bonus_months}개월): {monthly_ow:,.0f}원 × 100% = {monthly_bonus:,.0f}원"
-            )
-        warnings.append(
-            f"아빠 육아휴직 보너스: 같은 자녀에 대해 배우자 이후 두 번째 육아휴직 사용 시 "
-            f"첫 3개월 통상임금 100% (상한 {bonus_upper:,}원/월) 적용"
-        )
-
-    # ── 총 급여 계산 ───────────────────────────────────────────────────
-    total_benefit = 0.0
-    if has_bonus:
-        # 보너스 기간: 보너스 급여 (사후지급금 없음 또는 포함)
-        # 실제로는 보너스도 사후지급금 25% 공제 적용됨 (동일 구조)
-        bonus_actual  = round(monthly_bonus * (1 - DEFERRED_RATIO))
-        total_benefit += bonus_actual * bonus_months
-        total_benefit += monthly_actual * (leave_months - bonus_months)
-    else:
-        total_benefit = monthly_actual * leave_months
-
-    total_deferred = monthly_deferred * leave_months
-    if has_bonus:
-        bonus_deferred = round(monthly_bonus * DEFERRED_RATIO) * bonus_months
-        normal_deferred = monthly_deferred * (leave_months - bonus_months)
-        total_deferred = bonus_deferred + normal_deferred
-
-    formulas.append(
-        f"전체 육아휴직 수령액(매월): {total_benefit:,.0f}원 ({leave_months}개월)"
-    )
-    formulas.append(
-        f"복직 후 사후지급금 합계: {total_deferred:,.0f}원"
-    )
-
-    # ── 육아기 근로시간 단축급여 ─────────────────────────────────────────
-    reduced_benefit = 0.0
-    if reduced_hrs > 0:
-        # 단축 시간에 대한 통상임금 대비 보전 (80%)
-        # 단축 전 통상임금 - 단축 후 통상임금 = 단축시간 × 통상시급
-        # 단축급여 = 차액의 80% + 나머지
-        daily_hours_orig = inp.schedule.daily_work_hours
-        daily_hours_after = max(0, daily_hours_orig - reduced_hrs)
-
-        # 단축 후 월 통상임금
-        if daily_hours_orig > 0:
-            reduction_ratio = reduced_hrs / daily_hours_orig
-            monthly_ow_after = monthly_ow * (1 - reduction_ratio)
-            wage_diff = monthly_ow - monthly_ow_after  # 감소분
-            # 고용보험 보전: 감소분 × 80% (상한 별도)
-            reduced_benefit = wage_diff * 0.80
-            formulas.append(
-                f"육아기 단축급여: 단축({reduced_hrs}h/일) → "
-                f"임금 감소분 {wage_diff:,.0f}원 × 80% = {reduced_benefit:,.0f}원/월"
-            )
-        legal.append("고용보험법 제73조의2 (육아기 근로시간 단축급여)")
-
-    warnings.append("육아휴직급여 수급 요건: 육아휴직 시작일 전 피보험기간 180일 이상")
-    warnings.append("신청 기한: 육아휴직 종료 후 12개월 이내 (고용보험법 제70조)")
-    warnings.append(
-        f"사후지급금 {int(DEFERRED_RATIO*100)}%는 복직 후 6개월 이상 근무 후 신청 가능"
-    )
-
-    # 보너스 기간 급여 결정
-    monthly_bonus_benefit = round(monthly_bonus * (1 - DEFERRED_RATIO)) if has_bonus else 0.0
-
-    breakdown = {
-        "월 통상임금": f"{monthly_ow:,.0f}원",
-        "육아휴직급여(80%)": f"{monthly_benefit:,.0f}원/월",
-        "매월 수령액(75%)": f"{monthly_actual:,.0f}원/월",
-        "사후지급금(25%)": f"{monthly_deferred:,.0f}원/월 (복직 후)",
-        "육아휴직 기간": f"{leave_months}개월",
-        "총 수령액(매월)": f"{total_benefit:,.0f}원",
-        "총 사후지급금": f"{total_deferred:,.0f}원",
-        "상한액 적용": "✅" if upper_applied else "미적용",
-        "하한액 적용": "✅" if lower_applied else "미적용",
-    }
-    if has_bonus:
-        breakdown["아빠 보너스(첫 3개월)"] = f"{monthly_bonus:,.0f}원/월 (100% 상한 {bonus_upper:,}원)"
-    if reduced_hrs > 0:
-        breakdown["육아기 단축급여"] = f"{reduced_benefit:,.0f}원/월"
-    breakdown["기준 연도"] = f"{year}년"
-
-    return ParentalLeaveResult(
-        monthly_ordinary_wage=monthly_ow,
-        monthly_benefit_before_deferred=round(monthly_benefit),
-        monthly_benefit_actual=monthly_actual,
-        monthly_deferred=monthly_deferred,
-        total_months=leave_months,
-        total_benefit=round(total_benefit),
-        total_deferred=round(total_deferred),
-        has_bonus=has_bonus,
-        bonus_months=bonus_months,
-        monthly_bonus_benefit=round(monthly_bonus_benefit),
-        reduced_work_monthly_benefit=round(reduced_benefit),
-        upper_limit_applied=upper_applied,
-        lower_limit_applied=lower_applied,
-        breakdown=breakdown,
-        formulas=formulas,
-        warnings=warnings,
-        legal_basis=legal,
-    )
+    r=ParentalLeaveResult(legal_basis=['고용보험법 제70조·제71조',
+        '고용보험법 시행령 제95조·제95조의3·제98조',
+        '남녀고용평등법 제19조·제19조의4',
+        '내장 시행일 규칙: 제35100호 부칙 제3·4·7조 (관리자 승인 키와 별도)'])
+    try:
+        wage=number(ow.monthly_ordinary_wage,'개시일 기준 월 통상임금',minimum=1)
+        ws,reference,prior=windows(inp,PARENTAL_RULES)
+        common_checks(inp,ws,reference,r.warnings)
+        scheme,matched,other=_scheme(inp,ws,reference)
+        _validate_periods(inp,ws,reference,prior,other)
+        r.scheme=scheme;r.monthly_ordinary_wage=wage
+        for w in ws:
+            gross=paid=deferred=0.;parts=[]
+            for a,b,rule,fraction in w.pieces:
+                v=rule.values;i=w.month_index
+                tier=0 if i<=3 else (1 if i<=6 else 2)
+                rate=v['general_rates'][tier];cap=v['general_caps'][tier]
+                special=(scheme=='six_plus_six' and i<=matched) or (scheme=='single_parent' and i<=3)
+                if scheme=='six_plus_six' and i<=matched: rate=1.;cap=v['six_caps'][i-1]
+                if scheme=='single_parent' and i<=3: rate=1.;cap=v['single_cap']
+                raw=wage*rate;monthly=max(v['lower'],min(raw,cap))
+                current=monthly if special else max(v['lower'],monthly*(1-v['deferred']))
+                gross+=monthly*fraction;paid+=current*fraction;deferred+=(monthly-current)*fraction
+                r.upper_limit_applied |= raw>cap;r.lower_limit_applied |= raw<v['lower']
+                parts.append(dict(start_date=a.isoformat() if a else None,
+                                  end_date=b.isoformat() if b else None,end_exclusive=True,
+                                  rule_id=rule.rule_id,rate=rate,cap=cap,lower=v['lower'],fraction=fraction,
+                                  monthly_gross=monthly,monthly_actual=current))
+            employer=employer_payment(inp,w);reduction=0.
+            if employer is not None and employer>0:
+                if any(p['rule_id']=='parental-2024' for p in parts) and employer:
+                    raise ValueError('2024년 사업주 지급액이 있는 경우 종전 감액·사후지급 내역을 확인해주세요')
+                if w.fraction!=1 and (w.start or reference)<date(2026,7,1):
+                    raise ValueError('2026-07-01 전 일부월 사업주 지급액 감액은 당시 지급 내역을 확인해주세요')
+                reduction=min(paid,max(0,paid+employer-wage*w.fraction));paid-=reduction
+            row=dict(month_index=w.month_index,start_date=w.start.isoformat() if w.start else None,
+                     end_date=(w.end.isoformat() if w.end else None),end_exclusive=True,
+                     fraction=w.fraction,kind=w.kind,gross=round(gross),payment=round(gross)-round(deferred)-round(reduction),
+                     deferred=round(deferred),employer_payment=employer,employer_reduction=round(reduction),rules=parts)
+            r.monthly_schedule.append(row)
+            r.formulas.append(f'{w.month_index}개월 차: {row["gross"]:,}원 − 사후지급 {row["deferred"]:,}원 − 사업주 지급 조정 {row["employer_reduction"]:,}원 = {row["payment"]:,}원')
+        r.total_benefit=sum(x['payment'] for x in r.monthly_schedule)
+        r.total_deferred=sum(x['deferred'] for x in r.monthly_schedule)
+        first=r.monthly_schedule[0]
+        r.monthly_benefit_before_deferred=first['gross'];r.monthly_benefit_actual=first['payment'];r.monthly_deferred=first['deferred']
+        r.total_months=sum(w.fraction for w in ws);r.has_bonus=scheme=='six_plus_six'
+        r.bonus_months=sum(w.month_index<=matched for w in ws)
+        r.monthly_bonus_benefit=first['payment'] if r.has_bonus else 0
+        r.breakdown={'급여 유형':{'general':'일반형','single_parent':'법정 한부모','six_plus_six':'6+6 부모 함께'}[scheme],
+                     '월차별 지급 내역':r.monthly_schedule,'육아휴직 급여 합계':f'{r.total_benefit:,.0f}원',
+                     '사후지급 합계':f'{r.total_deferred:,.0f}원'}
+        if r.total_deferred:
+            r.warnings.append('2024년 대상 기간의 사후지급분은 복직 후 6개월 계속 근무 또는 법정 예외 요건을 따릅니다')
+        if inp.reduced_weekly_hours_before is not None or inp.reduced_work_hours_per_day:
+            from .reduced_work_benefit import calc_reduced_work_benefit
+            reduced=calc_reduced_work_benefit(inp,ow)
+            if reduced.held_reason: r.warnings.append('별도 단축급여: '+reduced.held_reason)
+            else: r.reduced_work_monthly_benefit=reduced.monthly_benefit
+        return r
+    except (ValueError,TypeError,RuleUnavailable) as exc:
+        return ParentalLeaveResult(held_reason=str(exc),legal_basis=r.legal_basis)

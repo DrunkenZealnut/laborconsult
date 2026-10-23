@@ -397,14 +397,16 @@ TEST_CASES = [
     {
         "id": 26,
         "desc": "육아휴직급여 — 월급 400만원, 6개월, 첫 번째 사용자",
-        # 통상임금 4,000,000원 → 80% = 3,200,000원 → 상한 1,500,000원 적용
-        # 매월: 1,500,000 × 75% = 1,125,000원 / 사후: 375,000원
-        # 6개월 총: 1,125,000 × 6 = 6,750,000원 / 사후: 2,250,000원
+        # 2025년 일반형: 250만원×3 + 200만원×3 = 1,350만원, 사후지급 0원
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=4_000_000,
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
+            reference_date="2025-07-01",
+            parental_leave_start="2025-01-01",
+            childcare_child_birth_date="2024-10-01",
+            childcare_insured_days=180,
             parental_leave_months=6,
             is_second_parent=False,
         ),
@@ -412,16 +414,23 @@ TEST_CASES = [
     },
     {
         "id": 27,
-        "desc": "육아휴직급여 — 아빠 보너스 (두 번째 사용자, 3개월)",
-        # 통상임금 3,000,000원 → 100% = 3,000,000원 → 상한 2,500,000원 적용
-        # 아빠 보너스 첫 3개월: 2,500,000 × 75% = 1,875,000원/월
+        "desc": "육아휴직급여 — 같은 자녀 부모 각 3개월, 6+6 특례",
+        # 2025년 6+6: 250만 + 250만 + 300만 = 800만원, 사후지급 0원
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=3_000_000,
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
+            reference_date="2025-07-01",
+            parental_leave_start="2025-01-01",
+            childcare_child_birth_date="2024-10-01",
+            childcare_insured_days=180,
             parental_leave_months=3,
             is_second_parent=True,
+            parental_scheme="six_plus_six",
+            parental_same_child=True,
+            parental_other_parent_start="2024-12-01",
+            parental_other_parent_months=3,
         ),
         "targets": ["parental_leave"],
     },

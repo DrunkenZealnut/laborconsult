@@ -329,5 +329,120 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-13",
+    "category": "육아휴직 개정 경계",
+    "question": "2024년 10월 1일부터 2025년 3월 31일까지 처음 일반 육아휴직을 사용했습니다. 개시일 월 통상임금 300만원이고 주 40시간 근무했습니다. 자녀는 당시 만 3세, 피보험 단위기간 180일 이상이며 특례는 해당 없고 회사가 휴직 중 지급한 돈은 없습니다. 2024년과 2025년의 월별 실제 급여와 사후지급액을 나눠 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "total_benefit": 9375000,
+      "deferred_payment": 1125000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-14",
+    "category": "6+6 실제 부모 사용",
+    "question": "같은 자녀(2024년 10월 1일생)에 대해 저는 2025년 1월 1일부터 6월 30일까지 처음 육아휴직을 사용했고, 배우자는 2024년 12월 1일부터 2025년 2월 28일까지 3개월 사용했습니다. 둘 다 고용보험 가입 근로자이고 각 피보험 단위기간은 180일 이상입니다. 제 개시일 월 통상임금은 500만원, 주 40시간이며 회사가 지급한 돈은 없습니다. 제 6+6 급여를 월별로 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "month_1_payment": 2500000,
+      "month_2_payment": 2500000,
+      "month_3_payment": 3000000,
+      "month_4_payment": 2000000,
+      "month_5_payment": 2000000,
+      "month_6_payment": 2000000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-15",
+    "category": "단기 육아휴직",
+    "question": "2026년 9월 1일부터 9월 7일까지 자녀의 어린이집 휴원으로 법정 단기 육아휴직을 처음 사용합니다. 자녀는 만 3세, 올해 단기 육아휴직 사용은 없고 기존 일반 육아휴직 사용도 없습니다. 개시일 월 통상임금 300만원, 주 40시간 근무, 피보험 단위기간 180일 이상이며 회사 지급액은 0원입니다. 7일 고용보험 급여를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "total_benefit": 583333
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-16",
+    "category": "단축급여 개정 경계",
+    "question": "만 5세 자녀 양육으로 2025년 12월 1일부터 2026년 1월 31일까지 주 40시간에서 30시간으로 육아기 단축을 처음 사용했습니다. 개시일 월 통상임금은 300만원이고 직전월 통상임금도 300만원이며 인상은 없었습니다. 회사는 월 225만원을 지급했고 피보험 단위기간은 180일 이상입니다. 두 달의 고용보험 단축급여만 각각 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "month_1_payment": 550000,
+      "month_2_payment": 625000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
   }
 ]

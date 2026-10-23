@@ -925,8 +925,13 @@ class WageCompositionTest(unittest.TestCase):
                    [], ["평균임금", "산재보상금(휴업·장해·유족·장례비)"], ["적용 평균임금", "1일 평균임금"], []),
             "휴업수당": (dict(base, calculation_types_kr=["휴업수당"], shutdown_days=10, **self.DATES), self.HOLD_Q,
                      [], ["휴업수당(근기법 제46조)"], ["  휴업수당: ", "적용 기준"], []),
-            "육아휴직": (dict(base, calculation_types_kr=["육아휴직"], parental_leave_months=12, **self.DATES), self.HOLD_Q,
-                     ["육아휴직급여"], [], ["육아휴직 월 수령액"], []),
+            "육아휴직": (dict(base, calculation_types_kr=["육아휴직"], parental_leave_months=12,
+                              childcare_example=True, **self.DATES), self.HOLD_Q,
+                     ["육아휴직급여"], [], ["육아휴직 월차별 지급액"], []),
+            "육아기 단축": (dict(base, calculation_types_kr=["육아기 단축급여"], childcare_example=True,
+                                 reduced_months=1, reduced_weekly_hours_before=40,
+                                 reduced_weekly_hours_after=30, **self.DATES), self.HOLD_Q,
+                        ["육아기 단축급여"], [], ["육아기 단축급여 월별 지급액"], []),
             "출산휴가(다태아)": (dict(base, calculation_types_kr=["출산휴가"], is_multiple_birth=True, **self.DATES),
                             self.HOLD_Q, ["출산전후휴가급여"], [], ["출산전후휴가 월 급여", "배우자 출산휴가 유급액"],
                             ["다태아 출산전후휴가: 120일"]),
@@ -960,7 +965,11 @@ class WageCompositionTest(unittest.TestCase):
                 self.assertIn("추정하지 마세요", out)
                 # 금액이 총액 위에 더해지지 않는다 — 카드의 월 총액은 사용자가 말한 총액이다
                 won = "2,000,000" if "포괄" in name else "2,700,000"
-                self.assertIn(f"월 총 예상 수령액(세전): {won}원", out)
+                if name in ("육아휴직", "육아기 단축"):
+                    # 보험급여만 요청한 경우 휴직/단축 전 임금을 지급액으로 내보내지 않는다.
+                    self.assertNotIn("월 총 예상 수령액", out)
+                else:
+                    self.assertIn(f"월 총 예상 수령액(세전): {won}원", out)
                 self.assertEqual(self._stale_names(out), [])
 
     def test_t5_held_card_passes_only_eligibility_zeros(self):

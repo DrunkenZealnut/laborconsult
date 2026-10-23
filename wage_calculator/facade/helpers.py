@@ -245,12 +245,20 @@ def _pop_compensatory_leave(r, result):
 
 
 def _pop_parental_leave(r, result):
-    """result.summary에 육아휴직 월수령액·총수령액·사후지급금 추가. 반환: 0."""
-    result.summary["육아휴직 월 수령액"] = f"{r.monthly_benefit_actual:,.0f}원"
+    """월차별 금액과 총액. 첫 월액을 전체 기간의 고정 월액으로 표시하지 않는다."""
+    result.summary["육아휴직 월차별 지급액"] = ", ".join(
+        f"{x['month_index']}개월차 {x['payment']:,.0f}원" for x in r.monthly_schedule)
     result.summary["육아휴직 총 수령액"] = f"{r.total_benefit:,.0f}원"
     result.summary["사후지급금 합계"] = f"{r.total_deferred:,.0f}원"
-    if r.has_bonus:
-        result.summary["아빠 보너스(첫 3개월)"] = f"{r.monthly_bonus_benefit:,.0f}원/월"
+    result.summary["육아휴직 급여 유형"] = r.breakdown["급여 유형"]
+    return 0
+
+
+def _pop_reduced_work_benefit(r, result):
+    result.summary["육아기 단축급여 월별 지급액"] = ", ".join(
+        f"{x['month_index']}개월차 {x['payment']:,.0f}원" for x in r.monthly_schedule)
+    result.summary["고용보험 단축급여 합계"] = f"{r.total_benefit:,.0f}원"
+    result.summary["단축 전후 주 소정근로시간"] = f"{r.weekly_hours_before:g} → {r.weekly_hours_after:g}시간"
     return 0
 
 

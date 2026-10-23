@@ -1274,7 +1274,7 @@ _HELD_MINWAGE_WARN_RE = re.compile(r"^최저임금 미달: 실질시급")
 # 계산기가 통상임금을 새로 읽으면 이 집합이나 테스트의 유지 목록에 넣어야 한다(test_audit50 T5가 계산기 소스와 대조한다).
 _ORDINARY_BASED_TARGETS = frozenset({
     "overtime", "weekly_holiday", "annual_leave", "dismissal", "public_holiday", "compensatory_leave",
-    "flexible_work", "parental_leave", "maternity_leave",
+    "flexible_work", "parental_leave", "reduced_work_benefit", "maternity_leave",
     "average_wage", "severance", "shutdown_allowance", "industrial_accident", "retirement_pension",
 })
 # 그중 평균임금으로 계산하는 것(퇴직소득세는 퇴직금 결과를 쓴다) — 보류 안내가 이유를 따로 적는다
@@ -2369,6 +2369,24 @@ def _independent_supported_request(query: str, pattern: str, unsupported: str) -
     return bool(re.search(pattern + r"(?:과|와|및)" + unsupported + r".{0,20}" + operation, query))
 
 
+def _complete_explicit_reduced_calendar_month(inp, query):
+    """명시된 달 전체 단축만 날짜로 정규화한다. 부분월·상대월은 추정하지 않는다."""
+    if inp.reduced_start or inp.reduced_end or inp.reduced_periods is not None:
+        return
+    sentence = re.split(r"[.!?\n]", query or "", maxsplit=1)[0]
+    match = re.match(r"^\s*(20\d{2})년\s*(\d{1,2})월\s*(?:한\s*달|전체)(?:\s|,)", sentence)
+    if (not match or len(re.findall(r"\d+\s*월", sentence)) != 1
+            or "육아휴직" in sentence or re.search(r"않|아니|미정", sentence)
+            or not re.search(r"단축(?:근무)?(?:을|근무를)?\s*(?:합니다|해요|했습니다|중|할)", sentence)):
+        return
+    import calendar
+    year, month = map(int, match.groups())
+    if not 1 <= month <= 12:
+        return
+    inp.reduced_start = f"{year:04d}-{month:02d}-01"
+    inp.reduced_end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+
+
 def _run_calculator(params: dict, query: str = "") -> str | None:
     """지원하지 않는 정산의 안내를 보존한 뒤 실행 가능한 요청을 계산한다."""
     if not params or not params.get("needs_calculation"):
@@ -2559,9 +2577,11 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         inp.end_date = params["end_date"]
     # 연차 입력을 숫자 변환으로 덮거나 누락시키지 않는다. 범위·날짜 검증은 계산기에서 보류 사유와 함께 수행한다.
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
-    for key in ANNUAL_INPUT_FIELDS:
+    from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS:
         if params.get(key) is not None:
             setattr(inp, key, params[key])
+    _complete_explicit_reduced_calendar_month(inp, query)
 
     # 특수고용직(노무제공자) 판별
     if params.get("is_platform_worker"):
@@ -2594,8 +2614,6 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     # 해고예고·육아휴직·임금체불 — 배선 누락으로 계산이 조용히 skip되던 필드 (CALC-1)
     if params.get("notice_days_given") is not None:
         inp.notice_days_given = int(params["notice_days_given"])
-    if params.get("parental_leave_months"):
-        inp.parental_leave_months = int(params["parental_leave_months"])
     if params.get("arrear_amount"):
         inp.arrear_amount = float(params["arrear_amount"])
     if params.get("arrear_due_date"):
@@ -3014,9 +3032,15 @@ _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     "insurance": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
     ],
+    "reduced_work_benefit": [
+        (_WAGE_FIELDS_NO_HOURLY, "단축 개시일 월 통상임금"),
+        ({"reduced_weekly_hours_before"}, "단축 전 주 소정근로시간"),
+        ({"reduced_weekly_hours_after"}, "단축 후 주 소정근로시간"),
+        ({"reduced_months", "reduced_periods", "reduced_end"}, "단축 사용 기간"),
+    ],
     "parental_leave": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
-        ({"parental_leave_months"}, "육아휴직 예정 개월수"),
+        ({"parental_leave_months", "parental_leave_periods", "parental_leave_end"}, "육아휴직 사용 기간"),
     ],
     "maternity_leave": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
@@ -3079,6 +3103,7 @@ _CALC_TYPE_LABELS: dict[str, str] = {
     "unemployment": "실업급여",
     "insurance": "4대보험·소득세",
     "parental_leave": "육아휴직급여",
+    "reduced_work_benefit": "육아기 단축급여",
     "maternity_leave": "출산전후휴가급여",
     "wage_arrears": "임금체불 지연이자",
     "compensatory_leave": "보상휴가",
@@ -3148,6 +3173,7 @@ def _analysis_to_extract_params(analysis) -> dict:
         "annual_leave": "연차수당", "dismissal": "해고예고수당",
         "unemployment": "실업급여", "insurance": "4대보험",
         "parental_leave": "육아휴직", "maternity_leave": "출산휴가",
+        "reduced_work_benefit": "육아기 근로시간 단축급여",
         "prorated": "일할계산급여",
         "year_end_settlement": "연말정산", "selective_work_settlement": "선택적 근로시간제",
         "arrears_principal": "임금체불액",
@@ -3200,7 +3226,8 @@ def _analysis_to_extract_params(analysis) -> dict:
         "public_holiday_days": info.get("public_holiday_days"),
     }
     from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
-    params.update({key: info[key] for key in ANNUAL_INPUT_FIELDS if key in info})
+    from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 

@@ -18,7 +18,7 @@ ANALYZE_TOOL = {
                         "overtime", "minimum_wage", "weekly_holiday",
                         "annual_leave", "dismissal", "severance",
                         "unemployment", "insurance", "comprehensive",
-                        "parental_leave", "maternity_leave", "prorated",
+                        "parental_leave", "reduced_work_benefit", "maternity_leave", "prorated",
                         "wage_arrears", "flexible_work", "compensatory_leave",
                         # 주 분석경로에서 분류 불가능하던 계산기들 (CALC-6).
                         # industrial_accident·business_size는 여기서 제외 —
@@ -141,6 +141,10 @@ ANALYZE_TOOL = {
         "required": ["requires_calculation", "question_summary"],
     },
 }
+
+# 육아급여 입력: 기간·자격·시간을 계산기까지 보존한다.
+from .childcare_inputs import CHILDCARE_PROPERTIES
+ANALYZE_TOOL["input_schema"]["properties"].update(CHILDCARE_PROPERTIES)
 
 # 법률상담 분류 필드 추가
 ANALYZE_TOOL["input_schema"]["properties"].update({
@@ -282,6 +286,9 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 - 연차수당 → annual_leave
 - 실업급여 → unemployment
 - 육아휴직급여 → parental_leave
+- 육아기 근로시간 단축급여 → reduced_work_benefit (휴직 개월 수 없이 독립 계산)
+- 육아 급여는 입사일과 실제 휴직/단축 사용일을 구분한다. 실제 사건에 시작일을 만들지 않는다. 날짜 없는 현행 일반형 예시 요청만 childcare_example=true로 표시한다. 입력 임금은 개시일 기준 월 통상임금이다.
+- 부모별 사용 기간·같은 자녀·자격·피보험 단위기간은 질문에 있는 사실만 전달한다. 6+6, 18개월 연장, 단기형 자격을 두 번째 사용자라는 이유로 추정하지 않는다.
 - 출산전후휴가급여 → maternity_leave
 - 임금체불 지연이자 → wage_arrears
 - 근로장려금(EITC) → eitc

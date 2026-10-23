@@ -142,337 +142,78 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
    style="display:none;padding:10px 14px;background:#1B2A4A;color:#F7F5F2;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;text-decoration:none">← 기초 노동상담 — 무료 AI 노동상담·임금계산</a>
 <script>if(window.self===window.top){document.getElementById("site-home-link").style.display="block";}</script>
 
-<div style="padding:1rem 0">
-<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-<button onclick="showTab(0)" id="t0" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">일반 육아휴직</button>
-<button onclick="showTab(1)" id="t1">아빠 보너스</button>
-<button onclick="showTab(2)" id="t2">근로시간 단축</button>
-<button onclick="showTab(3)" id="t3">총 수령액 시뮬레이션</button>
+<style>
+main{max-width:850px;margin:24px auto;line-height:1.7}h1{font-size:25px;margin-bottom:8px}h2{font-size:20px;margin:12px 0}p{margin:8px 0}table{width:100%;border-collapse:collapse;margin:16px 0}th,td{padding:10px;border-bottom:1px solid var(--b);text-align:left}th{background:var(--bg2)}.notice{padding:14px 18px;background:var(--color-background-info);border-radius:10px;margin:16px 0}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.steps div{padding:14px;background:var(--bg2);border-radius:8px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tabs button[aria-selected=true]{background:var(--color-background-info);color:var(--color-text-info)}.form{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.form label{display:flex;flex-direction:column;gap:5px}.form input,.form select{font:inherit;padding:8px;border:1px solid var(--b);border-radius:6px;color:inherit;background:var(--color-background-primary)}.total{font-size:26px;font-weight:700;color:var(--color-text-info)}.muted{font-size:13px;color:var(--s)}@media(max-width:560px){.steps,.form{grid-template-columns:1fr}h1{font-size:22px}th,td{font-size:13px}}
+</style>
+<main>
+<h1>육아휴직·육아기 단축급여</h1>
+<p>2026년 10월 24일 기준 · 고용보험 급여 계산 과정</p>
+<div class="tabs" role="tablist" aria-label="급여 설명">
+<button id="t0" role="tab" aria-selected="true" onclick="showTab(0)">일반 육아휴직</button>
+<button id="t1" role="tab" aria-selected="false" onclick="showTab(1)">6+6·한부모</button>
+<button id="t2" role="tab" aria-selected="false" onclick="showTab(2)">근로시간 단축</button>
+<button id="t3" role="tab" aria-selected="false" onclick="showTab(3)">금액 예시</button>
 </div>
-
-<!-- TAB 0: 일반 -->
-<div id="tab0">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">일반 육아휴직급여</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">고용보험법 제70~73조</p>
+<section id="tab0" role="tabpanel" aria-labelledby="t0">
+<h2>일반형은 누적 월차별로 달라집니다</h2>
+<div class="steps"><div>① 개시일 기준<br><strong>월 통상임금 확인</strong></div><div>② 사용 기간·월차 확인<br><strong>적용 규칙 선택</strong></div><div>③ 월별 급여 합산<br><strong>사업주 지급액 조정</strong></div></div>
+<table><thead><tr><th>누적 사용 기간</th><th>지급률</th><th>월 상한 / 하한</th></tr></thead><tbody><tr><td>1~3개월 차</td><td>100%</td><td>250만 / 70만 원</td></tr><tr><td>4~6개월 차</td><td>100%</td><td>200만 / 70만 원</td></tr><tr><td>7개월 차 이후</td><td>80%</td><td>160만 / 70만 원</td></tr></tbody></table>
+<div class="notice">월 통상임금 300만 원 · 일반형 12개월: <strong>250만×3 + 200만×3 + 160만×6 = 2,310만 원</strong><br>2025년 1월 1일 이후 대상 기간에는 사후지급 공제가 없습니다.</div>
+<p>급여 수급은 개시일 전 피보험 단위기간 180일 이상, 일반형 합산 30일 이상 부여 등의 요건을 확인해야 합니다. 만 8세 이하 또는 초등 2학년 이하 자녀 양육, 임신 중 본인 모성보호, 법정 위험이 있는 임신 배우자 돌봄은 사유를 구분합니다.</p>
+<p>기본 기간은 12개월입니다. 부모 각각 3개월 이상 사용, 법정 한부모, 법정 장애아동 부모 중 연장 자격이 있으면 최대 18개월입니다. 단기형은 2026년 8월 20일부터 법정 사유가 있는 경우 연 1회 7일 또는 14일이며, 전체 사용 기간에 포함합니다.</p>
+<p class="muted">2024년 일반형: 80%, 상한 150만 원·하한 70만 원, 사후지급 적용. 2025년을 걸친 휴직은 기간별로 규칙을 나누되 누적 월차를 유지합니다. 과거 사후지급분이 일괄 폐지되는 것은 아닙니다.</p>
+</section>
+<section id="tab1" role="tabpanel" aria-labelledby="t1" hidden>
+<h2>6+6 부모 함께 육아휴직</h2>
+<p>같은 자녀에 대해 부모 각각의 개시일에 생후 18개월 이내이고 양쪽 모두 사용하는 등의 요건을 확인합니다. 부모가 각각 사용한 기간에 대응하는 첫 최대 6개월에 통상임금 100%를 적용합니다.</p>
+<table><thead><tr><th>월차</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr></thead><tbody><tr><td>상한(만 원)</td><td>250</td><td>250</td><td>300</td><td>350</td><td>400</td><td>450</td></tr></tbody></table>
+<p>하한은 70만 원입니다. 상대 부모가 4개월을 사용했다면 본인 첫 4개월이 대응 대상이며, 나머지 기간은 해당 월차의 일반 규칙을 따릅니다. 두 번째 사용자라는 사실만으로 특례가 확정되지는 않습니다.</p>
+<h2>법정 한부모</h2><p>한부모가족지원법상 자격을 충족하면 첫 3개월은 통상임금 100%, 월 상한 300만 원입니다. 4~6개월은 상한 200만 원, 7개월 이후는 80%·상한 160만 원이며 하한은 70만 원입니다.</p>
+<div class="notice">특례 급여를 서로 더하지 않습니다. 6+6 자격과 최대 18개월 사용 자격도 각각 확인합니다.</div>
+</section>
+<section id="tab2" role="tabpanel" aria-labelledby="t2" hidden>
+<h2>주 소정근로시간의 감소분으로 산정</h2>
+<p>단축 후 주 15~35시간, 자녀 만 12세 이하 또는 초등 6학년 이하 등의 요건을 확인합니다. 단축 개시일 월 통상임금과 단축 전후 주 소정시간을 사용합니다.</p>
+<table><thead><tr><th>구간</th><th>월 임금 기준액</th><th>시간 비율</th></tr></thead><tbody><tr><td>최초 주 10시간</td><td>통상임금 100%<br>상한 250만·하한 50만 원</td><td>최초 단축시간 ÷ 단축 전 시간</td></tr><tr><td>10시간 초과분</td><td>통상임금 80%<br>상한 160만·하한 50만 원</td><td>초과 단축시간 ÷ 단축 전 시간</td></tr></tbody></table>
+<div class="notice">월 통상임금 300만 원 · 주 40→30시간 · 한 달 전부 사용:<br><strong>250만 원 × 10/40 = 625,000원</strong><br>주 40→20시간이면 625,000 + 160만×10/40 = <strong>1,025,000원</strong></div>
+<p>사업주 지급 임금과 보험 급여는 별개입니다. 합계가 감액 기준 통상임금을 넘으면 보험 급여가 조정됩니다. 일부월은 해당 달 일수로 일할하고, 2025년 시작분도 2026년 잔여 기간에는 새 상한을 적용합니다.</p>
+<p>기본 12개월에, 기본 육아휴직 12개월 중 미사용 기간의 2배를 더할 수 있습니다. 연장 육아휴직 6개월을 더해 계산하지 않습니다.</p>
+<p class="muted">이전 기준: 2024년 7월부터 최초 10시간(그 전 5시간), 최초 상한 200만·나머지 150만 원. 2025년 최초 상한 220만·나머지 150만 원.</p>
+</section>
+<section id="tab3" role="tabpanel" aria-labelledby="t3" hidden>
+<h2>2026년 규칙으로 보는 월별 예시</h2>
+<p>같은 통상임금으로 한 달씩 전부 사용하고, 사업주 지급에 따른 감액이 없으며 수급 자격을 충족한 경우의 예시입니다. 실제 날짜·부분월·과거 사용 이력은 상담에서 별도로 확인하세요.</p>
+<div class="form">
+<label>급여 유형<select id="type" onchange="calc()"><option value="general">일반 육아휴직</option><option value="single">법정 한부모 육아휴직</option><option value="six">6+6 (부모 각각 6개월 이상 조건)</option><option value="reduced">육아기 단축급여</option></select></label>
+<label>개시일 월 통상임금 (원)<input id="wage" type="number" value="3000000" min="1" step="10000" oninput="calc()"></label>
+<label>이번 사용 개월 수<input id="months" type="number" value="12" min="1" max="36" step="1" oninput="calc()"></label>
+<label>12개월 초과 휴직 연장 자격<select id="extension" onchange="calc()"><option value="no">해당 없음 / 미확인</option><option value="yes">부모 각각 3개월 사용 또는 장애아동 부모</option></select></label>
+<label>단축 전 주 소정시간<input id="before" type="number" value="40" min="15" max="40" oninput="calc()"></label>
+<label>단축 후 주 소정시간<input id="after" type="number" value="30" min="15" max="35" oninput="calc()"></label>
+<label>단축 계산: 기본 12개월 중 미사용 휴직 (개월)<input id="unused" type="number" value="0" min="0" max="12" oninput="calc()"></label>
 </div>
-<svg width="100%" viewBox="0 0 680 560">
-<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<!-- Step 1 -->
-<g class="c-coral">
-<rect x="180" y="20" width="320" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">월 통상임금</text>
-<text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">통상임금 계산기에서 산출된 값</text>
-</g>
-
-<line x1="340" y1="76" x2="340" y2="106" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 2 -->
-<g class="c-teal">
-<rect x="180" y="106" width="320" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="126" text-anchor="middle" dominant-baseline="central">월 급여 = 통상임금 x 80%</text>
-<text class="ts" x="340" y="144" text-anchor="middle" dominant-baseline="central">통상임금의 80%를 기준으로 산정</text>
-</g>
-
-<line x1="340" y1="162" x2="340" y2="192" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 3: 상하한 -->
-<g class="c-purple">
-<rect x="100" y="192" width="480" height="80" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="216" text-anchor="middle" dominant-baseline="central">상한·하한 적용</text>
-
-<rect x="130" y="236" width="180" height="28" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#791F1F" x="220" y="254" text-anchor="middle" dominant-baseline="central">상한: 150만원/월</text>
-
-<rect x="370" y="236" width="180" height="28" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#085041" x="460" y="254" text-anchor="middle" dominant-baseline="central">하한: 70만원/월</text>
-</g>
-
-<line x1="340" y1="272" x2="340" y2="306" class="arr" marker-end="url(#ar)"/>
-
-<!-- Step 4: 분할 -->
-<rect x="60" y="306" width="560" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
-<text class="th" x="340" y="330" text-anchor="middle">75% / 25% 분할 지급</text>
-
-<g class="c-teal">
-<rect x="90" y="348" width="240" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="210" y="368" text-anchor="middle" dominant-baseline="central">매월 수령분: 75%</text>
-<text class="ts" x="210" y="386" text-anchor="middle" dominant-baseline="central">= 월 급여 x 75%</text>
-</g>
-
-<g class="c-amber">
-<rect x="350" y="348" width="240" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="470" y="368" text-anchor="middle" dominant-baseline="central">사후지급금: 25%</text>
-<text class="ts" x="470" y="386" text-anchor="middle" dominant-baseline="central">복직 후 6개월 뒤 일괄</text>
-</g>
-
-<line x1="340" y1="436" x2="340" y2="466" class="arr" marker-end="url(#ar)"/>
-
-<!-- 예시 -->
-<g class="c-gray">
-<rect x="100" y="466" width="480" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="488" text-anchor="middle" dominant-baseline="central">예시: 통상임금 250만원</text>
-<text class="ts" x="340" y="508" text-anchor="middle" dominant-baseline="central">월 급여 = 250만 x 80% = 200만 → 상한 150만 적용</text>
-<text class="ts" x="340" y="526" text-anchor="middle" dominant-baseline="central">매월 수령 112.5만 + 사후지급 37.5만/월분</text>
-</g>
-</svg>
-</div>
-
-<!-- TAB 1: 아빠보너스 -->
-<div id="tab1" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">아빠 보너스 (두 번째 부모 육아휴직)</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">같은 자녀에 대해 두 번째로 육아휴직하는 부모에게 적용</p>
-</div>
-<svg width="100%" viewBox="0 0 680 500">
-<defs><marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<g class="c-coral">
-<rect x="180" y="20" width="320" height="44" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">월 통상임금</text>
-</g>
-
-<line x1="340" y1="64" x2="340" y2="94" class="arr" marker-end="url(#ar2)"/>
-
-<!-- 분기 -->
-<text class="th" x="340" y="110" text-anchor="middle">기간에 따라 요율이 다릅니다</text>
-
-<line x1="240" y1="120" x2="170" y2="150" class="arr" marker-end="url(#ar2)"/>
-<line x1="440" y1="120" x2="510" y2="150" class="arr" marker-end="url(#ar2)"/>
-
-<!-- 첫 3개월 -->
-<g class="c-purple">
-<rect x="60" y="150" width="220" height="100" rx="8" stroke-width="0.5"/>
-<text class="th" x="170" y="174" text-anchor="middle" dominant-baseline="central">첫 3개월</text>
-<text class="ts" x="170" y="196" text-anchor="middle" dominant-baseline="central">통상임금 x 100%</text>
-<text class="ts" x="170" y="216" text-anchor="middle" dominant-baseline="central">상한: 250만원/월</text>
-<rect x="90" y="226" width="160" height="18" rx="4" fill="#E1F5EE" stroke="none"/>
-<text style="font-size:11px;fill:#085041" x="170" y="238" text-anchor="middle" dominant-baseline="central">일반 대비 상한 100만원 ↑</text>
-</g>
-
-<!-- 4개월~ -->
-<g class="c-teal">
-<rect x="400" y="150" width="220" height="100" rx="8" stroke-width="0.5"/>
-<text class="th" x="510" y="174" text-anchor="middle" dominant-baseline="central">4개월째부터</text>
-<text class="ts" x="510" y="196" text-anchor="middle" dominant-baseline="central">통상임금 x 80%</text>
-<text class="ts" x="510" y="216" text-anchor="middle" dominant-baseline="central">상한: 150만원/월</text>
-<rect x="430" y="226" width="160" height="18" rx="4" fill="var(--bg2)" stroke="none"/>
-<text style="font-size:11px;fill:var(--s)" x="510" y="238" text-anchor="middle" dominant-baseline="central">일반 육아휴직과 동일</text>
-</g>
-
-<line x1="170" y1="250" x2="280" y2="290" class="arr" marker-end="url(#ar2)"/>
-<line x1="510" y1="250" x2="400" y2="290" class="arr" marker-end="url(#ar2)"/>
-
-<!-- 합산 -->
-<g class="c-gray">
-<rect x="140" y="290" width="400" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="310" text-anchor="middle" dominant-baseline="central">동일하게 75%/25% 분할 지급</text>
-<text class="ts" x="340" y="330" text-anchor="middle" dominant-baseline="central">사후지급금은 복직 6개월 후 일괄</text>
-</g>
-
-<line x1="340" y1="346" x2="340" y2="380" class="arr" marker-end="url(#ar2)"/>
-
-<g class="c-gray">
-<rect x="80" y="380" width="520" height="100" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="404" text-anchor="middle" dominant-baseline="central">예시: 통상임금 300만원, 12개월 사용</text>
-<text class="ts" x="340" y="426" text-anchor="middle" dominant-baseline="central">첫 3개월: 300만 x 100% = 300만 → 상한 250만 적용</text>
-<text class="ts" x="340" y="446" text-anchor="middle" dominant-baseline="central">나머지 9개월: 300만 x 80% = 240만 → 상한 150만 적용</text>
-<text class="ts" x="340" y="466" text-anchor="middle" dominant-baseline="central">총 = (250만 x 3) + (150만 x 9) = 2,100만원</text>
-</g>
-</svg>
-</div>
-
-<!-- TAB 2: 근로시간단축 -->
-<div id="tab2" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">육아기 근로시간 단축 급여</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">휴직 대신 근로시간을 줄이고 차액을 보전받는 방식</p>
-</div>
-<svg width="100%" viewBox="0 0 680 440">
-<defs><marker id="ar3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-
-<g class="c-coral">
-<rect x="60" y="20" width="260" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="190" y="40" text-anchor="middle" dominant-baseline="central">월 통상임금</text>
-<text class="ts" x="190" y="58" text-anchor="middle" dominant-baseline="central">예: 300만원</text>
-</g>
-
-<g class="c-gray">
-<rect x="360" y="20" width="260" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="490" y="40" text-anchor="middle" dominant-baseline="central">단축 후 소정근로시간</text>
-<text class="ts" x="490" y="58" text-anchor="middle" dominant-baseline="central">예: 주 25시간 (기존 40시간)</text>
-</g>
-
-<line x1="190" y1="76" x2="260" y2="110" class="arr" marker-end="url(#ar3)"/>
-<line x1="490" y1="76" x2="420" y2="110" class="arr" marker-end="url(#ar3)"/>
-
-<!-- 단축 후 임금 -->
-<g class="c-teal">
-<rect x="140" y="110" width="400" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="132" text-anchor="middle" dominant-baseline="central">단축 후 임금 산정</text>
-<text class="ts" x="340" y="152" text-anchor="middle" dominant-baseline="central">= 통상임금 x (단축 후 시간 / 소정근로시간)</text>
-<text class="ts" x="340" y="170" text-anchor="middle" dominant-baseline="central">= 300만 x (25h / 40h) = 187.5만원</text>
-</g>
-
-<line x1="340" y1="186" x2="340" y2="220" class="arr" marker-end="url(#ar3)"/>
-
-<!-- 차액 -->
-<g class="c-purple">
-<rect x="140" y="220" width="400" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="244" text-anchor="middle" dominant-baseline="central">단축 급여 = (통상임금 - 단축 후 임금) x 80%</text>
-<text class="ts" x="340" y="264" text-anchor="middle" dominant-baseline="central">= (300만 - 187.5만) x 80%</text>
-<text class="ts" x="340" y="282" text-anchor="middle" dominant-baseline="central">= 112.5만 x 80% = 90만원</text>
-</g>
-
-<line x1="340" y1="296" x2="340" y2="330" class="arr" marker-end="url(#ar3)"/>
-
-<!-- 총 수령 -->
-<g class="c-amber">
-<rect x="100" y="330" width="480" height="76" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="354" text-anchor="middle" dominant-baseline="central">실제 월 수령액</text>
-<text class="ts" x="340" y="374" text-anchor="middle" dominant-baseline="central">= 단축 후 임금(사업주) + 단축 급여(고용보험)</text>
-<text class="ts" x="340" y="394" text-anchor="middle" dominant-baseline="central">= 187.5만 + 90만 = 277.5만원</text>
-</g>
-</svg>
-</div>
-
-<!-- TAB 3: 시뮬레이션 -->
-<div id="tab3" style="display:none">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">총 수령액 시뮬레이션</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">통상임금과 기간을 조정해 보세요</p>
-</div>
-
-<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-<div style="display:flex;align-items:center;gap:12px">
-<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">통상임금</label>
-<input type="range" min="70" max="500" value="250" step="10" id="wage" oninput="calc()" style="flex:1">
-<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="wageOut">250만원</span>
-</div>
-<div style="display:flex;align-items:center;gap:12px">
-<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">휴직 기간</label>
-<input type="range" min="1" max="12" value="12" step="1" id="months" oninput="calc()" style="flex:1">
-<span style="font-size:14px;font-weight:500;min-width:80px;text-align:right" id="monthsOut">12개월</span>
-</div>
-<div style="display:flex;align-items:center;gap:12px">
-<label style="font-size:13px;color:var(--color-text-secondary);min-width:80px">유형</label>
-<button id="btnGen" onclick="setType('general');calc()" style="font-weight:500;background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)">일반</button>
-<button id="btnDad" onclick="setType('dad');calc()">아빠 보너스</button>
-</div>
-</div>
-
-<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px">
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">매월 수령분 합계</p>
-<p style="font-size:22px;font-weight:500;margin:0" id="monthly">0원</p>
-</div>
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">사후지급금 합계</p>
-<p style="font-size:22px;font-weight:500;margin:0" id="deferred">0원</p>
-</div>
-<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem">
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px">총 수령액</p>
-<p style="font-size:22px;font-weight:500;margin:0;color:var(--color-text-info)" id="total">0원</p>
-</div>
-</div>
-
-<div id="breakdown" style="font-size:13px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem"></div>
-</div>
-</div>
-
+<div class="notice" aria-live="polite"><p id="resultLabel">보험 급여 합계 (조건부 예시)</p><p class="total" id="total"></p><p id="resultNote"></p></div>
+<table><thead><tr><th>월차</th><th>월 지급액</th></tr></thead><tbody id="breakdown"></tbody></table>
+</section>
+<p class="muted">근거: <a href="https://www.law.go.kr/법령/고용보험법시행령" target="_blank" rel="noopener">고용보험법 시행령 제95조·제95조의3·제104조의2</a>, 남녀고용평등법 제19조·제19조의2. 실제 수급·신청·소득 제한은 고용센터 확인이 필요합니다.</p>
+</main>
 <script>
-var ptype = 'general';
-function setType(t) {
-  ptype = t;
-  document.getElementById('btnGen').style.fontWeight = t==='general'?'500':'';
-  document.getElementById('btnGen').style.background = t==='general'?'var(--color-background-info)':'';
-  document.getElementById('btnGen').style.color = t==='general'?'var(--color-text-info)':'';
-  document.getElementById('btnGen').style.borderColor = t==='general'?'var(--color-border-info)':'';
-  document.getElementById('btnDad').style.fontWeight = t==='dad'?'500':'';
-  document.getElementById('btnDad').style.background = t==='dad'?'var(--color-background-info)':'';
-  document.getElementById('btnDad').style.color = t==='dad'?'var(--color-text-info)':'';
-  document.getElementById('btnDad').style.borderColor = t==='dad'?'var(--color-border-info)':'';
-}
-function fmt(n) { return Math.round(n).toLocaleString('ko-KR') + '원'; }
-
-function calc() {
-  var w = parseInt(document.getElementById('wage').value);
-  var m = parseInt(document.getElementById('months').value);
-  document.getElementById('wageOut').textContent = w + '만원';
-  document.getElementById('monthsOut').textContent = m + '개월';
-
-  var ww = w * 10000;
-  var totalPay = 0;
-  var lines = [];
-
-  for (var i = 1; i <= m; i++) {
-    var rate, cap;
-    if (ptype === 'dad' && i <= 3) {
-      rate = 1.0; cap = 2500000;
-    } else {
-      rate = 0.8; cap = 1500000;
-    }
-    var raw = ww * rate;
-    var capped = Math.min(raw, cap);
-    capped = Math.max(capped, 700000);
-    totalPay += capped;
-
-    var label = (ptype === 'dad' && i <= 3) ? '보너스' : '일반';
-    if (i <= 3 || i === m) {
-      lines.push(i + '개월차(' + label + '): ' + fmt(capped));
-    } else if (i === 4) {
-      lines.push('...');
-    }
-  }
-
-  var monthlyTotal = Math.round(totalPay * 0.75);
-  var deferredTotal = totalPay - monthlyTotal;
-
-  document.getElementById('monthly').textContent = fmt(monthlyTotal);
-  document.getElementById('deferred').textContent = fmt(deferredTotal);
-  document.getElementById('total').textContent = fmt(totalPay);
-  document.getElementById('breakdown').innerHTML = '<p style="font-weight:500;margin:0 0 8px;color:var(--color-text-primary)">월별 산정 내역</p>' + lines.map(function(l){return '<p style="margin:2px 0">'+l+'</p>'}).join('');
+function showTab(n){for(let i=0;i<4;i++){document.getElementById('tab'+i).hidden=i!==n;document.getElementById('t'+i).setAttribute('aria-selected',String(i===n));}if(n===3)calc();}
+function calc(){
+ const get=id=>document.getElementById(id),w=Number(get('wage').value),m=Number(get('months').value),t=get('type').value;
+ const b=Number(get('before').value),a=Number(get('after').value),u=Number(get('unused').value);
+ const max=t==='reduced'?12+2*u:(t==='single'||t==='six'||get('extension').value==='yes'?18:12);
+ let err='';if(!Number.isFinite(w)||w<=0||!Number.isInteger(m)||m<1||m>max)err='임금·사용 개월 수와 연장 자격을 확인하세요.';
+ if(t==='reduced'&&(!Number.isFinite(b)||!Number.isFinite(a)||b>40||a<15||a>35||b<=a||!Number.isFinite(u)||u<0||u>12))err='단축 전후 주 소정시간과 기본 육아휴직 미사용 기간을 확인하세요.';
+ get('breakdown').replaceChildren();if(err){get('total').textContent='계산 보류';get('resultNote').textContent=err;return;}
+ let total=0;for(let i=1;i<=m;i++){let pay;
+ if(t==='reduced')pay=Math.min(2500000,Math.max(500000,w))*Math.min(b-a,10)/b+Math.min(1600000,Math.max(500000,.8*w))*Math.max(0,b-a-10)/b;
+ else{let rate=i<=6?1:.8,cap=i<=3?2500000:(i<=6?2000000:1600000);if(t==='single'&&i<=3)cap=3000000;if(t==='six'&&i<=6)cap=[2500000,2500000,3000000,3500000,4000000,4500000][i-1];pay=Math.max(700000,Math.min(w*rate,cap));}
+ pay=Math.round(pay);total+=pay;const tr=document.createElement('tr');for(const value of [i+'개월 차',pay.toLocaleString('ko-KR')+'원']){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}get('breakdown').appendChild(tr);}
+ get('total').textContent=total.toLocaleString('ko-KR')+'원';get('resultNote').textContent=t==='reduced'?'사업주 지급 임금은 합산하지 않았습니다. 감액 전 고용보험 급여입니다.':'2026년 대상 기간의 사후지급금: 0원. 실제 사용일과 자격 확인이 필요합니다.';
 }
 calc();
-
-function showTab(n) {
-  for (var i = 0; i < 4; i++) {
-    document.getElementById('tab'+i).style.display = i===n?'block':'none';
-    var b = document.getElementById('t'+i);
-    if (i===n) {
-      b.style.fontWeight='500';b.style.background='var(--color-background-info)';b.style.color='var(--color-text-info)';b.style.borderColor='var(--color-border-info)';
-    } else {
-      b.style.fontWeight='';b.style.background='';b.style.color='';b.style.borderColor='';
-    }
-  }
-  if (n===3) calc();
-}
 </script>
-
-
-<nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
-<script>
-// Mobile: wrap SVGs in scrollable containers
-(function(){
-  if(window.innerWidth>680)return;
-  var svgs=document.querySelectorAll('svg[viewBox]');
-  if(!svgs.length)return;
-  // Add hint once
-  var hint=document.createElement('span');
-  hint.className='scroll-hint';
-  hint.textContent='좌우로 스크롤하세요';
-  svgs[0].parentNode.insertBefore(hint,svgs[0]);
-  // Wrap each SVG
-  svgs.forEach(function(svg){
-    if(svg.closest('.svg-scroll-wrap'))return;
-    var w=document.createElement('div');
-    w.className='svg-scroll-wrap';
-    svg.parentNode.insertBefore(w,svg);
-    w.appendChild(svg);
-  });
-})();
-</script>
+<nav style="max-width:850px;margin:16px auto;padding:10px;border-top:1px solid #ddd;text-align:center"><a href="wage_calculator_dependency_map.html">← 전체 계산기 구조도로 돌아가기</a></nav>
 <script type="module" src="/analytics.js"></script>
-</body>
-</html>
+</body></html>
