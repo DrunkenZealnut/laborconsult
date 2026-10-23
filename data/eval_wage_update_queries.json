@@ -216,5 +216,118 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-09",
+    "category": "연차 발생과 사용 분리",
+    "question": "2025년 1월 1일 입사했고 2026년 7월 1일 기준 계속 재직 중입니다. 상시 10명, 주 5일 하루 8시간, 통상시급 1만원입니다. 2025년 출근율은 100%, 첫해 월별 개근으로 11일이 발생해 그중 5일을 썼고, 2026년 발생분에서는 2일을 썼습니다. 2026년 7월 1일 기준 당해 발생·사용·잔여 연차를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 15,
+      "used_days": 2,
+      "remaining_days": 13
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-10",
+    "category": "80% 미만 월 개근",
+    "question": "2024년 1월 1일 입사했고 2026년 1월 1일에도 재직 중입니다. 2025년 소정근로일 출근율은 70%이고 실제로 개근한 달은 7개월입니다. 법정 휴직은 없고 일반 결근입니다. 상시 10명, 주5일 하루8시간, 통상시급 1만원, 해당 발생분에서 사용한 연차 2일입니다. 2026년 1월 1일 기준 2025년 근로로 생긴 연차와 미사용 일수를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 7,
+      "remaining_days": 5
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-11",
+    "category": "육아휴직 출근 간주",
+    "question": "2025년 1월 1일 입사했고 2026년 1월 1일에도 재직 중입니다. 상시 10명, 주5일 하루8시간, 통상시급 1만원입니다. 2025년 소정근로일은 250일, 실제 출근은 150일이며 나머지 100일은 법정 육아휴직입니다. 휴직 구간은 2025년 7월 1일부터 12월 31일까지이고 최초 신청일은 2025년 6월 1일입니다. 다른 결근은 없습니다. 2026년 1월 1일 발생 연차일수를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 15,
+      "effective_attendance_rate": 1
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-12",
+    "category": "정확히 1년 계약 종료",
+    "question": "2025년 1월 1일부터 2025년 12월 31일까지 정확히 1년 기간제 계약입니다. 근로관계가 존재하는 마지막 날은 12월 31일이고 2026년 1월 1일에는 재직하지 않습니다. 2025년 12월 31일 기준 계산해주세요. 상시 10명, 주5일 하루8시간, 통상시급 1만원, 매월 개근했고 연차를 전혀 쓰지 않았습니다. 총 발생 연차와 미사용 수당 평가액은 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 11,
+      "annual_leave_pay": 880000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
   }
 ]

@@ -286,7 +286,7 @@ class WageInput:
     use_fiscal_year: bool = False          # 회계연도(1/1) 기준 여부
     leave_use_promotion: bool = False      # 사용촉진제도 실시 여부 (근기법 제61조)
                                            # True면 미사용 연차수당 지급 의무 면제 가능
-    first_year_leave_used: float = 0.0    # 첫해 발생분에서 사용한 일수. 현행 다음 연도 15일과 별도
+    first_year_leave_used: Optional[float] = None  # 첫해 사용 일수. None=미확인, 현행 다음 연도 15일과 별도
     annual_full_attendance_months: Optional[int] = None  # 현재 산정기간 실제 월 개근 수
     first_year_full_attendance_months: Optional[int] = None  # 과거 첫해 개근 수(현재 출근율로 추정하지 않음)
     annual_scheduled_days: Optional[float] = None  # 현재 산정기간 소정근로일수

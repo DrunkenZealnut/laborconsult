@@ -128,7 +128,10 @@ def _pop_weekly_holiday(r, result):
 
 def _pop_annual_leave(r, result):
     """result.summary에 연차발생일수·연차수당·미사용일수·차감·비례·정산 추가. 반환: 0."""
-    result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
+    if r.accrual_basis == "company":
+        result.summary["회사 부여 연차일수"] = f"{r.accrued_days:g}일"
+    else:
+        result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
     result.summary["연차수당"] = f"{r.annual_leave_pay:,.0f}원"
     result.summary["미사용 연차"] = f"{r.remaining_days:.1f}일"
     if r.is_eligible:
