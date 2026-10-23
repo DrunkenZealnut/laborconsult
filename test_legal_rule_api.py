@@ -55,7 +55,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(result["revision"], 2)
         self.assertEqual(result["records"][0]["status"], "approved")
         self.assertTrue(result["parameters"])
-        self.assertEqual(len(result["topics"]), 29)
+        self.assertEqual(len(result["topics"]), 30)
         # 입력란 옆 '현재 적용값'의 출처. 승인 직후 그 키만 승인값으로 바뀌어야 한다.
         current = result["current"]["values"]["minimum_hourly_wage"]
         self.assertEqual(current["approved"], None, "오늘은 2031년 구간 밖이다")

@@ -1092,6 +1092,7 @@ class WageCompositionTest(unittest.TestCase):
     # 통상임금을 읽지만 보류 경로에서 그대로 계산하는 계산기와 그 이유. 보류 대상(`_ORDINARY_BASED_TARGETS`)에도 여기에도 없는
     # 계산기가 통상임금을 읽기 시작하면 보류 카드에 부풀린 금액이 다시 실린다.
     KEPT_ORDINARY_READERS = {
+        "arrears_principal": "명시 원금·일할 항목은 통상시급과 독립. 파생 시간 청구는 자체 구성 검증으로 총액 기반 통상임금을 보류한다(C5 회귀)",
         "comprehensive": "월급 총액(inp.monthly_wage)으로 역산하는 계산이다 — 판정은 따로 내린다",
         "prorated": "월급 총액으로 일할계산한다(통상임금은 월급이 없을 때만 읽는다)",
         "insurance": "보수월액은 수당을 포함한 총액이 맞다 — 계산식의 이름만 바꾼다(사업주 부담분도 같은 모듈)",
@@ -1114,7 +1115,7 @@ class WageCompositionTest(unittest.TestCase):
             if re.search(r"\bow\.(?:hourly|daily|monthly)_ordinary_wage\b|\b(?:monthly|annual)_wage_total\(",
                          path.read_text(encoding="utf-8")):
                 # C4b helpers are guarded through their owning registered calculator.
-                readers.add({"family_leave": "maternity_leave", "pay_inputs": "average_wage"}.get(path.stem, path.stem))
+                readers.add({"family_leave": "maternity_leave", "pay_inputs": "average_wage", "wage_claims": "arrears_principal"}.get(path.stem, path.stem))
         self.assertEqual(readers - _ORDINARY_BASED_TARGETS - set(self.KEPT_ORDINARY_READERS), set())
         # 분류표가 실제 계산기를 가리키는지도 본다 — 이름이 바뀌면 분류가 조용히 비고, 겹치면 어느 쪽인지 모호하다
         self.assertLessEqual(set(self.KEPT_ORDINARY_READERS), readers)

@@ -170,7 +170,8 @@ from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
 from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
 from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
 from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
-_INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS)
+from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS
+_INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS)
 
 
 def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:

@@ -167,6 +167,21 @@ def _pop_comprehensive(r, result):
     return 0
 
 
+def _pop_wage_claims(r, result):
+    result.summary["미지급 원금 합계" + (" (추정)" if r.is_estimate else "")] = f"{r.remaining_principal:,.0f}원"
+    result.summary["지급 의무액 합계"] = f"{r.total_obligation:,.0f}원"
+    result.summary["기지급 원금 합계"] = f"{r.total_paid:,.0f}원"
+    result.summary["지급기일 경과 체불 원금"] = f"{r.overdue_principal:,.0f}원"
+    result.summary["기한 미도래·당일 미지급액"] = f"{r.not_yet_due:,.0f}원"
+    result.summary["초과 지급액 (자동 상계 안 함)"] = f"{r.overpayment:,.0f}원"
+    result.summary["원금 잔액 기준일"] = r.calc_date
+    for row in r.items:
+        result.summary[f"{row['month']} {row['name']} [{row['id']}]"] = (
+            f"의무액 {row['obligation']:,.0f}원 − 기지급 원금 {row['paid_principal']:,.0f}원 = 미지급 {row['remaining']:,.0f}원; 지급기일 {row['due_date']}"
+            + (f"; 초과 지급 {row['overpayment']:,.0f}원 별도" if row['overpayment'] else ""))
+    return 0
+
+
 def _pop_prorated(r, result):
     """result.summary에 일할계산 임금·근무일수 추가. 반환: 0."""
     result.summary["일할계산 임금"] = f"{r.prorated_wage:,.0f}원"
