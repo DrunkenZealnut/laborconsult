@@ -254,10 +254,10 @@ def _hints_nontaxable(inp: WageInput) -> list[LegalHint]:
     if inp.non_taxable_detail is None and inp.monthly_non_taxable == 200_000:
         hints.append(LegalHint(
             category="비과세소득",
-            condition="식대 20만원만 비과세 적용 중",
+            condition="비과세 항목과 지급 요건 확인 필요",
             hint=(
-                "자가운전보조금, 자녀보육수당, 연구보조비 등 추가 비과세 항목이 있으면 "
-                "non_taxable_detail로 상세 입력 시 실수령액이 증가할 수 있습니다."
+                "식대 등 수당의 지급 사실과 비과세 요건은 확인되지 않았습니다. "
+                "실수령액 계산을 요청할 때 실제 지급 항목·금액과 비과세 요건을 확인해주세요."
             ),
             basis="소득세법 제12조 (비과세소득)",
             priority=2,

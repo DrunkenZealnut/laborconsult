@@ -15,6 +15,12 @@ def average(**changes):
 
 
 class PayInputUpdateTests(unittest.TestCase):
+    def test_default_nontaxable_amount_does_not_invent_a_meal_allowance(self):
+        from wage_calculator.legal_hints import generate_legal_hints
+        hints=generate_legal_hints(WageInput(monthly_wage=3_000_000))
+        self.assertFalse(any('식대 20만원만 비과세 적용 중' in h.condition for h in hints))
+        self.assertTrue(any('지급 사실' in h.hint for h in hints if h.category=='비과세소득'))
+
     def test_explicit_average_event_date_is_preserved_without_retirement(self):
         from app.core.analyzer import _build_analysis_result
         from app.core.pipeline import _analysis_to_extract_params, _run_calculator
