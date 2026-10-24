@@ -49,7 +49,10 @@ from app.core.qna_experiment import corpus_paths, include_sparse_document
 CORPUS_FIELDS = ("id", "text", "title", "section", "source_type", "book_id") + PROVENANCE_FIELDS
 _KEEP_FIELDS = CORPUS_FIELDS
 # 그중 반복이 큰 것만 인터닝한다(text는 문서마다 달라 공유될 일이 없다).
-_INTERN_FIELDS = ("title", "section", "source_type", "book_id")
+# Dates/source labels repeat across many chunks. Share these low-cardinality
+# values; interning mostly unique IDs/URLs/version hashes adds table overhead.
+_INTERN_FIELDS = ("title", "section", "source_type", "book_id",
+                  "corpus_origin", "namespace", "posted_at", "answer_status")
 # 실측(60,174건 전체 로드 시 BM25Okapi 인덱스까지 프로세스 RSS 약 815MB, 2026-07-14).
 # "여유"라 부를 수준은 아님 — Vercel 함수 메모리가 1GB라면 남는 건 ~185MB뿐이고,
 # 여기 도달하기 전에 이 프로세스 다른 부분(FastAPI·다른 SDK 클라이언트·GraphRAG 등)도

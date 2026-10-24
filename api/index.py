@@ -1512,6 +1512,16 @@ async def send_email(req: EmailRequest, request: Request):
         raise HTTPException(status_code=500, detail="이메일 전송에 실패했습니다.") from e
 
 
+# Q&A routes must precede the static catch-all below.
+from api.qa_quality import build_router as build_qa_quality_router
+from app.core.qa_quality_store import quality_client
+from types import SimpleNamespace as _QualityConfig
+_qa_feedback_rate: dict[str, list[float]] = {}
+app.include_router(build_qa_quality_router(
+    require_admin, lambda: _QualityConfig(supabase=quality_client()), JWT_SECRET,
+    lambda request: _rate_limit_wait(_client_ip(request), max_count=30, window=60, store=_qa_feedback_rate),
+))
+
 # ── 정적 자산 폴백 (로컬 개발 전용) ──────────────────────────────────────────
 #
 # 프로덕션은 vercel.json 의 {"src": "/(.*\\..*)", "dest": "/public/$1"} 가
@@ -1572,13 +1582,3 @@ def serve_public_asset(asset_path: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.index:app", host="0.0.0.0", port=5555, reload=True)
-
-# Q&A feedback: signed answer/session token, separate IP bucket and private DB RPC.
-from api.qa_quality import build_router as build_qa_quality_router
-from app.core.qa_quality_store import quality_client
-from types import SimpleNamespace as _QualityConfig
-_qa_feedback_rate: dict[str, list[float]] = {}
-app.include_router(build_qa_quality_router(
-    require_admin, lambda: _QualityConfig(supabase=quality_client()), JWT_SECRET,
-    lambda request: _rate_limit_wait(_client_ip(request), max_count=30, window=60, store=_qa_feedback_rate),
-))

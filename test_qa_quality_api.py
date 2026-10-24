@@ -42,4 +42,16 @@ class QualityApiTests(unittest.TestCase):
             self.assertTrue(r.json()['saved'])
         self.assertEqual(self.events[0],'laborconsult')
 
+    def test_complete_app_quality_route_precedes_static_fallback(self):
+        import api.index as main
+        client=TestClient(main.app)
+        self.assertEqual(client.get('/api/admin/qa-quality').status_code,401)
+        def allowed_admin():return {'admin':True}
+        main.app.dependency_overrides[main.require_admin]=allowed_admin
+        self.addCleanup(main.app.dependency_overrides.pop,main.require_admin)
+        with patch.object(main,'quality_client',return_value=None):
+            response=client.get('/api/admin/qa-quality')
+        self.assertEqual(response.status_code,503)
+        self.assertEqual(response.json()['detail'],'집계를 불러올 수 없습니다.')
+
 if __name__=='__main__':unittest.main()

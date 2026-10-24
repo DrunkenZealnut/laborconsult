@@ -85,5 +85,34 @@ class SnapshotTests(unittest.TestCase):
                              index.rows["ctx_qa_123_c1"]["metadata"]["document_version"])
             self.assertNotIn("corpus_origin",index.rows["ctx_qa_case_1_c0"]["metadata"])
 
+    def test_second_release_keeps_explicit_versions_in_dense_and_sparse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp);self.snapshot(path/'snapshot')
+            shard=path/'snapshot/qa/0000000.json.gz'
+            with gzip.open(shard,'rt') as stream:rows=json.load(stream)
+            for key in ['ctx_qa_123_c0','ctx_qa_123_c1']:
+                rows[key]['metadata']['document_version']='explicit-content-hash'
+            with gzip.open(shard,'wt') as stream:json.dump(rows,stream)
+            index=Index();index.rows={}
+            self.q.clone_qa(path/'snapshot',index,'qa-eval-next',path/'ledger')
+            self.q.build_sparse(path/'snapshot',{},path/'sparse.gz')
+            with gzip.open(path/'sparse.gz','rt') as stream:sparse={r['id']:r for r in map(json.loads,stream)}
+            for key in ['ctx_qa_123_c0','ctx_qa_123_c1']:
+                self.assertEqual(index.rows[key]['metadata']['document_version'],'explicit-content-hash')
+                self.assertEqual(sparse[key]['document_version'],'explicit-content-hash')
+
+    def test_mixed_document_versions_fail_before_writing_sparse(self):
+        for versions in [('v1','v2'),('v1',None)]:
+            with self.subTest(versions=versions),tempfile.TemporaryDirectory() as tmp:
+                path=Path(tmp);self.snapshot(path/'snapshot')
+                shard=path/'snapshot/qa/0000000.json.gz'
+                with gzip.open(shard,'rt') as stream:rows=json.load(stream)
+                for key,value in zip(['ctx_qa_123_c0','ctx_qa_123_c1'],versions):
+                    if value:rows[key]['metadata']['document_version']=value
+                with gzip.open(shard,'wt') as stream:json.dump(rows,stream)
+                output=path/'sparse.gz';output.write_bytes(b'previous')
+                with self.assertRaises(ValueError):self.q.build_sparse(path/'snapshot',{},output)
+                self.assertEqual(output.read_bytes(),b'previous')
+
 if __name__=="__main__":
     unittest.main()

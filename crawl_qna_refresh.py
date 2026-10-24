@@ -57,7 +57,9 @@ def refresh(*, run_dir: Path, baseline: dict, fetch, start_page: int, end_page: 
                 targets[row["post_id"]] = row
     if revisit_pending:
         for post_id, row in baseline.items():
-            if row["status"] in {"unanswered", "conflict", "parse_error"}:
+            undeployed = ("deployed_content_hash" in row
+                          and row["deployed_content_hash"] != row["content_hash"])
+            if row["status"] in {"unanswered", "conflict", "parse_error"} or undeployed:
                 targets.setdefault(post_id, row)
     # Freeze a complete target list before the first document fetch.
     save(run_dir/"targets.json", sorted(targets))

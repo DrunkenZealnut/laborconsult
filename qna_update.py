@@ -35,7 +35,11 @@ def prepare(crawl:Path,candidate:Path,*,quarantine_ids=()):
     for pid,result in state['posts'].items():
         if result['status']!='ok':continue
         record=read(crawl/'records'/f'{pid}.json')
-        if record.get('change') in {'new','changed'} or baseline.get(pid,{}).get('status')=='unanswered':
+        previous=baseline.get(pid,{})
+        undeployed=('deployed_content_hash' in previous
+                    and previous['deployed_content_hash']!=record['content_hash'])
+        legacy_cleanup=previous.get('status')=='unanswered' and 'deployed_content_hash' not in previous
+        if record.get('change') in {'new','changed'} or legacy_cleanup or undeployed:
             selected[pid]=record
     candidate.mkdir(parents=True,exist_ok=True)
     identity={'documents':{pid:digest(record) for pid,record in selected.items()},'quarantined_ids':quarantined,
@@ -64,9 +68,36 @@ def merge_manifest(crawl:Path,output:Path,*,quarantine_ids=()):
     merged=read(crawl/"baseline-manifest.json")
     for pid,result in read(crawl/"state.json")["posts"].items():
         if result["status"]=="ok":
-            merged[pid]=read(crawl/"records"/f"{pid}.json")
+            previous=merged.get(pid,{})
+            record=read(crawl/"records"/f"{pid}.json")
+            # Collection is not deployment. Legacy inventory describes the
+            # Q0 production baseline; subsequent runs retain its checkpoint.
+            legacy_hash=None if previous.get('status')=='unanswered' else previous.get('content_hash')
+            record['deployed_content_hash']=previous.get('deployed_content_hash',legacy_hash)
+            merged[pid]=record
     save(output,merged)
     return {"documents":len(merged),"manifest_version":digest(merged),"meaning":"collected, not necessarily deployed"}
+
+
+def mark_deployed(collection:Path,candidate:Path,ledger:Path,output:Path):
+    """Advance only verified production documents, retaining newer pending content."""
+    manifest=read(candidate/'manifest.json')
+    done=read(ledger/'apply-complete.json')
+    if (done.get('status')!='complete' or done.get('namespace')!='qa'
+            or done.get('candidate_version')!=manifest['candidate_version']
+            or done.get('documents')!=len(manifest['documents'])):
+        raise ValueError('deployment checkpoint requires complete matching production apply')
+    merged=read(collection)
+    for pid in manifest['documents']:
+        prepared=read(candidate/'prepared'/f'{pid}.json')
+        entry=read(ledger/pid/'complete.json')
+        if (pid not in merged or entry.get('status')!='complete' or entry.get('namespace')!='qa'
+                or entry.get('post_id')!=pid or set(entry.get('chunk_ids',[]))!={c['chunk_id'] for c in prepared['chunks']}):
+            raise ValueError('deployment checkpoint has incomplete document evidence')
+        merged[pid]['deployed_content_hash']=prepared['record']['content_hash']
+    save(output,merged)
+    return {'documents':len(manifest['documents']),'candidate_version':manifest['candidate_version'],
+            'manifest_version':digest(merged),'meaning':'verified production deployment checkpoint'}
 
 
 def _read_vectors(path):
@@ -147,6 +178,7 @@ def main():
     sub=parser.add_subparsers(dest='command',required=True)
     p=sub.add_parser('prepare');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--candidate',type=Path,required=True);p.add_argument('--quarantine-id',action='append',default=[])
     p=sub.add_parser('manifest');p.add_argument('--crawl',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--quarantine-id',action='append',default=[])
+    p=sub.add_parser('deployed-manifest');p.add_argument('--collection',type=Path,required=True);p.add_argument('--candidate',type=Path,required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p=sub.add_parser('embed');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--workers',type=int,choices=[1,2,4,8],default=4)
     p=sub.add_parser('apply');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--namespace',required=True);p.add_argument('--ledger',type=Path,required=True);p.add_argument('--production',action='store_true');p.add_argument('--gate',type=Path);p.add_argument('--workers',type=int,choices=[1,2,4,8],default=4)
     p=sub.add_parser('build');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--snapshot',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
@@ -154,6 +186,7 @@ def main():
     args=parser.parse_args()
     if args.command=='prepare':result=prepare(args.crawl,args.candidate,quarantine_ids=args.quarantine_id)
     elif args.command=='manifest':result=merge_manifest(args.crawl,args.output,quarantine_ids=args.quarantine_id)
+    elif args.command=='deployed-manifest':result=mark_deployed(args.collection,args.candidate,args.ledger,args.output)
     elif args.command=='build':
         from qna_snapshot import build_sparse, legacy_versions
         result=build_sparse(args.snapshot,replacements(args.candidate),args.output)

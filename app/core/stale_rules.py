@@ -232,4 +232,6 @@ if __name__ == "__main__":
     if args.scan:
         _scan(args.path, args.samples, args.output)
     else:
+        if args.output or args.path != "data/bm25_corpus.jsonl.gz":
+            parser.error("--path/--output audit requests require --scan")
         parser.print_help()

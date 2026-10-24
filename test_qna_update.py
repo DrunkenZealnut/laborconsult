@@ -84,4 +84,31 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(ValueError):self.q.embed(root/'candidate',lambda _: [])
             self.assertFalse((root/'candidate'/'embedding-complete.json').exists())
 
+    def test_undeployed_answer_survives_next_collection_until_verified_deployment(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t);self.crawl(root/'crawl')
+            self.q.merge_manifest(root/'crawl',root/'collected.json')
+            collected=self.q.read(root/'collected.json')
+            self.q.save(root/'crawl/baseline-manifest.json',collected)
+            doc=self.q.read(root/'crawl/records/3.json');doc['change']='unchanged'
+            self.q.save(root/'crawl/records/3.json',doc)
+            candidate=root/'candidate';manifest=self.q.prepare(root/'crawl',candidate)
+            self.assertIn('3',manifest['documents'],'postponed new answer was lost')
+            self.q.embed(candidate,lambda texts:[[.1]*EMBED_DIM for _ in texts])
+            ledger=root/'production';ledger.mkdir()
+            done={'status':'complete','namespace':'qa','candidate_version':manifest['candidate_version'],'documents':len(manifest['documents'])}
+            self.q.save(ledger/'apply-complete.json',done)
+            for pid in manifest['documents']:
+                prepared=self.q.read(candidate/'prepared'/f'{pid}.json')
+                self.q.save(ledger/pid/'complete.json',{'status':'complete','namespace':'qa','post_id':pid,'chunk_ids':[r['chunk_id'] for r in prepared['chunks']]})
+            self.q.mark_deployed(root/'collected.json',candidate,ledger,root/'deployed.json')
+            checkpoint=self.q.read(root/'deployed.json')
+            self.assertEqual(checkpoint['3']['deployed_content_hash'],doc['content_hash'])
+            self.q.save(root/'crawl/baseline-manifest.json',checkpoint)
+            self.assertEqual(self.q.prepare(root/'crawl',root/'next')['documents'],{},
+                             'verified unchanged unanswered cleanup must not remain pending forever')
+            self.q.save(ledger/'apply-complete.json',{**done,'namespace':'qa-eval-test'})
+            with self.assertRaises(ValueError):self.q.mark_deployed(root/'collected.json',candidate,ledger,root/'bad.json')
+            self.assertFalse((root/'bad.json').exists())
+
 if __name__=='__main__':unittest.main()

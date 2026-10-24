@@ -23,7 +23,7 @@ python crawl_qna_refresh.py \
 python qna_update.py manifest --crawl "$RUN/crawl" --output "$RUN/collection-manifest.json"
 ```
 
-다음 실행은 `--source-dir` 대신 `--baseline-manifest "$PREVIOUS/collection-manifest.json"`을 사용한다. 최근 30일을 `--since`로 주고 미답변 글을 재방문한다. 월간 점검 때 오래된 목록 페이지 구간을 `--start-page/--end-page`로 순환한다. 목록 정렬/공지 변화가 있으므로 첫 오래된 글에서 멈추지 않는다. 전체 사이트를 확인했다고 보고하지 않는다.
+다음 실행은 `--source-dir` 대신 `--baseline-manifest "$PREVIOUS/collection-manifest.json"`을 사용한다. `deployed_content_hash`는 수집 해시와 별도이며 수집만으로 앞당기지 않는다. 배포가 보류된 신규·변경 글은 다음 실행에서 미답변 목록과 함께 기간 밖에서도 재확인하고 후보에 유지한다. 최근 30일을 `--since`로 주고 미답변 글을 재방문한다. 월간 점검 때 오래된 목록 페이지 구간을 `--start-page/--end-page`로 순환한다. 목록 정렬/공지 변화가 있으므로 첫 오래된 글에서 멈추지 않는다. 전체 사이트를 확인했다고 보고하지 않는다.
 
 현재 주간·월간 자동 예약은 만들지 않았다. 예약을 적용할 때는 별도 실행 계정·실패 통지 수단·비용 한도를 정한다.
 
@@ -58,7 +58,7 @@ python qna_update.py build --candidate "$RUN/candidate" \
 - before/after 벡터와 BM25에서 표본 신규·수정·과거 글의 document_version, ID, 날짜를 대조한다.
 - namespace별 청크 수와 삭제·추가 장부를 설명한다. 빈 namespace/20% 초과 감소는 중단한다.
 - `QNA_EVAL_BM25_PATH="$RUN/bm25-after.jsonl.gz" python test_bm25_memory.py`: 기존550MB 관문을 유지한다.
-- `python -m app.core.stale_rules --path "$RUN/bm25-after.jsonl.gz" --output "$RUN/stale-matches.jsonl"`: 표본 출력만 보지 말고 신규/변경 제외 전량을 검토한다.
+- `python -m app.core.stale_rules --scan --path "$RUN/bm25-after.jsonl.gz" --output "$RUN/stale-matches.jsonl"`: 표본 출력만 보지 말고 신규/변경 제외 전량을 검토한다.
 - 자동 단위·통합 검증은 `.github/workflows/tests.yml`을 실행한다.
 
 A/B/C는 같은 커밋·설정·법령 캐시를 쓴다. A는 nodong_qna만 제외하고 후보 자리는 기존 검색 예산 안에서 다른 자료가 채운다. qa 전체나 counsel을 끄지 않는다. 모든 조건에 같은 Q3 시점 필터를 사용하므로 이 비교는 코퍼스 효과이며 Q3 단독 개선 실험이 아니다.
@@ -93,6 +93,14 @@ python qna_update.py apply --candidate "$RUN/candidate" --namespace qa \
 4. 운영 벡터 검증 후 새 BM25와 builder가 생성한 `qa_legacy_versions.json.gz`를 함께 `data/`에 포함하여 교체하고, `data/qa_corpus_release.json`에 corpus_version/calculator_version/answer_code_version을 기록한다.
 5. 운영의 두 검색 경로를 재확인한 후 정상 완료로 표시한다. 부분 실패 시 새 BM25를 배포하지 않는다.
 
+6. 완료된 운영 apply 장부로만 배포 기준 manifest를 갱신한다. 평가 namespace 장부는 거부된다. 이후 수집은 이 파일을 `--baseline-manifest`로 사용한다. 더 최근 수집 내용이 있으면 배포된 버전과의 차이를 계속 미배포로 유지한다.
+
+```bash
+python qna_update.py deployed-manifest --collection "$RUN/collection-manifest.json" \
+  --candidate "$RUN/candidate" --ledger "$RUN/apply-production" \
+  --output "$RUN/deployed-manifest.json"
+```
+
 ## 5. 복구
 
 실패 실행의 `apply-production/<post_id>/before.json`에는 덮어쓰기 전 값과 메타데이터가 있다. ID 목록만으로는 복구할 수 없다.
@@ -102,7 +110,7 @@ python qna_update.py restore --namespace qa --production \
   --ledger "$RUN/apply-production" --post-id POST_ID
 ```
 
-영향받은 모든 문서에 반복한다. 원래 벡터 복원·fetch 대조 후 새 잔여 ID만 제거한다. 기존 문서가 없던 신규 글은 이 실행에서 추가한 청크만 제거된다. 이어서 **같은 백업 시점의 BM25·legacy 버전 맵·release 메타데이터**를 복원하고 Dense/BM25 문서 버전을 다시 확인한다. 다른 실행이 이후 같은 글을 변경한 경우 먼저 장부를 대조한다. 과거 장부를 무조건 덮어쓰지 않는다.
+영향받은 모든 문서에 반복한다. 다음 수집의 기준도 배포 전 collection manifest로 되돌려, 롤백된 변경분을 미배포로 다시 추적한다. 원래 벡터 복원·fetch 대조 후 새 잔여 ID만 제거한다. 기존 문서가 없던 신규 글은 이 실행에서 추가한 청크만 제거된다. 이어서 **같은 백업 시점의 BM25·legacy 버전 맵·release 메타데이터**를 복원하고 Dense/BM25 문서 버전을 다시 확인한다. 다른 실행이 이후 같은 글을 변경한 경우 먼저 장부를 대조한다. 과거 장부를 무조건 덮어쓰지 않는다.
 
 ## 6. 내부 추적·사용자 의견
 

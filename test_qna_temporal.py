@@ -1,5 +1,7 @@
 """Current and historical questions must use the right temporal filter."""
 import unittest
+import subprocess
+import sys
 from app.core.stale_rules import filter_stale_hits
 
 def hit(text, key="old"):
@@ -72,6 +74,12 @@ class TemporalTests(unittest.TestCase):
             except TypeError:
                 self.fail("full scan export missing")
             self.assertEqual(len(out.read_text().splitlines()),7)
+
+class ScanCommandTests(unittest.TestCase):
+    def test_requested_audit_without_scan_action_fails(self):
+        result=subprocess.run([sys.executable,'-m','app.core.stale_rules','--path','missing-corpus.gz','--output','missing-report.jsonl'],text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0,'missing audit action must not look successful')
+        self.assertIn('--scan',result.stderr)
 
 if __name__=="__main__":
     unittest.main()

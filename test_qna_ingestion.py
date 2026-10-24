@@ -158,6 +158,18 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(out["new"],0)
             self.assertFalse((Path(tmp)/"documents/123.md").exists())
 
+    def test_undeployed_answer_is_revisited_outside_recent_window(self):
+        import qna_ingestion as q
+        previous=q.document('123','제목','2025-01-01','질문',['기존 답변'])
+        previous['deployed_content_hash']='older-version'
+        listing='<table class="bd_lst"><tbody><tr><td class="title"><a href="/qna/123">오래된 글</a></td><td class="time">2025.01.01</td></tr></tbody></table>'
+        with tempfile.TemporaryDirectory() as tmp:
+            report=self.r.refresh(run_dir=Path(tmp),baseline={'123':previous},
+                fetch=lambda url:listing if 'page=' in url else html_post('2025.01.01 10:00'),
+                start_page=1,end_page=1,since='2026-09-01',until='2026-10-24T07:00:00+09:00',revisit_pending=True)
+            self.assertEqual(report['target_documents'],1)
+            self.assertTrue((Path(tmp)/'records/123.json').exists())
+
 
 if __name__ == "__main__":
     unittest.main()

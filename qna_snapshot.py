@@ -34,11 +34,22 @@ def iter_namespace(snapshot: Path, namespace: str):
 
 def legacy_versions(snapshot: Path) -> dict[str, str]:
     by_post = defaultdict(list)
+    explicit = defaultdict(set)
     for row in iter_namespace(snapshot, "qa"):
         meta = provenance(row["metadata"])
         if is_nodong_qa(meta) and meta.get("post_id"):
             by_post[meta["post_id"]].append((row["id"], digest(row["metadata"])))
-    return {key: "legacy-" + digest(sorted(parts)) for key, parts in by_post.items()}
+            # Inspect archived metadata, not a locally deployed fallback map.
+            version = row["metadata"].get("document_version") or None
+            explicit[meta["post_id"]].add(version)
+    versions = {}
+    for key, parts in by_post.items():
+        known = explicit[key]
+        if len(known) != 1:
+            raise ValueError("inconsistent document versions in snapshot")
+        version = next(iter(known))
+        versions[key] = version if version else "legacy-" + digest(sorted(parts))
+    return versions
 
 def sparse_row(vector: dict, namespace: str) -> dict:
     meta = vector["metadata"]
