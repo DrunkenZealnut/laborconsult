@@ -239,6 +239,9 @@ class StaleFilterTest(unittest.TestCase):
             "daily_10days": "2019-10-01",      # 고용보험법 2019.8.27 개정, 2019.10.1 시행
             "weekly_next_week": "2021-08-04",  # 임금근로시간과-1736
             "lsa_35": "2019-01-15",            # 근로기준법 2019.1.15 개정(제26조 단서로 이관)
+            "parental_old_cap": "2025-01-01",
+            "arrears_in_service_old": "2025-10-23",
+            "annual_old_deduction": "2018-05-29",
         })
 
     def test_k8_negative_patterns(self):
@@ -269,9 +272,20 @@ class StaleFilterTest(unittest.TestCase):
 
     def test_k9_filter_runs_before_caps(self):
         from app.core import rag
-        src = inspect.getsource(rag.format_pinecone_hits)
-        self.assertLess(src.index("filter_stale_hits(hits)"),
-                        src.index("_cap_counsel_total(_cap_textbook_total(_cap_by_book(hits))"))
+        from app.core import stale_rules
+        from unittest.mock import patch
+        order = []
+        real_filter, real_cap = stale_rules.filter_stale_hits, rag._cap_by_book
+        def filtered(*args, **kwargs):
+            order.append("filter")
+            return real_filter(*args, **kwargs)
+        def capped(*args, **kwargs):
+            order.append("cap")
+            return real_cap(*args, **kwargs)
+        with patch.object(stale_rules, "filter_stale_hits", side_effect=filtered), patch.object(
+            rag, "_cap_by_book", side_effect=capped):
+            rag.format_pinecone_hits([dict(self.PLAIN, section="")])
+        self.assertEqual(order, ["filter", "cap"])
 
     def test_k9_format_reports_stale_ids(self):
         from app.core.rag import format_pinecone_hits

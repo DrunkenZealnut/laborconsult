@@ -12,6 +12,7 @@ import os
 import re
 import logging
 from collections import Counter
+from app.core.provenance import provenance
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ def _query_namespaces(
                     # 메타에는 법제처·아카이브가 확인한 번호가 이미 있다.
                     "case_no": meta.get("case_no", ""),
                     "id": m.id,
+                    **provenance(meta),
                 })
         except Exception as e:
             logger.warning("Pinecone ns=%s 검색 실패: %s", ns, e)
@@ -907,7 +909,8 @@ _JOINER_LEN = len(_CONTEXT_JOINER)
 
 def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
                          max_chars: int | None = None,
-                         stale_out: list[str] | None = None) -> tuple[str | None, list[dict]]:
+                         stale_out: list[str] | None = None,
+                         query: str = "", reference_date: str | None = None) -> tuple[str | None, list[dict]]:
     """Pinecone 검색 결과를 LLM 컨텍스트 텍스트 + 메타 리스트로 변환.
 
     인용 가드 G4가 여기서 적용되므로 **출력 건수가 입력보다 적을 수 있다** —
@@ -926,7 +929,7 @@ def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
     # 폐기 기준 필터(kin-answer-accuracy P0-3)는 **가드보다 먼저** — 상담글을 걸러낸
     # 자리를 다른 출처가 채우도록. 캡은 순수 차감이라 순서가 반대면 빈자리가 그대로 남는다.
     from app.core.stale_rules import filter_stale_hits
-    hits, stale_ids = filter_stale_hits(hits)
+    hits, stale_ids = filter_stale_hits(hits, query=query, reference_date=reference_date)
     if stale_out is not None:
         stale_out.extend(stale_ids)
 
@@ -964,6 +967,12 @@ def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
         if h.get("section"):
             header += f" — {h['section']}"
 
+        if is_counsel_source(h):
+            when = h.get("posted_at") or "시점 불명"
+            header += f" (사례 게시일: {when}; 법 적용일은 사건 시점으로 판단)"
+            if h.get("answer_status") == "unanswered":
+                header += " [답변 없는 질문 — 상담 결론이나 법적 근거로 사용 금지]"
+
         content = h.get("content", "")
         if content:
             entry = f"{header}\n{content}"
@@ -983,6 +992,8 @@ def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
                 "section": h.get("section", ""),
                 "source_type": h["source_type"],
                 "score": h["score"],
+                "id": h.get("id", ""),
+                **provenance(h),
                 "chunk_text": content,   # 인용 목록/검증이 본문에서 판례번호를 파싱하도록 동봉(R-1b)
                 # 본문 파싱만으로는 부족하다 — 판시사항·판결요지는 자기 사건번호를
                 # 적지 않는 것이 보통이라 letec 6,440청크 중 94%가 인용 목록에

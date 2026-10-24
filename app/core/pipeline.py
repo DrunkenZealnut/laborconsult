@@ -296,7 +296,8 @@ def _build_sources_payload(
                 "score": score,
                 "origin": origin,
             })
-            if h.get("url") or h.get("official_url"):
+            from app.core.provenance import is_nodong_qa
+            if (h.get("url") or h.get("official_url")) and not is_nodong_qa(h):
                 out[-1]["url"] = h.get("url") or h["official_url"]
             if h.get("content_kind"):
                 out[-1]["content_kind"] = h["content_kind"]
@@ -3696,6 +3697,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 2-1b. 판례·행정해석 검색 (Pinecone 우선 → 법제처 API 폴백)
     precedent_text = None
     precedent_meta: list[dict] = []
+    retrieval_candidates: list[dict] = []
     stale_filtered: list[str] = []   # 폐기 기준 필터가 적용한 규칙 id (관측용)
     if analysis is None:
         # 의도분석 실패 시 이 블록이 통째로 죽어 답변이 검색 근거 0으로 나가던
@@ -3790,6 +3792,8 @@ def process_question(query: str, session: Session, config: AppConfig,
                 pinecone_search_queries, config, top_k=search_top_k,
             )
 
+            retrieval_candidates.extend(pinecone_hits)
+
             # ② Cohere Rerank — Adaptive top_n
             if pinecone_hits and config.cohere_api_key:
                 pinecone_hits = rerank_results(
@@ -3825,6 +3829,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                             pinecone_search_queries, config,
                             top_k=search_top_k * 2,
                         )
+                        retrieval_candidates.extend(wider_hits or [])
                         if wider_hits and config.cohere_api_key:
                             wider_hits = rerank_results(
                                 query, wider_hits, config.cohere_api_key,
@@ -3841,7 +3846,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 # 뒤라 원래 의도한 상한과 다르다(외부 리뷰 A-5).
                 precedent_text, precedent_meta = format_pinecone_hits(
                     pinecone_hits, top_n=adaptive_params["rerank_top_n"],
-                    max_chars=PRECEDENT_TEXT_BUDGET, stale_out=stale_filtered)
+                    max_chars=PRECEDENT_TEXT_BUDGET, stale_out=stale_filtered, query=query)
                 logger.info("Pinecone 판례·행정해석 %d건 사용", len(pinecone_hits))
 
             # ② Pinecone 결과 부족 시 법제처 API 폴백
@@ -3940,6 +3945,9 @@ def process_question(query: str, session: Session, config: AppConfig,
     except Exception as e:
         logger.warning("질문 사실 확인 실패 (fallback): %s", e, exc_info=True)
         fact_notes = ""
+
+    from app.core.retrieval_trace import observe as observe_retrieval
+    retrieval_trace = observe_retrieval(config, retrieval_candidates, precedent_meta)
 
     # sources는 GraphRAG까지 전부 모인 뒤 발신 — 인용 화이트리스트와 동일 소스 집합 노출
     yield {"type": "sources",
@@ -4496,6 +4504,17 @@ def process_question(query: str, session: Session, config: AppConfig,
     yield {"type": "ping"}
     try:
         conv_id = save_conversation(config.supabase, record)
+        if conv_id and not outcome.truncated and os.getenv("QA_QUALITY_ENABLED", "").lower() == "true":
+            try:
+                from app.core.qa_quality_store import record_quality, quality_client
+                feedback = record_quality(
+                    quality_client(), conv_id, session.id, retrieval_trace, outcome.model,
+                    synthetic=bool(conv_metadata.get("synthetic")),
+                )
+                if feedback:
+                    yield feedback
+            except Exception as exc:
+                logger.warning("Q&A quality storage failed: %s", type(exc).__name__)
         if conv_id and attachments:
             for att in attachments:
                 if att.raw_data:

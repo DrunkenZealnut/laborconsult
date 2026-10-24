@@ -23,6 +23,8 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,34 @@ STALE_RULES: tuple[StaleRule, ...] = (
         "해고예고 적용 예외(계속근로 3개월 미만 등)는 근로기준법 제26조 단서",
         re.compile(r"제\s*26\s*조\s*단서|구\s*근로기준법\s*제\s*35|삭제|위헌"),
     ),
+    # 2025-01-01 지급기간부터. 고용보험법 시행령 제95조 및 제35100호 부칙.
+    # https://moel.go.kr/policy/policydata/view.do?bbs_seq=20250100172
+    StaleRule(
+        "parental_old_cap",
+        re.compile(r"육아휴직.{0,80}(상한.{0,15}150\s*만|사후지급.{0,25}25\s*[%％])"),
+        "2025-01-01",
+        "육아휴직 급여는 지급기간과 월차에 따른 현행 상한 및 특례를 확인하고, 2025년 이후 기간의 사후지급금 폐지를 구분",
+        re.compile(r"250\s*만|200\s*만|160\s*만|사후지급.{0,20}(폐지|없)|종전|구\s*기준"),
+    ),
+    # 근로기준법 제37조 제1항 제2호, 법률 제20520호 부칙의 지급사유 적용례.
+    # https://1350.moel.go.kr/rtmview.do?id=1000309035
+    StaleRule(
+        "arrears_in_service_old",
+        re.compile(r"재직.{0,45}(체불|미지급).{0,45}(연\s*)?6\s*[%％]"),
+        "2025-10-23",
+        "재직 중 정기 임금은 2025-10-23 이후 지연이자 지급사유부터 근로기준법상 연 20% 적용 여부를 확인",
+        re.compile(r"재직(?:(?!퇴직).){0,60}20\s*[%％]|종전|구\s*기준|2025[.년/-]\s*10[.월/-]\s*23"),
+    ),
+    # 근로기준법 제60조 제3항 삭제(법률 제15108호, 시행 2018-05-29).
+    # https://www.law.go.kr/LSW/nwRvsLsInfoR.do?lsiSeq=199151
+    StaleRule(
+        "annual_old_deduction",
+        re.compile(r"근로기준법.{0,15}제?\s*60\s*조\s*제?\s*3\s*항.{0,100}(차감|공제)"),
+        "2018-05-29",
+        "1년 미만 사용 연차를 다음해 발생 연차에서 공제하던 제60조 제3항은 삭제됨",
+        re.compile(r"삭제|폐지|(차감|공제).{0,10}(않|아니|없|말)|종전|구\s*기준"),
+    ),
+
 )
 
 
@@ -99,7 +129,21 @@ def _annotate(hit: dict, rules: list[StaleRule]) -> dict:
     return out
 
 
-def filter_stale_hits(hits: list[dict]) -> tuple[list[dict], list[str]]:
+def _event_window(query: str, reference_date: str | None) -> tuple[str | None, str | None]:
+    years = [int(y) for y in re.findall(r"(?<!\d)((?:19|20)\d{2})(?=\s*(?:년|[./-]\d))", query)]
+    if years:
+        return f"{min(years)}-01-01", f"{max(years)}-12-31"
+    if re.search(r"예전|과거|당시", query):
+        return None, None
+    try:
+        current = date.fromisoformat(reference_date) if reference_date else datetime.now(ZoneInfo("Asia/Seoul")).date()
+    except ValueError:
+        return None, None
+    return current.isoformat(), current.isoformat()
+
+
+def filter_stale_hits(hits: list[dict], *, query: str = "",
+                      reference_date: str | None = None) -> tuple[list[dict], list[str]]:
     """(처리된 hits, 적용된 규칙 id 목록). 순서는 보존한다.
 
     상담글 일치는 제외, 그 외 일치는 주석. 제외 후 남는 것이 없으면 제외를 취소하고
@@ -109,6 +153,7 @@ def filter_stale_hits(hits: list[dict]) -> tuple[list[dict], list[str]]:
         return hits, []
 
     try:
+        window_start, window_end = _event_window(query, reference_date)
         matched = [(h, match_rules(h.get("content", ""))) for h in hits]
         if not any(rules for _, rules in matched):
             return hits, []
@@ -117,6 +162,11 @@ def filter_stale_hits(hits: list[dict]) -> tuple[list[dict], list[str]]:
         for h, rules in matched:
             if not rules:
                 kept.append(h)
+            elif window_end and all(window_end < r.changed for r in rules):
+                kept.append(h)  # All matched rules were valid before their amendments.
+            elif not window_start or any(window_start < r.changed for r in rules):
+                kept.append(_annotate(h, rules))  # Mixed/unknown period: keep with boundary notes.
+                annotated += 1
             elif (h.get("source_type") in _EXCLUDE_SOURCES
                   and not _mentions_current(h.get("content", ""), rules)):
                 dropped += 1
@@ -136,14 +186,18 @@ def filter_stale_hits(hits: list[dict]) -> tuple[list[dict], list[str]]:
         return hits, []
 
 
-def _scan(path: str = "data/bm25_corpus.jsonl.gz", samples: int = 5) -> None:
+def _scan(path: str = "data/bm25_corpus.jsonl.gz", samples: int = 5,
+          output: str | None = None) -> None:
     import gzip
     import json
     from collections import Counter, defaultdict
+    from contextlib import ExitStack
 
     counts: dict[str, Counter] = defaultdict(Counter)
     shown: dict[str, list[str]] = defaultdict(list)
-    with gzip.open(path, "rt", encoding="utf-8") as f:
+    with ExitStack() as stack:
+        f = stack.enter_context(gzip.open(path, "rt", encoding="utf-8"))
+        export = stack.enter_context(open(output, "w", encoding="utf-8")) if output else None
         for line in f:
             d = json.loads(line)
             text = d.get("text", "")
@@ -153,6 +207,10 @@ def _scan(path: str = "data/bm25_corpus.jsonl.gz", samples: int = 5) -> None:
                 if st in _EXCLUDE_SOURCES and not _mentions_current(text, [r]):
                     st += "(제외)"
                 counts[r.id][st] += 1
+                if export:
+                    export.write(json.dumps({"id": d["id"], "rule": r.id,
+                        "action": "exclude" if st.endswith("(제외)") else "annotate",
+                        "source_type": d.get("source_type"), "text": text}, ensure_ascii=False)+"\n")
                 if len(shown[r.id]) < samples:
                     m = r.pattern.search(text)
                     s = max(0, m.start() - 40)
@@ -164,8 +222,16 @@ def _scan(path: str = "data/bm25_corpus.jsonl.gz", samples: int = 5) -> None:
 
 
 if __name__ == "__main__":
-    import sys
-    if "--scan" in sys.argv:
-        _scan()
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scan", action="store_true")
+    parser.add_argument("--path", default="data/bm25_corpus.jsonl.gz")
+    parser.add_argument("--samples", type=int, default=5)
+    parser.add_argument("--output", help="Export every match as private JSONL, independent of sample count")
+    args = parser.parse_args()
+    if args.scan:
+        _scan(args.path, args.samples, args.output)
     else:
-        print("usage: python3 -m app.core.stale_rules --scan")
+        if args.output or args.path != "data/bm25_corpus.jsonl.gz":
+            parser.error("--path/--output audit requests require --scan")
+        parser.print_help()

@@ -220,6 +220,7 @@
 <div id="quality-view" class="container hidden">
   <div class="conv-header"><h2>상담 답변 품질</h2><button type="button" class="search-btn" onclick="loadEvaluationRuns()">새로고침</button></div>
   <div id="quality-status" class="quality-status" role="status"></div>
+  <div id="qa-quality-summary" class="quality-panel" role="status"></div>
   <div id="quality-stat-cards"></div>
   <div class="quality-layout">
     <section class="quality-panel">
@@ -468,7 +469,38 @@ function renderEvaluationDetail(run) {
     ${renderEvaluationSummary(item)}${results.map(renderEvaluationCase).join('') || fallback}`;
 }
 
+function renderQaQuality(data) {
+  const f = data.feedback || {};
+  const r = data.retrieval || {};
+  const ratio = (n, d) => Number.isFinite(n) && Number.isFinite(d) && d > 0 ? (100 * n / d).toFixed(1) + '%' : '측정 없음';
+  const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const reasons = {legal_calculation_error:'법률·계산 오류',unclear:'설명이 어려움',missing_answer:'필요한 답이 없음',other:'기타'};
+  let html = '<h2>실제 사용자 의견 · 최근 30일 노출 답변</h2><p>긍정 비율 ' + ratio(f.positive, f.votes) +
+    ' · 응답률 ' + ratio(f.votes, f.exposures) + ' · 유효 투표 ' + esc(f.votes || 0) + ' / 노출 ' + esc(f.exposures || 0) + '</p>';
+  html += '<p>' + ((f.votes || 0) < 30 ? '30건 미만: 탐색적 결과. ' : '') + '자발적 응답이므로 전체 이용자 만족도나 갱신의 인과효과를 뜻하지 않습니다.</p>';
+  html += '<p>부정 사유: ' + Object.entries(f.negative_reasons || {}).map(([k,v]) => esc(reasons[k] || k) + ' ' + esc(v)).join(' · ') + '</p>';
+  html += '<h3>검색 후보 / 컨텍스트 공급</h3><p>공급은 모델 결론에 대한 실제 영향의 증거가 아닙니다. 유사도 차이는 법률적 모순 판정이 아닙니다.</p><ul>';
+  (r.by_origin || []).forEach(row => { html += '<li>' + esc(row.origin) + ': 후보 ' + esc(row.candidates) + ', 공급 ' + esc(row.supplied) + '</li>'; });
+  html += '</ul><details><summary>버전별 표본</summary><ul>';
+  (f.by_version || []).forEach(row => { html += '<li>' + esc(JSON.stringify(row.versions)) + ': 투표 ' + esc(row.votes) + ' / 노출 ' + esc(row.exposures) + ' · 긍정 ' + ratio(row.positive,row.votes) + '</li>'; });
+  return html + '</ul></details>';
+}
+
+async function loadQaQuality() {
+  const target = document.getElementById('qa-quality-summary');
+  if (!target) return;
+  target.textContent = '사용자 의견 집계를 불러오는 중...';
+  try {
+    const data = await adminFetch(API + '/qa-quality?days=30');
+    if (!data || !data.feedback || !data.retrieval) throw new Error('invalid quality summary');
+    target.innerHTML = renderQaQuality(data);
+  } catch (_) {
+    target.textContent = '사용자 의견 집계를 불러올 수 없습니다.';
+  }
+}
+
 async function loadEvaluationRuns() {
+  loadQaQuality();
   const request = ++evaluationListRequest;
   const generation = ++evaluationViewGeneration;
   const status = document.getElementById('quality-status');

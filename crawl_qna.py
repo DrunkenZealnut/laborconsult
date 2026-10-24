@@ -199,23 +199,6 @@ def extract_answers(soup: BeautifulSoup) -> list[str]:
             if converted and len(converted) > 5:
                 answers.append(converted)
 
-    # 컨테이너가 없으면 전체 답변 영역을 통째로 변환
-    if not answers:
-        answer_area = soup.select_one('.fdb_lst_wrp') or soup.select_one('.comments')
-        if answer_area:
-            for tag in answer_area.select('script, style, .ad_wrap, .share_btn'):
-                tag.decompose()
-            converted = md(
-                str(answer_area),
-                heading_style='ATX',
-                bullets='-',
-                strip=['script', 'style'],
-                escape_misc=False,
-            )
-            converted = re.sub(r'\n{3,}', '\n\n', converted).strip()
-            if converted:
-                answers = [converted]
-
     return answers
 
 
@@ -227,7 +210,18 @@ def extract_post(url: str) -> dict:
     except Exception as e:
         return {'error': str(e)}
 
-    soup = BeautifulSoup(resp.text, 'lxml')
+    return parse_post_html(resp.text, url)
+
+
+def parse_post_html(html: str, url: str) -> dict:
+    """Parse only the requested document; login/challenge pages are failures."""
+    soup = BeautifulSoup(html, 'lxml')
+    rd = soup.select_one('.rd[data-docsrl]')
+    expected = re.search(r'/qna/(\d+)', url)
+    if not rd or not expected or rd.get('data-docsrl') != expected.group(1):
+        return {'error': 'document_missing_or_mismatched'}
+    if not rd.select_one('.rd_body .xe_content'):
+        return {'error': 'question_body_missing'}
 
     result = {
         'title': '', 'date': '', 'views': '', 'category': '',
@@ -252,8 +246,10 @@ def extract_post(url: str) -> dict:
 
     # ── 날짜 / 조회수 ──────────────────────────────────────────
     if rd:
-        full_rd_text = rd.get_text('\n')
-        date_match = re.search(r'(\d{4}[.\-]\d{2}[.\-]\d{2})', full_rd_text)
+        header = rd.select_one('.rd_hd')
+        full_rd_text = header.get_text('\n') if header else ''
+        posted = header.select_one('.date') if header else None
+        date_match = re.search(r'(\d{4}[.\-]\d{2}[.\-]\d{2})', posted.get_text() if posted else '')
         if date_match:
             result['date'] = date_match.group(1)
         views_match = re.search(r'조회\s*수\s*(\d[\d,]*)', full_rd_text)
