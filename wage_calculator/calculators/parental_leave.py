@@ -57,7 +57,12 @@ def _six_plus_six_disproven(inp,ws):
     limit=month_after(day(inp.childcare_child_birth_date,'자녀 생년월일'),18)
     starts=[ws[0].start] if ws and ws[0].start else []
     if inp.parental_other_parent_periods:
-        starts+=[day(p['start_date'],'상대 부모 구간 개시일') for p in inp.parental_other_parent_periods]
+        # 구간이 불완전하면(시작일 없음 등) 여기서 판단하지 않는다 — 6+6 검증의 구간 파서가 '확인해주세요' 보류를 낸다
+        # (직접 인덱싱하면 KeyError로 계산기가 죽었다 — PR #134 Codex 재리뷰)
+        periods=inp.parental_other_parent_periods
+        if not isinstance(periods,list) or any(not isinstance(p,dict) or not p.get('start_date') for p in periods):
+            return False
+        starts+=[day(p['start_date'],'상대 부모 구간 개시일') for p in periods]
     elif inp.parental_other_parent_start:
         starts.append(day(inp.parental_other_parent_start,'상대 부모 개시일'))
     return any(s>limit for s in starts)

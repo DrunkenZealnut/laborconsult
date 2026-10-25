@@ -44,6 +44,10 @@ class ParentalBenefitsUpdateTests(unittest.TestCase):
         # 자녀가 생후 18개월을 넘은 뒤 시작한 휴직이면 6+6은 확정적으로 해당하지 않는다 — 일반형을 그대로 낸다(PR #134 Codex 리뷰)
         older=calc(childcare_child_birth_date='2021-12-01',**other)
         self.assertEqual((older.held_reason,older.scheme,older.total_benefit),('','general',13_500_000))
+        # 상대 부모 구간이 불완전하면 예외가 아니라 보류다(PR #134 Codex 재리뷰: KeyError 'start_date')
+        broken=calc(parental_same_child=True,parental_other_parent_periods=[{'end_date':'2026-06-30'}])
+        self.assertTrue(broken.held_reason)
+        self.assertFalse(broken.total_benefit)
 
     def test_identical_single_period_dates_are_redundant_not_conflicting(self):
         fields=dict(childcare_example=False,parental_leave_months=0,
