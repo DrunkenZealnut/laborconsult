@@ -41,6 +41,9 @@ class ParentalBenefitsUpdateTests(unittest.TestCase):
         held=calc(childcare_child_birth_date=None,**other)
         self.assertIn('6+6 특례(고용보험법 시행령 제95조의3)가 적용될 수 있습니다',held.held_reason)
         self.assertFalse(held.total_benefit)
+        # 자녀가 생후 18개월을 넘은 뒤 시작한 휴직이면 6+6은 확정적으로 해당하지 않는다 — 일반형을 그대로 낸다(PR #134 Codex 리뷰)
+        older=calc(childcare_child_birth_date='2021-12-01',**other)
+        self.assertEqual((older.held_reason,older.scheme,older.total_benefit),('','general',13_500_000))
 
     def test_identical_single_period_dates_are_redundant_not_conflicting(self):
         fields=dict(childcare_example=False,parental_leave_months=0,

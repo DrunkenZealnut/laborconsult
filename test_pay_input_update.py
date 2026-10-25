@@ -248,11 +248,11 @@ class PayInputUpdateTests(unittest.TestCase):
         '미확인'을 붙여도) 매월이다 — 수당 하나로 카드 전체가 보류되던 결함(Codex 리뷰 High 1)."""
         from app.core.analyzer import _build_analysis_result
         cycle=lambda a:_build_analysis_result(dict(fixed_allowances=[a]),'').extracted_info['fixed_allowances'][0].get('payment_cycle')
-        for name in ('상여','정기상여','명절수당','성과급','인센티브','하계휴가비'):
+        for name in ('상여','정기상여','명절수당','추석수당','설날수당','생일수당','김장수당','성과급','인센티브','하계휴가비','설날 선물비','추석 귀성여비','연차수당','복지포인트'):
             with self.subTest(name=name):
                 self.assertEqual(cycle(dict(name=name,amount=120_000)),'미확인')
                 self.assertEqual(cycle(dict(name=name,amount=120_000,payment_cycle='미확인')),'미확인')
-        for name in ('수당','식대','직책수당','교통비','가족수당'):
+        for name in ('수당','식대','직책수당','교통비','가족수당','자격증 수당','통신비'):
             with self.subTest(name=name):
                 self.assertEqual(cycle(dict(name=name,amount=120_000)),'매월')
                 self.assertEqual(cycle(dict(name=name,amount=120_000,payment_cycle='미확인')),'매월')
@@ -265,7 +265,8 @@ class PayInputUpdateTests(unittest.TestCase):
         from app.core.pipeline import _analysis_to_extract_params,_run_calculator
         query='월급 250만원에 식대 20만원 받고 주5일 하루 8시간 일합니다. 최저임금 위반인가요?'
         raw=dict(requires_calculation=True,calculation_types=['minimum_wage'],wage_type='월급',wage_amount=2_500_000,
-                 weekly_work_days=5,daily_work_hours=8,business_size='5인이상',fixed_allowances=[dict(name='식대',amount=200_000)])
+                 weekly_work_days=5,daily_work_hours=8,business_size='5인이상',reference_year=2026,   # 최저임금 연도 고정
+                 fixed_allowances=[dict(name='식대',amount=200_000)])
         card=_run_calculator(_analysis_to_extract_params(_build_analysis_result(raw,query)),query) or ''
         self.assertIn('최저임금 충족: ✅ 충족',card)
         self.assertNotIn('계산 보류',card)

@@ -48,6 +48,21 @@ def _other_parent(inp):
     return (None if months is None else number(months,'상대 부모 사용 개월 수',maximum=18,integer=True)),start
 
 
+def _six_plus_six_disproven(inp,ws):
+    """6+6 요건 불충족이 확정되는가 — 어느 부모든 개시일이 자녀 생후 18개월을 넘으면 6+6은 해당하지 않는다(시행령 제95조의3①).
+    그때는 일반형을 그대로 쓴다(부모 각 3개월 이상 사용에 따른 18개월 연장 등은 일반형 경로가 판단). 정보가 없어 판단할 수
+    없으면 False — 6+6 검증으로 넘겨 보류한다(PR #134 Codex 리뷰: 생후 18개월이 지난 자녀의 휴직까지 0원으로 보류됐다)."""
+    if not inp.childcare_child_birth_date:
+        return False
+    limit=month_after(day(inp.childcare_child_birth_date,'자녀 생년월일'),18)
+    starts=[ws[0].start] if ws and ws[0].start else []
+    if inp.parental_other_parent_periods:
+        starts+=[day(p['start_date'],'상대 부모 구간 개시일') for p in inp.parental_other_parent_periods]
+    elif inp.parental_other_parent_start:
+        starts.append(day(inp.parental_other_parent_start,'상대 부모 개시일'))
+    return any(s>limit for s in starts)
+
+
 def _scheme(inp,ws,reference):
     scheme=inp.parental_scheme
     if scheme not in ('general','single_parent','six_plus_six'): raise ValueError('육아휴직급여 유형을 확인해주세요')
@@ -55,7 +70,8 @@ def _scheme(inp,ws,reference):
     # 자녀에 상대 부모의 사용 사실이 있으면 유형을 지정하지 않아도 6+6 요건을 검증한다 — 검증에 실패하면 일반형으로 확정하지
     # 않고 보류한다(Codex 리뷰 High 3: 요건을 다 입력해도 유형 미지정이면 2,000만 원 대신 일반형 1,350만 원을 경고 없이 냈다)
     other_facts=(inp.parental_other_parent_months or inp.parental_other_parent_start or inp.parental_other_parent_periods)
-    if scheme=='general' and inp.parental_same_child is True and other_facts and inp.parental_single_parent_eligible is not True:
+    if (scheme=='general' and inp.parental_same_child is True and other_facts and inp.parental_single_parent_eligible is not True
+            and not _six_plus_six_disproven(inp,ws)):
         from dataclasses import replace
         try:
             return _scheme(replace(inp,parental_scheme='six_plus_six'),ws,reference)
