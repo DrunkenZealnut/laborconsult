@@ -957,7 +957,7 @@ def _extract_params(query: str, config: AppConfig) -> tuple[str, dict | None]:
         if name == "harassment_params":
             return ("harassment", params)
         # 날짜 보정
-        for dk in ("start_date", "end_date"):
+        for dk in ("start_date", "end_date", "last_employed_date"):
             if dk in params:
                 # 추출 LLM이 본 텍스트는 query(질문+첨부)뿐이다 — 연도 단서도 거기서 찾는다
                 params[dk] = _correct_date_year(params[dk], query)

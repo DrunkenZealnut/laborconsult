@@ -198,6 +198,14 @@ def holiday_divisor(weekly_work_days: float) -> float:
     return max(float(weekly_work_days), 5.0)
 
 
+def scheduled_weekly_hours(daily_work_hours: float, weekly_work_days: float) -> float:
+    """1주 소정근로시간 = 1일 × 근무일수. 주 합계를 근무일수로 나눠 만든 1일 시간에 다시 곱할 때 남는 부동소수 오차를 지운다
+    (15 ÷ 5.5 × 5.5 = 14.999999999999998 → 15시간 미만으로 판정되던 문제, wage-update-followups L6). 입력 정밀도(분 단위
+    = 1/60시간)보다 훨씬 작은 자리에서 반올림하므로 실제 시간은 바뀌지 않는다. 1일 시간을 먼저 반올림하지 말 것 —
+    15/5.5일이 46시간, 40/5.5일이 120시간이 되어 다른 값이 틀어진다(실측)."""
+    return round(daily_work_hours * weekly_work_days, 9)
+
+
 def weekly_holiday_hours(weekly_work_days: float, daily_work_hours: float) -> tuple[float, str]:
     """주휴 유급시간과 산식 설명. 1주 소정근로시간 15시간 미만(주휴 미발생) 판정은 호출부가 한다.
 

@@ -126,24 +126,54 @@ def _pop_weekly_holiday(r, result):
     return 0
 
 
+_ANNUAL_SETTLEMENT_STATUS = {
+    "retired": "퇴직 시 현재 기간 잔여분 (당시 임금·기지급 확인 필요)",
+    "end_unconfirmed": ("퇴직 여부·마지막 재직일 미확인 — 퇴직했다면 퇴직 시 정산 대상, "
+                        "재직 중이면 사용기간 만료 전 평가액(확정 지급액 아님)"),
+    "employed": "입력 임금 기준 평가액 · 사용기간 만료/퇴직 전 확정 지급액 아님",
+}
+
+
+def _annual_settlement_point(r):
+    if not r.pay_trigger_date:
+        return "월별 발생·소멸 일정과 사용 귀속 확인 필요"
+    if r.settlement_basis == "retired":
+        return f"{r.pay_trigger_date} (퇴직 — 마지막 재직일 다음날)"
+    return f"{r.pay_trigger_date} (사용기간 만료 다음날 · 그 전에 퇴직하면 퇴직 시)"
+
+
 def _pop_annual_leave(r, result):
-    """result.summary에 연차발생일수·연차수당·미사용일수·차감·비례·정산 추가. 반환: 0."""
+    """result.summary에 연차발생일수·연차수당·미사용일수·정산·첫해 장부·전제 추가. 반환: 0.
+
+    답변은 summary만 본다(breakdown은 카드에 나오지 않는다) — 결론을 좌우하는 사유·전제·정산 시점은 계산기가 판단해 결과
+    필드로 넘기고, 여기서는 옮기기만 한다(wage-update-followups L1)."""
     if r.accrual_basis == "company":
         result.summary["회사 부여 연차일수"] = f"{r.accrued_days:g}일"
     else:
-        result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
+        days = f"{r.accrued_days}일"
+        result.summary["법정 연차 발생일수"] = f"{days} ({r.exclusion_reason})" if r.exclusion_reason else days
     result.summary["연차수당"] = f"{r.annual_leave_pay:,.0f}원"
     result.summary["미사용 연차"] = f"{r.remaining_days:.1f}일"
     if r.is_eligible:
         result.summary["연차 시간"] = f"발생 {r.accrued_hours:g}시간 · 사용 {r.used_hours:g}시간 · 잔여 {r.remaining_hours:g}시간"
-        result.summary["연차수당 정산 상태"] = ("퇴직 시 현재 기간 잔여분 (당시 임금·기지급 확인 필요)" if r.pay_due
-                                                else "입력 임금 기준 평가액 · 사용기간 만료/퇴직 전 확정 지급액 아님")
+        result.summary["연차수당 정산 상태"] = _ANNUAL_SETTLEMENT_STATUS[r.settlement_basis]
+        result.summary["정산 시점"] = _annual_settlement_point(r)
+        if r.anniversary_boundary:
+            result.summary["발생일 경계"] = "종료일이 연차 발생일 당일 — 그날까지 근로했는지(마지막 재직일) 확인 필요"
     if r.first_year_settlement_days is not None:
         result.summary["별도 첫해 미사용분"] = f"{r.first_year_settlement_days:g}일 (당해 발생분·수당에 합산하지 않음)"
+    elif r.first_year_ledger:
+        result.summary["별도 첫해 장부"] = r.first_year_ledger
     if r.deducted_days > 0:
         result.summary["개정 전 사건의 첫해 공제"] = f"{r.deducted_days:.1f}일 (2017-05-30 전 입사)"
-    if r.is_part_time_ratio:
-        result.summary["단시간 비례"] = f"×{r.part_time_ratio:.2f}"
+    if r.is_eligible and r.is_part_time_ratio:
+        # '×1.00'은 1일 단위라 비례가 없는 것처럼 읽힌다 — 비례는 시간에 걸린다(시행령 별표 2 제4호). 미발생 카드에는 싣지 않는다
+        result.summary["단시간 비례"] = (f"주 {r.weekly_hours:g}시간 ÷ 40시간 — 발생 {r.accrued_hours:g}시간"
+                                     f"(1일 {r.day_hours:g}시간 기준 {r.accrued_days:g}일)")
+    if r.hours_premise:
+        result.summary["시간 전제"] = r.hours_premise
+    if r.deemed_basis_note:
+        result.summary["출근 간주 기준"] = r.deemed_basis_note
     if r.fiscal_year_gap > 0:
         result.summary["퇴직 시 추가 지급"] = f"{r.fiscal_year_gap:.1f}일"
     return 0

@@ -219,7 +219,7 @@ def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisRes
             for a in extracted["fixed_allowances"]]
 
     # 날짜 보정: LLM이 연도를 잘못 추정한 경우 현재 기준으로 수정
-    for date_key in ("start_date", "end_date", "arrear_due_date"):
+    for date_key in ("start_date", "end_date", "arrear_due_date", "last_employed_date"):
         if date_key in extracted:
             extracted[date_key] = _correct_date_year(extracted[date_key], context)
 

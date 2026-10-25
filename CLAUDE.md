@@ -548,6 +548,20 @@ wage_calculator/
 - **휴업수당의 평균임금 산정 사유 발생일은 휴업 시작일이다**(근로기준법 제2조①6호·제46조, 근로기준정책과-2081). 입력한
   `average_wage_date`는 퇴직금 등 다른 계산의 기산일일 수 있어 휴업수당에는 쓰지 않고, 다르면 고지한다. 휴업 시작일이 없으면
   계산은 그대로 두고 조건을 밝힌다 — 무엇으로 대신할지는 원문으로 정할 수 없다(G7).
+- **연차 결론을 좌우하는 사유·전제·정산 시점은 계산기 결과 필드로 넘기고 `_pop_annual_leave`가 summary로 옮긴다**
+  (`AnnualLeaveResult.exclusion_reason`·`settlement_basis`·`anniversary_boundary`·`first_year_ledger`·`hours_premise`·
+  `weekly_hours`·`deemed_basis_note`). 답변은 summary만 보고 **breakdown은 카드에 나오지 않는다** — 미발생 사유('5인 미만'·
+  '15시간 미만')·첫해 장부 보류·정산 시점이 breakdown에만 있어 카드에는 '0.0일'·'×0.00'만 실렸다(wage-update-followups L1).
+  `end_date`만 있으면 퇴직일인지 재직자의 기준일인지 모른다 — 퇴직으로 단정하지 말고 `end_unconfirmed`(조건부 문구)로 둔다(L2).
+  월별 개근 수를 모르면 첫해 장부는 '최대 N일(각 월 개근 시)' 보류다 — 기본 출근율 1.0으로 11일을 확정하지 않는다.
+- **육아휴직 출근 간주(근로기준법 제60조⑥3호)는 휴직 개시일이 2018-05-29 이후면 적용한다**(`annual_leave.CHILDCARE_DEEMED_FROM`,
+  고용노동부 개정 근로기준법 설명자료 2018.5). 신청일은 있을 때만 검증한다(시작일보다 늦으면 모순으로 보류). 부칙 <제15108호>
+  제2조의 '최초 신청' 문언과 갈리는 경계(입력한 신청일이 그 전이거나, 신청일 없이 2018년에 개시)에만 조건 문구를 붙인다 —
+  2025년 휴직에까지 붙이면 답변이 혼란스러워진다(L3). 산정기간에 걸친 휴직은 잘린 시작일로 검사되는 한계가 있다(후속).
+- **1주 소정근로시간은 `shared.scheduled_weekly_hours(daily, days)`로 구한다.** 주 합계를 근무일수로 나눈 1일 시간에 다시 곱하면
+  15 ÷ 5.5 × 5.5 = 14.999999999999998이라 15시간 미만으로 판정됐다(L6). 연차·통상임금 기준시간·주휴수당이 같은 헬퍼를 쓴다 —
+  한 곳만 고치면 같은 카드에 '연차 발생'과 '주휴 0원'이 함께 실린다(L6b). 1일 시간을 먼저 반올림하지 말 것(15/5.5일이 46시간이
+  된다). 실업급여·최저임금·포괄·연장 등 남은 곱셈 8곳은 후속이다.
 - `shared.py` extracts common patterns: `DateRange` (tenure calc, 8 modules), `AllowanceClassifier` (minimum wage inclusion, 3 modules), `MultiplierContext` (sub-5-employee rates, 5 modules).
 
 ### Calculator Targets (28 types)

@@ -1,5 +1,7 @@
 """2026-10 계산기 갱신 회귀: 사용자 요청이 실제 계산 결과에 대응해야 한다."""
 import unittest
+from datetime import date
+from unittest import mock
 from test_parental_benefits_update import ParentalBenefitsUpdateTests
 from test_arrears_interest_update import ArrearsInterestUpdateTests
 from test_pay_input_update import PayInputUpdateTests
@@ -25,6 +27,31 @@ def annual(**kwargs):
     data.update(kwargs)
     inp = WageInput(**data)
     return calc_annual_leave(inp, calc_ordinary_wage(inp))
+
+
+def annual_card(**kwargs):
+    """facade를 거친 연차 카드 — 답변은 summary만 본다(breakdown은 카드에 나오지 않는다)."""
+    data = dict(wage_type=WageType.HOURLY, hourly_wage=10000,
+                business_size=BusinessSize.OVER_5, reference_year=2026,
+                reference_date="2026-10-23", start_date="2025-01-01", end_date="2026-07-01")
+    data.update(kwargs)
+    return WageCalculator().calculate(WageInput(**data), ["annual_leave"])
+
+
+class _Today(date):
+    """분석기 연도 보정의 '오늘'을 2026-10-26으로 고정한다."""
+    @classmethod
+    def today(cls):
+        return cls(2026, 10, 26)
+
+
+# 연차 후속(wage-update-followups PR-4) 공용 입력
+_FULL_ORIGINAL = dict(schedule=WorkSchedule(daily_work_hours=5, weekly_work_days=5),
+                      annual_original_weekly_hours=40, annual_original_daily_hours=8)
+_REDUCED = dict(kind="childcare_reduced", end_date="2025-12-31")
+_FACTS_2018 = dict(start_date="2017-01-01", end_date="2019-01-01", annual_scheduled_days=250, annual_attended_days=150)
+_FACTS_2025 = dict(annual_scheduled_days=250, annual_attended_days=150, annual_full_attendance_months=6)
+_LEAVE_2025 = dict(kind="childcare_leave", start_date="2025-07-01", end_date="2025-12-31", scheduled_days=100)
 
 
 class AnnualLeaveUpdateTests(unittest.TestCase):
@@ -107,7 +134,9 @@ class AnnualLeaveUpdateTests(unittest.TestCase):
         self.assertEqual(r.annual_leave_pay, 1150000)
         # Starting before the amendment does not switch automatically during use.
         p["start_date"] = "2024-10-21"
-        self.assertTrue(annual(annual_deemed_periods=[p]).held_reason)
+        held = annual(schedule=WorkSchedule(daily_work_hours=5, weekly_work_days=5), annual_deemed_periods=[p],
+                      annual_original_weekly_hours=40, annual_original_daily_hours=8)
+        self.assertIn("2024-10-22", held.held_reason)   # 원래 시간을 넣어도 다른 사유가 아니라 시행일 경계로 보류된다
 
     def test_short_childcare_deemed_attendance_effective_boundary(self):
         for start, end, held in (("2026-08-19", "2026-08-25", True),
@@ -258,6 +287,219 @@ class AnnualLeaveUpdateTests(unittest.TestCase):
         held = _run_calculator(_analysis_to_extract_params(_build_analysis_result(raw, "2025년 입사")), "연차 계산")
         self.assertIn("계산 보류", held)
         self.assertNotIn("월 총 예상 수령액", held)
+
+    # ── wage-update-followups PR-4: L1 적용 제외 사유·첫해 장부·정산 시점을 카드 요약으로 ─────────────────────
+    def test_l1_exclusion_reason_is_on_the_card(self):
+        for data, expected in ((dict(business_size=BusinessSize.UNDER_5), "0.0일 (5인 미만 사업장 적용 제외)"),
+                               (dict(schedule=WorkSchedule(daily_work_hours=2.8, weekly_work_days=5)),
+                                "0.0일 (4주 평균 주 소정근로시간 15시간 미만: 미발생)")):
+            with self.subTest(expected=expected):
+                summary = annual_card(**data).summary
+                self.assertEqual(summary["법정 연차 발생일수"], expected)
+                self.assertNotIn("단시간 비례", summary)        # '×0.00'은 비례가 아니라 미발생이다
+        self.assertIn("주 14시간", annual_card(schedule=WorkSchedule(daily_work_hours=2.8, weekly_work_days=5)).summary["시간 전제"])
+
+    def test_l1_first_year_ledger_held_state_is_on_the_card(self):
+        summary = annual_card(first_year_leave_used=5).summary
+        self.assertEqual(summary["별도 첫해 장부"],
+                         "월별 발생 최대 11일(각 월 개근 시) · 사용 5일 — 월별 개근 수 확인 전 미사용 정산분 확정 보류"
+                         "(현재 기간에서 다시 차감하지 않음)")
+        self.assertNotIn("별도 첫해 미사용분", summary)   # 개근 수를 모르면 기본 출근율로 11일을 확정하지 않는다
+
+    def test_l1_day_366_retiree_card_shows_first_year_leave(self):
+        result = annual_card(end_date="2026-01-01", last_employed_date="2026-01-01")
+        self.assertEqual(result.summary["법정 연차 발생일수"], "15.0일")
+        self.assertIn("최대 11일", result.summary["별도 첫해 장부"])
+        self.assertIn("사용 미확인", result.summary["별도 첫해 장부"])
+        self.assertEqual(result.summary["정산 시점"], "2026-01-02 (퇴직 — 마지막 재직일 다음날)")
+        self.assertIn("별도 첫해 장부: 월별 발생 최대 11일", format_result(result))
+        known = annual_card(end_date="2026-01-01", last_employed_date="2026-01-01",
+                            first_year_full_attendance_months=11, first_year_leave_used=0).summary
+        self.assertEqual(known["별도 첫해 미사용분"], "11일 (당해 발생분·수당에 합산하지 않음)")
+        self.assertNotIn("별도 첫해 장부", known)
+
+    def test_l1_first_year_ledger_not_added_to_later_years_without_facts(self):
+        self.assertNotIn("별도 첫해 장부", annual_card(start_date="2023-01-01").summary)
+        self.assertIn("별도 첫해 장부", annual_card(start_date="2023-01-01", first_year_leave_used=3).summary)
+
+    def test_l1_settlement_point_is_on_the_card(self):
+        self.assertEqual(annual_card().summary["정산 시점"], "2027-01-01 (사용기간 만료 다음날 · 그 전에 퇴직하면 퇴직 시)")
+        self.assertEqual(annual_card(end_date=None, last_employed_date="2025-12-31").summary["정산 시점"],
+                         "2026-01-01 (퇴직 — 마지막 재직일 다음날)")
+
+    # ── L2 퇴직이 end_date로만 올 때: 조건부 문구(A안) ─────────────────────────────────────────
+    def test_l2_end_date_only_is_conditional_not_pre_retirement(self):
+        result = annual_card(end_date="2025-12-31")
+        self.assertEqual((result.summary["법정 연차 발생일수"], result.summary["연차수당"]), ("11.0일", "880,000원"))
+        status = result.summary["연차수당 정산 상태"]
+        self.assertIn("마지막 재직일 미확인", status)
+        self.assertIn("퇴직했다면 퇴직 시 정산 대상", status)
+        self.assertFalse(any("퇴직 전 확정 지급채권으로 보지 않습니다" in w for w in result.warnings))
+        self.assertIn("퇴직 시 현재 기간 잔여분",
+                      annual_card(end_date=None, last_employed_date="2025-12-31").summary["연차수당 정산 상태"])
+        self.assertIn("퇴직 전 확정 지급액 아님", annual_card(end_date=None).summary["연차수당 정산 상태"])
+
+    def test_l2_end_date_on_anniversary_flags_the_day_366_boundary(self):
+        flagged = annual(end_date="2026-01-01")
+        self.assertTrue(flagged.anniversary_boundary)
+        self.assertEqual(flagged.accrued_days, 15)
+        self.assertTrue(any("1년 미만 월별 발생분(최대 11일)만" in w for w in flagged.warnings))
+        self.assertIn("발생일 경계", annual_card(end_date="2026-01-01").summary)
+        for data in (dict(end_date="2026-01-01", last_employed_date="2026-01-01"),
+                     dict(end_date="2025-12-31"), dict(end_date="2026-01-02")):
+            with self.subTest(data=data):
+                self.assertFalse(annual(**data).anniversary_boundary)
+
+    def test_l2_chat_path_retirement_by_end_date_is_conditional(self):
+        from app.core.analyzer import _build_analysis_result
+        raw = dict(requires_calculation=True, calculation_types=["annual_leave"], wage_type="시급", wage_amount=10000,
+                   business_size="5인이상", daily_work_hours=8, weekly_work_days=5, reference_date="2026-10-26",
+                   start_date="2025-01-01", end_date="2025-12-31", annual_leave_used=0)
+        query = "2025년 1월 1일 입사해서 2025년 12월 31일 퇴사했습니다. 연차를 하나도 안 썼는데 연차수당 얼마인가요?"
+        text = _run_calculator(_analysis_to_extract_params(_build_analysis_result(raw, query)), query)
+        self.assertIn("퇴직했다면 퇴직 시 정산 대상", text)
+        self.assertNotIn("퇴직 전 확정 지급채권으로 보지 않습니다", text)
+
+    # ── L3 육아휴직 출근 간주: 개시일 기준(고용노동부 2018.5 설명자료) ──────────────────────────────────
+    def test_l3_childcare_leave_without_application_date_counts(self):
+        r = annual(**_FACTS_2025, annual_deemed_periods=[dict(_LEAVE_2025)])
+        self.assertEqual((r.held_reason, r.accrued_days), ("", 15))      # 출근율 (150+100)/250
+        self.assertIn("근로기준법 제60조제6항제3호", r.deemed_basis_note)
+        self.assertIn("개정 근로기준법 설명자료, 2018.5", r.deemed_basis_note)
+        self.assertNotIn("부칙", r.deemed_basis_note)     # 2025년 휴직은 해석이 갈리지 않는다 — 조건 문구를 붙이지 않는다
+        self.assertTrue(any("2018-05-29 이후 개시한 육아휴직" in line for line in r.legal_basis))
+        card = annual_card(**_FACTS_2025, annual_deemed_periods=[dict(_LEAVE_2025)]).summary
+        self.assertIn("2025-07-01~2025-12-31", card["출근 간주 기준"])
+        short = annual(start_date="2025-10-01", end_date="2026-10-01", annual_scheduled_days=250, annual_attended_days=195,
+                       annual_deemed_periods=[dict(kind="short_childcare_leave", start_date="2026-08-20",
+                                                   end_date="2026-08-26", scheduled_days=5)])
+        self.assertEqual((short.held_reason, short.accrued_days), ("", 15))   # 단기 육아휴직도 신청일을 요구하지 않는다
+
+    def test_l3_split_use_first_applied_before_amendment_counts_with_condition(self):
+        r = annual(**_FACTS_2025, annual_deemed_periods=[dict(_LEAVE_2025, application_date="2017-03-01")])
+        self.assertEqual((r.held_reason, r.accrued_days), ("", 15))
+        self.assertIn("부칙 <제15108호> 제2조", r.deemed_basis_note)
+        self.assertIn("최초 신청일 2017-03-01", r.deemed_basis_note)
+        card = annual_card(**_FACTS_2025, annual_deemed_periods=[dict(_LEAVE_2025, application_date="2017-03-01")])
+        self.assertIn("부칙", card.summary["출근 간주 기준"])
+        later = annual(**_FACTS_2025, annual_deemed_periods=[dict(_LEAVE_2025, application_date="2025-06-01")])
+        self.assertNotIn("부칙", later.deemed_basis_note)
+
+    def test_l3_start_date_boundary_and_inconsistent_application(self):
+        facts = dict(start_date="2017-05-01", end_date="2019-05-01", annual_scheduled_days=250, annual_attended_days=150)
+        leave = dict(kind="childcare_leave", end_date="2018-11-30", scheduled_days=100)
+        self.assertIn("2018-05-29 전에 시작",
+                      annual(**facts, annual_deemed_periods=[dict(leave, start_date="2018-05-28")]).held_reason)
+        r = annual(**facts, annual_deemed_periods=[dict(leave, start_date="2018-05-29")])
+        self.assertEqual(r.accrued_days, 15)
+        self.assertIn("최초 신청일 미기재", r.deemed_basis_note)    # 2018년 개시·신청일 미기재 — 경계 사례라 조건을 붙인다
+        self.assertIn("신청일이 휴직 시작일보다 늦습니다",
+                      annual(**_FACTS_2025, annual_deemed_periods=[dict(_LEAVE_2025, application_date="2025-08-01")]).held_reason)
+
+    # ── L4 산정기간 소정근로시간 전제와 '×1.00' 정리 ──────────────────────────────────────────
+    def test_l4_hours_premise_is_on_one_year_or_more_cards(self):
+        premise = annual_card(schedule=WorkSchedule(daily_work_hours=5, weekly_work_days=5)).summary["시간 전제"]
+        self.assertIn("2025-01-01~2025-12-31", premise)
+        self.assertIn("주 25시간·1일 5시간", premise)
+        self.assertEqual(annual(schedule=WorkSchedule(daily_work_hours=5, weekly_work_days=5)).accrued_hours, 75)  # 값은 그대로
+        self.assertNotIn("시간 전제", annual_card(start_date="2026-01-01").summary)   # 1년 미만: 현재 기간이 곧 산정기간
+        reduced = annual_card(annual_deemed_periods=[dict(_REDUCED, start_date="2025-01-01")], **_FULL_ORIGINAL).summary
+        self.assertIn("단축 전 소정근로시간(주 40시간·1일 8시간)", reduced["시간 전제"])
+
+    def test_l4_part_time_ratio_is_shown_in_hours_not_times_one(self):
+        card = annual_card(schedule=WorkSchedule(daily_work_hours=5, weekly_work_days=5)).summary
+        self.assertEqual((card["연차수당"], card["단시간 비례"]),
+                         ("750,000원", "주 25시간 ÷ 40시간 — 발생 75시간(1일 5시간 기준 15일)"))
+        self.assertNotIn("×", card["단시간 비례"])
+
+    # ── L6·L6b 주 소정근로시간 부동소수 오차 ─────────────────────────────────────────────────
+    def test_l6_weekly_fifteen_hours_split_over_fractional_days_accrues(self):
+        for days in (5.5, 6.5):
+            with self.subTest(days=days):
+                r = annual(schedule=WorkSchedule(daily_work_hours=15 / days, weekly_work_days=days))
+                self.assertTrue(r.is_eligible)
+                self.assertEqual(r.accrued_hours, 45)
+        self.assertFalse(annual(schedule=WorkSchedule(daily_work_hours=14.99 / 5, weekly_work_days=5)).is_eligible)
+        # L6b: 같은 카드의 주휴도 같은 헬퍼 — 연차는 발생하는데 주휴는 '15h 미만 0원'인 카드가 나오지 않는다
+        card = WageCalculator().calculate(WageInput(
+            wage_type=WageType.HOURLY, hourly_wage=10000, business_size=BusinessSize.OVER_5, reference_year=2026,
+            reference_date="2026-10-23", start_date="2025-01-01", end_date="2026-07-01",
+            schedule=WorkSchedule(daily_work_hours=15 / 5.5, weekly_work_days=5.5)), ["annual_leave", "weekly_holiday"])
+        self.assertEqual(card.summary["주휴수당(월)"], "118,506원")
+        from wage_calculator.utils import WEEKS_PER_MONTH
+        monthly = calc_ordinary_wage(WageInput(wage_type=WageType.MONTHLY, monthly_wage=1_000_000,
+                                               schedule=WorkSchedule(daily_work_hours=15 / 5.5, weekly_work_days=5.5)))
+        # 월 기준시간에도 주휴 시간(1일 평균 15/5.5h)이 들어간다 — 14.999h로 읽으면 주휴 없이 65.18h가 된다
+        self.assertAlmostEqual(monthly.monthly_base_hours, (15 + 15 / 5.5) * WEEKS_PER_MONTH, places=6)
+
+    # ── L7 연도 보정에 last_employed_date ─────────────────────────────────────────────────
+    def test_l7_last_employed_date_year_is_corrected_with_other_dates(self):
+        from app.core.analyzer import _build_analysis_result
+        raw = dict(requires_calculation=True, calculation_types=["annual_leave"], wage_type="시급", wage_amount=10000,
+                   business_size="5인이상", daily_work_hours=8, weekly_work_days=5, reference_date="2026-10-26",
+                   start_date="2024-03-01", end_date="2024-09-30", last_employed_date="2024-09-30")
+        query = "3월 1일 입사해서 9월 30일까지 일하고 그만뒀어요. 연차수당은요?"
+        with mock.patch("app.core.analyzer.date", _Today):
+            analysis = _build_analysis_result(raw, query)
+        info = analysis.extracted_info
+        self.assertEqual((info["start_date"], info["last_employed_date"]), ("2026-03-01", "2026-09-30"))
+        text = _run_calculator(_analysis_to_extract_params(analysis), query)
+        self.assertNotIn("계산 보류", text)
+        self.assertIn("법정 연차 발생일수: 6.0일", text)
+        self.assertIn("480,000원", text)
+        self.assertIn("정산 시점: 2026-10-01 (퇴직", text)
+        with mock.patch("app.core.analyzer.date", _Today):     # 연도 단서가 있으면 그대로 둔다
+            kept = _build_analysis_result(raw, "2024년 3월 1일 입사, 2024년 9월 30일까지 근무").extracted_info
+        self.assertEqual(kept["last_employed_date"], "2024-09-30")
+
+    def test_l7_extract_params_path_corrects_last_employed_date(self):
+        from app.core import pipeline
+        params = {"needs_calculation": True, "start_date": "2024-03-01", "last_employed_date": "2024-09-30"}
+        with mock.patch("app.core.analyzer.date", _Today), \
+             mock.patch.object(pipeline.llm_gateway, "tool", return_value=("p", "wage_params", dict(params))):
+            kind, out = pipeline._extract_params("3월 1일 입사, 9월 30일까지 근무", object())
+        self.assertEqual((kind, out["start_date"], out["last_employed_date"]), ("wage", "2026-03-01", "2026-09-30"))
+
+    # ── L5 리뷰 제안 단언 8개(M3는 L3 결정에 맞춰 개시일 경계로 바꿈) ────────────────────────────
+    def test_l5_m1_even_year_increment(self):
+        self.assertEqual((annual(start_date="2024-01-01", end_date="2026-01-01").accrued_days,
+                          annual(start_date="2022-01-01", end_date="2026-01-01").accrued_days), (15, 16))
+
+    def test_l5_m2_forty_hours_over_six_days_is_full_time(self):
+        r = annual(schedule=WorkSchedule(daily_work_hours=40 / 6, weekly_work_days=6))
+        self.assertEqual((round(r.accrued_hours, 6), r.accrued_days), (100, 15))
+
+    def test_l5_m3_childcare_start_boundary(self):
+        # 리뷰 원안('2018-06-01 시작·2018-05-28 신청 → 보류')은 개시일 기준(L3 a)에서 기대가 뒤집힌다 — 반영하고 조건을 남긴다
+        leave = dict(kind="childcare_leave", end_date="2018-12-31", scheduled_days=100, application_date="2018-05-28")
+        r = annual(**_FACTS_2018, annual_deemed_periods=[dict(leave, start_date="2018-06-01")])
+        self.assertFalse(r.held_reason)
+        self.assertIn("최초 신청일 2018-05-28", r.deemed_basis_note)
+        facts = dict(start_date="2017-05-01", end_date="2019-05-01", annual_scheduled_days=250, annual_attended_days=150)
+        self.assertTrue(annual(**facts, annual_deemed_periods=[dict(leave, start_date="2018-05-28", end_date="2018-11-30",
+                                                                    application_date=None)]).held_reason)
+
+    def test_l5_m4_pre_amendment_deduction_only_for_second_year(self):
+        r = annual(start_date="2016-03-01", end_date="2018-07-01", first_year_leave_used=5)
+        self.assertEqual((r.accrued_days, r.deducted_days), (15, 0))
+
+    def test_l5_m5_short_childcare_leave_must_be_one_or_two_weeks(self):
+        self.assertTrue(annual(start_date="2025-10-01", end_date="2026-10-01", annual_scheduled_days=250,
+                               annual_attended_days=195, annual_deemed_periods=[dict(kind="short_childcare_leave",
+                               start_date="2026-08-20", end_date="2026-08-29", scheduled_days=8,
+                               application_date="2026-08-01")]).held_reason)
+
+    def test_l5_m6_pre_amendment_label(self):
+        summary = annual_card(start_date="2017-05-29", end_date="2018-07-01", first_year_leave_used=5).summary
+        self.assertEqual(summary["개정 전 사건의 첫해 공제"], "5.0일 (2017-05-30 전 입사)")
+
+    def test_l5_m7_reduced_hours_start_boundary_with_original_hours(self):
+        held = annual(annual_deemed_periods=[dict(_REDUCED, start_date="2024-10-21")], **_FULL_ORIGINAL)
+        self.assertIn("2024-10-22", held.held_reason)
+        self.assertEqual(annual(annual_deemed_periods=[dict(_REDUCED, start_date="2024-10-22")], **_FULL_ORIGINAL).accrued_hours, 120)
+
+    def test_l5_m8_low_attendance_monthly_cap_is_twelve(self):
+        self.assertEqual(annual(end_date="2026-01-02", attendance_rate=.7, annual_full_attendance_months=12).accrued_days, 12)
 
 
 def card(labels, query="", **extra):
