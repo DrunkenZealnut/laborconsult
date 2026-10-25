@@ -157,7 +157,7 @@ class WageCalculator:
         # 초기 CLI·골든 소비자가 쓰던 이름도 실제 독립 계산기로 연결한다.
         targets = ["ordinary_wage" if target == "ordinary" else target for target in targets]
 
-        if "arrears_principal" in targets and inp.wage_claim_include_interest and "wage_arrears" not in targets:
+        if "arrears_principal" in targets and inp.wage_claim_include_interest is True and "wage_arrears" not in targets:
             targets = [*targets, "wage_arrears"]
 
         # 지급 주기가 불명확한 수당을 월액으로 확정하지 않는다. 임금 기반과

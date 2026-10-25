@@ -20,7 +20,7 @@ _EXCLUSIONS = {
 }
 ARREARS_PROPERTIES = {
     'arrear_amount':{'type':'number','description':'지연이자를 계산할 확정 원금. 채권 목록과 중복 입력 금지'},
-    'arrear_due_date':{'type':'string','description':'원래 정기지급일 YYYY-MM-DD. 체불 첫날(다음 날)과 구분'},
+    'arrear_due_date':{'type':'string','description':'원래 정기지급일 YYYY-MM-DD. 체불 첫날(다음 날)과 구분. 퇴직금 지급일은 회사가 따로 정한 날이 질문에 명시된 경우에만 추출하고, 없으면 비운다(법정 기한은 계산기가 정한다)'},
     'arrear_calc_date':{'type':'string','description':'이자를 계산할 마지막 날 YYYY-MM-DD 포함. 질문에 명시된 경우 반드시 전달'},
     'is_post_retirement_arrear':{'type':'boolean','description':'퇴직했다는 사실만. 14일 경과나 연20%를 뜻하지 않음'},
     'arrear_claim_kind':{'type':'string','enum':['regular_wage','retirement_lump_sum','other_rate'],
