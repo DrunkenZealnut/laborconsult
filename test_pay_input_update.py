@@ -243,10 +243,36 @@ class PayInputUpdateTests(unittest.TestCase):
         self.assertIn('월 환산 임금',text)
         self.assertNotIn('월 총 예상 수령액',text)
 
-    def test_analyzer_missing_cycle_is_unknown(self):
+    def test_analyzer_missing_cycle_is_unknown_only_for_varying_items(self):
+        """주기가 갈리는 상여·성과급 계열만 '미확인'(보류)이다. 식대·직책수당 같은 월정 수당은 주기 표현이 없어도(또는 LLM이
+        '미확인'을 붙여도) 매월이다 — 수당 하나로 카드 전체가 보류되던 결함(Codex 리뷰 High 1)."""
         from app.core.analyzer import _build_analysis_result
-        r=_build_analysis_result(dict(fixed_allowances=[dict(name='수당',amount=120_000)]),'수당 12만원')
-        self.assertEqual(r.extracted_info['fixed_allowances'][0].get('payment_cycle'),'미확인')
+        cycle=lambda a:_build_analysis_result(dict(fixed_allowances=[a]),'').extracted_info['fixed_allowances'][0].get('payment_cycle')
+        for name in ('상여','정기상여','명절수당','추석수당','설날수당','생일수당','김장수당','성과급','인센티브','하계휴가비','설날 선물비','추석 귀성여비','연차수당','복지포인트'):
+            with self.subTest(name=name):
+                self.assertEqual(cycle(dict(name=name,amount=120_000)),'미확인')
+                self.assertEqual(cycle(dict(name=name,amount=120_000,payment_cycle='미확인')),'미확인')
+        for name in ('수당','식대','직책수당','교통비','가족수당','자격증 수당','통신비'):
+            with self.subTest(name=name):
+                self.assertEqual(cycle(dict(name=name,amount=120_000)),'매월')
+                self.assertEqual(cycle(dict(name=name,amount=120_000,payment_cycle='미확인')),'매월')
+        self.assertEqual(cycle(dict(name='식대',amount=600_000,payment_cycle='분기')),'분기')
+        self.assertEqual(cycle(dict(name='상여',amount=6_000_000,annual=True)),'연')
+
+    def test_monthly_allowance_without_cycle_does_not_hold_the_chat_card(self):
+        """채팅 경로(분석기 → 변환기 → 카드): "월급 250만원 + 식대 20만원"이 최저임금 판정 없이 보류되지 않는다."""
+        from app.core.analyzer import _build_analysis_result
+        from app.core.pipeline import _analysis_to_extract_params,_run_calculator
+        query='월급 250만원에 식대 20만원 받고 주5일 하루 8시간 일합니다. 최저임금 위반인가요?'
+        raw=dict(requires_calculation=True,calculation_types=['minimum_wage'],wage_type='월급',wage_amount=2_500_000,
+                 weekly_work_days=5,daily_work_hours=8,business_size='5인이상',reference_year=2026,   # 최저임금 연도 고정
+                 fixed_allowances=[dict(name='식대',amount=200_000)])
+        card=_run_calculator(_analysis_to_extract_params(_build_analysis_result(raw,query)),query) or ''
+        self.assertIn('최저임금 충족: ✅ 충족',card)
+        self.assertNotIn('계산 보류',card)
+        bonus=dict(raw,fixed_allowances=[dict(name='상여금',amount=1_200_000)])
+        held=_run_calculator(_analysis_to_extract_params(_build_analysis_result(bonus,query)),query) or ''
+        self.assertIn('상여금: 지급 주기를 확인해주세요',held)
 
     def test_average_wage_explicit_inputs_survive_pipeline(self):
         from app.core.analyzer import _build_analysis_result

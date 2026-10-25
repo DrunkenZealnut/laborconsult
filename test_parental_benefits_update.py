@@ -22,6 +22,33 @@ def benefit(reduced=False, **changes):
 
 
 class ParentalBenefitsUpdateTests(unittest.TestCase):
+    def test_six_plus_six_applies_without_naming_the_scheme(self):
+        """6+6은 요건이 되면 그 금액으로 산정한다(시행령 제95조의3①) — 유형을 지정하지 않아도 같은 자녀·상대 부모 사용 사실이
+        있으면 6+6을 검증하고, 검증할 수 없으면 일반형으로 확정하지 않고 보류한다(Codex 리뷰 High 3)."""
+        from wage_calculator.models import WorkSchedule
+
+        def calc(**kw):
+            inp=WageInput(wage_type=WageType.MONTHLY,monthly_wage=5_000_000,reference_date='2026-10-01',
+                          schedule=WorkSchedule(daily_work_hours=8,weekly_work_days=5),parental_leave_start='2026-03-01',
+                          parental_leave_months=6,childcare_child_birth_date='2025-12-01',childcare_insured_days=180)
+            for k,v in kw.items(): setattr(inp,k,v)
+            return calc_parental_leave(inp,calc_ordinary_wage(inp))
+        other=dict(parental_same_child=True,parental_other_parent_start='2026-01-01',parental_other_parent_months=6)
+        auto,named=calc(**other),calc(parental_scheme='six_plus_six',**other)
+        self.assertEqual((auto.scheme,auto.total_benefit),('six_plus_six',20_000_000))   # 250·250·300·350·400·450만
+        self.assertEqual(auto.total_benefit,named.total_benefit)
+        self.assertEqual((calc().scheme,calc().total_benefit),('general',13_500_000))   # 상대 부모 사실 없음
+        held=calc(childcare_child_birth_date=None,**other)
+        self.assertIn('6+6 특례(고용보험법 시행령 제95조의3)가 적용될 수 있습니다',held.held_reason)
+        self.assertFalse(held.total_benefit)
+        # 자녀가 생후 18개월을 넘은 뒤 시작한 휴직이면 6+6은 확정적으로 해당하지 않는다 — 일반형을 그대로 낸다(PR #134 Codex 리뷰)
+        older=calc(childcare_child_birth_date='2021-12-01',**other)
+        self.assertEqual((older.held_reason,older.scheme,older.total_benefit),('','general',13_500_000))
+        # 상대 부모 구간이 불완전하면 예외가 아니라 보류다(PR #134 Codex 재리뷰: KeyError 'start_date')
+        broken=calc(parental_same_child=True,parental_other_parent_periods=[{'end_date':'2026-06-30'}])
+        self.assertTrue(broken.held_reason)
+        self.assertFalse(broken.total_benefit)
+
     def test_identical_single_period_dates_are_redundant_not_conflicting(self):
         fields=dict(childcare_example=False,parental_leave_months=0,
                     parental_leave_start='2026-09-01',parental_leave_end='2026-09-07',

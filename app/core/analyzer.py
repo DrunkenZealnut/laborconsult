@@ -174,6 +174,34 @@ from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS, CLAIM_DE
 _INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS)
 
 
+# 지급 주기가 회사마다 갈리는 수당(상여·성과급·명절 등) — 질문에 주기가 없으면 '미확인'으로 두고 그 수당에 기대는 계산을 보류한다
+_CYCLE_VARIES_RE = re.compile(r"상여|보너스|성과|인센티브|격려|포상|장려금|명절|설날|구정|추석|선물|귀성|김장|생일|경조|휴가비|하계|동계|"
+                              r"연말|연초|체력단련|분기|반기|연간|연차")
+# 주기 표현이 없어도 매월 지급으로 보는 월정 수당 — 허용 목록이다. 목록 밖 이름은 '미확인'으로 남긴다(거부 목록만 두면 '설날
+# 선물비'처럼 목록에 없는 연 1회 지급액이 월액으로 들어갔다 — PR #134 리뷰). 이름이 '…수당'이면 월정 수당으로 본다
+_MONTHLY_ALLOWANCE_RE = re.compile(r"식대|식비|중식|석식|교통|차량|유류|통신|직책|직급|직무|자격|면허|가족|자녀|부양|보육|육아|근속|위험|"
+                                   r"기술|연구|숙소|주거|주택|출장|야간|교대|당직|특수|벽지|현장|조정|팀장|반장|조장|관리|만근|개근|어학|"
+                                   r"업무|활동|복리|기본|고정")
+
+
+def _default_payment_cycle(allowance: dict) -> str:
+    """고정수당의 지급 주기. 명시된 주기는 그대로 두고, 생략·'미확인'이면 이름으로 정한다.
+
+    상여·성과급·명절처럼 주기가 갈리는 항목과 월정 수당으로 알아볼 수 없는 이름은 '미확인'으로 남긴다. 식대·직책·교통·가족수당
+    같은 월정 수당(허용 목록, 또는 이름이 '…수당')은 주기 표현이 없어도 매월 지급이다 — 모든 생략을 '미확인'으로 두면 수당 하나 때문에 최저임금·퇴직금·4대보험 카드 전체가 보류됐다(Codex 리뷰
+    High 1: "월급 250만 + 식대 20만, 최저임금 위반인가요?"가 판정 없이 끝남. 상담 코퍼스에서 수당을 금액과 함께 적은 질문의
+    93%가 주기를 적지 않는다)."""
+    if allowance.get("annual") is True:
+        return allowance.get("payment_cycle") or "연"
+    cycle = allowance.get("payment_cycle")
+    if cycle and cycle != "미확인":
+        return cycle
+    name = re.sub(r"\s+", "", str(allowance.get("name") or ""))
+    if _CYCLE_VARIES_RE.search(name):
+        return "미확인"
+    return "매월" if (_MONTHLY_ALLOWANCE_RE.search(name) or name.endswith("수당")) else "미확인"
+
+
 def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:
     """도구 입력 dict → AnalysisResult.
 
@@ -187,8 +215,8 @@ def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisRes
 
     if isinstance(extracted.get("fixed_allowances"), list):
         extracted["fixed_allowances"] = [
-            dict(a, payment_cycle=a.get("payment_cycle", "연" if a.get("annual") is True else "미확인"))
-            if isinstance(a, dict) else a for a in extracted["fixed_allowances"]]
+            dict(a, payment_cycle=_default_payment_cycle(a)) if isinstance(a, dict) else a
+            for a in extracted["fixed_allowances"]]
 
     # 날짜 보정: LLM이 연도를 잘못 추정한 경우 현재 기준으로 수정
     for date_key in ("start_date", "end_date", "arrear_due_date"):

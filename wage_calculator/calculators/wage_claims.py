@@ -112,6 +112,12 @@ def _amount(row,inp,ow):
         result=calc_overtime(replace(inp,schedule=schedule,hour_split=None),ow)
         return _won(getattr(result,source+'_pay')),{source},False
     if source=='weekly_holiday':
+        # 월급·연봉·포괄임금의 월 임금에는 유급 주휴분이 들어 있다(통상임금 월 기준시간에 주휴시간 포함 — weekly_holiday도
+        # '월급에 주휴수당 포함'으로 안내한다). 별도 채권으로 만들면 같은 임금을 두 번 청구한다(Codex 리뷰 High 2: 월급 250만 원에
+        # 주휴 383,560원이 따로 확정되고, 월급 행과 함께 넣으면 의무액 2,883,560원)
+        if inp.wage_type in (WageType.MONTHLY,WageType.ANNUAL,WageType.COMPREHENSIVE):
+            raise ValueError('월급·연봉제의 월 임금에는 유급 주휴분이 들어 있어 주휴수당을 별도 채권으로 만들지 않습니다. '
+                             '월급에서 주휴분을 빼기로 약정했다면 그 약정과 금액을 확인해주세요.')
         from .weekly_holiday import calc_weekly_holiday
         weeks=row.get('weeks')
         if isinstance(weeks,bool) or not isinstance(weeks,int) or not 1<=weeks<=6:raise ValueError('동일 조건으로 확정된 주휴 대상 주 수를 확인해주세요.')
