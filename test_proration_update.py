@@ -208,5 +208,49 @@ class ProrationUpdateTests(unittest.TestCase):
         self.assertIn('16/31',text)
         self.assertIn('2026-10-16',text)
 
+
+_CHAT_BASE = dict(requires_calculation=True, question_summary="q", is_labor_related=True, wage_type="월급",
+                  weekly_work_days=5, daily_work_hours=8, reference_year=2026)
+
+
+def _chat(query, **raw):
+    """프로덕션 변환기: analyzer._build_analysis_result → _analysis_to_extract_params → _run_calculator."""
+    from app.core.analyzer import _build_analysis_result
+    from app.core import pipeline as P
+    analysis = _build_analysis_result(dict(_CHAT_BASE, **raw), query)
+    return P._run_calculator(P._analysis_to_extract_params(analysis), query) or "", analysis
+
+
+class ProrationHeadlineTests(unittest.TestCase):
+    """일할 카드에는 평월 머리줄이 없고, 함께 실린 보험은 '평월 기준'이다(wage-update-followups G5)."""
+    Q = ("월급 300만원, 주5일 하루8시간, 2024년 1월 1일 입사했습니다. 2026년 10월 16일까지 재직하고 다음날 퇴직 효력이 발생합니다. "
+         "역일수 기준 약정이고 10월 급여를 일할계산해주세요. 4대보험도 알려주세요.")
+    RAW = dict(calculation_types=["prorated", "insurance"], wage_amount=3_000_000, start_date="2024-01-01",
+               last_employed_date="2026-10-16", proration_retirement_effective_date="2026-10-17", end_date="2026-10-17",
+               settlement_month="2026-10", proration_method="calendar", proration_employed_at_month_start=True,
+               proration_all_items_proportional=True)
+
+    def test_prorated_card_hides_full_month_headline_and_labels_insurance(self):
+        for meal, prorated, gross in ((None, "1,548,387원", "3,000,000원"), (200_000, "1,651,613원", "3,200,000원")):
+            with self.subTest(meal=meal):
+                raw = dict(self.RAW)
+                query = self.Q
+                if meal:
+                    raw["fixed_allowances"] = [{"name": "식대", "amount": meal, "condition": "없음"}]
+                    query = query.replace("월급 300만원", "월급 300만원, 식대 20만원")
+                text, _ = _chat(query, **raw)
+                self.assertIn(f"일할계산 임금: {prorated}", text)
+                self.assertNotIn("월 총 예상 수령액", text)
+                self.assertNotIn("월 실수령액(세후)", text)
+                self.assertIn(f"세전 월 급여(평월 기준): {gross}", text)
+                self.assertIn("정산월에 실제 공제되는 금액으로 계산한 것이 아닙니다", text)
+
+    def test_composition_total_does_not_restore_full_month_headline(self):  # 파이프라인 구성 판정 경로
+        query = self.Q.replace("월급 300만원, 주5일 하루8시간,", "월급은 총 300만원이고 기본급 250만원에 고정연장수당이 포함돼 있습니다.")
+        text, _ = _chat(query, **self.RAW)
+        self.assertIn("일할계산 임금: 1,548,387원", text)
+        self.assertNotIn("월 총 예상 수령액", text)
+
+
 if __name__=='__main__':
     unittest.main()
