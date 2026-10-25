@@ -227,7 +227,7 @@
 
 | ID | 결정 | 변경 |
 |---|---|---|
-| D1 | `expected_values`에 `null`을 허용한다. 뜻은 **'이 값은 산출하지 않고 보류해야 한다'**이다. `ww26-20`의 `total_claim: null`이 바로 그 의도다. 질문이 이자 충당액을 주지 않으므로 합계를 낼 수 없다 | `eval_consultation.py:168-172` 타입 검사에 `type(None)`을 더하고, 모듈 docstring에 null의 뜻을 한 줄 적는다.<br>`test_consultation_eval.py`에 'null 허용·list/dict 거부' 단언을 둔다.<br>CI '2026년 10월 계산기 갱신' 단계에 `python3 eval_consultation.py --offline --fixture data/eval_wage_update_queries.json`을 더한다. 현재는 `schema: FAIL: invalid expected_values: ww26-20`로 실패한다 |
+| D1 | `expected_values`에 `null`을 허용한다. 뜻은 **'이 값은 산출하지 않고 보류해야 한다'**이다. `ww26-20`의 `total_claim: null`이 바로 그 의도다. 질문이 이자 충당액을 주지 않으므로 합계를 낼 수 없다.<br>`expected_values`는 첫 단계 하네스의 채점 대상이 아니므로(`score_result`는 읽지 않는다) null도 기록용 계약이다. 보류 여부의 실제 판정은 그 사례의 `forbidden_claims`(금지 수치)가 맡는다 | `eval_consultation.py:168-172` 타입 검사에 `type(None)`을 더하고, 모듈 docstring에 null의 뜻을 한 줄 적는다.<br>`test_consultation_eval.py`에 'null 허용·list/dict 거부' 단언을 둔다.<br>CI '2026년 10월 계산기 갱신' 단계에 `python3 eval_consultation.py --offline --fixture data/eval_wage_update_queries.json`을 더한다. 현재는 `schema: FAIL: invalid expected_values: ww26-20`로 실패한다 |
 | D2 | 보고서 7개의 로컬 경로를 '저장소 밖 평가 원자료(로컬 보관, 실행 묶음 cN)'로 바꾼다. 7개 = `wage-calculator-annual-leave-update`·`arrears-interest`·`card-guard`·`parental-benefits`·`pay-inputs`·`proration`·`wage-claims`, 각 1줄, 그중 3개는 사용자명이 든 절대경로 | 이번 PR이 고치는 문서 기준으로 `git grep -nE "/Users/\|~/\|/private/tmp"`가 0이어야 한다 |
 | D3 | 통합 보고서 `wage-calculator-update-2026-10.report.md` 19행과 최종 검증 기준 12번을 '2026-10-24 승인 후 main 병합·운영 배포(#126~#132)'로 고친다 | 문구 |
 | D4 | CLAUDE.md:<br>② Calculator Targets를 28 → **30종**으로 고친다(`arrears_principal`·`reduced_work_benefit` 추가, `CALC_TYPES` 실측 30).<br>③ 480행 '일할계산만 아직 `monthly_total_pay or monthly_wage`를 직접 읽는다'를 지운다(`prorated.py`가 이미 `monthly_wage_total(premium=False)`를 거친다).<br>① 모듈 규칙은 각 코드 PR이 넣는다(§13) | 문구 |
@@ -449,10 +449,11 @@
         effective_from: str; effective_to: str     # 종료일 제외
         daily: int; capped_days: dict[str, int]; source: str
     DAILY_LEAVE_CAPS = (DailyLeaveCap("2026-01-01", "2027-01-01", 84_210,
-                        {"infertility": 2, "spouse_miscarriage": 3}, "고용노동부고시 제2026-67호"),)
+                        {"infertility": 2, "spouse_miscarriage": 3}, "고용노동부고시 제2025-124호·제2026-67호"),)
     def daily_leave_cap(kind: str, day: date) -> tuple[float | None, int]: ...
     ```
-  - `_daily_leave`(426-453행): 확정 일수 = min(보험 대상 유급일, capped_days − 기사용). 이를 넘으면 미확정 문구를 붙이고 `None`을 돌려준다.
+  - 상한표 시작일 2026-01-01은 제2025-124호(2026-01-01 시행) 구간이다. 제2026-67호(2026-09-18 개정)는 배우자 유산·사산휴가를 신설했을 뿐 기존 금액(난임 1일분 84,210원)은 같다. 앵커(`mat_upper`)는 현행 제2026-67호 원문으로 둔다.
+  - `_daily_leave`(426-453행): 확정 일수 = min(보험 대상 유급일, max(0, capped_days − 기사용)). 잔여 상한이 0이면 확정 0일이다. 확정 일수가 보험 대상 유급일보다 적으면 미확정 문구를 붙이고 `None`을 돌려준다.
   - `None` 안전 처리: 460-464행 `_benefit_warning`, 491-512행 breakdown·반올림, `helpers.py:310-311`.
   - `family_leave.py` 99-121행: 같은 상한표와 `confirmed_days`를 쓴다.
   - `family_leave.py` 134-136행: 정부 홍보 페이지 주소를 근거 조문으로 바꾼다. 근거 조문은 "남녀고용평등법 제18조의3제1항, 고용보험법 제76조제1항제3호"다.
@@ -465,6 +466,7 @@
   | 2026-12-01~04(4일), 월 500만 | 보험 336,840, 잔여 부담 430,283 | 보험 미확정(1·2일째 168,420 확정 문구). 사업주 유급액 767,123 유지, 잔여 부담 줄 생략 |
   | 기사용 1일 + 3일 | 252,630 | 1일분 84,210 확정 + 2일 미확정 |
   | 기사용 2일 + 2일 | 168,420 | 2일 미확정 |
+  | 기사용 3일 + 1일 | 84,210 | 확정 0일 + 1일 미확정(잔여 상한 0) |
   | 2026-10, 2일 | 168,420 | 168,420(유지) |
   | 2027-01 | 미확정 | 미확정(유지) |
   | 비우선지원 기업 | — | 보험 0, 사업주 전액 |
@@ -505,7 +507,8 @@
   - `facade/__init__.py`:
     - `_SELF_DATED_TARGETS = {"parental_leave": False, "reduced_work_benefit": True}`와 `_self_dated_event(inp, targets, auxiliary=())`를 둔다.
     - **물은 계산이 전부 실제 구간을 가진 육아 급여일 때만** 72행이 `event_date`를 넘긴다. 육아 급여는 승인 키를 읽지 않아 스냅샷 날짜를 옮겨도 다른 계산에 영향이 없다.
-    - 섞인 요청은 지금처럼 요청 전체를 보류한다. 기준일 해석은 기반 단계라서다(Plan R3).
+    - **관리 모드에서** 섞인 요청은 지금처럼 요청 전체를 보류한다. 기준일 해석은 기반 단계라서다(Plan R3).
+    - 비관리 모드는 facade 기준일 해석(72행)을 거치지 않는다(`rules_enabled()`가 거짓이면 바로 `_calculate`). 그래서 섞인 요청에서도 각 계산기가 자기 기준일을 쓴다 — 최저임금은 `reference_year`, 육아 급여는 첫 개시일(`childcare_shared`). 아래 표의 '섞인 요청(비관리 모드)' 행이 그 경우다.
   - 출산휴가는 승인 키(`maternity.monthly_upper`)를 읽어 범위에서 뺐다.
 - **기대 동작.**
 
