@@ -123,17 +123,21 @@ function browser(respond) {
       } });
   }
   const requests = [];
+  const qualityRequests = [];
   let reloaded = false;
   const context = vm.createContext({
     document: { getElementById: id => elements.get(id), addEventListener() {} },
     location: { hostname: 'localhost', reload() { reloaded = true; } },
     localStorage: { getItem() { return null; }, removeItem() {}, setItem() {} },
-    fetch: async (url, options) => { requests.push({ url, options }); return respond(url, options); },
+    fetch: async (url, options) => {
+      if (url.includes('/qa-quality?')) { qualityRequests.push({url,options}); return response({feedback:{exposures:0,votes:0,positive:0},retrieval:{}}); }
+      requests.push({ url, options }); return respond(url, options);
+    },
     alert() {}, URLSearchParams,
   });
   vm.runInContext(script, context);
   vm.runInContext('token = "admin-test-token";', context);
-  return { context, elements, requests, reloaded: () => reloaded };
+  return { context, elements, requests, qualityRequests, reloaded: () => reloaded };
 }
 const response = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -249,4 +253,21 @@ test('malformed list payload shows an error instead of reporting no runs', async
   const app = browser(() => response({ runs: 'broken' }));
   await app.context.loadEvaluationRuns();
   assert.match(app.elements.get('quality-status').textContent, /불러오지 못/);
+});
+
+test('Q&A feedback summary separates denominator, uncertainty and source supply', () => {
+  const context=renderers();
+  assert.equal(typeof context.renderQaQuality,'function');
+  const html=context.renderQaQuality({feedback:{exposures:100,votes:20,positive:15,exploratory:true,
+    negative_reasons:{missing_answer:5},by_version:[{versions:{corpus_version:'v1'},votes:20,exposures:100,positive:15}]},
+    retrieval:{answers:50,by_origin:[{origin:'nodong_qna',candidates:60,supplied:30}]}});
+  for (const value of ['75.0%','20.0%','20','100','탐색','인과','nodong_qna','30','v1']) assert.ok(html.includes(value),value);
+  assert.doesNotMatch(context.renderQaQuality({feedback:{exposures:0,votes:0,positive:0},retrieval:{}}),/100\.0%|0\.0%/);
+});
+
+test('Q&A summary uses existing admin bearer authentication', async () => {
+  const app=browser(() => response({runs:[]}));
+  await app.context.loadQaQuality();
+  assert.equal(app.qualityRequests[0].options.headers.Authorization,'Bearer admin-test-token');
+  assert.match(app.elements.get('qa-quality-summary').innerHTML,/측정 없음/);
 });

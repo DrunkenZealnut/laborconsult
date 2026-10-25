@@ -13,6 +13,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from app.core.provenance import provenance
 
 from dotenv import load_dotenv
 
@@ -126,6 +127,7 @@ def build_corpus() -> None:
                     # 소비자(bm25_search.py, rag.py)는 부재를 이미 흡수한다.
                     if meta.get("book_id"):
                         entry["book_id"] = meta["book_id"]
+                    entry.update(provenance(meta))
                     corpus.append(entry)
                     count += 1
                 pagination_token = resp.pagination.next if resp.pagination else None

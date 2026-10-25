@@ -41,7 +41,13 @@ jobs:
           LEGAL_RULE_SQL_TEST: 'true'
         run: |
           docker pull postgres:17
-          python3 -m unittest test_legal_rule_sql test_model_settings_sql test_abuse_guard_sql -v
+          python3 -m unittest test_legal_rule_sql test_model_settings_sql test_abuse_guard_sql test_qa_quality_sql -v
+
+      - name: 노동OK 증분 갱신·검색·피드백 회귀
+        run: |
+          python3 -m unittest test_qna_ingestion test_qna_vectors test_qna_corpus test_qna_snapshot test_qna_update test_qna_evaluation test_qna_retrieval test_qna_experiment test_qna_temporal test_qna_trace test_answer_feedback test_qa_quality_api test_qa_quality_store -v
+          node --test test_answer_feedback.js
+          python3 eval_consultation.py --offline --fixture data/eval_qna_queries.json
 
       - name: 파이프라인 배선 테스트
         run: python3 test_pipeline_wiring.py
@@ -159,4 +165,6 @@ jobs:
         run: node --test test_chat_lock.js
 
       - name: 공개 페이지 fetch 오류 처리 테스트
-        run: node --test test_public_fetch.js
+        run: |
+          node --test test_public_fetch.js
+          python3 -m unittest test_public_scripts -v

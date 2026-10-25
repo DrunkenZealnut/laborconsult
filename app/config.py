@@ -159,6 +159,9 @@ class AppConfig:
                 index_name, exc,
             )
 
+        from app.core.qna_experiment import configure_index
+        pinecone_index = configure_index(pinecone_index)
+
         claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         # 접속 생성은 storage.make_supabase_client 단일 경로 — 스키마 옵션이

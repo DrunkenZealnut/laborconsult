@@ -566,6 +566,14 @@
     #notice-banner .notice-link { display: block; margin-left: 0; margin-top: var(--space-half); }
   }
 </style>
+<script src="/answer_feedback.js" defer></script>
+<style>
+.answer-feedback { margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.answer-feedback button { cursor: pointer; border: 1px solid var(--color-border, #ccc); border-radius: 6px; padding: 6px 10px; background: var(--color-surface, #fff); color: inherit; font: inherit; }
+.answer-feedback button:disabled { opacity: .5; cursor: wait; }
+.feedback-reasons { width: 100%; }
+.feedback-reasons button { margin: 3px; }
+</style>
 </head>
 <body>
 
@@ -1359,6 +1367,7 @@ async function readSSE(resp, onActivity) {
   let pendingSources = null;
   let pendingCases = null;
   let pendingCalc = null;
+  let pendingFeedback = null;
   let streamDone = false;
   let errorEvent = null;   // 요청 거절·서버 오류 — 답변이 아니다
   let noticeEl = null;
@@ -1397,6 +1406,8 @@ async function readSSE(resp, onActivity) {
         pendingSources = event.hits || null;   // 답변 완료 후 출처 표시
       } else if (event.type === 'cases') {
         pendingCases = event.items || null;    // 결론이 같은 유사 상담 사례
+      } else if (event.type === 'feedback') {
+        pendingFeedback = event;
       } else if (event.type === 'meta') {
         if (event.calc_result) pendingCalc = event.calc_result;   // 답변 완료 후 정확 계산값 카드로 표시
       } else if (event.type === 'replace') {
@@ -1433,6 +1444,9 @@ async function readSSE(resp, onActivity) {
     if (pendingContacts) renderContacts(pendingContacts, lastAssistant);
     chat.scrollTop = chat.scrollHeight;
     showAnswerActions(lastAssistant);
+    if (streamDone && assistantEl && pendingFeedback && window.answerFeedback) {
+      window.answerFeedback.render(assistantEl, pendingFeedback, sessionId);
+    }
     // 조망 레이어(목차·접기)는 답변 확정 후 1회만 — 스트리밍 중엔 heading이 미완성이라
     // 목차가 어긋난다. replace(인용 교정) 이벤트도 이 루프 안에서 이미 처리됐으므로
     // 여기서는 항상 최종 텍스트를 본다.
