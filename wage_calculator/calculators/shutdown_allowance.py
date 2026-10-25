@@ -76,7 +76,7 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
         if inp.average_wage_date and inp.average_wage_date != inp.shutdown_start_date:
             warnings.append(
                 f"휴업수당의 평균임금은 휴업 시작일({inp.shutdown_start_date})을 산정 사유 발생일로 계산했습니다"
-                "(근로기준법 제2조제1항제6호·제46조, 고용노동부 근로기준정책과-2081). "
+                "(근로기준법 제2조제1항제6호·제46조). "
                 f"입력한 평균임금 사유 발생일({inp.average_wage_date})은 휴업수당에는 쓰지 않았습니다.")
         avg = calc_average_wage(replace(inp, end_date=inp.shutdown_start_date, average_wage_date=None), ow)
     else:

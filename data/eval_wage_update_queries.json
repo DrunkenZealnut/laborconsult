@@ -1051,5 +1051,149 @@
     "forbidden_claims": [],
     "risk_level": "high",
     "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-39",
+    "category": "연말정산 지나가는 언급과 4대보험(G2)",
+    "question": "월급 300만원(세전, 비과세 수당 없음)을 받는 직장인입니다. 작년 연말정산 때는 환급을 조금 받았어요. 부양가족은 본인 1명이고, 2026년 10월 기준으로 매달 4대보험을 떼고 나면 실수령액이 얼마인지 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "monthly_net": 2662477
+    },
+    "required_notices": [],
+    "forbidden_claims": [
+      "re!:연말정산[^.\\n]{0,30}지원하지\\s*않"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-update-followups"
+  },
+  {
+    "id": "ww26-40",
+    "category": "세후 금액을 월 총액으로 오추출(G3)",
+    "question": "월급 300만원이고 세후로는 270만원 정도 받아요. 매주 10시간 연장근로를 하고 연장수당은 따로 받습니다. 2026년 10월 기준 4대보험 공제액 알려주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "gross_monthly": 3937500
+    },
+    "required_notices": [],
+    "forbidden_claims": [
+      "re!:세전[^\\n]{0,15}2,700,000"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-update-followups"
+  },
+  {
+    "id": "ww26-41",
+    "category": "다태아 출산전후휴가 120일(P2)",
+    "question": "쌍둥이를 임신해서 2026년 5월 1일부터 8월 28일까지 120일 출산전후휴가를 씁니다. 월 통상임금은 500만원이고 회사는 우선지원대상기업입니다. 휴가 종료 전 고용보험 피보험 단위기간은 400일이고 법정 사용 요건은 충족합니다. 출산전후휴가 급여로 고용보험에서 받는 총액은 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "insurance_total": 8800000
+    },
+    "required_notices": [],
+    "forbidden_claims": [
+      "6,600,000"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-update-followups"
+  },
+  {
+    "id": "ww26-42",
+    "category": "퇴직금 약정 지급일이 14일 기한보다 빠른 경우(A4)",
+    "question": "2026년 8월 31일에 퇴사했습니다. 퇴직금 1,000만원을 회사와 9월 1일에 주기로 했는데 아직 못 받았어요. 회사는 주식회사이고 기간 연장 합의는 없었습니다. 2026년 10월 24일 기준으로 퇴직금 지연이자가 얼마인지 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "interest": 219178
+    },
+    "required_notices": [],
+    "forbidden_claims": [
+      "21,370",
+      "17,808"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-update-followups"
+  },
+  {
+    "id": "ww26-43",
+    "category": "육아휴직 출근 간주 — 신청일 미기재(L3)",
+    "question": "2017년 3월 2일에 입사해 5인 이상 사업장에서 일하고 있습니다. 2018년 6월 1일부터 2019년 5월 31일까지 육아휴직을 했고, 그 밖에는 결근이 없습니다. 2019년 3월 2일부터 2020년 3월 1일까지 근무에 대해 발생하는 연차휴가는 며칠인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [
+      "re!:신청일[^.\\n]{0,15}(?:입력|알려)"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-update-followups"
   }
 ]
