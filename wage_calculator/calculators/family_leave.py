@@ -59,8 +59,8 @@ def calc_family_leave(inp, ow):
 
 def _calculate(inp, ow):
     from .maternity_leave import (
-        INFERTILITY_LEAVE_PERIODS, SPOUSE_MISCARRIAGE_PERIODS, SPOUSE_LEAVE_PERIODS,
-        DAILY_LEAVE_UPPER_PERIODS, SPOUSE_LEAVE_UPPER_PERIODS, _effective, _employer_and_insurance,
+        INFERTILITY_LEAVE_PERIODS, SPOUSE_MISCARRIAGE_PERIODS, SPOUSE_LEAVE_PERIODS, EI_LEAVE_BASIS,
+        SPOUSE_LEAVE_UPPER_PERIODS, _effective, _employer_and_insurance, daily_leave_cap, unconfirmed_daily_text,
     )
     kind = inp.maternity_leave_type
     if kind == 'multiple':
@@ -96,16 +96,21 @@ def _calculate(inp, ow):
     paid_days = min(requested, max(0,paid_limit-used))
     insurance_days = min(requested,max(0,insurance_limit-used))
     daily = ow.hourly_ordinary_wage * ow.daily_hours_used
-    # Existing source tables contain confirmed 2025/2026 caps only.
     upper = None
-    if start.year in (2025,2026):
-        if kind == 'spouse_birth':
+    confirmed_days = insurance_days
+    daily_cap = capped_days = None
+    if kind == 'spouse_birth':
+        # Existing source tables contain confirmed 2025/2026 caps only.
+        if start.year in (2025,2026):
             total_cap = _effective(SPOUSE_LEAVE_UPPER_PERIODS,start.isoformat(),start.year)
             upper = total_cap / insurance_limit * insurance_days if total_cap is not None else None
-        else:
-            daily_cap = _effective(DAILY_LEAVE_UPPER_PERIODS,start.isoformat(),start.year)
-            upper = daily_cap * insurance_days if daily_cap is not None else None
-    pay, candidate = _employer_and_insurance(daily, paid_days, insurance_days, True, upper)
+    else:
+        # 1일 상한은 고시 효력 기간 안에서, 고시가 정한 '최초 N일분'까지만 확정이다. 기사용분도 그 일수에 센다(P4)
+        daily_cap, capped_days = daily_leave_cap(kind, start.isoformat())
+        if daily_cap is not None:
+            confirmed_days = min(insurance_days, max(0, capped_days - used))
+            upper = daily_cap * confirmed_days
+    pay, candidate = _employer_and_insurance(daily, paid_days, confirmed_days, True, upper)
     insured = inp.family_leave_insured_days
     if insured is not None:
         _days(insured, '휴가 종료 전 피보험 단위기간', 100_000)
@@ -116,9 +121,14 @@ def _calculate(inp, ow):
     if insurance_days == 0 or priority is False or (insured is not None and insured < 180):
         benefit = 0.0
         insurance_text = '0원 (지원 대상 일수 또는 기업·피보험 단위기간 요건 미충족)'
-    elif priority is True and insured is not None and upper is not None:
+    elif priority is True and insured is not None and upper is not None and confirmed_days == insurance_days:
         benefit = round(candidate)
         insurance_text = f'{benefit:,.0f}원'
+    elif priority is True and insured is not None and upper is not None:
+        benefit = None
+        insurance_text = unconfirmed_daily_text(label, daily_cap, capped_days, confirmed_days, round(candidate),
+                                                insurance_days - confirmed_days)
+        warnings.append(insurance_text)
     else:
         benefit = None
         insurance_text = '미확정 (우선지원대상기업·피보험 단위기간 180일·해당 연도 상한 확인 필요)'
@@ -133,10 +143,11 @@ def _calculate(inp, ow):
         summary[f'{label} 사업주 잔여 부담'] = f'{pay-benefit:,.0f}원'
     if kind == 'infertility' and start.isoformat() >= '2026-11-27':
         formulas.append('난임치료휴가 유급 기간은 2026-11-27 시행 개정으로 최초 2일에서 4일로 확대됩니다. 이 사용 구간에는 4일 한도를 적용했습니다.')
-        warnings.append('시행 근거: 정부 이렇게 달라집니다 — https://whatsnew.mofe.go.kr/mec/ots/dif/view.do?comBaseCd=DIFTYPCD&difField1=DIFFIELD26&difSer=5e74bf92-50c2-419c-9b43-745406c5e51c')
+        warnings.append('시행 근거: 남녀고용평등법 제18조의3제1항·고용보험법 제76조제1항제3호(2026-11-27 시행, 최초 4일 유급). '
+                        '시행 전에 사용한 기간도 최초 4일 산정에 포함합니다(남녀고용평등법 부칙 <제21700호> 제2조)')
     warnings.append('근로자가 진술한 법정 휴가 요건 충족을 전제로 산정했습니다. 실제 지원은 신청·심사를 거칩니다.')
     return FamilyLeaveResult(selected_type=kind,paid_days=paid_days,employer_pay=round(pay),
         insurance_benefit=benefit,summary=summary,breakdown=summary.copy(),formulas=formulas,warnings=warnings,
         legal_basis=[{'infertility':'남녀고용평등법 제18조의3','spouse_birth':'남녀고용평등법 제18조의2',
                       'spouse_miscarriage':'남녀고용평등법 제18조의4'}[kind],
-                     '고용보험법 출산전후휴가 급여등 규정', '고용노동부 출산전후휴가 급여등 상한액 고시'])
+                     EI_LEAVE_BASIS[kind], EI_LEAVE_BASIS['cap']])

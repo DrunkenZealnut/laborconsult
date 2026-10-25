@@ -1,11 +1,11 @@
 """
-출산전후휴가급여 계산기 (고용보험법 제75조, 근로기준법 제74조)
+출산전후휴가급여 계산기 (고용보험법 제75조·제76조, 근로기준법 제74조)
 
 핵심 계산식:
   출산전후휴가: 90일 (미숙아 100일 · 다태아 120일, 둘 다면 긴 쪽)
   급여 기간:
     - 우선지원대상기업(중소기업): 90일 전액 고용보험 지원
-    - 대규모 기업: 최초 60일은 사업주 부담, 61일~90일만 고용보험
+    - 대규모 기업: 최초 60일(다태아 75일)은 사업주 부담, 그 뒤 30일(미숙아 40일·다태아 45일)만 고용보험
   급여액:
     - 통상임금 100% (최초 60일, 우선지원은 90일 전체)
     - 상한: 고용노동부 고시(2026년 월 220만원 = 90일 660만원). 기간 총액은 월 상한 ÷ 30 × 일수
@@ -19,7 +19,7 @@
 
 import math
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..base import BaseCalculatorResult
 from ..models import WageInput
@@ -52,7 +52,7 @@ MATERNITY_DAYS_PER_MONTH = 30
 # 상한이 걸릴 때만 총액을 같은 단위로 맞춘다. 90·120일은 나누어떨어져 값이 변하지 않는다.
 PREMATURE_LEAVE_FROM = "2025-02-23"
 
-# ── 배우자 출산휴가 (남녀고용평등법 제18조의2, 고용보험법 제75조의2) ─────────
+# ── 배우자 출산휴가 (남녀고용평등법 제18조의2, 고용보험법 제76조제1항제2호) ─
 # **유급 일수와 고용보험 지원 일수는 다른 값이고 함께 바뀐다.** 2025-02-23 개정 시행으로
 # 유급 10일 → 20일, 지원 5일분 → 전 기간으로 확대됐다(고용노동부 work24 제도안내).
 # 연중 시행이라 시행일 구간으로 둔다 — (유급 일수, 고용보험 지원 일수).
@@ -91,13 +91,62 @@ SPOUSE_MISCARRIAGE_PERIODS: dict[str, tuple[int, int]] = {     # (휴가 일수,
 # **미등록**이다. 금액이 게시판 첨부 `.hwp`(OLE 바이너리)에만 있어 확인하지 못했다
 # (실측 2026-09-24: 게시글 본문에 금액 없음, 첨부는 hwp 1건, PDF 없음). 배우자 출산휴가
 # 5일분 상한과 같은 사정이고, 추정값을 넣는 대신 상한 미적용 + 경고로 둔다 — `_daily_leave`.
-DAILY_LEAVE_UPPER_PERIODS: dict[str, float] = {
-    "2026-01-01": 84_210,
-}
+#
+# **1일 상한은 유효기간과 '최초 N일분'을 함께 가진다.** 제2026-67호는 난임 최초 2일분·배우자 유산·사산 최초 3일분만 정하고
+# 2026-12-31까지 효력이 있다(Ⅴ). 2026-11-27부터 난임 유급·보험 대상은 최초 4일인데(남녀고용평등법 제18조의3①,
+# 고용보험법 제76조①3호) 3·4일째 상한은 고시에 없다 — 1일분을 외삽하면 고시에 없는 숫자를 확정값처럼 낸다.
+# 그래서 고시가 정한 일수까지만 확정하고 나머지는 미확정(None)으로 둔다(wage-update-followups P4).
+@dataclass(frozen=True)
+class DailyLeaveCap:
+    effective_from: str        # 적용 시작일(포함)
+    effective_to: str          # 효력 종료일 다음 날(제외)
+    daily: int                 # 1일분 상한
+    capped_days: dict = field(default_factory=dict)   # 휴가 종류별 상한이 정해진 일수(최초 N일분)
+    source: str = ""
+
+
+DAILY_LEAVE_CAPS: tuple[DailyLeaveCap, ...] = (
+    DailyLeaveCap("2026-01-01", "2027-01-01", 84_210, {"infertility": 2, "spouse_miscarriage": 3},
+                  "고용노동부고시 제2026-67호"),
+)
+
+
+def daily_leave_cap(kind: str, day: str) -> tuple[float | None, int]:
+    """(1일 상한, 상한이 정해진 일수). 고시 효력 기간 밖이거나 미등록이면 (None, 0)."""
+    for cap in DAILY_LEAVE_CAPS:
+        if cap.effective_from <= day < cap.effective_to:
+            return cap.daily, cap.capped_days.get(kind, 0)
+    return None, 0
+
+
+def unconfirmed_daily_text(label: str, cap: float, capped_days: int, confirmed_days: int,
+                           confirmed_amount: float, rest_days: int) -> str:
+    """고시가 '최초 N일분'만 정한 상한의 미확정 안내. 확정분은 금액으로, 나머지는 미확정으로 적는다."""
+    head = (f"{label} 고용보험 급여 미확정 — 고시(제2026-67호) 상한은 최초 {capped_days}일분(1일 {cap:,.0f}원)까지만 "
+            "정해져 있습니다.")
+    done = (f" 이번 사용분 중 {confirmed_days}일분 {confirmed_amount:,.0f}원은 그 상한 이내로 확정이고,"
+            if confirmed_days else " 이번 사용분은")
+    scope = ("(2026-11-27 이후 사용하는 3·4일째도 우선지원 대상기업이면 고용보험법 제76조제1항제3호의 급여 대상)"
+             if label == "난임치료휴가" else "")
+    return (f"{head}{done} 나머지 {rest_days}일분은 상한 고시가 정해지지 않아 금액을 확정할 수 없습니다{scope}. "
+            "사업주는 유급분을 지급하고, 지급된 고용보험 급여는 그 금액만큼 사업주가 지급한 것으로 봅니다"
+            "(남녀고용평등법 제18조제2항)")
 
 SPOUSE_LEAVE_UPPER_PERIODS: dict[str, float] = {
     "2025-02-23": 1_607_650,   # 20일분 — 2025년 고시
     "2026-01-01": 1_684_210,   # 20일분 — 고용노동부고시 제2025-124호
+}
+
+
+# 고용보험법 제76조제1항(출산전후휴가 급여등의 지급 기간)의 호별 근거. 제75조는 수급 요건이고 항이 없으며,
+# 제75조의2는 수급권 대위다 — 지급 기간을 제75조제1항·제2항·제75조의2로 적던 것을 원문으로 바로잡았다(P3).
+EI_LEAVE_BASIS = {
+    "maternity": "고용보험법 제76조제1항제1호 (출산전후휴가 급여 지급 기간)",
+    "maternity_non_priority": "고용보험법 제76조제1항제1호 단서 (60일(다태아 75일) 초과분, 30일(미숙아 40일·다태아 45일) 한도)",
+    "spouse_birth": "고용보험법 제76조제1항제2호 (배우자 출산전후휴가)",
+    "infertility": "고용보험법 제76조제1항제3호",
+    "spouse_miscarriage": "고용보험법 제76조제1항제4호",
+    "cap": "고용보험법 제76조제2항·같은 법 시행령 제101조제1호, 고용노동부고시 제2026-67호",
 }
 
 
@@ -106,6 +155,14 @@ def _won(value: float) -> str:
     정수로 반올림해 보여 주면 화면의 산식이 서로 곱해지지 않는다
     (실측: 95,877 × 20 = 1,917,540 ≠ 표시된 합계 1,917,546)."""
     return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}"
+
+
+def _round_or_none(value: float | None):
+    return None if value is None else round(value)
+
+
+def _won_or_unsettled(value: float | None) -> str:
+    return "미확정 (경고 참고)" if value is None else f"{value:,.0f}원"
 
 
 def _effective(periods: dict, reference_date: str | None, year: int):
@@ -172,7 +229,7 @@ class MaternityLeaveResult(BaseCalculatorResult):
     employer_covered_days: int = 0             # 사업주 부담 일수
 
     # 총 급여
-    total_insurance_benefit: float = 0.0       # 고용보험 지급 총액
+    total_insurance_benefit: float | None = 0.0  # 고용보험 지급 총액. None = 지원 일수 미확정(미숙아 + 다태아, 대규모)
     total_employer_benefit: float = 0.0        # 사업주 부담 총액
 
     # 배우자 출산휴가
@@ -185,10 +242,10 @@ class MaternityLeaveResult(BaseCalculatorResult):
     # 배우자 출산휴가와 같이 **유급액과 보험 급여를 분리**한다 — 위 두 필드 참조.
     infertility_paid_days: int = 0             # 난임치료휴가 유급 일수
     infertility_pay: float = 0.0               # 그 유급액(사업주 지급 의무, 상한 없음)
-    infertility_insurance_benefit: float = 0.0 # 그중 고용보험이 지원하는 급여(상한 적용)
+    infertility_insurance_benefit: float | None = 0.0  # 그중 고용보험이 지원하는 급여(상한 적용). None = 미확정
     spouse_miscarriage_paid_days: int = 0      # 배우자 유산·사산휴가 유급 일수
     spouse_miscarriage_pay: float = 0.0        # 그 유급액(사업주 지급 의무, 상한 없음)
-    spouse_miscarriage_insurance_benefit: float = 0.0   # 그중 고용보험 지원 급여(상한 적용)
+    spouse_miscarriage_insurance_benefit: float | None = 0.0   # 그중 고용보험 지원 급여(상한 적용). None = 미확정
 
     upper_limit_applied: bool = False
     requested_maternity_only: bool = False
@@ -317,6 +374,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
             )
 
     # ── 기업 유형별 부담 구조 ─────────────────────────────────────────────
+    insurance_days_unsettled = False
     if is_priority:
         # 우선지원대상기업: 전 기간(90일) 고용보험 지원
         insurance_days = leave_days
@@ -324,21 +382,31 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         formulas.append(
             f"우선지원대상기업: {leave_days}일 전액 고용보험 지원"
         )
-        legal.append("고용보험법 제75조제1항 (우선지원대상기업 전액 지원)")
+        legal.append(EI_LEAVE_BASIS["maternity"])
     else:
-        # 대규모 기업: 최초 60일 사업주 부담, 이후만 고용보험
-        guaranteed_days = 75 if inp.maternity_leave_type == "maternity" and is_multiple else 60
+        # 대규모 기업: 최초 60일(다태아 75일) 사업주 유급(근로기준법 제74조④), 그 초과분만 고용보험(제76조①1호 단서).
+        # 유형을 지정하지 않은 경로(CLI·라이브러리)도 다태아면 75일이다 — 유형 조건이 있어 60일로 계산되던 것을 고쳤다(P3)
+        guaranteed_days = 75 if is_multiple else 60
+        insurance_cap = 45 if is_multiple else (40 if premature_applies else 30)
         employer_days = min(guaranteed_days, leave_days)
-        insurance_days = max(0, leave_days - guaranteed_days)
+        insurance_days = max(0, min(leave_days - guaranteed_days, insurance_cap))
         formulas.append(
             f"대규모 기업: 최초 {employer_days}일 사업주 부담, "
             f"이후 {insurance_days}일 고용보험 지원"
         )
-        legal.append("고용보험법 제75조제2항 (대규모 기업)")
+        legal.append(EI_LEAVE_BASIS["maternity_non_priority"])
         warnings.append(
-            "대규모 기업(우선지원대상기업 제외): 최초 60일은 사업주가 통상임금 100% 지급, "
-            "61일~90일만 고용보험에서 지급 (상한 적용)"
+            f"우선지원 대상기업이 아닌 경우: 최초 {guaranteed_days}일은 사업주가 유급으로 지급(근로기준법 제74조제4항), "
+            f"고용보험은 {guaranteed_days + 1}일~{leave_days}일 중 최대 {insurance_cap}일"
+            "(고용보험법 제76조제1항제1호 단서)"
         )
+        if is_multiple and premature_applies:
+            # 한도가 미숙아 40일인지 다태아 45일인지 법문이 정하지 않는다(§1.2) — 고용보험 지급액을 확정하지 않는다
+            insurance_days_unsettled = True
+            warnings.append(
+                "미숙아이면서 다태아인 경우 고용보험 지원 한도(미숙아 40일·다태아 45일 중 어느 쪽인지)를 법문이 정하지 "
+                "않아 고용보험 지급액을 확정하지 않았습니다. 사업주 유급 75일분은 그대로입니다"
+            )
 
     # ── 일 환산 급여 (월 급여 → 일 급여) ────────────────────────────────
     # 고시가 기간 총액을 산정하는 방식과 같아야 한다(월 상한 ÷ 30 × 일수). 연 365일 환산은
@@ -356,24 +424,33 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         if overflow > 0:
             total_insurance_benefit -= overflow if insurance_days else 0
             total_employer_benefit -= overflow if not insurance_days else 0
+    if not is_priority:
+        # 사업주 유급분은 통상임금 기준이다 — 보험 상한 일액으로 계산하면 '유급액 ≠ 보험급여' 원칙이 깨진다.
+        # 유형을 지정한 경로와 같은 함수·같은 값(P3b)
+        total_employer_benefit, _ = _employer_and_insurance(
+            monthly_ow / MATERNITY_DAYS_PER_MONTH, employer_days, 0, False, None)
     if inp.maternity_leave_type == "maternity":
         guaranteed_days = 75 if is_multiple else 60
         total_employer_benefit = max(0, monthly_ow / 30 - (daily_benefit if is_priority else 0)) * guaranteed_days
         formulas.append(f"사업주 유급 의무: 최초 {guaranteed_days}일 통상임금 보장, 고용보험 지원분 공제 후 잔여 부담 {total_employer_benefit:,.0f}원")
-    total_benefit = total_insurance_benefit + total_employer_benefit
 
     formulas.append(
         f"일 급여: {monthly_benefit:,.0f}원/월 ÷ {MATERNITY_DAYS_PER_MONTH}일 = {daily_benefit:,.0f}원/일"
     )
-    formulas.append(
-        f"고용보험 지급 총액: {daily_benefit:,.0f}원 × {insurance_days}일 = {total_insurance_benefit:,.0f}원"
-    )
+    if not insurance_days_unsettled:
+        formulas.append(
+            f"고용보험 지급 총액: {daily_benefit:,.0f}원 × {insurance_days}일 = {total_insurance_benefit:,.0f}원"
+        )
     if employer_days > 0:
         formulas.append(
             f"사업주 부담 총액: {total_employer_benefit:,.0f}원 ({employer_days}일, 통상임금 기준)"
             if inp.maternity_leave_type == "maternity" else
-            f"사업주 부담 총액: {daily_benefit:,.0f}원 × {employer_days}일 = {total_employer_benefit:,.0f}원"
+            f"사업주 부담 총액: 통상임금 {monthly_ow / MATERNITY_DAYS_PER_MONTH:,.0f}원/일 × {employer_days}일 "
+            f"= {total_employer_benefit:,.0f}원"
         )
+    if insurance_days_unsettled:
+        total_insurance_benefit = None
+        formulas.append("고용보험 지급 총액: 미확정 (미숙아 + 다태아 대규모 기업 — 지원 한도 법문 미정)")
 
     if inp.maternity_leave_type == "maternity":
         warnings.extend(["수급 요건: 휴가 종료 전 피보험 단위기간 180일 이상 (고용보험법 제75조)",
@@ -382,11 +459,11 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
             requested_maternity_only=True, leave_days=leave_days, raw_monthly_wage=monthly_ow,
             monthly_benefit=round(monthly_benefit), is_priority_support=is_priority,
             insurance_covered_days=insurance_days, employer_covered_days=employer_days,
-            total_insurance_benefit=round(total_insurance_benefit),
+            total_insurance_benefit=_round_or_none(total_insurance_benefit),
             total_employer_benefit=round(total_employer_benefit), upper_limit_applied=upper_applied,
             breakdown={"월 통상임금": f"{monthly_ow:,.0f}원", "월 급여(상한 적용)":f"{monthly_benefit:,.0f}원",
                        "총 휴가 일수":f"{leave_days}일", "고용보험 지원 일수":f"{insurance_days}일",
-                       "고용보험 지급 총액":f"{total_insurance_benefit:,.0f}원",
+                       "고용보험 지급 총액":_won_or_unsettled(total_insurance_benefit),
                        "사업주 부담 총액":f"{total_employer_benefit:,.0f}원"},
             formulas=formulas, warnings=warnings, legal_basis=legal)
 
@@ -416,51 +493,60 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
                 "해당 시점의 배우자 출산휴가 급여 상한액 고시가 등록되지 않아 상한을 적용하지 "
                 "않았습니다. 실제 지급액은 상한에 걸릴 수 있습니다"
             )
-        legal.append("고용보험법 제75조의2 (배우자 출산휴가 급여)")
+        legal.append(EI_LEAVE_BASIS["spouse_birth"])
     warnings.append(_benefit_warning("배우자 출산휴가", spouse_days, spouse_pay,
                                       spouse_insurance, is_priority))
 
     # ── 난임치료휴가 · 배우자 유산·사산휴가 ───────────────────────────────
     # 유급액·고용보험 급여 분리는 배우자 출산휴가와 같은 `_employer_and_insurance`를 쓴다
     # (그 함수 docstring이 이 둘의 재발 이력을 근거로 남긴다).
-    daily_upper = _effective(DAILY_LEAVE_UPPER_PERIODS, reference_date, year)
+    leave_day = reference_date or f"{int(year):04d}-01-01"
 
-    def _daily_leave(periods, label, law):
-        """(유급 일수, 사업주 유급액, 고용보험 급여). 시행 전이면 (0, 0, 0)."""
+    def _daily_leave(periods, label, law, kind):
+        """(유급 일수, 사업주 유급액, 고용보험 급여). 시행 전이면 (0, 0, 0). 고용보험 급여 None = 미확정."""
         found = _effective(periods, reference_date, year)
         if not found:
             return 0, 0.0, 0.0
         total_days, paid_days = found
         legal.append(law)
         # 두 휴가 모두 유급 일수 = 고용보험 지원 일수(배우자 출산휴가처럼 갈리지 않는다).
-        # 상한은 **1일 단가**로 고시되므로 총액 상한(daily_upper × 일수)으로 환산해 넘긴다.
-        upper_total = daily_upper * paid_days if daily_upper is not None else None
+        # 상한은 **1일 단가**로 고시되고 '최초 N일분'까지만 정해진다 — 그 일수까지만 확정한다(P4).
+        daily_upper, capped_days = daily_leave_cap(kind, leave_day)
+        confirmed_days = paid_days if daily_upper is None else min(paid_days, capped_days)
+        upper_total = daily_upper * confirmed_days if daily_upper is not None else None
         pay, benefit = _employer_and_insurance(
-            daily_ordinary, paid_days, paid_days, is_priority, upper_total)
+            daily_ordinary, paid_days, confirmed_days, is_priority, upper_total)
         formulas.append(
             f"{label}: 총 {total_days}일 중 유급 {paid_days}일 × "
             f"{_won(daily_ordinary)}원 = {pay:,.0f}원")
         if is_priority:
+            legal.append(f"{EI_LEAVE_BASIS[kind]} ({label} 급여)")
             if daily_upper is None:
                 # 상한 미등록을 조용히 '상한 없음'으로 두지 않는다.
                 # 2025년분 난임치료휴가(고시 제2025-14호)가 여기에 해당한다.
                 warnings.append(
                     f"해당 시점의 {label} 급여 상한액 고시가 등록되지 않아 상한을 적용하지 "
                     f"않았습니다. 실제 지원액은 상한에 걸릴 수 있습니다")
+            if confirmed_days < paid_days:
+                warnings.append(unconfirmed_daily_text(label, daily_upper, capped_days, confirmed_days,
+                                                       benefit, paid_days - confirmed_days))
+                formulas.append(f"{label} 급여(고용보험): 최초 {confirmed_days}일분 {benefit:,.0f}원 확정, "
+                                f"나머지 {paid_days - confirmed_days}일분 미확정")
+                return paid_days, pay, None
             formulas.append(
                 f"{label} 급여(고용보험, {paid_days}일분): {benefit:,.0f}원"
                 + (" (1일 상한 적용)" if daily_upper and daily_ordinary > daily_upper else ""))
         return paid_days, pay, benefit
 
     infertility_days, infertility_pay, infertility_benefit = _daily_leave(
-        INFERTILITY_LEAVE_PERIODS, "난임치료휴가", "남녀고용평등법 제18조의3 (난임치료휴가)")
+        INFERTILITY_LEAVE_PERIODS, "난임치료휴가", "남녀고용평등법 제18조의3 (난임치료휴가)", "infertility")
     miscarriage_days, miscarriage_pay, miscarriage_benefit = _daily_leave(
         SPOUSE_MISCARRIAGE_PERIODS, "배우자 유산·사산휴가",
-        "남녀고용평등법 제18조의4 (배우자 유산·사산휴가)")
+        "남녀고용평등법 제18조의4 (배우자 유산·사산휴가)", "spouse_miscarriage")
     for label, days, pay, benefit in (
             ("난임치료휴가", infertility_days, infertility_pay, infertility_benefit),
             ("배우자 유산·사산휴가", miscarriage_days, miscarriage_pay, miscarriage_benefit)):
-        if days:
+        if days and benefit is not None:
             warnings.append(_benefit_warning(label, days, pay, benefit, is_priority))
 
     warnings.append("수급 요건: 출산 전 피보험기간 180일 이상 (고용보험법 제75조)")
@@ -473,7 +559,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         "기업 유형": "우선지원대상기업(중소기업)" if is_priority else "대규모 기업",
         "고용보험 지원 일수": f"{insurance_days}일",
         "사업주 부담 일수": f"{employer_days}일",
-        "고용보험 지급 총액": f"{total_insurance_benefit:,.0f}원",
+        "고용보험 지급 총액": _won_or_unsettled(total_insurance_benefit),
         "사업주 부담 총액": f"{total_employer_benefit:,.0f}원",
         f"배우자 출산휴가({spouse_days}일 유급)": f"{spouse_pay:,.0f}원",
         "└ 고용보험 지원분": (f"{spouse_insurance:,.0f}원 ({spouse_insurance_days}일분)"
@@ -489,6 +575,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
             # 키에 휴가명을 넣는다 — 배우자 출산휴가의 `└ 고용보험 지원분`과 서로,
             # 그리고 두 휴가끼리 덮어쓰지 않아야 한다(dict 라 조용히 사라진다).
             breakdown[f"└ {key} 고용보험 지원분"] = (
+                "미확정 (경고 참고)" if benefit is None else
                 f"{benefit:,.0f}원" if is_priority else "없음 (우선지원대상기업 아님)")
 
     return MaternityLeaveResult(
@@ -498,7 +585,7 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         is_priority_support=is_priority,
         insurance_covered_days=insurance_days,
         employer_covered_days=employer_days,
-        total_insurance_benefit=round(total_insurance_benefit),
+        total_insurance_benefit=_round_or_none(total_insurance_benefit),
         total_employer_benefit=round(total_employer_benefit),
         spouse_leave_days=spouse_days,
         spouse_leave_pay=round(spouse_pay),
@@ -506,10 +593,10 @@ def calc_maternity_leave(inp: WageInput, ow: OrdinaryWageResult) -> MaternityLea
         spouse_insurance_days=spouse_insurance_days if is_priority else 0,
         infertility_paid_days=infertility_days,
         infertility_pay=round(infertility_pay),
-        infertility_insurance_benefit=round(infertility_benefit),
+        infertility_insurance_benefit=_round_or_none(infertility_benefit),
         spouse_miscarriage_paid_days=miscarriage_days,
         spouse_miscarriage_pay=round(miscarriage_pay),
-        spouse_miscarriage_insurance_benefit=round(miscarriage_benefit),
+        spouse_miscarriage_insurance_benefit=_round_or_none(miscarriage_benefit),
         upper_limit_applied=upper_applied,
         breakdown=breakdown,
         formulas=formulas,

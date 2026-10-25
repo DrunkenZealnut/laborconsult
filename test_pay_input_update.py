@@ -151,7 +151,9 @@ class PayInputUpdateTests(unittest.TestCase):
         self.assertEqual(r.insurance_benefit,84_210)
         inp.family_leave_start_date='2026-11-27';inp.family_leave_end_date='2026-12-01'
         r=calc_maternity_leave(inp,calc_ordinary_wage(inp))
-        self.assertEqual((r.paid_days,r.employer_pay,r.insurance_benefit),(3,360_000,252_630))
+        # 고시(제2026-67호)는 최초 2일분 상한만 정한다 — 기사용 1일이면 1일분만 확정, 3·4일째는 미확정(wage-update-followups P4)
+        self.assertEqual((r.paid_days,r.employer_pay,r.insurance_benefit),(3,360_000,None))
+        self.assertTrue(any('1일분 84,210원은 그 상한 이내로 확정' in w for w in r.warnings),r.warnings)
         inp.family_leave_insured_days=None
         r=calc_maternity_leave(inp,calc_ordinary_wage(inp))
         self.assertEqual(r.employer_pay,360_000)

@@ -287,7 +287,8 @@ def _pop_maternity_leave(r, result):
         result.summary.update(r.summary)
         return 0
     result.summary["출산전후휴가 월 급여"] = f"{r.monthly_benefit:,.0f}원"
-    result.summary["고용보험 지급 총액"] = f"{r.total_insurance_benefit:,.0f}원"
+    result.summary["고용보험 지급 총액"] = ("미확정 — 지원 한도를 법문이 정하지 않음(경고 참고)"
+                                     if r.total_insurance_benefit is None else f"{r.total_insurance_benefit:,.0f}원")
     if r.requested_maternity_only:
         result.summary["출산전후휴가 사업주 잔여 부담"] = f"{r.total_employer_benefit:,.0f}원"
         return 0
@@ -308,6 +309,7 @@ def _pop_maternity_leave(r, result):
             continue
         result.summary[f"{label} 유급액(유급 {days}일)"] = f"{pay:,.0f}원"
         result.summary[f"{label} 급여(고용보험)"] = (
+            "미확정 — 고시 상한이 정한 일수를 넘는 유급일 포함(경고 참고)" if benefit is None else
             f"{benefit:,.0f}원" if r.is_priority_support else "없음 (우선지원대상기업만 지원)")
     return 0
 

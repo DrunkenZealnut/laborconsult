@@ -154,7 +154,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div id="tab0">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
 <p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출산전후휴가급여 — 전체 계산 흐름</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제74조, 고용보험법 제75조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제74조, 고용보험법 제75조·제76조</p>
 </div>
 <svg width="100%" viewBox="0 0 680 740">
 <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
@@ -314,11 +314,11 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 
 <rect x="400" y="386" width="240" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
 <rect x="420" y="400" width="200" height="44" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#633806;font-weight:500" x="520" y="416" text-anchor="middle" dominant-baseline="central">처음 60일</text>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="520" y="416" text-anchor="middle" dominant-baseline="central">처음 75일</text>
 <text style="font-size:11px;fill:#633806" x="520" y="434" text-anchor="middle" dominant-baseline="central">사업주 부담</text>
 
 <rect x="420" y="454" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#0C447C;font-weight:500" x="520" y="470" text-anchor="middle" dominant-baseline="central">나머지 60일</text>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="520" y="470" text-anchor="middle" dominant-baseline="central">나머지 45일</text>
 <text style="font-size:11px;fill:#0C447C" x="520" y="488" text-anchor="middle" dominant-baseline="central">고용보험 지급</text>
 
 <!-- 범례 -->
@@ -334,7 +334,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <rect x="40" y="618" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
 <text class="th" x="340" y="640" text-anchor="middle">핵심 차이</text>
 <text class="ts" x="340" y="662" text-anchor="middle">중소기업: 전 기간 고용보험이 부담 → 상한 2,200,000원/월 적용</text>
-<text class="ts" x="340" y="678" text-anchor="middle">대규모: 처음 60일은 사업주가 통상임금 전액(상한 없음) 부담</text>
+<text class="ts" x="340" y="678" text-anchor="middle">대규모: 처음 60일(다태아 75일)은 사업주가 통상임금 전액(상한 없음) 부담</text>
 </svg>
 </div>
 
@@ -450,7 +450,9 @@ function calc(){
   var ww=w*10000;
 
   var totalDays=babyType==='single'?90:120;
-  var empDays=60;
+  // 대규모: 최초 60일(다태아 75일) 사업주 유급(근로기준법 제74조 제4항), 초과분 30일(다태아 45일)만 고용보험
+  // (고용보험법 제76조 제1항 제1호 단서). 중소는 전 기간 고용보험이라 이 일수는 대규모에서만 쓴다.
+  var empDays=babyType==='single'?60:75;
   var insDays=totalDays-empDays;
   var months=totalDays/30;
 
@@ -471,11 +473,11 @@ function calc(){
     lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 부담</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
   } else {
     empMonthly=ww;
-    empTotal=empMonthly*2;
-    insTotal=insMonthlyFinal*(months-2);
+    empTotal=empMonthly*empDays/30;
+    insTotal=insMonthlyFinal*insDays/30;
     totalAll=empTotal+insTotal;
-    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>처음 60일 (사업주: 통상임금 전액)</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
-    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>나머지 '+(totalDays-60)+'일 (고용보험)</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>처음 '+empDays+'일 (사업주: 통상임금 전액)</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>나머지 '+insDays+'일 (고용보험)</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
     lines.push('<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px"><span>사업주 부담</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
     lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 부담</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
   }
@@ -520,10 +522,10 @@ function calc(){
     tl.innerHTML='<div style="width:'+p1+'%;background:#85B7EB;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:#85B7EB;border-radius:0 4px 4px 0"></div>';
     lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-info);text-align:center">60일 고용보험</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+(totalDays-60)+'일 고용보험</div>';
   } else {
-    var p1=60/totalDays*100;
-    var p2=(totalDays-60)/totalDays*100;
+    var p1=empDays/totalDays*100;
+    var p2=insDays/totalDays*100;
     tl.innerHTML='<div style="width:'+p1+'%;background:#FAC775;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:#85B7EB;border-radius:0 4px 4px 0"></div>';
-    lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-warning);text-align:center">60일 사업주</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+(totalDays-60)+'일 고용보험</div>';
+    lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-warning);text-align:center">'+empDays+'일 사업주</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+insDays+'일 고용보험</div>';
   }
 }
 calc();

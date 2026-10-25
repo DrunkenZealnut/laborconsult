@@ -505,6 +505,20 @@ wage_calculator/
 - `FixedAllowance` dataclass in `models.py` has `from_dict()` factory and `monthly_amount` property.
 - `calc_wage_arrears()` is a standalone function (no WageInput dependency).
 - `constants.py` holds yearly minimum wages, insurance rates, tax brackets — update these when laws change.
+- **출산·가족휴가 급여의 지급 기간 근거는 `maternity_leave.EI_LEAVE_BASIS` 단일 출처다**(고용보험법 제76조①1~4호). 제75조는
+  수급 요건이고 **항이 없으며**, 제75조의2는 수급권 대위다 — 지급 기간을 '제75조제1항·제2항·제75조의2'로 적던 문구가 그대로
+  답변 근거로 나갔다(wage-update-followups P3). 대규모 기업은 사업주 유급 60일(다태아 75일, 근로기준법 제74조④) 초과분 중
+  30일(미숙아 40일·다태아 45일)만 보험이고, 사업주 유급액은 **통상임금 기준**이다(보험 상한 일액으로 계산하면 '유급액 ≠ 보험급여'
+  원칙 위반 — P3b). 미숙아이면서 다태아인 대규모의 보험 한도는 법문이 정하지 않아 보험 총액을 `None`(미확정)으로 둔다.
+- **1일 단위 휴가 급여 상한은 효력 기간과 '최초 N일분'을 함께 가진다**(`maternity_leave.DAILY_LEAVE_CAPS`·`daily_leave_cap`).
+  고시 제2026-67호는 난임 최초 2일분·배우자 유산·사산 최초 3일분만 정하고 2026-12-31까지 효력이다. 2026-11-27부터 난임 유급·
+  보험 대상은 최초 4일인데 3·4일째 상한은 고시에 없다 — **1일분을 외삽하지 말 것.** 고시가 정한 일수까지만 확정하고 나머지는
+  보험 급여 `None`(미확정)이다(사업주 유급액은 확정). 기사용분도 그 일수에 센다(부칙 <제21700호> 제2조). 새 고시가 나오면
+  표에 행을 더한다 — 유효기간 없는 상한표로 되돌리면 효력이 끝난 고시가 조용히 계속 적용된다.
+- **계산기 근거 문구의 원문 앵커는 `wage_calculator/legal_anchors.py::CALC_BASIS_ANCHORS`다** — (doc_id, 구절), 형식은
+  `RuleFact.anchors`와 같다. 등록(`fetch_official_rules.ARTICLES`/`ADMRULS`)은 CI가, 원문(`output_공식법령/`)은 로컬이,
+  다음 판본은 `check_law_freshness --anchors`가 본다(`test_wage_update_2026.py::CalcBasisAnchorTests`). 근거 문구를 바꾸면
+  자기 앵커를 더할 것. 현행판과 다음 시행 판본 **양쪽에서 참인** 구절을 고른다.
 - `shared.py` extracts common patterns: `DateRange` (tenure calc, 8 modules), `AllowanceClassifier` (minimum wage inclusion, 3 modules), `MultiplierContext` (sub-5-employee rates, 5 modules).
 
 ### Calculator Targets (28 types)
