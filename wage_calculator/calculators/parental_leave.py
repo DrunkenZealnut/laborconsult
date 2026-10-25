@@ -51,6 +51,17 @@ def _other_parent(inp):
 def _scheme(inp,ws,reference):
     scheme=inp.parental_scheme
     if scheme not in ('general','single_parent','six_plus_six'): raise ValueError('육아휴직급여 유형을 확인해주세요')
+    # 6+6은 신청 제도가 아니라 요건이 되면 그 금액으로 산정한다(고용보험법 시행령 제95조의3① "…산정한 금액으로 한다"). 같은
+    # 자녀에 상대 부모의 사용 사실이 있으면 유형을 지정하지 않아도 6+6 요건을 검증한다 — 검증에 실패하면 일반형으로 확정하지
+    # 않고 보류한다(Codex 리뷰 High 3: 요건을 다 입력해도 유형 미지정이면 2,000만 원 대신 일반형 1,350만 원을 경고 없이 냈다)
+    other_facts=(inp.parental_other_parent_months or inp.parental_other_parent_start or inp.parental_other_parent_periods)
+    if scheme=='general' and inp.parental_same_child is True and other_facts and inp.parental_single_parent_eligible is not True:
+        from dataclasses import replace
+        try:
+            return _scheme(replace(inp,parental_scheme='six_plus_six'),ws,reference)
+        except ValueError as exc:
+            raise ValueError(f'같은 자녀에 부모 모두 육아휴직한 사실이 있어 6+6 특례(고용보험법 시행령 제95조의3)가 적용될 수 '
+                             f'있습니다 — {exc}') from exc
     if inp.is_second_parent and scheme=='general':
         raise ValueError('두 번째 사용자라는 사실만으로 특례를 판정할 수 없습니다. 같은 자녀·양쪽 개시일과 사용 기간을 확인해주세요')
     other,start=_other_parent(inp)

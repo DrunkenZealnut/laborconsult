@@ -147,7 +147,7 @@ _PAY_PROPS = ANALYZE_TOOL["input_schema"]["properties"]
 _PAY_PROPS["fixed_allowances"]["items"]["properties"].update({
     "annual": {"type": "boolean", "description": "amount가 연간 총액인 경우에만 true. 분기 지급이라도 연간 총액으로 말했으면 true"},
     "payment_cycle": {"type": "string", "enum": ["매월", "분기", "반기", "연", "미확인"],
-                      "description": "지급 회차. amount는 회차별 금액(annual=true는 연간 총액). 주기 미확인 시 미확인, 월 지급으로 추정 금지"},
+                      "description": "지급 회차. amount는 회차별 금액(annual=true는 연간 총액). 상여·성과급·명절수당처럼 주기가 갈리는 항목은 질문에 주기가 없으면 미확인(월 지급으로 추정 금지). 식대·직책·교통·가족수당 등 월정 수당은 주기 표현이 없으면 매월"},
     "source_id": {"type": "string", "description": "질문 속 동일 수당의 식별자. 같은 금액의 서로 다른 수당은 다른 ID"},
 })
 _PAY_PROPS.update({

@@ -18,6 +18,25 @@ def calculate(items=None,**changes):
 
 
 class WageClaimsUpdateTests(unittest.TestCase):
+    def test_monthly_salary_weekly_holiday_is_not_a_separate_claim(self):
+        """월급·연봉·포괄임금의 월 임금에는 유급 주휴분이 들어 있다 — 주휴 파생 채권을 만들지 않는다(Codex 리뷰 High 2:
+        월급 250만 원에 주휴 383,560원이 따로 확정되고 월급 행과 함께면 의무액 2,883,560원). 시급제는 그대로 계산한다."""
+        schedule=WorkSchedule(daily_work_hours=8,weekly_work_days=5)
+        weekly=item('wh',amount=None,source='weekly_holiday',weeks=4,basis_confirmed=True,components=['weekly_holiday'])
+        common=dict(settlement_month='2026-09',weekly_attendance_days=5,schedule=schedule)
+        for wage_type,wage in ((WageType.MONTHLY,dict(monthly_wage=2_500_000)),(WageType.ANNUAL,dict(monthly_wage=None,annual_wage=30_000_000)),
+                               (WageType.COMPREHENSIVE,dict(monthly_wage=2_500_000))):
+            for items in ([weekly],[item('base',amount=2_500_000,components=['regular']),weekly]):
+                with self.subTest(wage_type=wage_type.value,rows=len(items)):
+                    r=calculate(items,wage_type=wage_type,**wage,**common)
+                    # 포괄임금(명세 없음)은 앞선 가드('수당이 섞인 월 총액을 통상임금으로 쓰지 않음')가 먼저 보류한다 — 결과는 같다
+                    self.assertIn('주휴수당을 별도 채권으로 만들지 않습니다' if wage_type!=WageType.COMPREHENSIVE
+                                  else '통상임금으로 사용하지 않습니다',r.held_reason)
+                    self.assertFalse(r.breakdown.get('월별·항목별 원금 명세'))
+        r=calculate([weekly],wage_type=WageType.HOURLY,monthly_wage=None,hourly_wage=12_000,**common)
+        self.assertEqual(r.held_reason,'')
+        self.assertEqual([x['obligation'] for x in r.breakdown['월별·항목별 원금 명세']],[384_000])
+
     def test_analyzer_to_card_and_fallback_keep_gross_claim_ledger(self):
         from app.core.analyzer import _build_analysis_result
         from app.core.pipeline import _analysis_to_extract_params,_run_calculator,WAGE_CALC_TOOL

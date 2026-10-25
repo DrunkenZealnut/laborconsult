@@ -99,6 +99,12 @@ python3 test_law_api_recovery.py      # 법제처 조회 복구(예열 키·인�
 python3 test_calc_card_followups.py  # 계산 카드 시간 축·적용 요건(소정·연장 분리, D4 두 구성, 수습·특고·해고예고)
 python3 test_calc_card_consistency.py  # 계산 카드 금액 일관성(월 총·세전·평균임금 불변식 격자 2,160카드, 미확인 모드 조건부 예시)
 python3 test_monthly_base_unification.py  # 기준 월액·평균임금 일액 단일 출처(고정수당 격자 288·등가·총액 경로·휴업 하한)
+python3 test_wage_update_2026.py  # 2026-10 계산기 갱신 공통(미실행 카드·입력 연결)
+python3 test_parental_benefits_update.py  # 육아휴직·단축급여 시행일별·6+6 자동 판정
+python3 test_arrears_interest_update.py   # 체불 지연이자 적용일·채권별 잔액
+python3 test_pay_input_update.py          # 지급 주기·평균임금 실제 자료(월정 수당 주기 생략은 매월)
+python3 test_proration_update.py          # 정산월·약정별 일할계산(node 필요)
+python3 test_wage_claims_update.py        # 월별 체불 원금·차액(월급제 주휴 별도 채권 보류)
 python3 test_audit50.py               # 외부 점검 50문항(쟁점 근거 패턴 양성·음성·지침 앵커·감지 규칙·월급 구성 가드·월 환산 시간)
 
 # Local API server
