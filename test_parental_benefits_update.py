@@ -411,6 +411,9 @@ class MaternityFamilyFollowupTests(unittest.TestCase):
         r = run("2026-11-27", "2026-11-28", 2, 2)     # 시행 전 2일 사용 → 남은 유급 2일, 상한 확정분 0일
         self.assertEqual((r.paid_days, r.employer_pay, r.insurance_benefit), (2, 240_000, None))
         self.assertTrue(any("이번 사용분은 나머지 2일분" in w for w in r.warnings), r.warnings)
+        r = run("2026-11-27", "2026-11-27", 1, 3)     # 잔여 상한이 음수가 되지 않는다(확정 0일)
+        self.assertEqual((r.paid_days, r.employer_pay, r.insurance_benefit), (1, 120_000, None))
+        self.assertTrue(any("이번 사용분은 나머지 1일분" in w for w in r.warnings), r.warnings)
         self.assertTrue(run("2026-11-26", "2026-11-27", 2, 0).held_reason)   # 시행일을 걸치면 구간별 확인
 
     def test_public_pages_drop_old_maternity_and_parental_texts(self):

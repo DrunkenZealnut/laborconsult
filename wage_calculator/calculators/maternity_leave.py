@@ -105,9 +105,10 @@ class DailyLeaveCap:
     source: str = ""
 
 
+# 2026-01-01~09-17은 제2025-124호, 09-18부터는 제2026-67호(배우자 유산·사산휴가 신설, 기존 금액 동일) 구간이다.
 DAILY_LEAVE_CAPS: tuple[DailyLeaveCap, ...] = (
     DailyLeaveCap("2026-01-01", "2027-01-01", 84_210, {"infertility": 2, "spouse_miscarriage": 3},
-                  "고용노동부고시 제2026-67호"),
+                  "고용노동부고시 제2025-124호·제2026-67호"),
 )
 
 
