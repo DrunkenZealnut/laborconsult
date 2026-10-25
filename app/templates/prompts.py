@@ -224,7 +224,7 @@ ANALYZE_TOOL["input_schema"]["properties"].update({
                                                 "short_childcare_leave", "childcare_reduced", "pregnancy_reduced"]},
             "start_date": {"type": "string", "description": "휴직/단축 시작일 YYYY-MM-DD. 개정 적용 판단용 원래 시작일 보존"},
             "end_date": {"type": "string", "description": "종료일 YYYY-MM-DD (포함)"},
-            "application_date": {"type": "string", "description": "육아휴직 최초 신청일. 시작일로 추정하지 않음"},
+            "application_date": {"type": "string", "description": "육아휴직 최초 신청일 YYYY-MM-DD. 질문에 나온 경우만(시작일로 추정 금지). 분할 사용이면 처음 신청한 날"},
             "scheduled_days": {"type": "number", "description": "해당 휴직 구간의 소정근로일수. 단축시간을 일수로 바꿔 넣지 않음"},
         }, "required": ["kind", "start_date", "end_date"]},
     },
