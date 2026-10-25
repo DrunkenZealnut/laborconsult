@@ -66,7 +66,7 @@ def test_fixture_has_required_fields_and_valid_enums() -> None:
             assert isinstance(values, list)
             assert all(isinstance(value, str) and value.strip() for value in values)
         assert isinstance(case.expected_values, dict)
-        assert all(isinstance(key, str) and type(value) in (float, int, str)
+        assert all(isinstance(key, str) and type(value) in (float, int, str, type(None))
                    for key, value in case.expected_values.items())
 
 
@@ -560,7 +560,7 @@ def test_cli_rejects_malformed_fixture_field_types() -> None:
         for value in ("근로기준법 제26조", None, {}, [42], [None], [""], [" \t"])
     )
     invalid_values.extend(("expected_values", value) for value in (
-        [], None, "amount", {"amount": True}, {"amount": None},
+        [], None, "amount", {"amount": True},
         {"amount": []}, {"amount": {}},
     ))
     invalid_values.extend(("risk_level", value) for value in (None, [], {}, 42, "urgent"))
@@ -568,6 +568,16 @@ def test_cli_rejects_malformed_fixture_field_types() -> None:
     _assert_cli_rejects_fixture_values(invalid_values)
     case = load_cases(FIXTURE)[0]
     assert validate_cases([replace(case, expected_values={42: 100})])
+
+
+def test_expected_values_null_means_value_must_be_held() -> None:
+    # null은 '산출하지 않고 보류해야 한다'는 기대다(ww26-20 total_claim). list·dict는 여전히 거부한다.
+    case = load_cases(FIXTURE)[0]
+    assert validate_cases([replace(case, expected_values={"total_claim": None})]) == []
+    for value in ([], {}, True):
+        assert validate_cases([replace(case, expected_values={"total_claim": value})])
+    wage_cases = load_cases(Path(__file__).with_name("data") / "eval_wage_update_queries.json")
+    assert validate_cases(wage_cases) == []
 
 
 def test_cli_rejects_unsupported_and_malformed_routing_labels() -> None:
@@ -882,6 +892,7 @@ def main() -> int:
         test_cli_rejects_bad_arguments_before_loading_clients,
         test_offline_cli_reports_fixture_errors,
         test_cli_rejects_malformed_fixture_field_types,
+        test_expected_values_null_means_value_must_be_held,
         test_cli_rejects_unsupported_and_malformed_routing_labels,
         test_offline_cli_accepts_supported_and_optional_routing_labels,
         test_live_cli_serializes_full_scores_bounded_answer_and_metadata,

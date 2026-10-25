@@ -47,7 +47,7 @@ CLI #25는 날짜 없는 퇴직 boolean 예제를 명시된 퇴직 효력일·�
 - 수정 전 답변은 잘못된 카드와 법령의 불일치를 발견해 재계산을 요구했지만 요청 금액을 제공하지 못했다. 수정 후에는 계산 가능한 금액과 추가 확인이 필요한 합계를 구분했다.
 - 오류 0건, 제공자 폴백 0건. 모두 OpenAI, 저장 설정 revision 12, 같은 모델 설정이다.
 - 법제처 직접 호출은 운영 환경의 인증 실패 조건으로 재현했다. 대화 저장·운영 L2 쓰기·모델 설정 변경은 하지 않았다.
-- 원자료: `~/DEV/laborconsult_eval/wage-update-2026-10/c2/before-{1,2}.json`, `after-1head-{1,2}.json` 및 각 메타데이터. fixture는 `data/eval_wage_update_queries.json`이다.
+- 원자료: 저장소 밖 평가 원자료(로컬 보관, 실행 묶음 c2)의 `before-{1,2}.json`, `after-1head-{1,2}.json` 및 각 메타데이터. fixture는 `data/eval_wage_update_queries.json`이다.
 - 이는 지정 사례의 정확도 검증이다. 실제 사용자 만족도나 전체 상담의 정확도 향상 비율을 측정한 결과는 아니다.
 
 ## 독립 리뷰
