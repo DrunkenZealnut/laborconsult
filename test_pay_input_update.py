@@ -363,5 +363,85 @@ class PayInputUpdateTests(unittest.TestCase):
                 self.assertTrue(r.calculation_skipped)
 
 
+_CHAT_BASE = dict(requires_calculation=True, question_summary="q", is_labor_related=True, wage_type="월급",
+                  weekly_work_days=5, daily_work_hours=8, reference_year=2026)
+
+
+def _chat(query, **raw):
+    """프로덕션 변환기: analyzer._build_analysis_result → _analysis_to_extract_params → _run_calculator."""
+    from app.core.analyzer import _build_analysis_result
+    from app.core import pipeline as P
+    analysis = _build_analysis_result(dict(_CHAT_BASE, **raw), query)
+    return P._run_calculator(P._analysis_to_extract_params(analysis), query) or "", analysis
+
+
+class AnalyzerTotalAndBonusTests(unittest.TestCase):
+    """분석기 총액의 근거 대조·상여 중복 조정·휴업수당 기산일(wage-update-followups G3·G4·G7)."""
+    Q_OT = "월급 300만원, 주5일 하루 8시간에 매주 10시간 연장근로를 하고 연장수당은 따로 받습니다. 4대보험 공제액 알려주세요."
+
+    def test_analyzer_total_equal_to_wage_does_not_replace_monthly_base(self):  # G3
+        text, _ = _chat(self.Q_OT, calculation_types=["insurance"], wage_amount=3_000_000,
+                        weekly_overtime_hours=10, monthly_total_pay=3_000_000)
+        self.assertIn("세전 월 급여: 3,937,500원", text)
+        self.assertIn("월 실수령액(세후):       3,387,472원", text)
+
+    def test_analyzer_total_missing_or_net_in_question_is_dropped(self):  # G3
+        text, _ = _chat("월급 270만원에 연장수당이 포함되어 있습니다. 2020년 1월 1일 입사, 2026년 10월 1일 퇴사. 퇴직금은?",
+                        calculation_types=["severance"], wage_amount=2_700_000, start_date="2020-01-01",
+                        end_date="2026-10-01", monthly_total_pay=2_900_000)
+        self.assertIn("월 총 예상 수령액(세전): 2,700,000원", text)
+        self.assertNotIn("2,900,000", text)
+        text, _ = _chat("월급 300만원이고 세후로는 270만원 정도 받아요. 매주 10시간 연장근로를 하고 연장수당은 따로 받습니다. "
+                        "4대보험 공제액 알려주세요.", calculation_types=["insurance"], wage_amount=3_000_000,
+                        weekly_overtime_hours=10, monthly_total_pay=2_700_000)
+        self.assertIn("세전 월 급여: 3,937,500원", text)
+
+    def test_stated_gross_total_is_kept(self):  # G3 비회귀(과잉 제거 방지)
+        text, _ = _chat("월급 300만원이고 연장수당 합치면 매달 350만원 정도 받아요. 4대보험 공제액 알려주세요.",
+                        calculation_types=["insurance"], wage_amount=3_000_000, monthly_total_pay=3_500_000)
+        self.assertIn("세전 월 급여: 3,500,000원", text)
+        text, _ = _chat("기본급 250만원에 식대 20만원, 월 270만원 받습니다. 4대보험 공제액 알려주세요.",
+                        calculation_types=["insurance"], wage_amount=2_500_000, monthly_total_pay=2_700_000)
+        self.assertIn("세전 월 급여: 2,700,000원", text)
+        text, _ = _chat("기본급 300만원, 정기상여 포함 월 환산 총액 310만원", calculation_types=["average_wage"],
+                        wage_amount=3_000_000, monthly_total_pay=3_100_000, annual_bonus_total=1_200_000,
+                        monthly_total_bonus_included=100_000,
+                        fixed_allowances=[dict(name="정기상여", amount=1_200_000, annual=True, source_id="b1")])
+        self.assertIn("3개월 임금총액: 9,300,000원", text)
+
+    def test_bonus_dedup_subtracts_only_the_bonus_not_premium_raised_by_it(self):  # G4
+        from wage_calculator.calculators.pay_inputs import bonus_already_included
+        from wage_calculator.models import BusinessSize, WageType, WorkSchedule
+        fa = [{"name": "정기상여", "amount": 6_000_000, "annual": True, "condition": "재직조건", "source_id": "b1"}]
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=2_500_000, business_size=BusinessSize.OVER_5,
+                        start_date="2020-01-01", end_date="2026-10-01",
+                        schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5, weekly_overtime_hours=12),
+                        fixed_allowances=fa, annual_bonus_total=6_000_000, annual_bonus_allowance_ids=["b1"])
+        self.assertEqual(bonus_already_included(inp, calc_ordinary_wage(inp)), 1_500_000)
+        text, _ = _chat("월급 250만원, 정기상여 연 600만원(재직조건), 주5일 하루8시간에 매주 12시간 연장근로하고 연장수당은 따로 "
+                        "받습니다. 2020년 1월 1일 입사 2026년 10월 1일 퇴사. 퇴직금은?",
+                        calculation_types=["severance"], wage_amount=2_500_000, weekly_overtime_hours=12,
+                        start_date="2020-01-01", end_date="2026-10-01", annual_bonus_total=6_000_000,
+                        fixed_allowances=fa, annual_bonus_allowance_ids=["b1"])
+        self.assertIn("퇴직금: 27,252,271원", text)
+
+    def test_shutdown_average_wage_is_dated_at_shutdown_start(self):  # G7
+        from wage_calculator.models import BusinessSize, WageType, WorkSchedule
+        from wage_calculator.result import format_result
+        s = WageInput(wage_type=WageType.MONTHLY, monthly_wage=2_500_000, business_size=BusinessSize.OVER_5,
+                      start_date="2020-01-01",
+                      schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5, weekly_overtime_hours=12),
+                      shutdown_start_date="2026-03-01", shutdown_days=10, average_wage_date="2026-10-01")
+        with_date = format_result(WageCalculator().calculate(s, ["shutdown_allowance"]))
+        without = format_result(WageCalculator().calculate(replace(s, average_wage_date=None), ["shutdown_allowance"]))
+        self.assertIn("휴업수당: 802,083원", with_date)
+        self.assertIn("휴업수당: 802,083원", without)
+        self.assertIn("휴업 시작일(2026-03-01)을 산정 사유 발생일로", with_date)
+        self.assertNotIn("휴업 시작일 미확인", with_date)
+        no_start = format_result(WageCalculator().calculate(replace(s, shutdown_start_date=None, average_wage_date=None,
+                                                                    end_date="2026-03-01"), ["shutdown_allowance"]))
+        self.assertIn("휴업 시작일 미확인", no_start)
+
+
 if __name__=='__main__':
     unittest.main()
