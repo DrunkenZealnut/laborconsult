@@ -199,9 +199,12 @@ function calculateInterest(input){
   if(input.holidays===null)notices.push('퇴직 지급기한은 토·일요일만 조정했습니다. 법정·대체공휴일 여부에 따라 날짜와 이자가 달라질 수 있습니다.');
  }
  if(kind==='retirement_lump_sum'&&retirement===null)throw Error('퇴직급여는 퇴직 효력일이 필요합니다.');
- const due=input.due?parse(input.due,'원래 지급기일'):kind==='retirement_lump_sum'?deadline:null;
+ let due=input.due?parse(input.due,'원래 지급기일'):kind==='retirement_lump_sum'?deadline:null;
  if(due===null)throw Error('정기지급 임금의 원래 지급기일이 필요합니다.');
  if(kind==='retirement_lump_sum'&&due<retirement)throw Error('퇴직급여 지급기일이 퇴직 효력일보다 빠릅니다.');
+ // 퇴직급여의 연 20%는 '지급 사유가 발생한 날부터 14일이 되는 날'의 다음 날부터다 — 입력한 지급일과 무관하다.
+ // 더 이른 입력일로 연 5%·6% 구간을 앞에 붙이지 않는다(중간정산 확인 뒤에서 바꾼다).
+ if(kind==='retirement_lump_sum'&&due<deadline){notices.push('입력한 지급일('+iso(due)+')은 법정 기한('+iso(deadline)+')보다 빨라 기한을 기준으로 계산했습니다. 회사 규정이나 계약에 그보다 이른 지급일이 정해져 있었다면, 그 다음 날부터 기한까지 연 5%(상인은 6%) 지연손해금을 따로 청구할 여지가 있습니다.');due=deadline;}
  if(due+day<Date.UTC(2005,6,1))throw Error('2005년 7월 1일 전 지급사유는 당시 규칙 확인이 필요합니다.');
  let special=kind==='regular_wage'&&due+day>=Date.UTC(2025,9,23)?due+day:null;
  if(deadline!==null)special=special===null?deadline+day:Math.min(special,deadline+day);

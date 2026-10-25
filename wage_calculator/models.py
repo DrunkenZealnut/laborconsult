@@ -325,7 +325,10 @@ class WageInput:
     wage_claim_calc_date: str | None = None
     wage_claim_payments: list | None = None
     wage_claim_adjustments: list | None = None
-    wage_claim_include_interest: bool = False
+    # 원금 정산과 그 채권의 지연이자 관계: True=함께 요청(C5가 이자 채권을 만든다), False=별도 기존 채권의 이자만,
+    # None=관계 미상(별도 체불 입력이 함께 있으면 중복 여부 확인으로 이자를 보류한다). 기본은 '모름'이다 — False로 두면
+    # 같은 채권을 별도 채권으로 보고 그 원금·이자 합계를 따로 확정한다(wage-update-followups A1)
+    wage_claim_include_interest: bool | None = None
 
     settlement_month: Optional[str] = None
     proration_method: Optional[str] = None

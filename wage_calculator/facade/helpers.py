@@ -173,12 +173,15 @@ def _pop_wage_claims(r, result):
     result.summary["기지급 원금 합계"] = f"{r.total_paid:,.0f}원"
     result.summary["지급기일 경과 체불 원금"] = f"{r.overdue_principal:,.0f}원"
     result.summary["기한 미도래·당일 미지급액"] = f"{r.not_yet_due:,.0f}원"
+    if r.due_unconfirmed:
+        result.summary["지급기한 미확인 미지급액 (퇴직일 확인 필요)"] = f"{r.due_unconfirmed:,.0f}원"
     result.summary["초과 지급액 (자동 상계 안 함)"] = f"{r.overpayment:,.0f}원"
     result.summary["원금 잔액 기준일"] = r.calc_date
     for row in r.items:
         result.summary[f"{row['month']} {row['name']} [{row['id']}]"] = (
             f"의무액 {row['obligation']:,.0f}원 − 기지급 원금 {row['paid_principal']:,.0f}원 = 미지급 {row['remaining']:,.0f}원; 지급기일 {row['due_date']}"
             + (f"; 퇴직 후 적용 지급기한 {row['effective_due_date']}" if row['effective_due_date'] != row['due_date'] else "")
+            + ("; 지급기한 미확인(퇴직일 필요)" if row.get('due_unconfirmed') else "")
             + (f"; 초과 지급 {row['overpayment']:,.0f}원 별도" if row['overpayment'] else ""))
     return 0
 

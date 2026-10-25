@@ -86,11 +86,13 @@ const context=vm.createContext({});vm.runInContext(code,context);
 const base={amount:3000000,kind:'regular_wage',due:'2026-01-01',end:'2026-01-31',retirement:'',merchant:null,holidays:[]};
 const cases=[{}, {due:'2025-10-21',end:'2025-10-31'}, {due:'2025-10-22',end:'2025-10-31'},
  {retirement:'2026-01-15'}, {kind:'retirement_lump_sum',due:'2024-06-14',retirement:'2024-06-01',end:'2024-06-15'},
- {due:'2024-02-29',end:'2024-03-01',merchant:false}, {end:'2026-01-01'}];
+ {due:'2024-02-29',end:'2024-03-01',merchant:false}, {end:'2026-01-01'},
+ {amount:10000000,kind:'retirement_lump_sum',due:'2026-09-01',retirement:'2026-09-01',end:'2026-10-24'}];
 console.log(JSON.stringify(cases.map(c=>context.calculateInterest({...base,...c}).scenarios.map(s=>s.interest))));
 '''
         run=subprocess.run(['node','-e',script,str(page)],capture_output=True,text=True,timeout=30,check=True)
-        self.assertEqual(json.loads(run.stdout),[[49315],[4110,4932],[14795],[49315],[1644],[411],[0]])
+        # 마지막 사례(A4b): 퇴직금 입력 기일 9/1이 14일 기한 9/14보다 빨라도 20%는 9/15부터 — [236986,240548]이 아니라 단일값
+        self.assertEqual(json.loads(run.stdout),[[49315],[4110,4932],[14795],[49315],[1644],[411],[0],[219178]])
 
     def test_malformed_optional_inputs_do_not_become_missing(self):
         for fields in [dict(arrear_due_date='2026-W01-1'), dict(arrear_calc_date='2026-W01-1'),
@@ -208,6 +210,50 @@ console.log(JSON.stringify(cases.map(c=>context.calculateInterest({...base,...c}
         self.assertEqual(interest(arrear_calc_date='2026-01-01').interest_amount,0)
         r=interest(payments=[dict(date='2026-01-15',principal_amount=3_000_000,interest_amount=0,allocation_confirmed=True)])
         self.assertEqual((r.arrear_amount,r.interest_amount,r.total_claim),(0,23_014,23_014))
+
+    def test_retirement_lump_sum_due_before_deadline_uses_deadline(self):
+        """A4: 퇴직급여 일시금의 연 20%는 '지급 사유가 발생한 날부터 14일이 되는 날'의 다음 날부터다(근로기준법 제37조①1호).
+        입력한 더 이른 지급일로 연 5%·6% 구간(민사 236,986 / 상사 240,548)을 앞에 붙이지 않는다."""
+        fields=dict(arrear_amount=10_000_000,arrear_due_date='2026-09-01',claim_kind='retirement_lump_sum',
+                    last_employed_date='2026-08-31',deadline_holidays=[])
+        r=interest(**fields,arrear_calc_date='2026-10-24')
+        self.assertEqual((r.held_reason,r.due_date,r.interest_amount,r.conditional_scenarios),('','2026-09-14',219_178,[]))
+        self.assertTrue(any('입력한 퇴직급여 지급일(2026-09-01)은 법정 기한(2026-09-14)' in w for w in r.warnings),r.warnings)
+        self.assertEqual(interest(**fields,arrear_calc_date='2026-09-15').interest_amount,5_479)
+        self.assertEqual(interest(**fields,arrear_calc_date='2026-09-05').interest_amount,0)
+        # 중간정산 가드(퇴직 효력일보다 이른 기일)는 대체보다 먼저 — 계속 보류
+        self.assertTrue(interest(**dict(fields,arrear_due_date='2026-08-30'),arrear_calc_date='2026-10-24').held_reason)
+        # 기한과 같은 날을 입력하면 대체 안내가 없다
+        r=interest(**dict(fields,arrear_due_date='2026-09-14'),arrear_calc_date='2026-10-24')
+        self.assertEqual(r.interest_amount,219_178)
+        self.assertFalse(any('법정 기한' in w for w in r.warnings))
+
+    def test_unconfirmed_late_payment_uses_statutory_allocation(self):
+        """A2: 충당 확인이 없는 지급기일 뒤 지급은 그때까지의 지연이자에 먼저 충당한다(민법 제479조, C5와 같은 결론).
+        지급 총액(원금 + 이자)을 알 수 없으면(이자 미기재) 보류, 기일 전 지급은 원금, 이자를 확정할 수 없으면 보류."""
+        late=dict(date='2026-01-15',principal_amount=1_000_000,interest_amount=0)
+        r=interest(payments=[late])
+        # 1/2~1/15 3,000,000×20%×14/365 = 23,014 → 원금 충당 976,986, 남은 원금 2,023,014
+        self.assertEqual((r.held_reason,r.arrear_amount,r.interest_paid),('',2_023_014,23_014))
+        self.assertTrue(any('그 경우 남은 원금은 2,000,000원(합계 2,040,548원)' in w for w in r.warnings),r.warnings)
+        self.assertTrue(any('지연이자 23,014원에 먼저' in f for f in r.formulas),r.formulas)
+        confirmed=interest(payments=[dict(late,allocation_confirmed=True)])
+        self.assertEqual((confirmed.arrear_amount,confirmed.total_claim),(2_000_000,2_040_548))
+        self.assertTrue(interest(payments=[dict(date='2026-01-15',principal_amount=1_000_000)]).held_reason)
+        early=interest(arrear_due_date='2026-01-20',payments=[dict(late,date='2026-01-10')])
+        self.assertEqual((early.arrear_amount,early.interest_paid),(2_000_000,0))
+        held=interest(arrear_due_date='2025-09-10',arrear_calc_date='2025-10-24',payments=[dict(late,date='2025-10-10')])
+        self.assertIn('상인 여부',held.held_reason)
+        # 두 번 나눠 받으면 두 번째 지급도 그때까지 남은 지연이자부터 충당한다
+        two=interest(payments=[late,dict(late,date='2026-01-25',principal_amount=500_000)])
+        self.assertEqual(len([f for f in two.formulas if '민법 제479조' in f]),2)
+        self.assertEqual(two.interest_paid,23_014+round(2_023_014*.2*10/365))
+
+    def test_public_menu_states_where_twenty_percent_applies(self):
+        """A7: 공개 메뉴의 '연 20%'가 모든 체불에 붙는 것처럼 읽히지 않게 적용 범위와 그 밖의 5·6%를 함께 적는다."""
+        menu=(Path(__file__).parent/'public/calculators.html').read_text(encoding='utf-8')
+        self.assertNotIn('<span class="item-desc">연 20% 지연이자 산정</span>',menu)
+        self.assertIn('연 20%(퇴직 후 14일 경과·2025.10.23 이후 지급일 경과분), 그 밖은 연 5·6%',menu)
 
 
 if __name__=='__main__':

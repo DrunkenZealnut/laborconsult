@@ -114,6 +114,12 @@ def _prepare_claim(raw, fallback_id, calc, retirement, retirement_deadline, defa
         raise ValueError('정기지급 임금의 원래 지급기일을 확인해주세요')
     if kind=='retirement_lump_sum' and due<retirement:
         raise ValueError('퇴직급여 일시금의 지급기일이 퇴직 효력일보다 빠릅니다. 중간정산은 별도 확인이 필요합니다')
+    # 퇴직급여 일시금의 연 20%는 '지급 사유가 발생한 날부터 14일이 되는 날'까지 지급하지 않은 경우 그 다음 날부터다
+    # (근로기준법 제37조제1항제1호) — 입력한 기일과 무관하다. 더 이른 입력일로 5%/6% 구간을 앞에 붙이지 않는다(A4).
+    # 중간정산 가드(퇴직 효력일보다 이른 기일) 뒤에서 바꾼다 — 앞에서 바꾸면 그 가드가 사라진다
+    entered_due=None
+    if kind=='retirement_lump_sum' and retirement_deadline and due<retirement_deadline:
+        entered_due,due=due,retirement_deadline
     rule=_rule(due+DAY)
     special=due+DAY if kind=='regular_wage' and rule.values['regular_rate'] is not None else None
     if retirement_deadline:
@@ -154,7 +160,76 @@ def _prepare_claim(raw, fallback_id, calc, retirement, retirement_deadline, defa
     sol=_three_year_date(retirement if kind=='retirement_lump_sum' else due)
     return dict(id=cid,kind=kind,amount=amount,due=due,start=start,special=special,rule=rule,
                 payments=by_day,interest_paid=interest_paid,interest_paid_known=interest_paid_known,
-                exclusions=excluded,sol=sol)
+                exclusions=excluded,sol=sol,entered_due=entered_due)
+
+
+def _statutory_allocation(claim, payment, merchants):
+    """충당 합의가 확인되지 않은 지급기일 뒤 지급의 법정 충당 — (이자 충당, 원금 충당) 또는 None.
+
+    민법 제479조①은 비용·이자·원본 순서로 충당하게 하고, ②가 제476조(지정충당)를 준용하지 않아 합의가 없으면 어느 쪽도
+    일방적으로 순서를 정할 수 없다(대법원 2002다12871·12888, 2019다29013). 그래서 지급일까지 생긴 지연이자에 먼저,
+    나머지를 원금에 충당한다. 비용 채권은 이 계산기 범위 밖이라 0으로 본다.
+    `claim`은 그 지급 전의 확정 충당만 담은 `_prepare_claim` 결과, `payment`는 dict(date=날짜, amount=지급 총액)이다.
+    지급일까지의 지연이자를 하나로 정할 수 없으면 None — 상인 여부 미확인으로 연 5%·6%가 갈리거나 앞선 지급의 이자
+    충당액이 미확인인 경우다. 호출부가 보류한다."""
+    if not claim['interest_paid_known']:
+        return None
+    outstanding={max(0,round(sum(row['interest'] for row in _calculate(claim,payment['date'],merchant))
+                             -claim['interest_paid'])) for merchant in merchants}
+    if len(outstanding)!=1:
+        return None
+    interest=min(payment['amount'],outstanding.pop())
+    return interest,payment['amount']-interest
+
+
+def principal_first_note(remaining, total=None):
+    """법정 충당으로 계산한 카드에 함께 싣는 '원금 우선' 값. 합의충당·묵시적 합의(지급 내역대로 이의 없이 수령)면
+    원금에 먼저 충당된다(대법원 2012다15602) — 어느 쪽이 최종인지는 사실에 달려 있어 두 값을 함께 보인다(Q1)."""
+    return ("받은 금액은 법에 따라 그때까지 생긴 지연이자에 먼저, 나머지를 원금에 충당해 계산했습니다(민법 제479조). "
+            "회사와 원금에 먼저 충당하기로 했거나, 회사가 '○월분 급여'로 준 돈을 이의 없이 받았다면 원금에 먼저 충당된 것으로 "
+            f"볼 수 있습니다. 그 경우 남은 원금은 {remaining:,.0f}원"
+            + (f"(합계 {total:,.0f}원)" if total is not None else "") + "입니다")
+
+
+def _statutory_payments(raw, fallback_id, calc, retirement, retirement_deadline, default_kind, merchants, applied):
+    """충당 합의가 확인되지 않은 지급(allocation_confirmed가 True가 아님)을 법정 충당한 확인 충당으로 바꾼다.
+
+    지급기일 뒤 지급은 `_statutory_allocation`으로, 기일 당일·이전 지급은 충당할 이자가 없어 원금으로 본다. 지급 총액
+    (원금 + 이자)을 알 수 없는 지급(interest_amount 없음)은 그대로 둔다 — `_prepare_claim`이 기존 사유로 보류한다.
+    적용한 법정 충당은 `applied`에 남긴다(입력한 배분 = 원금 우선 값을 함께 보이기 위해)."""
+    if not isinstance(raw,dict) or not isinstance(raw.get('payments'),list):
+        return raw
+    payments=raw['payments']
+    pending=[p for p in payments if not (isinstance(p,dict) and p.get('allocation_confirmed') is True)]
+    if not pending or any(not isinstance(p,dict) or p.get('interest_amount') is None for p in pending):
+        return raw
+    order=sorted(range(len(payments)),key=lambda i:(_date(payments[i].get('date'),'원금 변제일'),i))
+    resolved=list(payments);done=[]
+    for i in order:
+        p=payments[i]
+        if p.get('allocation_confirmed') is True:
+            done.append(p)
+            continue
+        d=_date(p.get('date'),'원금 변제일')
+        if d>calc:
+            raise ValueError('계산일 이후 변제는 실제 원금 잔액에 반영할 수 없습니다')
+        total=_money(p.get('principal_amount'),'원금 충당액')+_money(p['interest_amount'],'지급 이자 충당액')
+        claim=_prepare_claim(dict(raw,payments=[q for q in done if _date(q.get('date'),'원금 변제일')<=d]),
+                             fallback_id,d,retirement,retirement_deadline,default_kind)
+        if d<claim['start']:
+            interest,principal=0,total
+        else:
+            split=_statutory_allocation(claim,dict(date=d,amount=total),merchants)
+            if split is None:
+                raise ValueError(f"채권 {claim['id']}: {d.isoformat()} 지급은 지급기일 뒤라 그때까지 생긴 지연이자에 먼저 충당되는데"
+                                 "(민법 제479조), 그 지연이자를 하나로 정할 수 없습니다(채무자의 상인 여부 미확인으로 연 5%·6%가 "
+                                 "갈리거나 앞선 지급의 이자 충당액이 미확인). 상인 여부 또는 원금·이자 충당 내역을 확인해주세요")
+            interest,principal=split
+            applied.append(dict(claim_id=claim['id'],payment_index=i,date=d.isoformat(),total=total,interest=interest,
+                                principal=principal,entered=p))
+        resolved[i]=dict(p,principal_amount=principal,interest_amount=interest,allocation_confirmed=True)
+        done.append(resolved[i])
+    return dict(raw,payments=resolved)
 
 
 def _calculate(claim, calc, merchant):
@@ -213,7 +288,21 @@ def calc_wage_arrears(arrear_amount=0, arrear_due_date='', is_post_retirement_ar
             if arrear_amount or arrear_due_date or payments or exclusions:
                 raise ValueError('단일 채권과 채권 목록을 중복 입력하지 마세요')
             raw=claims
+        merchants=[False,True] if debtor_is_merchant is None else [debtor_is_merchant]
+        applied=[];resolved=[]
+        for i,x in enumerate(raw):
+            mark=len(applied)
+            resolved.append(_statutory_payments(x,str(i+1),calc,retirement,deadline,claim_kind,merchants,applied))
+            for a in applied[mark:]:
+                a['claim_index']=i
+        raw=resolved
         prepared=[_prepare_claim(x,str(i+1),calc,retirement,deadline,claim_kind) for i,x in enumerate(raw)]
+        for c in prepared:
+            if c['entered_due']:
+                r.warnings.append(f"채권 {c['id']}: 입력한 퇴직급여 지급일({c['entered_due'].isoformat()})은 법정 기한"
+                                  f"({c['due'].isoformat()})보다 빨라 기한을 기준으로 계산했습니다(근로기준법 제36조·제37조제1항제1호, "
+                                  "근로자퇴직급여 보장법 제9조). 회사 규정이나 계약에 그보다 이른 지급일이 정해져 있었다면, 그 다음 날부터 "
+                                  "기한까지 연 5%(상인은 6%) 지연손해금을 따로 청구할 여지가 있습니다")
         if len({x['id'] for x in prepared})!=len(prepared):
             raise ValueError('채권 ID가 중복됩니다')
         scenarios=[]
@@ -275,6 +364,22 @@ def calc_wage_arrears(arrear_amount=0, arrear_due_date='', is_post_retirement_ar
             for row in scenario['interest_schedule']:
                 r.formulas.append(f'{prefix} 채권 {row["claim_id"]} {row["start_date"]}~{row["end_date"]}: '
                     f'{row["principal"]:,.0f}원 × {row["rate"]:.0%} × {row["days"]}일 ÷ 365 = {row["interest"]:,.2f}원')
+        if applied:
+            for a in applied:
+                r.formulas.append(f"채권 {a['claim_id']} {a['date']} 지급 {a['total']:,.0f}원: 그때까지 생긴 지연이자 {a['interest']:,.0f}원에 "
+                                  f"먼저, 나머지 {a['principal']:,.0f}원을 원금에 충당 (민법 제479조)")
+            # 입력한 배분 그대로(원금 우선)의 값 — 같은 함수를 확인 충당으로 다시 돌린다(모든 지급이 확인 충당이라 재귀는 한 단계)
+            alt_raw=[dict(x,payments=list(x['payments'])) if isinstance(x,dict) and isinstance(x.get('payments'),list) else x
+                     for x in raw]
+            for a in applied:
+                alt_raw[a['claim_index']]['payments'][a['payment_index']]=dict(a['entered'],allocation_confirmed=True)
+            alt=calc_wage_arrears(claims=alt_raw,arrear_calc_date=calc.isoformat(),
+                is_post_retirement_arrear=is_post_retirement_arrear,claim_kind=claim_kind,
+                retirement_effective_date=retirement_effective_date,last_employed_date=last_employed_date,
+                debtor_is_merchant=debtor_is_merchant,deadline_holidays=deadline_holidays,is_employee=is_employee)
+            remaining=max(0,r.arrear_amount+sum(a['principal']-_money(a['entered'].get('principal_amount'),'원금 충당액')
+                                                for a in applied))
+            r.warnings.append(principal_first_note(remaining,None if alt.held_reason else alt.total_claim))
         r.warnings.append('원금·이자 변제충당과 적용 제외의 법적 자격이 확인된 사실을 전제로 한 단리 추정입니다. 이자는 지급한 날까지 계산합니다')
         if all(not c['exclusions'] for c in prepared):
             r.warnings.append('입력된 법정 제외 기간이 없어 제37조·시행령 제18조 적용 제외 사유가 없다는 조건으로 계산했습니다')

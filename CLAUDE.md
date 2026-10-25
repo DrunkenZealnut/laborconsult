@@ -554,6 +554,35 @@ wage_calculator/
 `ordinary_wage`, `working_hours`, `overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `parental_leave`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
 (단일 출처는 `wage_calculator/facade/registry.py::CALC_TYPES` — 세어서 확인할 것)
 
+### 체불 원금·이자 (`pay_inputs.py`·`wage_claims.py`·`wage_arrears.py`)
+
+월별 의무액·기지급 원금(C5, `wage_claims`)과 채권별 지연이자(C2, `wage_arrears`)는 법률 사실을 추정하지 않고 보류한다.
+지킬 것 — 전부 조용히 틀린 금액이 된다:
+- **지급 주기가 불명확한 수당은 월액으로 확정하지 않는다**(`FixedAllowance.monthly_amount` → `pay_inputs.PayInputError`).
+  facade는 그 수당에 기대는 계산만 보류하고, 금액이 명시된 원금 명세(`claims_are_independent`)·확정 체불 이자·시간 계산은 그대로 돌린다.
+- **원금 정산과 별도 체불 입력의 관계 기본값은 '모름'(`wage_claim_include_interest=None`)이다.** False로 두면 같은 채권을
+  별도 채권으로 보고 그 원금·이자 합계(9월 급여 중복 기재 → 3,023,014원)를 따로 확정한다. True면 C5가 이자 채권을 만들고, None이면
+  `calc_claim_interest`가 중복 여부 확인으로 이자만 보류한다. facade 비교는 `is True`/`is False`로 한다.
+- **지급기일 뒤 일부 지급은 합의가 없으면 그때까지의 지연이자에 먼저 충당한다**(민법 제479조, `wage_arrears._statutory_allocation`
+  — C5 요약 지급과 C2 확인 없는 지급이 같은 함수). 제479조②가 제476조를 준용하지 않아 회사가 '○월분 급여'로 줬다는 지정만으로는
+  원금 충당이 아니다. 대신 묵시적 합의(지급 내역대로 이의 없이 수령)면 원금 충당이 될 수 있어, 카드에 **원금 우선 값을 함께**
+  싣는다(`principal_first_note`). 합의가 명시되면 `paid_allocation_confirmed=True`로 입력 충당을 쓴다. 지급일까지의 지연이자를
+  하나로 정할 수 없으면(상인 미상으로 5%·6%가 갈리는 구 규칙 채권 등) 보류한다. C2 지급의 총액(원금 + 이자)을 알 수 없으면
+  (interest_amount 없음) 기존대로 보류다.
+- **퇴직금 행의 지급기일은 퇴직 후 14일 기한이다**(근로기준법 제36조·제37조①1호, 퇴직급여법 제9조) — 20% 기산일은 조문이
+  고정하고 입력한 기일과 무관하다. 더 이른 입력일로 5%·6% 구간을 앞에 붙이지 않고 '청구 여지'로만 안내한다. C2의 대체는
+  중간정산 가드(퇴직 효력일보다 이른 기일) **뒤**에서 한다. 공개 계산기(`wage_arrears_interest_calc.html`)도 같은 규칙이다.
+- **퇴직 사실만 있고 날짜가 없으면 원래 기일이 지난 원금만 정산하고 기한·이자는 보류한다**(`due_unconfirmed`, '지급기한 미확인
+  미지급액'). 그런 행의 일부 지급은 기한 뒤였는지 알 수 없어 보류한다. C2는 이자 계산기라 그대로 보류다.
+- **같은 달 월급에 든 고정연장수당과 실제 연장·야간·휴일 근로 임금은 큰 쪽만 센다**(`_fixed_overtime_offsets` — facade 월
+  총액과 같은 규칙). 파생 연장 행에서 고정액을 빼고, 월급 행 포함 여부를 알 수 없거나 연장 금액을 직접 적은 행이 있으면 보류한다.
+- **근거 조문은 해당 행이 있을 때만 붙인다** — 최저임금법 제6조는 `source=minimum_wage` 행, 민법 제476조~제479조는 법정·지정
+  충당 행. 약정 임금 미지급만 정산한 카드에 붙이면 오인용이다. 공개 메뉴의 '연 20%'도 적용 범위(퇴직 후 14일 경과·2025.10.23
+  이후 지급일 경과분)와 그 밖의 5·6%를 함께 적는다.
+- 원금 장부 추출 예산(`llm_gateway.extraction_budget`)의 표지는 `_LEDGER_RE`다 — '정산'은 넣지 않는다(퇴직금 정산·연말정산까지
+  8192가 됐다). 도구 호출 하한은 `_MIN_TOOL_TOKENS`(Gemini 8192 — 사고 토큰이 출력 한도를 함께 쓴다)이고 텍스트 단계 하한
+  (`_MIN_TOKENS`)과 따로다.
+
 ### Legal Rule Registry (`wage_calculator/legal_rules.py` + `app/core/legal_updates.py`)
 
 법정 수치 기준을 **관리자 승인 + 시행일별 버전**으로 관리하는 경로. 근거·설계·감사 의견은
