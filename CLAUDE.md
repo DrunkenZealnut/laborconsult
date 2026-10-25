@@ -592,6 +592,12 @@ wage_calculator/
   추정하지 말라"고 지시하므로 무지정이 정상 경로이고, 보류로 두면 최저임금·4대보험 질문 대다수가
   금액 없이 끝난다. 서버 로컬시간(UTC)은 00~09시에 전날이라 KST를 쓰며, UTC 전년을 허용값으로
   섞지 않는다. 그러면 사용자가 명시한 전년이 KST 새해 오늘로 바뀐다.
+  **사건 날짜(`event_date`)는 명시 기준일 다음, 오늘 앞이다** — 육아휴직·단축급여처럼 실제 사용 구간이 있으면 첫 개시일이
+  기준일이다(`childcare_shared.first_period_start`). 연도로 시점을 추정하는 것이 아니라 질문에 나온 날짜라 '오늘이 아닌 연도'
+  보류에 걸지 않는다 — 걸면 작년 휴직의 급여를 새해에 물을 때 날짜를 다 주고도 보류됐다(wage-update-followups P1).
+  facade는 **물은 계산이 전부 실제 구간을 가진 육아 급여일 때만**(`_SELF_DATED_TARGETS`) 넘긴다. 육아 급여는 승인 키를 읽지
+  않아 스냅샷 날짜를 옮겨도 다른 계산에 영향이 없지만, 섞인 요청에서 옮기면 최저임금·보험의 기준일이 사건 날짜로 바뀐다.
+  섞인 요청은 지금처럼 요청 전체 보류다. 출산휴가는 승인 키(`maternity.monthly_upper`)를 읽어 넣지 않았다.
 - **보류 범위는 "기반이면 요청 전체, 출력 섹션이면 그 섹션만"이다.** 기준일 해석·저장소 조회·
   `use_minimum_wage` 해결·통상임금·사업장 규모는 **뒤따르는 모든 계산의 입력**이라 실패 시 요청 전체가
   `blocked`다. 개별 계산기(`_STANDARD_CALCS` 및 특수 계산기)의 `RuleUnavailable`은 `guarded()`가 잡아
@@ -955,6 +961,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - **모델명은 별칭으로** — 고정 버전은 모델 폐기 시 조용히 404가 된다(실제로 `gemini-2.5-pro`가 그렇게 죽어 있었고, 폴백 계측이 없어 아무도 몰랐다).
   - **Gemini SDK의 `request_options={"timeout"}`은 스트림 전체 마감이다 — 청크 사이 대기 한도가 아니다.** 읽기 한도(25초)를 그대로 넣어 25초를 넘는 답변이 전부 잘렸다(실측 2026-10-11: 외부 점검 50문항 중 9건 '생성 중단', 전부 Gemini 1순위. 재현 시 1,471자 지점 `DeadlineExceeded`). 마감은 `GEMINI_STREAM_DEADLINE`(240초, Vercel maxDuration 300초 안)으로 두고 무응답 판정은 `_iter_with_idle_timeout`(청크 사이 25초, 첫 청크 포함)이 한다. 실측: 9,438자 61초, 첫 청크 15.1초(추론), 이후 최대 간격 0.5초. **SDK 호출까지 스레드 안에 둘 것** — `generate_content(stream=True)`는 첫 청크가 올 때까지 호출 자체가 막힌다.
 - 의도분석(`analyze_intent`)은 설정 1순위 실패 시 2순위로 폴백한다(`llm_gateway.tool`, 벤더별 도구 호출 — Claude tool_use·OpenAI function calling·Gemini function_declarations). 후처리는 `_build_analysis_result` 단일 출처를 벤더가 공유해야 추출 결과가 갈라지지 않는다. 도구 스펙은 Anthropic 규약 하나만 두고 변환한다(`llm_fallback.anthropic_tool_to_openai`). `metadata.llm.intent_provider`는 **답변 1순위와 다른 제공자**가 의도분석을 했을 때만 기록된다(감시의 `intent_fallback` 신호). 게이트웨이·어댑터는 `pipeline.py`를 import하지 않는다 — `analyzer.py`가 순환 import 없이 쓰기 위해서다.
+- **변환기(`_analysis_to_extract_params`)가 읽는 `info` 키는 전부 분석기 키여야 한다** — `analyzer._INFO_KEYS`와 `ANALYZE_TOOL` 속성 양쪽에. `_build_analysis_result`는 `_INFO_KEYS` 밖의 키를 버리므로, 변환기·계산기만 있고 분석기에 없는 필드는 채팅에서 **조용히 늘 빠진다**(다태아·미숙아가 그랬다 — 레거시 추출 도구에만 있었다, wage-update-followups P2). `test_pipeline_wiring.py` W13b가 AST로 고정한다. 스텁(`SimpleNamespace`) 배선 테스트는 이 필터를 건너뛰어 못 잡는다. 불리언 플래그는 `is True`로 판정한다 — 분석기가 문자열 `"false"`를 내면 truthy다.
 - 폴백 결과는 `qa_conversations.metadata.llm`(provider·model·attempts·fallback·empty·truncated·citation_fixed)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.**
   - **계측만으로는 부족했다 — 아무도 보지 않았다.** 8-21~9-28 38일간 프로덕션 실사용 답변 17/17이 폴백이었고(anthropic SDK 1.x 자동 설치), 같은 기간 로컬·벤치마크는 SDK 0.120이라 전부 Claude 성공이었다. 기록은 다 있었다. 그래서 `check_llm_fallback.py` + `.github/workflows/llm-fallback-alert.yml`이 6시간마다 **최근 실사용 3건이 연속 저하**(fallback·empty·intent_provider)면 실패해 GitHub 실패 메일로 알린다. 지킬 것 셋: ① 판정을 "Claude가 아님"으로 바꾸지 말 것 — 관리자 화면에서 1순위를 OpenAI로 두면 `attempts=['OpenAI']`가 정상이다 ② 감시는 **fail-closed**(조회 실패 exit 2) — 파이프라인 규약(fail-open)을 따르면 감시가 죽은 것도 조용해진다 ③ 비율 임계로 바꾸지 말 것 — 실사용이 하루 0~5건이라 1건으로 100%가 된다. Secret `SUPABASE_URL`·`SUPABASE_KEY`(anon — service-role에는 `qa_conversations` 권한이 없다) 필요.
 - All `app/core/*.py` modules use `from __future__ import annotations` for forward reference support.

@@ -345,6 +345,36 @@ class LegalUpdatesTest(unittest.TestCase):
         self.assertEqual(result.legal_rule_status, "blocked")
         self.assertNotIn("private", format_result(result))
 
+    def _childcare_input(self):
+        from wage_calculator import WageInput, WageType
+        return WageInput(wage_type=WageType.MONTHLY, monthly_wage=3_000_000, reference_year=2025,
+                         childcare_example=False, parental_leave_start="2025-03-01", parental_leave_end="2025-05-31",
+                         childcare_child_age=1, childcare_insured_days=400)
+
+    def test_childcare_only_request_uses_first_start_as_reference_date(self):
+        """P1(wage-update-followups): 육아 급여만 물은 요청은 실제 첫 개시일이 기준일 — 연도만 있어도 보류하지 않는다.
+        육아 급여는 승인 키를 읽지 않으므로 기준일을 옮겨도 다른 계산에 영향이 없다."""
+        from wage_calculator import WageCalculator
+        from wage_calculator.legal_rules import resolve_reference_date
+        self.assertEqual(resolve_reference_date(None, 2025, event_date="2025-03-01"), "2025-03-01")
+        self.assertEqual(resolve_reference_date("2025-04-01", 2025, event_date="2025-03-01"), "2025-04-01")
+        with self.assertRaises(RuleUnavailable):
+            resolve_reference_date(None, 2025, event_date="2025-02-30")
+        r = WageCalculator(rule_store=self.store).calculate(self._childcare_input(), ["parental_leave"])
+        self.assertEqual((r.legal_rule_status, r.legal_reference_date), ("managed_no_parameters", "2025-03-01"))
+        self.assertEqual(r.summary["육아휴직 총 수령액"], "7,500,000원")
+
+    def test_mixed_childcare_request_still_needs_a_reference_date(self):
+        """R3: 다른 계산이 섞인 요청의 기준일은 옮기지 않는다 — 기준일 해석은 기반 단계라 요청 전체 보류다."""
+        from wage_calculator import WageCalculator, WageInput, WageType
+        r = WageCalculator(rule_store=self.store).calculate(self._childcare_input(), ["parental_leave", "minimum_wage"])
+        self.assertEqual(r.legal_rule_status, "blocked")
+        self.assertIn("계산 기준일", r.warnings[0])
+        example = WageInput(wage_type=WageType.MONTHLY, monthly_wage=3_000_000, reference_year=2025,
+                            childcare_example=True, parental_leave_months=3, childcare_child_age=1)
+        r = WageCalculator(rule_store=self.store).calculate(example, ["parental_leave"])
+        self.assertEqual(r.legal_rule_status, "blocked")
+
     def test_unspecified_date_resolves_to_today_but_other_year_still_needs_a_date(self):
         """R2: 기준일 무지정은 오늘. '연도만으로 추정 금지'는 오늘이 속하지 않는 연도에만 적용."""
         from wage_calculator import WageCalculator, WageInput, WageType

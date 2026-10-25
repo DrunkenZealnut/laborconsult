@@ -196,6 +196,8 @@ _PAY_PROPS.update({
     "is_priority_support_company": {"type": "boolean", "description": "우선지원대상기업 여부. 단순 중소기업 추정 금지, 명시 확인된 경우만"},
     "family_leave_start_date": {"type": "string", "description": "이번 휴가 실제 사용 시작일 YYYY-MM-DD. 입사일과 구분"},
     "family_leave_end_date": {"type": "string", "description": "이번 휴가 실제 사용 종료일 YYYY-MM-DD. 퇴사일과 구분. 계산하여 추정하지 말 것"},
+    "is_multiple_birth": {"type": "boolean", "description": "쌍둥이·세쌍둥이 등 한 번에 둘 이상 임신·출산이면 true (출산전후휴가 120일). 질문에 없으면 생략"},
+    "is_premature_birth": {"type": "boolean", "description": "미숙아 출산이면 true (출산전후휴가 100일). 미숙아는 임신 37주 미만 또는 출생 시 2.5kg 미만으로 출생 후 24시간 이내 신생아중환자실에 입원한 경우. 질문에 없으면 생략"},
 })
 
 # 육아급여 입력: 기간·자격·시간을 계산기까지 보존한다.

@@ -53,7 +53,9 @@ def _six_plus_six_disproven(inp,ws):
     그때는 일반형을 그대로 쓴다(부모 각 3개월 이상 사용에 따른 18개월 연장 등은 일반형 경로가 판단). 정보가 없어 판단할 수
     없으면 False — 6+6 검증으로 넘겨 보류한다(PR #134 Codex 리뷰: 생후 18개월이 지난 자녀의 휴직까지 0원으로 보류됐다)."""
     if not inp.childcare_child_birth_date:
-        return False
+        # 생년월일이 없어도 개시일 현재 만 2세 이상이거나 초등 학년이 있으면 생후 18개월을 넘은 것이 분명해 불충족이 확정된다.
+        # 만 1세는 생후 12~23개월이라 갈리지 않는다 — 6+6 검증으로 넘겨 생년월일을 묻는다(wage-update-followups P7)
+        return _age_beyond_18_months(inp)
     limit=month_after(day(inp.childcare_child_birth_date,'자녀 생년월일'),18)
     starts=[ws[0].start] if ws and ws[0].start else []
     if inp.parental_other_parent_periods:
@@ -66,6 +68,30 @@ def _six_plus_six_disproven(inp,ws):
     elif inp.parental_other_parent_start:
         starts.append(day(inp.parental_other_parent_start,'상대 부모 개시일'))
     return any(s>limit for s in starts)
+
+
+def _age_beyond_18_months(inp):
+    age,grade=inp.childcare_child_age,inp.childcare_child_grade
+    return ((age is not None and number(age,'자녀 만 나이',maximum=30,integer=True)>=2)
+            or (grade is not None and number(grade,'초등 학년',minimum=1,maximum=12,integer=True)>=1))
+
+
+def _six_plus_six_notes(inp,ws):
+    """일반형으로 산정했지만 6+6과 갈릴 수 있는 사실의 안내(PR #134 자동 6+6의 경계, wage-update-followups P7)."""
+    other_facts=(inp.parental_other_parent_months or inp.parental_other_parent_start or inp.parental_other_parent_periods)
+    if not other_facts or inp.parental_single_parent_eligible is True:
+        return []
+    if _six_plus_six_disproven(inp,ws):
+        if inp.childcare_child_birth_date:
+            return ['자녀 생후 18개월이 지난 뒤 개시한 육아휴직이 있어 6+6 특례(고용보험법 시행령 제95조의3) 대상이 아닙니다 '
+                    '— 일반형으로 산정했습니다']
+        return ['입력한 자녀 나이·학년을 육아휴직 개시일 현재 기준으로 보아 생후 18개월이 지났으므로 6+6 특례(고용보험법 '
+                '시행령 제95조의3) 대상이 아닌 것으로 산정했습니다 — 부모 어느 쪽이든 개시일에 생후 18개월 이내였다면 6+6이 '
+                '적용될 수 있어 금액이 달라집니다(자녀 생년월일로 확인)']
+    if inp.parental_same_child is None:
+        return ['상대 부모의 육아휴직 사실이 있습니다. 같은 자녀에 대한 사용이고 양쪽 개시일이 자녀 생후 18개월 이내면 '
+                '6+6 특례(고용보험법 시행령 제95조의3)가 적용될 수 있어 금액이 달라집니다 — 위 금액은 일반형 기준입니다']
+    return []
 
 
 def _scheme(inp,ws,reference):
@@ -166,6 +192,7 @@ def calc_parental_leave(inp: WageInput, ow: OrdinaryWageResult) -> ParentalLeave
         common_checks(inp,ws,reference,r.warnings)
         scheme,matched,other=_scheme(inp,ws,reference)
         _validate_periods(inp,ws,reference,prior,other)
+        if scheme=='general': r.warnings.extend(_six_plus_six_notes(inp,ws))
         r.scheme=scheme;r.monthly_ordinary_wage=wage
         for w in ws:
             gross=paid=deferred=0.;parts=[]

@@ -65,17 +65,24 @@ def kst_today():
         return datetime.now(timezone(timedelta(hours=9))).date().isoformat()
 
 
-def resolve_reference_date(reference_date, reference_year=None):
-    """명시된 기준일이 우선. 없으면 오늘(KST)로 확정한다.
+def resolve_reference_date(reference_date, reference_year=None, *, event_date=None):
+    """명시된 기준일이 우선. 그다음 계산 대상 사건의 실제 날짜(`event_date`), 없으면 오늘(KST)로 확정한다.
 
     '연도만으로 분기 기준을 추정하지 않는다'는 원칙은 **오늘이 속하지 않는 연도**를
     지정한 경우에만 필요하다 — 2025년의 어느 시점인지는 결정할 수 없기 때문이다.
     아무 날짜도 지정하지 않은 질문을 '현재 시점'으로 읽는 데에는 모호성이 없고,
     이를 보류로 처리하면 기준일을 말하지 않는 통상적인 상담 대부분이 수치 없이 끝난다.
+
+    `event_date`는 질문에 나온 사건 날짜(육아휴직·단축의 첫 개시일 등)다. 연도로 시점을 추정하는 것이 아니므로 '오늘이
+    아닌 연도' 보류에 걸지 않는다 — 걸면 작년 휴직의 급여를 새해에 묻는 질문이 날짜를 다 주고도 보류됐다
+    (wage-update-followups P1). 사건 날짜를 넘길지는 호출자가 정한다(다른 계산이 섞인 요청에는 넘기지 않는다).
     """
     if reference_date is not None:
         iso_date_or_block(reference_date)
         return reference_date
+    if event_date is not None:
+        iso_date_or_block(event_date)
+        return event_date
     today = kst_today()
     if reference_year is not None:
         try:
