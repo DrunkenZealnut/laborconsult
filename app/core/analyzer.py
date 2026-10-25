@@ -163,7 +163,7 @@ _INFO_KEYS = {
     "shutdown_days", "public_holiday_days",
     "use_minimum_wage", "reference_year", "reference_date",
     "is_probation", "contract_months", "occupation_code",
-    "is_platform_worker",
+    "is_platform_worker", "is_multiple_birth", "is_premature_birth",
 }
 _INFO_KEYS.update(set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS)
 from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS

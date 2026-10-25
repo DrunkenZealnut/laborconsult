@@ -98,8 +98,11 @@ def periods_from_input(inp, reduced=False):
 
 def windows(inp,rules,*,reduced=False):
     if not isinstance(inp.childcare_example,bool): raise ValueError('제도 예시 여부를 확인해주세요')
-    reference=day(resolve_reference_date(inp.reference_date,inp.reference_year),'조회 기준일')
+    # 실제 사용 구간이 있으면 구간을 먼저 해석한다 — 지급액은 구간별 시행 규칙으로 정해지므로 명시 기준일이 없으면 첫 개시일이
+    # 기준일이다. '연도만 있으면 기준일 필요' 보류는 날짜 없는 제도 예시에만 남는다(wage-update-followups P1)
     periods,months=periods_from_input(inp,reduced)
+    reference=day(resolve_reference_date(inp.reference_date,inp.reference_year,
+                                         event_date=periods[0][0].isoformat() if periods else None),'조회 기준일')
     prior=number(getattr(inp,'reduced_prior_months' if reduced else 'parental_prior_months'),
                  '기존 사용 개월 수',maximum=36,integer=True)
     if not reduced and number(inp.parental_prior_days,'기존 사용 잔여 일수',maximum=366,integer=True):
@@ -135,6 +138,15 @@ def windows(inp,rules,*,reduced=False):
     if months and abs(sum(w.fraction for w in result)-months)>1e-9:
         raise ValueError('사용 개월 수와 실제 사용 구간의 길이가 서로 다릅니다')
     return result,reference,prior
+
+
+def first_period_start(inp,reduced=False):
+    """실제 사용 구간의 첫 개시일 YYYY-MM-DD. 구간이 없거나 해석할 수 없으면 None — 보류 사유는 계산기가 낸다."""
+    try:
+        periods,_=periods_from_input(inp,reduced)
+    except (ValueError,TypeError):
+        return None
+    return periods[0][0].isoformat() if periods else None
 
 
 def check_child(inp,start,warnings,*,reduced=False,reason=None):

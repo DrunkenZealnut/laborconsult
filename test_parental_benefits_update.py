@@ -448,5 +448,112 @@ class MaternityFamilyFollowupTests(unittest.TestCase):
         self.assertEqual(out["t"], "15,800,000원")
 
 
+PARENTAL_2025 = dict(calculation_types=["parental_leave"], wage_type="월급", wage_amount=3_000_000,
+                     childcare_example=False, parental_leave_start="2025-03-01", parental_leave_end="2025-05-31",
+                     childcare_child_age=1, childcare_insured_days=400)
+Q_PARENTAL = "2025년 3월 1일부터 5월 31일까지 만 1세 아이 육아휴직을 썼습니다. 월급 300만원인데 육아휴직급여가 얼마였나요?"
+REDUCED_2025 = dict(calculation_types=["reduced_work_benefit"], wage_type="월급", wage_amount=3_000_000,
+                    childcare_example=False, reduced_start="2025-03-01", reduced_end="2025-05-31",
+                    reduced_weekly_hours_before=40, reduced_weekly_hours_after=30, childcare_child_age=5,
+                    childcare_insured_days=400)
+Q_REDUCED = "2025년 3월 1일부터 5월 31일까지 만 5세 아이 때문에 주 40시간에서 30시간으로 단축했습니다. 단축급여 얼마였나요?"
+
+
+class ChildcareReferenceDateTests(unittest.TestCase):
+    """P1: 실제 사용 구간이 있으면 첫 개시일이 기준일이다(wage-update-followups PR-2b)."""
+
+    def test_actual_periods_do_not_need_reference_date_for_past_year(self):
+        """연도만 지목돼도 실제 구간이 있으면 보류하지 않는다 — 지급액은 구간별 시행 규칙으로 정해진다."""
+        out = _chat(dict(PARENTAL_2025, reference_year=2025), Q_PARENTAL)
+        self.assertIn("육아휴직 총 수령액: 7,500,000원", out)
+        self.assertNotIn("계산 기준일(YYYY-MM-DD)이 필요합니다", out)
+        out = _chat(dict(REDUCED_2025, reference_year=2025), Q_REDUCED)
+        self.assertIn("고용보험 단축급여 합계: 1,650,000원", out)
+        self.assertNotIn("계산 기준일(YYYY-MM-DD)이 필요합니다", out)
+
+    def test_after_new_year_last_year_leave_is_still_calculated(self):
+        """기한(2027-01-01): 새해에 '작년 휴직'을 물어도 보류되지 않는다."""
+        from unittest.mock import patch
+        with patch("wage_calculator.legal_rules.kst_today", return_value="2027-01-05"):
+            out = _chat(dict(PARENTAL_2025, reference_year=2026, parental_leave_start="2026-03-01",
+                             parental_leave_end="2026-05-31"),
+                        "2026년 3월 1일부터 5월 31일까지 만 1세 육아휴직. 월급 300만원")
+        self.assertIn("육아휴직 총 수령액: 7,500,000원", out)
+
+    def test_dateless_example_still_needs_date_for_other_year(self):
+        """가드: '연도만으로 추정 금지'는 날짜 없는 제도 예시에 그대로 남는다."""
+        r = benefit(reference_date=None, reference_year=2025, parental_leave_months=3)
+        self.assertIn("계산 기준일", r.held_reason)
+
+    def test_mixed_request_keeps_other_calculations_reference_year(self):
+        """R3: 같은 요청의 최저임금은 여전히 2025년 기준(10,030원)으로 판정하고, 육아휴직은 첫 개시일로 계산한다."""
+        out = _chat(dict(PARENTAL_2025, calculation_types=["parental_leave", "minimum_wage"], reference_year=2025),
+                    Q_PARENTAL + " 최저임금 위반인지도 알려주세요")
+        self.assertIn("2025년 최저임금: 10,030원/h", out)
+        self.assertIn("육아휴직 총 수령액: 7,500,000원", out)
+
+
+class Rule2024AmountTests(unittest.TestCase):
+    """P5: 2024 판본 금액 단언(코드 무변경). 기존 테스트로는 2024 상한·특례월 사후지급 변이가 살아남았다."""
+
+    def calc(self, **changes):
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=5_000_000, reference_year=2026,
+                        reference_date="2026-10-24")
+        fields = dict(childcare_example=False, childcare_insured_days=180, childcare_child_age=1)
+        fields.update(changes)
+        for k, v in fields.items(): setattr(inp, k, v)
+        return calc_parental_leave(inp, calc_ordinary_wage(inp))
+
+    def test_2024_six_plus_six_caps_and_full_monthly_payment(self):
+        """2024 판본 시행령 제95조의3①1호 상한 200~450만, 특례월은 사후지급 없이 매월 전액."""
+        r = self.calc(parental_leave_start="2024-03-01", parental_leave_months=6, childcare_reason="child",
+                      childcare_child_birth_date="2024-02-01", parental_scheme="six_plus_six", parental_same_child=True,
+                      parental_other_parent_start="2024-01-01", parental_other_parent_months=6,
+                      parental_other_parent_reason="pregnant_self")
+        self.assertFalse(r.held_reason, r.held_reason)
+        self.assertEqual([x["payment"] for x in r.monthly_schedule],
+                         [2_000_000, 2_500_000, 3_000_000, 3_500_000, 4_000_000, 4_500_000])
+        self.assertEqual(r.total_deferred, 0)
+
+    def test_2024_single_parent_cap_and_full_monthly_payment(self):
+        """2024 판본 한부모 첫 3개월 상한 250만·전액 지급, 4개월째는 일반형 80%·150만·사후지급 25%."""
+        r = self.calc(parental_leave_start="2024-03-01", parental_leave_months=4, parental_scheme="single_parent",
+                      parental_single_parent_eligible=True)
+        self.assertFalse(r.held_reason, r.held_reason)
+        self.assertEqual([x["payment"] for x in r.monthly_schedule], [2_500_000] * 3 + [1_125_000])
+        self.assertEqual(r.total_deferred, 375_000)
+
+
+class AutoSixPlusSixBoundaryTests(unittest.TestCase):
+    """P7: 자동 6+6의 경계 — 나이로 불충족이 확정되면 일반형, 같은 자녀 미입력이면 6+6 가능성 안내."""
+
+    OTHER = dict(parental_other_parent_start="2026-01-01", parental_other_parent_months=6)
+
+    def calc(self, **kw):
+        from wage_calculator.models import WorkSchedule
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=5_000_000, reference_date="2026-10-01",
+                        schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5), parental_leave_start="2026-03-01",
+                        parental_leave_months=6, childcare_child_birth_date="2025-12-01", childcare_insured_days=180)
+        for k, v in kw.items(): setattr(inp, k, v)
+        return calc_parental_leave(inp, calc_ordinary_wage(inp))
+
+    def test_unknown_same_child_with_other_parent_facts_warns(self):
+        r = self.calc(**self.OTHER)
+        self.assertEqual((r.scheme, r.total_benefit), ("general", 13_500_000))
+        self.assertTrue(any("6+6 특례" in w and "적용될 수 있어" in w for w in r.warnings), r.warnings)
+        r = self.calc(parental_same_child=False, **self.OTHER)
+        self.assertFalse(any("6+6" in w for w in r.warnings), r.warnings)
+
+    def test_child_age_beyond_18_months_disproves_six_plus_six_without_birth_date(self):
+        r = self.calc(parental_same_child=True, childcare_child_birth_date=None, childcare_child_age=5, **self.OTHER)
+        self.assertEqual((r.held_reason, r.scheme, r.total_benefit), ("", "general", 13_500_000))
+        self.assertTrue(any("개시일 현재 기준" in w and "6+6 특례" in w for w in r.warnings), r.warnings)
+        r = self.calc(parental_same_child=True, childcare_child_birth_date=None, childcare_child_grade=2,
+                      **self.OTHER)
+        self.assertEqual((r.held_reason, r.scheme), ("", "general"))
+        r = self.calc(parental_same_child=True, childcare_child_birth_date=None, childcare_child_age=1, **self.OTHER)
+        self.assertIn("자녀 생년월일", r.held_reason)          # 만 1세는 12~23개월 — 갈리지 않으니 묻는다
+
+
 if __name__ == '__main__':
     unittest.main()

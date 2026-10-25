@@ -168,6 +168,39 @@ def main() -> None:
     assert r100 and "100일" in r100, f"W13 실패(미숙아 배선 없음):\n{r100}"
     print("  ✅ W13 출산 유형 배선 → 단태아 90일 / 다태아 120일 / 미숙아 100일")
 
+    # ── W13b. 같은 배선을 분석기 후처리(_build_analysis_result)부터 — 스텁은 _INFO_KEYS 필터를 건너뛴다 ──
+    # 분석기 스키마·_INFO_KEYS에 두 필드가 없어 실제 채팅에서는 다태아·미숙아가 늘 빠졌다(wage-update-followups P2). 문자열 "false"를
+    # truthiness로 읽으면 단태아가 120일이 된다. 변환기가 읽는 info 키는 전부 분석기 키여야 같은 유형의 단절이 재발하지 않는다.
+    import ast as _ast
+    import inspect as _inspect
+    from app.core.analyzer import _INFO_KEYS, _build_analysis_result as _bar
+    from app.templates.prompts import ANALYZE_TOOL
+    mat = {"requires_calculation": True, "is_labor_related": True, "calculation_types": ["maternity_leave"],
+           "wage_type": "월급", "wage_amount": 5_000_000, "maternity_leave_type": "maternity",
+           "family_leave_used_days": 0, "family_leave_start_date": "2026-05-01", "family_leave_insured_days": 400,
+           "family_leave_eligible": True, "is_priority_support_company": True}
+
+    def chat13(extra, query):
+        a = _bar({**mat, **extra}, query)
+        return _run_calculator(_analysis_to_extract_params(a), query)
+    c120 = chat13({"is_multiple_birth": True, "family_leave_days": 120, "family_leave_end_date": "2026-08-28"},
+                  "쌍둥이 2026-05-01~08-28 120일 출산휴가, 월급 500만, 우선지원대상기업")
+    c100 = chat13({"is_premature_birth": True, "family_leave_days": 100, "family_leave_end_date": "2026-08-08"},
+                  "미숙아 2026-05-01~08-08 100일 출산휴가, 월급 500만, 우선지원대상기업")
+    c90 = chat13({"is_multiple_birth": "false", "family_leave_days": 90, "family_leave_end_date": "2026-07-29"},
+                 "단태아 2026-05-01~07-29 90일 출산휴가, 월급 500만, 우선지원대상기업")
+    assert c120 and "고용보험 지급 총액: 8,800,000원" in c120, f"W13b 실패(분석기 경유 다태아):\n{c120}"
+    assert c100 and "고용보험 지급 총액: 7,333,330원" in c100, f"W13b 실패(분석기 경유 미숙아):\n{c100}"
+    assert c90 and "고용보험 지급 총액: 6,600,000원" in c90, f"W13b 실패(문자열 false를 다태아로 읽음):\n{c90}"
+    tree = _ast.parse(_inspect.getsource(pl._analysis_to_extract_params))
+    read_keys = {n.args[0].value for n in _ast.walk(tree)
+                 if isinstance(n, _ast.Call) and getattr(n.func, "attr", "") == "get"
+                 and getattr(n.func.value, "id", "") == "info" and n.args and isinstance(n.args[0], _ast.Constant)}
+    props = set(ANALYZE_TOOL["input_schema"]["properties"])
+    assert read_keys and not read_keys - _INFO_KEYS, f"W13b 실패(분석기가 버리는 키): {sorted(read_keys - _INFO_KEYS)}"
+    assert not read_keys - props, f"W13b 실패(분석기 스키마에 없는 키): {sorted(read_keys - props)}"
+    print(f"  ✅ W13b 분석기 경유 다태아 8,800,000 / 미숙아 7,333,330 / 'false' 6,600,000, 변환기 키 {len(read_keys)}개 ⊆ 분석기 키")
+
     # ── W14. 날짜 연도 보정은 질문에 연도 단서가 없을 때만 ──
     # 보정이 조건 없이 돌아 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가 2026-03-02 입사·
     # 2026-03-01 퇴사가 되어 퇴직금 0원이 나왔다(실측 2026-10-11 — 당시 월 기준시간 208.6h로 5,752,620원, 반올림 없는
