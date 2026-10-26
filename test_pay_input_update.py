@@ -409,6 +409,42 @@ class AnalyzerTotalAndBonusTests(unittest.TestCase):
                         fixed_allowances=[dict(name="정기상여", amount=1_200_000, annual=True, source_id="b1")])
         self.assertIn("3개월 임금총액: 9,300,000원", text)
 
+    def test_follow_up_keeps_only_totals_grounded_in_an_earlier_turn(self):  # G3 후속 질문(Codex #137)
+        """앞 턴에서 질문과 대조한 월 총액은 금액을 다시 적지 않은 후속 질문에서도 세전 기준으로 남고, 앞 턴에서 버린 총액(세후)은
+        캐시에 남지 않아 후속 질문에서 되살아나지 않는다."""
+        from unittest import mock
+        from app.config import AppConfig
+        from app.core import pipeline as P
+        from app.core.analyzer import _build_analysis_result
+        from app.models.session import Session
+
+        def answer(messages, system, config):
+            yield "답변"
+
+        def cards(*turns):
+            session = Session(id="g3-followup-offline")
+            config = AppConfig(openai_client=object(), pinecone_index=None, claude_client=object(), supabase=None)
+            config.law_api_key = None
+            out = []
+            for query, raw in turns:
+                analysis = _build_analysis_result(dict(_CHAT_BASE, calculation_types=["insurance"], **raw), query)
+                with mock.patch.object(P, "analyze_intent", return_value=analysis), \
+                     mock.patch.object(P, "_answer_providers", lambda c: [("OpenAI", answer)]), \
+                     mock.patch.object(P, "process_consultation", return_value=("", [])):
+                    events = list(P.process_question(query, session, config))
+                out.append(next((e["calc_result"] for e in events if e.get("type") == "meta"), ""))
+            return out
+
+        follow_up = ("부양가족이 2명이면 다시 계산해 주세요.", {})
+        first, second = cards(("월급 300만원이고 연장수당 합치면 매달 세전 350만원 받아요. 4대보험 공제액 알려주세요.",
+                               dict(wage_amount=3_000_000, monthly_total_pay=3_500_000)), follow_up)
+        self.assertIn("세전 월 급여: 3,500,000원", first)
+        self.assertIn("세전 월 급여: 3,500,000원", second)
+        first, second = cards(("월급 300만원이고 세후로는 270만원 정도 받아요. 4대보험 공제액 알려주세요.",
+                               dict(wage_amount=3_000_000, monthly_total_pay=2_700_000)), follow_up)
+        self.assertIn("세전 월 급여: 3,000,000원", first)
+        self.assertIn("세전 월 급여: 3,000,000원", second)
+
     def test_bonus_dedup_subtracts_only_the_bonus_not_premium_raised_by_it(self):  # G4
         from wage_calculator.calculators.pay_inputs import bonus_already_included
         from wage_calculator.models import BusinessSize, WageType, WorkSchedule

@@ -245,6 +245,18 @@ class ProrationHeadlineTests(unittest.TestCase):
                 self.assertIn(f"세전 월 급여(평월 기준): {gross}", text)
                 self.assertIn("정산월에 실제 공제되는 금액으로 계산한 것이 아닙니다", text)
 
+    def test_full_month_label_keeps_composition_alternative(self):  # G5 × D4(Codex #137)
+        """항목별 일할 + 연장시간 + 구성 미상이면 평월 보험 줄에도 '연장수당 별도 또는 월급에 포함' 두 값이 실린다 — 접미사를
+        붙인 키로 대안 결과를 찾아 대안이 통째로 빠졌다."""
+        query = (self.Q.replace("주5일 하루8시간,", "주5일 하루8시간, 매주 연장근로 10시간,")
+                 .replace("역일수 기준 약정이고", "기본급만 역일수로 일할하는 약정이고"))
+        raw = dict(self.RAW, weekly_overtime_hours=10, proration_all_items_proportional=False, proration_items_complete=True,
+                   proration_items=[dict(id="base", name="기본급", amount=3_000_000, payment_cycle="매월", policy="prorate")])
+        text, _ = _chat(query, **raw)
+        self.assertIn("일할계산 임금: 1,548,387원", text)
+        self.assertIn("세전 월 급여(평월 기준): 3,937,500원(연장수당 별도) 또는 2,999,999원(월급에 포함)", text)
+        self.assertIn("세전 월 급여·세후 실수령액·총 공제액·4대보험 합계 등 평균임금·보수로 계산한 금액은", text)
+
     def test_composition_total_does_not_restore_full_month_headline(self):  # 파이프라인 구성 판정 경로
         query = self.Q.replace("월급 300만원, 주5일 하루8시간,", "월급은 총 300만원이고 기본급 250만원에 고정연장수당이 포함돼 있습니다.")
         text, _ = _chat(query, **self.RAW)

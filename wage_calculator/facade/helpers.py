@@ -253,11 +253,12 @@ def _pop_insurance(r, result):
 FULL_MONTH_INSURANCE_NOTE = ("4대보험·세액은 평월(한 달 전체 근무) 임금 기준 금액입니다. 정산월에 실제 공제되는 금액으로 "
                              "계산한 것이 아닙니다 — 일할 임금에서 이 공제액을 빼지 마세요.")
 _FULL_MONTH_KEYS = ("세전 월 급여", "세후 실수령액", "총 공제액", "4대보험 합계", "사업주 4대보험 합계", "총 인건비(사업주)")
+FULL_MONTH_SUFFIX = "(평월 기준)"
 
 
 def _mark_full_month_insurance(result):
     """일할 카드의 보험 금액 줄에 '(평월 기준)'을 붙이고 안내를 더한다. 보험료를 다시 계산하지는 않는다."""
-    result.summary = {(f"{k}(평월 기준)" if k in _FULL_MONTH_KEYS else k): v for k, v in result.summary.items()}
+    result.summary = {(k + FULL_MONTH_SUFFIX if k in _FULL_MONTH_KEYS else k): v for k, v in result.summary.items()}
     result.warnings.append(FULL_MONTH_INSURANCE_NOTE)
 
 

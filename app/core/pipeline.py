@@ -27,6 +27,7 @@ from app.core.storage import save_conversation, save_session_data, upload_attach
 from app.models.session import Session
 from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.facade.registry import resolve_calc_type_strict, unsupported_calc_reason, split_calc_labels, CALC_TYPES
+from wage_calculator.facade.helpers import FULL_MONTH_SUFFIX
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize, HourSplit
 from wage_calculator.result import format_result, format_skipped_calculations, SKIPPED_CALCULATION_MARK
 from wage_calculator.calculators.shared import (
@@ -1428,11 +1429,12 @@ def _add_composition_alternative(result, calc, inp, targets) -> None:
     label = _WAGE_UNIT_LABEL.get(inp.wage_type, "임금")
     changed = []
     for key, value in list(result.summary.items()):
-        other = alt.summary.get(key)
+        # 일할 카드의 보험 줄에는 '(평월 기준)'이 붙는다 — 대안 계산(일할 제외)의 키는 붙지 않은 이름이다(Codex #137)
+        other = alt.summary.get(key.removesuffix(FULL_MONTH_SUFFIX))
         if key in _D4_SINGLE_READING_KEYS or other is None or other == value:
             continue
         result.summary[key] = f"{value}(연장수당 별도) 또는 {other}({label}에 포함)"
-        changed.append(key)
+        changed.append(key.removesuffix(FULL_MONTH_SUFFIX))
     if result.monthly_net and round(result.monthly_net) != round(alt.monthly_net or 0):
         result.monthly_net = 0.0
     if changed:
@@ -1633,14 +1635,19 @@ def _drop_ungrounded_total_pay(params: dict, query: str) -> None:
     """의도분석이 채운 월 총액은 질문에 근거가 있을 때만 받는다(wage-update-followups G3).
 
     월급과 같은 값을 총액에 복사하면 연장수당이 따로인 질문에서 월 기준이 연장분 없이 고정됐고(4대보험 세전 3,000,000 vs
-    3,937,500), 질문에 없는 합산값·세후·전 직장 금액이 총액이 되면 평균임금·보험 기준이 그 값으로 바뀌었다."""
+    3,937,500), 질문에 없는 합산값·세후·전 직장 금액이 총액이 되면 평균임금·보험 기준이 그 값으로 바뀌었다.
+
+    앞 턴 캐시에서 채운 총액(`total_pay_trusted`)은 그 턴의 질문으로 이미 대조했다 — 후속 질문에 금액이 없다고 지우면 세전
+    기준이 기본급으로 조용히 바뀐다(Codex #137). 버린 총액은 `total_pay_rejected`로 알려 호출부가 캐시에서 뺀다."""
     total = params.get("monthly_total_pay")
     if total is None:
         return
     base = params.get("wage_amount")
-    if (isinstance(total, bool) or not isinstance(total, (int, float)) or not _total_in_text(total, query)
+    grounded = params.get("total_pay_trusted") or _total_in_text(total, query)
+    if (isinstance(total, bool) or not isinstance(total, (int, float)) or not grounded
             or (isinstance(base, (int, float)) and not isinstance(base, bool) and abs(total - base) <= 1000)):
         params.pop("monthly_total_pay", None)
+        params["total_pay_rejected"] = True
         logger.info("의도분석 월 총액 %r 미사용 — 질문에 세전 총액으로 적혀 있지 않거나 임금액과 같음", total)
 
 
@@ -2027,8 +2034,11 @@ def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted
 
 
 def _note_rejected_hours(analysis, params) -> None:
-    """버린 소정근로시간을 확인 안내에 더하고 계산 캐시에서 뺀다 — 캐시(extracted_info)에 남으면 다음 턴이 대조 없이 그 값을
-    다시 채운다. 코드 누락 판정(_compute_missing_info)은 버리기 전 값을 보고 시간이 있다고 봤다."""
+    """버린 소정근로시간·월 총액을 계산 캐시에서 빼고, 시간은 확인 안내에 더한다 — 캐시(extracted_info)에 남으면 다음 턴이 대조
+    없이 그 값을 다시 채운다. 코드 누락 판정(_compute_missing_info)은 버리기 전 값을 보고 시간이 있다고 봤다."""
+    if params.get("total_pay_rejected"):
+        # 버린 월 총액도 캐시에 남기지 않는다 — 다음 턴에 대조를 거친 값(total_pay_trusted)으로 되살아난다
+        analysis.extracted_info.pop("monthly_total_pay", None)
     rejected = params.get("schedule_hours_rejected") or {}
     if not rejected:
         return
@@ -2449,8 +2459,15 @@ _KEYWORD_FALLBACK_RULES = (
 _KEYWORD_FALLBACK_BLOCK_RE = re.compile(
     r"해고|체불|밀린\s*임금|임금\s*미지급|산재|산업재해|요양급여|휴업급여|장해급여|괴롭힘|갑질|폭언|따돌림|실업급여|구직급여")
 # 연말정산이 계산 대상인 요청(공백을 지운 문장에 적용). 지나가는 언급("연말정산은 회사가 해준다는데")은 미지원 안내를 붙이지 않는다(G2)
+# 세 갈래: ① 같은 절에서 정산 결과어 뒤에 요청어("연말정산 때 받을 수 있는 환급액은 얼마" — Codex #137) ② 결과어가 바로 붙은
+# 명사구("연말정산 환급액과 …")이되 그 문장에 과거형이 없을 때("작년 연말정산 때는 환급을 조금 받았어요"는 지난 사실이다 — ww26-39)
+# ③ 바로 뒤의 계산 요청("연말정산이랑 주휴수당 계산")
+_YEAR_END_RESULT = r"(?:환급|추가(?:납부|징수)|정산(?:액|금)|결과|세액|돌려받)"
+# 과거 시제 음절 — 받침 ㅆ인 음절(았·었·했·왔·났·됐…) 중 '있'·'겠'(과거가 아니다)을 뺀 것
+_PAST_SYLLABLES = "".join(c for c in (chr(0xAC00 + i * 28 + 20) for i in range(19 * 21)) if c not in "있겠")
 _YEAR_END_REQUEST_RE = re.compile(
-    r"연말정산(?:[^.!?]{0,4}?(?:환급|추가(?:납부|징수)|정산(?:액|금)|결과|세액|돌려받)"
+    r"연말정산(?:[^.!?,]{0,15}?" + _YEAR_END_RESULT + r"[^.!?,]{0,10}?(?:계산|산정|얼마|알려|예상|궁금|받을까|나올까|될까)"
+    r"|[^.!?]{0,4}?" + _YEAR_END_RESULT + r"(?![^.!?]*[" + _PAST_SYLLABLES + r"])"
     r"|(?:을|를|은|는|이|가|만|도|하면|시|때|에서)?[^.!?]{0,6}?(?:계산|산정|얼마|알려|예상))")
 
 
@@ -3721,6 +3738,8 @@ def process_question(query: str, session: Session, config: AppConfig,
             # 앞 턴 캐시에서 채운 소정근로시간은 그 턴에서 대조를 거쳤다 — 이번 질문으로 다시 대조하지 않는다
             params["schedule_hours_trusted"] = [k for k in prefilled_keys
                                                 if k in ("weekly_total_hours", "daily_work_hours")]
+            # 월 총액도 같다 — 버린 총액은 캐시에 남지 않으므로(_note_rejected_hours) 캐시 값은 대조를 통과한 것이다
+            params["total_pay_trusted"] = "monthly_total_pay" in prefilled_keys
             calc_result = _run_calculator(params, query)
             _note_rejected_hours(analysis, params)
             if calc_result:
