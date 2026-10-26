@@ -455,12 +455,18 @@ def _calculate(inp, ow, legal):
                                               inp.first_year_full_attendance_months))
     first_ledger = ""
     monthly_cap = sum(1 for row in rows if row["kind"] == "monthly")
+    # 단시간이면 월별 1일분이 시간으로 올림돼(_leave_hours) 1일분 ≠ 1일이다 — 횟수를 일수로 적으면 첫해 장부의 발생 시간보다
+    # 적게 보인다(주 16.5시간·1일 3시간: 11회 × 4시간 = 44시간 = 14.67일, Codex #140)
+    grant_hours = _leave_hours(1, weekly, daily)[0]
     if years and first_settlement is None and (years == 1 or first_facts) and (monthly_cap or first_days is not None):
         if first_remaining is not None:
             first_ledger = breakdown["별도 첫해 장부"]
         else:
+            cap_hours = monthly_cap * grant_hours
             accrued_text = (f"발생 {first_days:g}일" if first_days is not None
-                            else f"월별 발생 최대 {monthly_cap}일(각 월 개근 시)")
+                            else f"월별 발생 최대 {monthly_cap}일(각 월 개근 시)" if grant_hours == daily
+                            else f"월별 발생 최대 {cap_hours / daily:g}일({monthly_cap}회 × {grant_hours:g}시간 = "
+                                 f"{cap_hours:g}시간, 각 월 개근 시)")
             used_text = f"사용 {first_used:g}일" if first_used is not None else "사용 미확인"
             missing = "사용일수" if first_days is not None else "월별 개근 수"
             first_ledger = (f"{accrued_text} · {used_text} — {missing} 확인 전 미사용 정산분 확정 보류"

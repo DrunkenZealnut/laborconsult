@@ -306,6 +306,16 @@ class AnnualLeaveUpdateTests(unittest.TestCase):
                          "(현재 기간에서 다시 차감하지 않음)")
         self.assertNotIn("별도 첫해 미사용분", summary)   # 개근 수를 모르면 기본 출근율로 11일을 확정하지 않는다
 
+    def test_l1_part_time_first_year_cap_uses_the_same_leave_units(self):  # Codex #140
+        """단시간은 월별 1일분이 시간으로 올림돼 11회가 11일이 아니다 — 상한을 확정 경로(11개월 개근)와 같은 단위로 적는다."""
+        part_time = WorkSchedule(daily_work_hours=3, weekly_work_days=5.5)
+        self.assertEqual(annual_card(schedule=part_time, first_year_leave_used=5).summary["별도 첫해 장부"],
+                         "월별 발생 최대 14.6667일(11회 × 4시간 = 44시간, 각 월 개근 시) · 사용 5일 — 월별 개근 수 확인 전 "
+                         "미사용 정산분 확정 보류(현재 기간에서 다시 차감하지 않음)")
+        known = annual_card(schedule=part_time, end_date="2026-01-01", last_employed_date="2026-01-01",
+                            first_year_full_attendance_months=11, first_year_leave_used=0).summary
+        self.assertEqual(known["별도 첫해 미사용분"], "14.6667일 (당해 발생분·수당에 합산하지 않음)")
+
     def test_l1_day_366_retiree_card_shows_first_year_leave(self):
         result = annual_card(end_date="2026-01-01", last_employed_date="2026-01-01")
         self.assertEqual(result.summary["법정 연차 발생일수"], "15.0일")
