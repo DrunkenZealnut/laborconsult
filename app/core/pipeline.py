@@ -2709,9 +2709,10 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         inp.probation_elapsed_months = terms["elapsed"]
     # 출산 유형은 휴가 일수를 바꾼다(90 / 미숙아 100 / 다태아 120). 배선이 없으면 상담이
     # 다태아·미숙아 질문에도 90일로 답한다 — 계산기와 흐름도만 지원하던 공백이었다.
-    if params.get("is_multiple_birth"):
+    # 불리언은 True일 때만 — 분석기가 문자열 "false"를 내도 truthy라 다태아 120일로 읽혔다(wage-update-followups P2)
+    if params.get("is_multiple_birth") is True:
         inp.is_multiple_birth = True
-    if params.get("is_premature_birth"):
+    if params.get("is_premature_birth") is True:
         inp.is_premature_birth = True
     if params.get("contract_months") is not None:
         inp.contract_months = int(params["contract_months"])
