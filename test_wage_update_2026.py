@@ -502,7 +502,11 @@ class CardGuardFollowupTests(unittest.TestCase):
 
     def test_passing_year_end_mention_keeps_requested_insurance(self):  # G2
         for query in ("연말정산은 회사가 알아서 해준다는데, 월급 300만원이면 매달 떼는 4대보험은요?",
-                      "연말정산 시즌이라 궁금한데 월급 300만원이면 세후 실수령액이 얼마인가요?"):
+                      "연말정산 시즌이라 궁금한데 월급 300만원이면 세후 실수령액이 얼마인가요?",
+                      # 지난 일의 서술 — Live 고정 사례 ww26-39 그대로, 결과어가 붙어 있어도 과거형이면 요청이 아니다
+                      "월급 300만원(세전, 비과세 수당 없음)을 받는 직장인입니다. 작년 연말정산 때는 환급을 조금 받았어요. "
+                      "부양가족은 본인 1명이고, 2026년 10월 기준으로 매달 4대보험을 떼고 나면 실수령액이 얼마인지 계산해주세요.",
+                      "연말정산 결과 추가납부가 나왔는데 월급 300만원이면 4대보험은요?"):
             with self.subTest(query=query):
                 text, _ = _chat(query, calculation_types=["insurance"], wage_amount=3_000_000)
                 self.assertIn("세전 월 급여: 3,000,000원", text)
@@ -511,6 +515,8 @@ class CardGuardFollowupTests(unittest.TestCase):
     def test_year_end_as_calculation_target_stays_unsupported(self):  # G2 반례
         for query in ("연말정산 환급 얼마나 받을까요? 월급 300만원이에요.",
                       "월급 300만원입니다. 연말정산 환급액 계산해 주세요.",
+                      # 결과어와 요청어가 떨어진 같은 절(Codex #137)
+                      "월급 300만원입니다. 연말정산 때 받을 수 있는 환급액은 얼마인가요?",
                       "연말정산 환급 받으면 실수령액이 얼마나 늘어요? 월급 300만원이에요."):
             with self.subTest(query=query):
                 text, _ = _chat(query, calculation_types=["insurance"], wage_amount=3_000_000)
