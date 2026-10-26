@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 PROVIDER_LABEL = {"claude": "Claude", "openai": "OpenAI", "gemini": "Gemini"}
 _DEFAULT_ORDER = ("claude", "openai", "gemini")
 _MIN_TOKENS = {"claude": 1024, "openai": 4096, "gemini": 2048}
+# 도구 호출(구조화 추출)의 하한. Gemini는 사고 토큰이 출력 한도를 함께 써서, 텍스트 단계의 2048로는 의도분석 도구 인자가
+# MAX_TOKENS로 잘린다(wage-update-followups A6). 텍스트 단계 하한(_MIN_TOKENS)은 그대로 둔다
+_MIN_TOOL_TOKENS = {"claude": 1024, "openai": 4096, "gemini": 8192}
+# 원금 장부(체불·미지급 정산) 추출에 큰 예산을 주는 질문 표지. '정산'은 넣지 않는다 — 퇴직금 정산·연말정산 질문까지
+# 8192가 됐고, 반대로 '못 받았어요'·'밀렸어요' 같은 흔한 체불 서술은 1024로 남았다(A6)
+_LEDGER_RE = re.compile(r"체불|미지급|밀(?:린|렸|려)|못\s*받|받지\s*못|덜\s*받|안\s*(?:주|줘|줬|준)|떼먹|원금|의무액|기지급|일할"
+                        r"|wage_claim|arrears", re.I)
 _MIN_REMAINING = 2.0      # 데드라인까지 이보다 적게 남으면 다음 제공자를 부르지 않는다
 
 _CLAUDE_VERSION_RE = re.compile(r"claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
@@ -195,12 +202,12 @@ def _messages_text(messages: list[dict]) -> list[tuple[str, str]]:
 def extraction_budget(context, default=1024):
     """Bounded ledger budget; exhausted responses fail over, never become partial complete ledgers."""
     text=context if isinstance(context,str) else '\n'.join(content for _,content in _messages_text(context))
-    if not re.search(r'체불|미지급|원금|정산|wage_claim|arrears',text,re.I):return default
+    if not _LEDGER_RE.search(text):return default
     return min(32768,max(8192,len(text)*4))
 
 
 def _claude_tool(config, model, system, messages, tools, choice, max_tokens, timeout):
-    kw = {"model": model, "max_tokens": max(max_tokens, _MIN_TOKENS["claude"]),
+    kw = {"model": model, "max_tokens": max(max_tokens, _MIN_TOOL_TOKENS["claude"]),
           "tools": tools, "messages": messages,
           "tool_choice": {"type": "tool", "name": choice} if choice else {"type": "any"}}
     if system:
@@ -221,7 +228,7 @@ def _openai_tool(config, model, system, messages, tools, choice, max_tokens, tim
     kw = {"model": model, "messages": msgs,
           "tools": [anthropic_tool_to_openai(t) for t in tools],
           "tool_choice": ({"type": "function", "function": {"name": choice}} if choice else "required"),
-          "max_completion_tokens": max(max_tokens, _MIN_TOKENS["openai"])}
+          "max_completion_tokens": max(max_tokens, _MIN_TOOL_TOKENS["openai"])}
     client = config.openai_client.with_options(timeout=timeout, max_retries=0)
     if model in _OPENAI_TOOL_NEEDS_NO_REASONING:
         kw["reasoning_effort"] = "none"
@@ -262,7 +269,7 @@ def _gemini_tool(config, model, system, messages, tools, choice, max_tokens, tim
     gm = _gemini_model(config, model, system, tools=[{"function_declarations": declarations}],
                        tool_config={"function_calling_config": {
                            "mode": "ANY", "allowed_function_names": names}},
-                       generation_config={"max_output_tokens":max(max_tokens,_MIN_TOKENS["gemini"])})
+                       generation_config={"max_output_tokens":max(max_tokens,_MIN_TOOL_TOKENS["gemini"])})
     contents = [{"role": "model" if role == "assistant" else "user", "parts": [content]}
                 for role, content in _messages_text(messages)]
     resp = gm.generate_content(contents, request_options={"timeout": timeout})

@@ -8,7 +8,7 @@ from ..base import BaseCalculatorResult
 from ..models import WageType
 from ..legal_rules import resolve_reference_date
 from .pay_inputs import money,strict_date
-from .shared import monthly_wage_total,normalize_allowances
+from .shared import fixed_overtime_monthly,monthly_wage_total,normalize_allowances
 
 CLAIM_INPUT_FIELDS=frozenset({'wage_claim_items','wage_claim_scope_complete','wage_claim_amount_basis',
     'wage_claim_calc_date','wage_claim_payments','wage_claim_adjustments','wage_claim_include_interest'})
@@ -24,12 +24,14 @@ class WageClaimsResult(BaseCalculatorResult):
     remaining_principal: float=0.0
     overdue_principal: float=0.0
     not_yet_due: float=0.0
+    due_unconfirmed: float=0.0   # 퇴직일을 몰라 지급기한을 정할 수 없는 미지급액(체불로도 미도래로도 단정하지 않는다)
     overpayment: float=0.0
     calc_date: str=''
     is_estimate: bool=False
     items: list=field(default_factory=list)
     interest_claims: list=field(default_factory=list)
     interest_held_reason: str=''
+    statutory_allocations: list=field(default_factory=list)   # 지급기일 뒤 지급의 법정 충당(민법 제479조) 내역
 
 
 def _hours(value,label):
@@ -149,6 +151,56 @@ def _amount(row,inp,ow):
     if inp.schedule.weekly_holiday_hours:components.add('holiday')
     return _won(contract),components,True
 
+def _fixed_overtime_offsets(inp,ow,raw):
+    """같은 달 월급 행에 든 고정연장수당 {귀속월: 월액}. 그 달의 파생 연장·야간·휴일 행에서 이 금액을 뺀다(A5).
+
+    고정연장수당과 실제 연장·야간·휴일 근로 임금은 같은 근로의 대가라 큰 쪽만 센다 — facade의 월 총액과 같은 규칙이다.
+    월급에 든 금액은 ① 고정연장수당(fixed_allowances) ② 파이프라인 구성 진술 경로의 '총액 − 통상임금 월액·비통상 고정수당'
+    (고정연장수당 항목을 지우고 monthly_total_pay로 옮긴 경우)이다. 월급 행이 그 금액을 포함하는지 알 수 없으면(계약 총액과
+    다르고 overtime 요소도 없음) 보류한다. 같은 달 연장 금액을 직접 적은 행은 _calculate가 보류한다."""
+    premium={'overtime','night','holiday'}
+    # 파생 연장·야간·휴일 행, 또는 연장 금액을 직접 적은 행(월급 행이 아닌 explicit 행)이 있는 달
+    months={x.get('month') for x in raw if isinstance(x,dict) and (
+        x.get('source') in premium or (x.get('source','explicit')=='explicit' and isinstance(x.get('components'),list)
+                                      and 'regular' not in x['components'] and premium&set(x['components'])))}
+    if not months:return {}
+    fixed=fixed_overtime_monthly(inp)
+    if inp.wage_composition_known and inp.monthly_total_pay:
+        fixed+=max(0.0,inp.monthly_total_pay-(ow.monthly_ordinary_wage+ow.not_ordinary_fixed_total))
+    fixed=_won(fixed)
+    if fixed<=0:return {}
+    contract=_won(inp.monthly_total_pay or monthly_wage_total(inp,ow,premium=False))
+    out={}
+    for x in raw:
+        if not (isinstance(x,dict) and x.get('source','explicit')=='explicit' and x.get('month') in months
+                and isinstance(x.get('components'),list) and 'regular' in x['components']):
+            continue
+        if 'overtime' in x['components'] or _won(money(x.get('amount'),'지급 의무액'))==contract:
+            out[x['month']]=fixed
+        else:
+            raise ValueError(f'같은 달 월급 행에 고정연장수당 월 {fixed:,.0f}원이 들어 있는지 확인해주세요. 고정연장수당과 실제 '
+                             '연장·야간·휴일 근로 임금은 같은 근로의 대가라 큰 쪽만 청구합니다.')
+    return out
+
+
+def _principal_first(inp,r,alternatives,note):
+    """법정 충당 카드에 함께 싣는 원금 우선 값 문구 — 남은 원금과, 이자를 계산할 수 있으면 원금·이자 합계."""
+    remaining=r.remaining_principal
+    for x in r.items:
+        if x['id'] in alternatives:
+            remaining+=max(0,x['obligation']-alternatives[x['id']][0])-x['remaining']
+    # 법정 충당은 요약 지급(행마다 지급 1건)에만 적용되므로, 그 행의 이자 채권 이력을 입력한 배분 1건으로 바꾼다
+    dated={a['id']:a['date'] for a in r.statutory_allocations}
+    claims=[c if c['id'] not in alternatives else dict(c,payments=[
+        dict(date=dated[c['id']],principal_amount=alternatives[c['id']][0],interest_amount=alternatives[c['id']][1],
+             allocation_confirmed=True)] if any(alternatives[c['id']]) else []) for c in r.interest_claims]
+    total=None
+    if not r.interest_held_reason:
+        alt=calc_claim_interest(inp,replace(r,interest_claims=claims))
+        total=None if alt.held_reason else alt.total_claim
+    return note(remaining,total)
+
+
 def _calculate(inp,ow):
     if inp.is_platform_worker:raise ValueError('임금 채권을 정산하려면 근로자성을 확인해주세요.')
     if inp.wage_claim_scope_complete is not True:raise ValueError('요청 정산 범위의 전체 항목과 지급 내역을 확인해주세요.')
@@ -156,26 +208,63 @@ def _calculate(inp,ow):
     asof=strict_date(inp.wage_claim_calc_date or resolve_reference_date(inp.reference_date,inp.reference_year),'잔액 기준일')
     raw=inp.wage_claim_items
     if not isinstance(raw,list) or not 1<=len(raw)<=100:raise ValueError('월별 지급 의무액·기지급액·지급기일의 항목 명세가 필요합니다.')
-    r=WageClaimsResult(calc_date=asof.isoformat(),legal_basis=['근로기준법 제43조 (임금 지급)',
-        '민법 제476조~제479조 (변제충당)','최저임금법 제6조 (최저임금의 효력)'])
-    from .wage_arrears import _retirement
-    _,retirement_deadline=_retirement(inp.arrear_retirement_effective_date or inp.proration_retirement_effective_date,
-        inp.arrear_last_employed_date or inp.last_employed_date,inp.is_post_retirement_arrear,inp.arrear_deadline_holidays,r.warnings)
+    # 근거 조문은 해당하는 행이 있을 때만 붙인다 — 약정 임금 미지급만 정산한 카드에 최저임금법 제6조(미달분을 임금 채권으로
+    # 만드는 근거)나 변제충당 조문을 붙이면 오인용이 된다(wage-update-followups A7·A7b)
+    r=WageClaimsResult(calc_date=asof.isoformat(),legal_basis=['근로기준법 제43조 (임금 지급)'])
+    from .wage_arrears import _retirement,_prepare_claim,_statutory_allocation,principal_first_note
+    effective_raw=inp.arrear_retirement_effective_date or inp.proration_retirement_effective_date
+    last_raw=inp.arrear_last_employed_date or inp.last_employed_date
+    # 퇴직 여부만 있고 날짜가 없으면 14일 기한을 정할 수 없다 — 원래 기일이 지난 원금은 정산하고 기한·이자만 보류한다(A3)
+    retirement_unknown=inp.is_post_retirement_arrear is True and effective_raw is None and last_raw is None
+    retirement=retirement_deadline=None
+    if not retirement_unknown:
+        retirement,retirement_deadline=_retirement(effective_raw,last_raw,inp.is_post_retirement_arrear,
+                                                   inp.arrear_deadline_holidays,r.warnings)
+    if inp.debtor_is_merchant is not None and not isinstance(inp.debtor_is_merchant,bool):
+        raise ValueError('채무자의 상인 여부는 확인된 사실 또는 미확인으로 구분해주세요.')
+    merchants=[False,True] if inp.debtor_is_merchant is None else [inp.debtor_is_merchant]
     prepared={};covered=set();derived=set()
+    fixed_left=_fixed_overtime_offsets(inp,ow,raw)
     for row in raw:
         if not isinstance(row,dict):raise ValueError('급여 항목 명세를 확인해주세요.')
         ident=_text(row.get('id'),'항목 ID');name=_text(row.get('name'),'항목 이름');month=_month(row.get('month'))
         if ident in prepared:raise ValueError('급여 항목 ID가 중복됩니다.')
         due=strict_date(row.get('due_date'),'지급기일')
-        effective_due=min(due,retirement_deadline) if retirement_deadline else due
         components=row.get('components')
         if not isinstance(components,list) or not components or len(components)>50:raise ValueError('항목 간 포함·중복 관계를 확인해주세요.')
         for c in components:
             if not isinstance(c,str) or not (c in COMPONENTS or re.fullmatch(r'(?:bonus|other):[^\s:]{1,80}',c)):
                 raise ValueError('임금 요소의 식별자를 확인해주세요.')
         if len(set(components))!=len(components):raise ValueError('같은 항목의 임금 요소가 중복됩니다.')
+        # 퇴직금 행의 지급기일은 퇴직 후 14일 기한이다 — 20%의 기산일은 조문이 고정하고 입력한 기일과 무관하다(A4,
+        # 근로기준법 제36조·제37조제1항제1호, 근로자퇴직급여 보장법 제9조)
+        severance='retirement' in components
+        effective_due=(retirement_deadline if severance and retirement_deadline else
+                       min(due,retirement_deadline) if retirement_deadline else due)
+        if severance and retirement_deadline:
+            r.warnings.append(f"{month} {name}: 퇴직금 지급기한은 {retirement_deadline.isoformat()}입니다(근로기준법 제36조, "
+                              "근로자퇴직급여 보장법 제9조). 연 20% 지연이자는 그 다음 날부터 붙습니다(근로기준법 제37조 제1항 제1호)."
+                              +(f" 입력한 지급일({due.isoformat()})은 법정 기한보다 빨라 기한을 기준으로 계산했습니다. 회사 규정이나 계약에 "
+                                "그보다 이른 지급일이 정해져 있었다면, 그 다음 날부터 기한까지 연 5%(상인은 6%) 지연손해금을 따로 "
+                                "청구할 여지가 있습니다." if due<retirement_deadline else "")
+                              +(f" 아직 퇴직금 지급기한({retirement_deadline.isoformat()})이 지나지 않았습니다."
+                                if asof<=retirement_deadline else ""))
+        # 지급기한 미확인: 퇴직일을 몰라 14일 기한이 원래 기일보다 빠를 수 있는 행(원래 기일이 아직 안 지남)과 퇴직금 행
+        due_unconfirmed=((retirement_unknown and (due>=asof or severance))
+                         or (severance and retirement_deadline is None))
         amount,automatic,estimate=_amount(row,inp,ow)
         elements=set(components)|automatic
+        if month in fixed_left:
+            if row.get('source','explicit')=='explicit' and 'regular' in components:
+                elements=elements-{'overtime','night','holiday'}   # 고정연장수당은 아래 파생 행에서 큰 쪽으로 센다
+            elif row.get('source') in ('overtime','night','holiday'):
+                before=fixed_left[month];offset=min(amount,before);fixed_left[month]-=offset
+                r.formulas.append(f"{month} {name}: 계산한 금액 {amount:,.0f}원 − 같은 달 월급에 든 고정연장수당 {before:,.0f}원 "
+                                  f"→ 추가 의무액 {amount-offset:,.0f}원 (같은 근로의 대가라 큰 쪽만 청구)")
+                amount-=offset
+            elif elements&{'overtime','night','holiday'}:
+                raise ValueError('같은 달 월급에 고정연장수당이 들어 있어 연장·야간·휴일 임금을 별도 금액으로 다시 청구하지 않습니다. '
+                                 '항목 관계를 확인해주세요.')
         scope={(month,c) for c in elements}
         if scope&covered:raise ValueError('같은 월의 임금 요소가 중복됩니다. 포함된 수당·최저임금 차액을 다시 청구하지 않도록 항목 관계를 확인해주세요.')
         covered|=scope
@@ -186,7 +275,10 @@ def _calculate(inp,ow):
             derived.add(key)
         r.is_estimate |= estimate
         prepared[ident]=dict(id=ident,name=name,month=month,due_date=due.isoformat(),components=sorted(elements),
-            source=source,effective_due_date=effective_due.isoformat(),original_obligation=amount,adjustment=0,obligation=amount,raw=row,payments=[])
+            source=source,effective_due_date=effective_due.isoformat(),due_unconfirmed=due_unconfirmed,
+            original_obligation=amount,adjustment=0,obligation=amount,raw=row,payments=[])
+    if any(x['source']=='minimum_wage' for x in prepared.values()):
+        r.legal_basis.append('최저임금법 제6조 (최저임금의 효력)')
     adjustments=inp.wage_claim_adjustments or []
     if not isinstance(adjustments,list) or len(adjustments)>100:raise ValueError('의무액 정정 목록을 확인해주세요.')
     ids=set()
@@ -224,7 +316,7 @@ def _calculate(inp,ow):
             prepared[ident]['payments'].append(dict(date=d.isoformat(),principal_amount=principal,
                 interest_amount=interest,allocation_confirmed=True))
         if summed!=total:raise ValueError('지급 총액과 항목별 원금·이자·비용 배분 합계가 다릅니다.')
-    interest_holds=[]
+    interest_holds=[];timing_unknown=[];alternatives={};agreed=False
     for ident,x in prepared.items():
         row=x.pop('raw');x['obligation']+=x['adjustment']
         if x['obligation']<0:raise ValueError('정정 후 지급 의무액이 음수입니다.')
@@ -240,13 +332,38 @@ def _calculate(inp,ow):
             if paid_date is not None:
                 d=strict_date(paid_date,'실제 지급일')
                 if d>asof:raise ValueError('기준일 이후 지급은 실제 잔액에 반영하지 않습니다.')
+                total=paid+(interest or 0)
+                # 충당 합의가 확인되지 않은 지급기일 뒤 지급은 그때까지 생긴 지연이자에 먼저 충당된다(민법 제479조 — 합의가
+                # 없으면 법정 순서, 일방 지정 무효). 회사가 '○월분 급여'로 줬다는 사실만으로 원금 충당으로 보지 않는다(A2)
+                agreed|=bool(total) and row.get('paid_allocation_confirmed') is True
+                if total and row.get('paid_allocation_confirmed') is not True and x['obligation']>0:
+                    if retirement_unknown or x['due_unconfirmed']:
+                        timing_unknown.append(f"{x['month']} {x['name']}")
+                    elif d>strict_date(x['effective_due_date'],'적용 지급기일'):
+                        kind='retirement_lump_sum' if 'retirement' in x['components'] else 'regular_wage'
+                        claim=_prepare_claim(dict(id=ident,amount=x['obligation'],claim_kind=kind,payments=[],
+                                                  due_date=x['effective_due_date'] if kind=='retirement_lump_sum' else x['due_date'],
+                                                  exclusions=row.get('exclusions')),ident,d,retirement,retirement_deadline,kind)
+                        split=_statutory_allocation(claim,dict(date=d,amount=total),merchants)
+                        if split is None:
+                            raise ValueError(f"{x['month']} {x['name']}: 지급기일 뒤에 받은 금액은 그때까지 생긴 지연이자에 먼저 충당되는데"
+                                             "(민법 제479조), 채무자의 상인 여부가 확인되지 않아 그 지연이자(연 5%·6%)를 정할 수 없습니다. "
+                                             "남은 원금을 확정하지 않습니다. 회사가 상인인지(상행위로 생긴 채무인지)나 원금·이자 충당 합의를 "
+                                             "알려주세요.")
+                        alternatives[ident]=(min(paid,x['obligation']),interest or 0)
+                        interest,paid=split
+                        r.statutory_allocations.append(dict(id=ident,month=x['month'],name=x['name'],date=d.isoformat(),
+                                                            total=total,interest=interest,principal=paid))
+                        r.formulas.append(f"{x['month']} {x['name']}: {d.isoformat()} 지급 {total:,.0f}원 → 그때까지 생긴 지연이자 "
+                                          f"{interest:,.0f}원에 먼저, 나머지 {paid:,.0f}원을 원금에 충당 (민법 제479조)")
                 if paid or interest:x['payments'].append(dict(date=d.isoformat(),principal_amount=paid,interest_amount=interest,allocation_confirmed=True))
             elif paid or interest:interest_holds.append('실제 지급일이 없어 이자 기간을 계산할 수 없습니다.')
         x.update(paid_principal=paid,remaining=max(0,x['obligation']-paid),overpayment=max(0,paid-x['obligation']),
-                 overdue=strict_date(x['effective_due_date'],'적용 지급기일')<asof)
+                 overdue=not x['due_unconfirmed'] and strict_date(x['effective_due_date'],'적용 지급기일')<asof)
         r.items.append(x)
         r.total_obligation+=x['obligation'];r.total_paid+=paid;r.remaining_principal+=x['remaining'];r.overpayment+=x['overpayment']
         if x['overdue']:r.overdue_principal+=x['remaining']
+        elif x['due_unconfirmed']:r.due_unconfirmed+=x['remaining']
         else:r.not_yet_due+=x['remaining']
         # 초과 지급은 별도 표시하고, 해당 채권의 소멸액까지만 C2에 전달한다.
         left=x['obligation'];history=[]
@@ -257,16 +374,30 @@ def _calculate(inp,ow):
             elif p['interest_amount'] is None:interest_holds.append('초과 지급 중 이자 충당액을 확인해주세요.')
         if x['obligation'] and x['overdue']:
             kind='retirement_lump_sum' if 'retirement' in x['components'] else 'regular_wage'
-            r.interest_claims.append(dict(id=ident,amount=x['obligation'],due_date=x['due_date'],claim_kind=kind,payments=history,
+            # 퇴직금 행은 C5가 정한 14일 기한을 넘긴다(C2가 같은 대체 안내를 다시 내지 않는다)
+            r.interest_claims.append(dict(id=ident,amount=x['obligation'],claim_kind=kind,payments=history,
+                                         due_date=x['effective_due_date'] if kind=='retirement_lump_sum' else x['due_date'],
                                          exclusions=row.get('exclusions')))
         r.formulas.append(f"{x['month']} {x['name']}: 의무액 {x['obligation']:,.0f}원 − 기지급 원금 {paid:,.0f}원 = 미지급 {x['remaining']:,.0f}원"+
                           (f" (초과 지급 {x['overpayment']:,.0f}원 별도)" if x['overpayment'] else ''))
+    if timing_unknown:
+        raise ValueError(', '.join(dict.fromkeys(timing_unknown))+': 퇴직일이 없어 받은 날이 퇴직 후 14일 지급기한 뒤인지 알 수 '
+                         '없습니다. 기한 뒤에 받은 금액은 그때까지 생긴 지연이자에 먼저 충당되므로(민법 제479조) 남은 원금을 확정하지 '
+                         '않습니다. 퇴직 효력일 또는 마지막 재직일을 알려주세요.')
     if r.is_estimate:interest_holds.append('월 평균 추정 의무액은 확정 채권이 아닙니다. 실제 월별 의무액을 확인해야 이자를 계산할 수 있습니다.')
+    if retirement_unknown or r.due_unconfirmed:
+        interest_holds.append('퇴직 효력일 또는 마지막 재직일이 없어 퇴직 후 14일 지급기한과 지연이자를 정할 수 없습니다.')
     r.interest_held_reason=' '.join(dict.fromkeys(interest_holds))
+    if r.statutory_allocations or allocated or agreed:
+        r.legal_basis.append('민법 제476조~제479조 (변제충당)')
+    if r.statutory_allocations:
+        r.warnings.append(_principal_first(inp,r,alternatives,principal_first_note))
     r.breakdown={'월별·항목별 원금 명세':r.items,'잔액 기준일':r.calc_date}
     r.warnings+=['명시한 정산 범위의 세전 금액입니다. 목록에 없는 퇴직급여·연차수당·공제를 자동 합산하지 않습니다.',
                 '초과 지급은 다른 항목의 체불과 자동 상계하지 않습니다. 지급 의무와 변제충당이 확인된 사실을 전제로 합니다.']
     if r.is_estimate:r.warnings.append('월 평균 조건으로 산출한 추정 원금이 포함되어 있습니다. 실제 월별 채권으로 확정하지 마세요.')
+    if retirement_unknown:r.warnings.append('퇴직일을 몰라 원래 지급기일이 지난 항목만 체불 원금으로 확정했습니다. 퇴직 후 14일 기한이 '
+        '더 빠를 수 있어 그 밖의 항목은 지급기한 미확인으로 따로 표시합니다.')
     if r.not_yet_due:r.warnings.append('지급기일 당일 또는 아직 기일이 지나지 않은 금액은 체불 원금·이자 청구 합계와 구분합니다.')
     return r
 
