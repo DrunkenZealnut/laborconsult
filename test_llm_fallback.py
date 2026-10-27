@@ -854,42 +854,6 @@ def test_gemini_stream_idle_not_total_deadline() -> None:
     print("  ✅ Gemini 스트림: 전체 마감 아닌 청크 간 무응답으로 판정")
 
 
-def main() -> None:
-    test_t1_empty_first_provider_falls_back()
-    test_t2_whitespace_only_not_leaked()
-    test_t3_switch_heartbeat_emitted()
-    test_t4_truncation_keeps_partial_no_fallback()
-    test_t5_all_providers_fail_raises()
-    test_t6_all_providers_empty_raises()
-    test_provider_order_and_gemini_gating()
-    test_t7_truncated_excluded_from_board()
-    test_truncation_notice_and_metadata()
-    test_llm_meta_payload()
-    test_t8_tool_schema_conversion()
-    test_intent_cross_vendor_fallback()
-    test_intent_empty_tool_response_falls_back()
-    test_intent_fallback_disabled_degrades()
-    test_primary_setting_drives_every_stage()
-    test_gateway_vendor_quirks()
-    test_llm_meta_intent_vs_primary()
-    test_intent_both_vendors_fail_keeps_fail_open()
-    test_analysis_result_vendor_neutral()
-    test_notices_survive_citation_correction()
-    test_rewrite_guard_rejects_empty_and_short()
-    test_rewrite_timeout_scaling()
-    test_citation_stage_budget()
-    test_gemini_stream_idle_not_total_deadline()
-    print("\n✅ LLM 폴백 경화 테스트 전부 통과")
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except AssertionError as e:
-        print(f"\n❌ 실패: {e}")
-        sys.exit(1)
-
-
 def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
     """Claude 5.5 세대(opus·sonnet)는 강제 tool_choice(any/tool)를 400으로 거절한다 — auto+지시로 자가치유.
 
@@ -979,3 +943,40 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
     assert len(ok.calls) == 1 and ok.calls[0]["tool_choice"] == {"type": "tool", "name": ANALYZE_TOOL["name"]}
     assert ok.calls[0]["system"] == "s"
     print("  ✅ Claude 강제 tool_choice 거절 → auto+지시 자가치유·기억, 다른 400 전파, 강제 가능 모델 불변")
+
+
+def main() -> None:
+    test_t1_empty_first_provider_falls_back()
+    test_t2_whitespace_only_not_leaked()
+    test_t3_switch_heartbeat_emitted()
+    test_t4_truncation_keeps_partial_no_fallback()
+    test_t5_all_providers_fail_raises()
+    test_t6_all_providers_empty_raises()
+    test_provider_order_and_gemini_gating()
+    test_t7_truncated_excluded_from_board()
+    test_truncation_notice_and_metadata()
+    test_llm_meta_payload()
+    test_t8_tool_schema_conversion()
+    test_intent_cross_vendor_fallback()
+    test_intent_empty_tool_response_falls_back()
+    test_intent_fallback_disabled_degrades()
+    test_primary_setting_drives_every_stage()
+    test_gateway_vendor_quirks()
+    test_claude_forced_tool_choice_rejected_falls_back_to_auto()
+    test_llm_meta_intent_vs_primary()
+    test_intent_both_vendors_fail_keeps_fail_open()
+    test_analysis_result_vendor_neutral()
+    test_notices_survive_citation_correction()
+    test_rewrite_guard_rejects_empty_and_short()
+    test_rewrite_timeout_scaling()
+    test_citation_stage_budget()
+    test_gemini_stream_idle_not_total_deadline()
+    print("\n✅ LLM 폴백 경화 테스트 전부 통과")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except AssertionError as e:
+        print(f"\n❌ 실패: {e}")
+        sys.exit(1)
