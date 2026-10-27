@@ -860,7 +860,7 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
     2026-10-27 실측: rev 13(Claude 1순위)에서 의도분석·파라미터 추출이 매 질문 400
     `tool_choice: type "tool" and "any" are not supported for this model` → OpenAI 폴백. 수정 뒤에는
     ① 그 400이면 auto + 도구 호출 지시 + effort low로 한 번 더 보내고 모델별로 기억한다(다음 호출은 바로 auto)
-    ② 다른 400(잔액·한도)은 그대로 전파해 다음 제공자로 넘어간다 ③ 강제가 통하는 모델(haiku)은 종전과 같다.
+    ② 다른 400(잔액·한도)과 400이 아닌 예외는 그대로 전파해 다음 제공자로 넘어간다 ③ 강제가 통하는 모델(haiku)은 종전과 같다.
     """
     from app.core import llm_gateway as gw
     from app.templates.prompts import ANALYZE_TOOL
@@ -874,13 +874,18 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
         stop_reason = "tool_use"
         content = [_Block()]
 
+    class _Bad(RuntimeError):
+        """anthropic.BadRequestError처럼 status_code를 가진 400 대역."""
+        status_code = 400
+
     class _Claude:
         """강제 tool_choice는 400, auto는 성공하는 Anthropic 대역."""
 
-        def __init__(self, reject_forced: bool = True, error: str | None = None):
+        def __init__(self, reject_forced: bool = True, error: str | None = None, error_cls=None):
             self.calls: list[dict] = []
             self.reject_forced = reject_forced
             self.error = error
+            self.error_cls = error_cls or _Bad
 
         def with_options(self, **kw):
             return self
@@ -892,10 +897,10 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
         def create(self, **kw):
             self.calls.append(kw)
             if self.error:
-                raise RuntimeError(self.error)
+                raise self.error_cls(self.error)
             if self.reject_forced and kw["tool_choice"]["type"] in ("any", "tool"):
-                raise RuntimeError('Error code: 400 - {"type": "error", "error": {"type": "invalid_request_error", '
-                                   '"message": "tool_choice: type \\"tool\\" and \\"any\\" are not supported for this model."}}')
+                raise _Bad('Error code: 400 - {"type": "error", "error": {"type": "invalid_request_error", '
+                           '"message": "tool_choice: type \\"tool\\" and \\"any\\" are not supported for this model."}}')
             return _Resp()
 
     def cfg(client):
@@ -936,13 +941,24 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
         else:
             raise AssertionError("잔액 400을 auto 재시도로 삼키면 안 된다")
     assert len(broke.calls) == 1 and "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE
+    # ②' 같은 문구라도 400이 아니면(5xx 본문·네트워크 오류) auto로 전환하지 않는다(CodeRabbit #142)
+    class _Server(RuntimeError):
+        status_code = 529
+    not400 = _Claude(error='overloaded: tool_choice ... not supported (upstream)', error_cls=_Server)
+    with _quiet(), _with_primary("claude"):
+        try:
+            gw.tool(cfg(not400), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t", attempts=1)
+        except gw.LLMUnavailable:
+            pass
+    assert len(not400.calls) == 1 and "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE
+    assert not gw._is_forced_tool_choice_rejection(RuntimeError("tool_choice: not supported"))   # status_code 없음
     # ③ 강제가 통하면 단일 호출, 지시 접미 없음
     ok = _Claude(reject_forced=False)
     with _quiet(), _with_primary("claude"):
         gw.tool(cfg(ok), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
     assert len(ok.calls) == 1 and ok.calls[0]["tool_choice"] == {"type": "tool", "name": ANALYZE_TOOL["name"]}
     assert ok.calls[0]["system"] == "s"
-    print("  ✅ Claude 강제 tool_choice 거절 → auto+지시 자가치유·기억, 다른 400 전파, 강제 가능 모델 불변")
+    print("  ✅ Claude 강제 tool_choice 거절(400+문구) → auto+지시 자가치유·기억, 다른 400·비400 전파, 강제 가능 모델 불변")
 
 
 def main() -> None:
