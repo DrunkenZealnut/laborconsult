@@ -19,6 +19,10 @@ Claude(Sonnet·Haiku)에 고정돼 있어, 1순위를 바꿔도 Anthropic 한도
   한 번 더 보낸 뒤 모델별로 기억한다.
 - **Gemini 함수 호출은 정수를 실수로 돌려준다**(2500000 → 2500000.0). 스키마의 integer 필드는 되돌린다.
 - **Claude 5 계열은 temperature를 받지 않는다**(400). 어느 벤더에도 temperature를 보내지 않는다.
+- **Claude 5.5 세대(opus·sonnet·fable 5.1)는 강제 tool_choice(`any`·`tool`)를 받지 않는다**(400 "tool_choice: type
+  \"tool\" and \"any\" are not supported for this model", 2026-10-27 실측 — haiku-5-5만 받는다). 그 400이면
+  `auto` + 도구 호출 지시(+effort low)로 한 번 더 보내고 모델별로 기억한다(`_CLAUDE_TOOL_NO_FORCE`). 다른 400(잔액·한도)은
+  그대로 전파한다. 이 자가치유가 없으면 Claude 1순위에서 의도분석·파라미터 추출이 **매 질문** 다음 제공자로 폴백한다.
 """
 
 from __future__ import annotations
@@ -38,6 +42,10 @@ _MIN_REMAINING = 2.0      # 데드라인까지 이보다 적게 남으면 다음
 
 _CLAUDE_VERSION_RE = re.compile(r"claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
 _OPENAI_TOOL_NEEDS_NO_REASONING: set[str] = set()
+# 강제 tool_choice를 400으로 거절한 Claude 모델 — 이후 호출은 실패 왕복 없이 바로 auto+지시로 간다.
+_CLAUDE_TOOL_NO_FORCE: set[str] = set()
+_FORCE_UNSUPPORTED_RE = re.compile(r"tool_choice.*not supported", re.S)
+_AUTO_TOOL_RULE = "[도구 호출 규칙] 답변 텍스트를 쓰지 말고 {target}를 정확히 한 번 호출해 결과만 돌려준다."
 
 
 class LLMUnavailable(RuntimeError):
@@ -199,13 +207,39 @@ def extraction_budget(context, default=1024):
     return min(32768,max(8192,len(text)*4))
 
 
+def _claude_auto_tool_kwargs(base: dict, model: str, choice: str | None) -> dict:
+    """강제 tool_choice를 거절하는 모델용 — auto + 지시(+effort low).
+
+    5.5 세대는 지시만으로 도구를 안정적으로 부른다(실측 12/12, 1.6~5.6초). 지시는 system 끝에 붙인다 —
+    messages에 넣으면 사용자 턴이 바뀌어 캐시 접두사와 분석 프롬프트의 전제("마지막 user가 질문")가 흔들린다.
+    """
+    target = f"도구 `{choice}`" if choice else "목록의 도구 중 알맞은 하나"
+    rule = _AUTO_TOOL_RULE.format(target=target)
+    kw = dict(base, tool_choice={"type": "auto", "disable_parallel_tool_use": True},
+              system=f"{base['system']}\n\n{rule}" if base.get("system") else rule)
+    if supports_effort(model):
+        kw["output_config"] = {"effort": "low"}   # 추론을 짧게 — 단계 타임아웃(의도분석 12초) 안에 들어오게
+    return kw
+
+
 def _claude_tool(config, model, system, messages, tools, choice, max_tokens, timeout):
-    kw = {"model": model, "max_tokens": max(max_tokens, _MIN_TOKENS["claude"]),
-          "tools": tools, "messages": messages,
-          "tool_choice": {"type": "tool", "name": choice} if choice else {"type": "any"}}
+    base = {"model": model, "max_tokens": max(max_tokens, _MIN_TOKENS["claude"]),
+            "tools": tools, "messages": messages}
     if system:
-        kw["system"] = system
-    resp = config.claude_client.with_options(timeout=timeout, max_retries=0).messages.create(**kw)
+        base["system"] = system
+    client = config.claude_client.with_options(timeout=timeout, max_retries=0)
+    resp = None
+    if model not in _CLAUDE_TOOL_NO_FORCE:
+        forced = dict(base, tool_choice={"type": "tool", "name": choice} if choice else {"type": "any"})
+        try:
+            resp = client.messages.create(**forced)
+        except Exception as exc:
+            if not _FORCE_UNSUPPORTED_RE.search(str(exc)):
+                raise
+            _CLAUDE_TOOL_NO_FORCE.add(model)
+            logger.info("%s는 강제 tool_choice를 받지 않는다 — auto+지시로 전환해 기억한다", model)
+    if resp is None:
+        resp = client.messages.create(**_claude_auto_tool_kwargs(base, model, choice))
     if getattr(resp,"stop_reason",None)=="max_tokens":
         raise ValueError("Truncated tool response: max_tokens")
     for block in resp.content:
