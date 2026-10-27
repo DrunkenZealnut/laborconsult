@@ -117,8 +117,11 @@ jobs:
       - name: 기준 월액·평균임금 일액 단일 출처(고정수당 격자·등가·휴업 하한)
         run: python3 test_monthly_base_unification.py
 
+      # 갱신 fixture는 null(보류해야 할 값)을 담는다 — 검증 단계가 없어 스키마 실패가 머지 뒤까지 드러나지 않았다
       - name: 2026년 10월 계산기 갱신(미실행 카드·입력 연결)
-        run: python3 test_wage_update_2026.py
+        run: |
+          python3 test_wage_update_2026.py
+          python3 eval_consultation.py --offline --fixture data/eval_wage_update_queries.json
 
       # 갱신 모듈별 회귀 — 머지 때 CI에 빠져 있어 육아휴직 6+6·월급제 주휴 채권·수당 주기 보류 같은 결함을 CI가 보지
       # 못했다(Codex 리뷰). 모듈을 고치면 여기서 잡힌다

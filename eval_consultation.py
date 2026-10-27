@@ -6,6 +6,8 @@
 expected_topic=None도 선택 판정이다. expected_calculation은 calculation_types의
 단일 enum 값이고 복수 계산 질문에서는 대표 유형을 기록한다. expected_values는
 명시된 조건으로 계산 가능한 참고값이며 첫 단계 하네스의 수치 채점 대상은 아니다.
+expected_values의 null은 '이 값은 산출하지 않고 보류해야 한다'는 뜻이다. expected_values는 채점하지 않으므로
+null도 기록용 계약이고, 보류 여부의 판정은 forbidden_claims(금지 수치)가 맡는다.
 """
 
 from __future__ import annotations
@@ -92,7 +94,7 @@ class EvalCase:
     required_laws: list[str]
     allowed_sources: list[str]
     expected_calculation: str | None
-    expected_values: dict[str, float | int | str]
+    expected_values: dict[str, float | int | str | None]
     required_notices: list[str]
     forbidden_claims: list[str]
     risk_level: str
@@ -166,7 +168,7 @@ def validate_cases(cases: list[EvalCase]) -> list[str]:
                     except re.error:
                         errors.append(f"invalid required_if regex: {case.id}")
         if not isinstance(case.expected_values, dict) or not all(
-            isinstance(key, str) and type(value) in (float, int, str)
+            isinstance(key, str) and type(value) in (float, int, str, type(None))
             for key, value in case.expected_values.items()
         ):
             errors.append(f"invalid expected_values: {case.id}")

@@ -46,7 +46,7 @@
 
 ### 재현 정보와 범위
 
-- 원본: `/Users/zealnutkim/DEV/laborconsult_eval/wage-update-2026-10/c1/`
+- 원본: 저장소 밖 평가 원자료(로컬 보관, 실행 묶음 c1)
 - 비교 파일: `before-1.json`, `before-2.json`, `after-release-1.json`, `after-release-2.json` 및 메타데이터.
 - 중간 `after-*.json`, `after-final-*.json`은 최종 비교에서 제외했다. 중간 반복 중 발견된 표시·입력 오류를 수정하기 위해 실행 일부를 종료했으며, 최종 두 실행은 모두 완료했다.
 - 수정 전 HEAD `fb1458f`, 최종 HEAD `db58a80`. 최종 코드 수정사항과 미추적 코드 없음.

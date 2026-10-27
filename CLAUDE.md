@@ -112,6 +112,7 @@ uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
 
 # 상담 답변 품질 평가 (오프라인 기본, 외부 호출·DB 쓰기 없음)
 ./.venv/bin/python eval_consultation.py --offline
+./.venv/bin/python eval_consultation.py --offline --fixture data/eval_wage_update_queries.json  # 계산기 갱신 fixture(expected_values의 null = 보류해야 할 값)
 
 # 운영자 평가: 먼저 게시 없이 로컬 JSON을 만들고 확인한다
 ./.venv/bin/python eval_consultation.py --live --case wage-01 --limit 1 \
@@ -477,7 +478,7 @@ wage_calculator/
   쓴다. 값이 있으면 평균임금 3개월 총액·퇴직금 1년 평균·휴업수당·산재 평균임금 추정·실업급여·4대보험 보수월액(근로자·사업주)·
   근로장려금 소득·DC형 연간임금·일할계산이 총액을 쓴다. None이면 기존 추정(`monthly_wage`·통상임금) 그대로다. **총액 기준
   계산에서 월 금액을 직접 만들지 말 것** — `shared.monthly_wage_total(inp, ow)`를 부른다(그 함수가 `monthly_total_pay`를 먼저
-  본다). 일할계산(`prorated`)만 아직 `monthly_total_pay or monthly_wage`를 직접 읽는다(월급 일할 — 후속). '월급 = 기본급'인 입력에서 평균임금이 과소가 되지 않게 `test_audit50.py`가 9개 계산기를 '월급 = 총액' 입력과 대조한다.
+  본다). '월급 = 기본급'인 입력에서 평균임금이 과소가 되지 않게 `test_audit50.py`가 9개 계산기를 '월급 = 총액' 입력과 대조한다.
 - **월 기준시간·포괄임금 계수시간은 반올림하지 않는다**(근로기준법 시행령 제6조②4호·최저임금법 시행령 제5조①3호 — 1주 기준시간
   × 1년 평균 주 수 ÷ 12, 반올림 규정 없음). 표시는 `utils.fmt_hours`(소수 넷째 자리까지), 주→월 계수는
   `utils.WEEKS_PER_MONTH_LABEL`('365÷7÷12')로 적는다. 소수 첫째 자리로 반올림해 계산하던 때 점검 #45가 83.4h × 10,320원 =
@@ -507,8 +508,8 @@ wage_calculator/
 - `constants.py` holds yearly minimum wages, insurance rates, tax brackets — update these when laws change.
 - `shared.py` extracts common patterns: `DateRange` (tenure calc, 8 modules), `AllowanceClassifier` (minimum wage inclusion, 3 modules), `MultiplierContext` (sub-5-employee rates, 5 modules).
 
-### Calculator Targets (28 types)
-`ordinary_wage`, `working_hours`, `overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `parental_leave`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
+### Calculator Targets (30 types)
+`ordinary_wage`, `working_hours`, `overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `arrears_principal`, `parental_leave`, `reduced_work_benefit`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
 (단일 출처는 `wage_calculator/facade/registry.py::CALC_TYPES` — 세어서 확인할 것)
 
 ### Legal Rule Registry (`wage_calculator/legal_rules.py` + `app/core/legal_updates.py`)

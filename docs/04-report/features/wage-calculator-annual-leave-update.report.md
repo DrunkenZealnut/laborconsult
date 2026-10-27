@@ -45,7 +45,7 @@
 
 ### 재현 정보
 
-- 원본: `/Users/zealnutkim/DEV/laborconsult_eval/wage-update-2026-10/c3/`
+- 원본: 저장소 밖 평가 원자료(로컬 보관, 실행 묶음 c3)
 - 비교 파일: `before-1.json`, `before-2.json`, `after-final-1.json`, `after-final-2.json` 및 메타데이터. 중간 `after-*.json`은 최종 비교에서 제외했다.
 - 수정 전 실행 HEAD `28bcad0`은 기준 코드 `ffce6f9`에 C4a 보고서만 추가한 버전이다. 최종 실행 HEAD는 `135c0dc`이고 코드 수정사항·미추적 코드는 없었다.
 - 실행기: `laborconsult_eval/kin/run_eval.py`, `--law-mode prod --primary openai`, 사례 `ww26-04,09,10,11,12`.

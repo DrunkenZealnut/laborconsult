@@ -1,6 +1,7 @@
 # monthly-base-unification Analysis Report
 
 > 대상: PR #123(main 머지 `d358047` = 브랜치 `8abc195`) · 설계: `monthly-base-unification.design.md`(같은 폴더) v0.2 · Plan v0.1
+> 버전 표기는 분석 시점의 **갱신 전 기준(역사적 스냅숏)**이다. 이후 Design은 v0.4, Plan은 v0.2까지 갱신됐다.
 > 분석: 2026-10-23, gap-detector(설계 대조) + Claude(재현·확인). 설계가 스스로 바꾼 것(§14 C1~C9)은 갭이 아니라 '설계 갱신'으로 센다.
 
 ## 1. 요약

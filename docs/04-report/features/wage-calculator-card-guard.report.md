@@ -38,7 +38,7 @@
 
 ### 재현 정보
 
-- 원본 결과: `/Users/zealnutkim/DEV/laborconsult_eval/wage-update-2026-10/c4a/`
+- 원본 결과: 저장소 밖 평가 원자료(로컬 보관, 실행 묶음 c4a)
 - 비교 파일: `before-1.json`, `before-2.json`, `after-final-1.json`, `after-final-2.json` 및 각 메타데이터. 중간 `after-*.json`은 최종 비교에서 제외했다.
 - 외부 실행기: `laborconsult_eval/kin/run_eval.py`, `--law-mode prod --primary openai`; 전후 같은 4개 사례·설정을 사용했다.
 - 실제 기본 모델: OpenAI `gpt-6-sol`, 설정 revision 12, 제공자 fallback 없음.
