@@ -2589,6 +2589,74 @@ def _raises(fn, exc) -> bool:
     return False
 
 
+def t33_book_non_boundary_re() -> None:
+    """T33 — 서적별 비경계 헤딩(`Book.non_boundary_re`, 옵트인).
+
+    marker가 쪽머리글("206 제 1 편 안전보건관리")을 h1~h3로 내보내면 그 줄이 섹션 라벨이 되어
+    뒤 본문의 출처가 쪽머리글로 표시된다(sanan2 실측 21건). 전역 NON_BOUNDARY_RE를 넓히면 기존
+    서적의 경계가 바뀌어 section_idx가 밀리므로 서적별 옵트인으로 둔다.
+    """
+    import pinecone_upload_textbook as tb
+
+    body = ("# 제1장 총칙\n\n본문 하나\n\n"
+            "### 206 제 1 편 안전보건관리\n\n머리글 뒤 본문\n\n"
+            "# 제2절 적용범위\n\n본문 둘\n")
+    header_re = re.compile(r"^\d{1,3}\s*제\s*\d\s*편\b")
+
+    plain = tb.Book(book_id="t33a", title="T", path=__file__, body_start="x")
+    secs, _kept, drop, dem = tb.parse_sections(body, plain)
+    check("T33-a 기본값(None)에서는 쪽머리글이 경계가 된다",
+          [s["heading"] for s in secs] == ["제1장 총칙", "206 제 1 편 안전보건관리", "제2절 적용범위"],
+          [s["heading"] for s in secs])
+    check("T33-b Book.non_boundary_re 기본값은 None", plain.non_boundary_re is None)
+
+    opt = tb.Book(book_id="t33b", title="T", path=__file__, body_start="x", non_boundary_re=header_re)
+    secs, _kept, drop, dem = tb.parse_sections(body, opt)
+    heads = [s["heading"] for s in secs]
+    check("T33-c 옵트인 서적에서는 쪽머리글이 경계가 아니다", heads == ["제1장 총칙", "제2절 적용범위"], heads)
+    check("T33-d 비경계로 세고 폐기로 세지 않는다", (dem, drop) == (1, 0), (dem, drop))
+    absorbed = next(s["text"] for s in secs if s["heading"] == "제1장 총칙")
+    check("T33-e 쪽머리글 뒤 본문은 직전 섹션에 흡수(유실 없음)", "머리글 뒤 본문" in absorbed, absorbed[:60])
+    # 전역 규칙은 그대로다 — 넓혔다면 기존 서적의 경계가 바뀐다.
+    check("T33-f 전역 NON_BOUNDARY_RE는 쪽머리글에 매치되지 않는다",
+          not tb.NON_BOUNDARY_RE.match("206 제 1 편 안전보건관리"))
+    # 레지스트리: sanan2만 옵트인, 나머지는 None(기존 서적 chunk_id 불변의 전제).
+    # 옵트인 서적 목록을 고정한다 — 기존 서적(win·juhae3·gaebyeol·ironpanrye·yeoncha)에 켜면 section_idx가 밀린다.
+    check("T33-g 레지스트리에서 non_boundary_re 옵트인은 산안법 1·2권뿐",
+          sorted(b for b, bk in tb.BOOKS.items() if bk.non_boundary_re is not None) == ["sanan1", "sanan2"],
+          sorted(b for b, bk in tb.BOOKS.items() if bk.non_boundary_re is not None))
+    check("T33-g' 기존 서적은 body_end·dedupe_pages도 끔(chunk_id 불변)",
+          all(bk.body_end is None and not bk.dedupe_pages
+              for b, bk in tb.BOOKS.items() if b in ("win", "juhae3", "gaebyeol", "ironpanrye", "yeoncha")))
+
+    # body_end — 권말 색인 절단(선택). 마커 앞까지만 본문이고, 지정했는데 없으면 중단한다.
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as f:
+        f.write("표지\n<!-- page: 1 -->\n# 제1장\n본문\n<!-- page: 2 -->\n# 사항색인\n가나다 / 12\n")
+        tmp = f.name
+    body = tb.load_part_body(tb.BookPart(tmp, "<!-- page: 1 -->", "<!-- page: 2 -->"))
+    check("T33-h body_end 마커 앞까지만 본문", "제1장" in body and "사항색인" not in body, body[:40])
+    check("T33-i body_end 미지정이면 끝까지",
+          "사항색인" in tb.load_part_body(tb.BookPart(tmp, "<!-- page: 1 -->")))
+    check("T33-j body_end 마커가 없으면 중단(조용히 전부 싣지 않음)",
+          _raises(lambda: tb.load_part_body(tb.BookPart(tmp, "<!-- page: 1 -->", "<!-- page: 99 -->")), SystemExit))
+    check("T33-k Book.body_end는 첫 조각에 전달", tb.Book(book_id="t33c", title="T", path=tmp, body_start="x",
+                                                   body_end="y").parts[0].body_end == "y")
+    # dedupe_pages — 인접 중복 쪽 제거(선택). 재스캔 중복이 PDF에 같이 묶인 책(sanan1 53쪽).
+    dup = ("<!-- page: 1 -->\n# 제1장\n본문 A\n<!-- page: 2 -->\n# 제1장\n본문 A\n"
+           "<!-- page: 3 -->\n본문 B\n<!-- page: 4 -->\n본문 B\n<!-- page: 5 -->\n본문 A\n")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("표지\n" + dup)
+    kept = tb.load_part_body(tb.BookPart(tmp, "표지\n", dedupe_pages=True))
+    check("T33-l 인접 중복 쪽은 뒤쪽만 제거, 떨어진 동일 쪽은 유지",
+          kept.count("본문 A") == 2 and kept.count("본문 B") == 1, kept)
+    check("T33-m dedupe_pages 기본값은 끔",
+          tb.load_part_body(tb.BookPart(tmp, "표지\n")).count("본문 A") == 3)
+    check("T33-n Book.dedupe_pages는 첫 조각에 전달", tb.Book(book_id="t33d", title="T", path=tmp, body_start="x",
+                                                       dedupe_pages=True).parts[0].dedupe_pages is True)
+    os.unlink(tmp)
+
+
 def main() -> int:
     print("\n판례 수집·업로드 오프라인 테스트\n" + "=" * 50)
     for fn in (t1_exact_match_gate, t2_exact_match_accepts, t3_nfd_case_number,
@@ -2606,7 +2674,7 @@ def main() -> int:
                t26_public_quota, t27_precedent_archive,
                t28_corpus_path_normalization, t29_heading_levels,
                t30_crawl_precedent_upload, t31_citation_whitelist_meta,
-               t32_ledger_convergence):
+               t32_ledger_convergence, t33_book_non_boundary_re):
         print(f"\n[{fn.__name__}]")
         fn()
 
