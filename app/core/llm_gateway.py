@@ -53,7 +53,14 @@ def _is_forced_tool_choice_rejection(exc: BaseException) -> bool:
     문구만 보면 5xx 본문이나 네트워크 오류 메시지에 같은 단어가 섞였을 때 auto로 전환하고 모델을 영구 기억한다
     (CodeRabbit #142). SDK의 BadRequestError는 `status_code`를 갖는다 — 모듈이 anthropic을 import하지 않도록 속성으로 본다.
     """
-    return getattr(exc, "status_code", None) == 400 and bool(_FORCE_UNSUPPORTED_RE.search(str(exc)))
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    body = getattr(exc, "body", None)
+    detail = ""
+    if isinstance(body, dict):   # SDK는 str(exc)에 본문을 붙이지만, 프록시·래퍼가 메시지를 바꿔도 본문으로 판정되게
+        err = body.get("error")
+        detail = str(err.get("message", "")) if isinstance(err, dict) else str(body)
+    return bool(_FORCE_UNSUPPORTED_RE.search(f"{exc} {detail}"))
 _AUTO_TOOL_RULE = "[도구 호출 규칙] 답변 텍스트를 쓰지 말고 {target}를 정확히 한 번 호출해 결과만 돌려준다."
 
 
