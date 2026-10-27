@@ -2654,6 +2654,12 @@ def t33_book_non_boundary_re() -> None:
           tb.load_part_body(tb.BookPart(tmp, "표지\n")).count("본문 A") == 3)
     check("T33-n Book.dedupe_pages는 첫 조각에 전달", tb.Book(book_id="t33d", title="T", path=tmp, body_start="x",
                                                        dedupe_pages=True).parts[0].dedupe_pages is True)
+    # body_start가 쪽 마커면 첫 쪽도 비교 대상이다 — 마커를 먼저 떼면 첫 쪽이 앞머리가 되어 둘째 쪽 중복이 남는다.
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("표지\n<!-- page: 0 -->\n# 제1장\n본문 A\n<!-- page: 1 -->\n# 제1장\n본문 A\n<!-- page: 2 -->\n본문 B\n")
+    first = tb.load_part_body(tb.BookPart(tmp, "<!-- page: 0 -->", dedupe_pages=True))
+    check("T33-o body_start가 쪽 마커여도 첫 쪽의 중복(둘째 쪽)을 제거",
+          first.count("본문 A") == 1 and "본문 B" in first and "표지" not in first, first)
     os.unlink(tmp)
 
 

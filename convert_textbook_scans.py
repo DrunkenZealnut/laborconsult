@@ -78,6 +78,9 @@ def build_pdf(images: list[Path], pdf_path: Path, force: bool = False) -> None:
     if pdf_path.exists():
         print("PDF 다시 조립" + ("(--rebuild-pdf)" if force else "(이미지 목록이 바뀜)"))
         pdf_path.unlink()
+    # 매니페스트는 조립 **전에** 지우고 성공 뒤에만 쓴다 — 조립이 중간에 끊기면 옛 매니페스트가
+    # 그대로 남아 다음 실행이 반쪽 PDF를 "일치"로 재사용한다(Codex #143).
+    manifest_path.unlink(missing_ok=True)
     t0 = time.time()
     for i, p in enumerate(images):
         with Image.open(p) as im:

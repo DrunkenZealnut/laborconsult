@@ -662,16 +662,19 @@ def load_part_body(part: BookPart) -> str:
     if marker_pos == -1:
         sys.exit(f"[오류] body_start 마커를 찾을 수 없습니다: "
                  f"{part.body_start!r} ({part.path})")
-    body = content[marker_pos + len(part.body_start):]
+    start = marker_pos + len(part.body_start)
+    end = len(content)
     if part.body_end:
-        end_pos = body.find(part.body_end)
-        if end_pos == -1:
+        end = content.find(part.body_end, start)
+        if end == -1:
             # 조용히 전부 싣지 않는다 — 마커 오타 하나로 색인이 통째로 들어가고 알아챌 방법이 없다.
             sys.exit(f"[오류] body_end 마커를 찾을 수 없습니다: {part.body_end!r} ({part.path})")
-        body = body[:end_pos]
+    # 중복 쪽 제거는 body_start 마커를 **떼기 전에** 돌린다 — body_start가 쪽 마커(sanan1의 p0)면 마커를
+    # 먼저 떼었을 때 첫 쪽이 '앞머리'가 되어 둘째 쪽과 비교되지 않는다(Codex #143).
+    segment = content[marker_pos:end]
     if part.dedupe_pages:
-        body = drop_adjacent_duplicate_pages(body)
-    return _PAGE_COMMENT_RE.sub("", body)
+        segment = drop_adjacent_duplicate_pages(segment)
+    return _PAGE_COMMENT_RE.sub("", segment[len(part.body_start):])
 
 
 def drop_adjacent_duplicate_pages(body: str) -> str:
