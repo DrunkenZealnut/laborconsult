@@ -451,5 +451,39 @@ class UnexecutedCardTests(unittest.TestCase):
                     self.assertHeld(card(labels, query))
 
 
+class CalcBasisAnchorTests(unittest.TestCase):
+    """계산기 근거 문구의 원문 앵커(wage_calculator/legal_anchors.py, wage-update-followups D-A)."""
+
+    def test_anchor_docs_are_registered_for_collection(self):
+        import fetch_official_rules as fo
+        from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
+        ids = {a[0] for a in fo.ARTICLES} | {a[0] for a in fo.ADMRULS}
+        self.assertTrue(CALC_BASIS_ANCHORS)
+        for doc_id, phrase in CALC_BASIS_ANCHORS:
+            self.assertIn(doc_id, ids, doc_id)
+            self.assertTrue(phrase.strip(), doc_id)
+
+    def test_anchors_exist_in_official_text(self):
+        import re
+        from pathlib import Path
+        from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
+        base = Path(__file__).resolve().parent / "output_공식법령"
+        if not base.is_dir():
+            self.skipTest("output_공식법령/ 없음 — fetch_official_rules.py --doc 로 수집 후 로컬에서 확인")
+        norm = lambda t: re.sub(r"[\s·ㆍ‧]", "", t)  # noqa: E731
+        for doc_id, phrase in CALC_BASIS_ANCHORS:
+            path = base / f"{doc_id}.md"
+            if not path.exists():
+                self.fail(f"{doc_id}.md 없음 — fetch_official_rules.py --doc {doc_id}")
+            body = path.read_text(encoding="utf-8").split("## 본문", 1)[-1]
+            self.assertIn(norm(phrase), norm(body), f"{doc_id}: {phrase}")
+
+    def test_freshness_check_walks_calc_basis_anchors(self):
+        import inspect
+        import check_law_freshness
+        src = inspect.getsource(check_law_freshness._anchor_warnings)
+        self.assertIn('("calc_basis", CALC_BASIS_ANCHORS)', src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

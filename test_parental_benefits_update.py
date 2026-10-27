@@ -287,5 +287,166 @@ class ParentalBenefitsUpdateTests(unittest.TestCase):
         self.assertEqual(r.monthly_total,3_000_000)
 
 
+def _chat(tool_input, query):
+    """프로덕션 변환기: analyzer._build_analysis_result → _analysis_to_extract_params → _run_calculator."""
+    from app.core.analyzer import _build_analysis_result
+    from app.core.pipeline import _analysis_to_extract_params, _run_calculator
+    analysis = _build_analysis_result(dict(tool_input, requires_calculation=True, is_labor_related=True), query)
+    return _run_calculator(_analysis_to_extract_params(analysis), query)
+
+
+class MaternityFamilyFollowupTests(unittest.TestCase):
+    """출산·난임 근거와 상한(wage-update-followups PR-2a: P3·P3b·P4·P6·P6b)."""
+
+    def maternity(self, **kw):
+        from wage_calculator.models import WorkSchedule
+        from wage_calculator.calculators.maternity_leave import calc_maternity_leave
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=5_000_000, reference_year=2026,
+                        reference_date="2026-05-01", schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5))
+        for k, v in kw.items(): setattr(inp, k, v)
+        return calc_maternity_leave(inp, calc_ordinary_wage(inp))
+
+    def test_large_company_multiple_birth_uses_75_45_days_without_subtype(self):
+        """P3: 유형 미지정(CLI·라이브러리) 다태아 대규모도 사업주 75일·보험 45일(제74조④, 제76조①1호 단서)."""
+        r = self.maternity(is_priority_support_company=False, is_multiple_birth=True)
+        self.assertEqual((r.employer_covered_days, r.insurance_covered_days, r.total_insurance_benefit),
+                         (75, 45, 3_300_000))
+        self.assertTrue(any("최초 75일" in w and "76일~120일 중 최대 45일" in w for w in r.warnings), r.warnings)
+        r = self.maternity(is_priority_support_company=False, is_premature_birth=True)
+        self.assertEqual((r.employer_covered_days, r.insurance_covered_days), (60, 40))
+        self.assertTrue(any("61일~100일 중 최대 40일" in w for w in r.warnings), r.warnings)
+
+    def test_auto_path_large_company_employer_pay_uses_ordinary_wage(self):
+        """P3b: 사업주 유급분은 통상임금 기준 — 보험 상한 일액(4,400,000)이 아니라 유형 지정 경로와 같은 값."""
+        self.assertEqual(self.maternity(is_priority_support_company=False).total_employer_benefit, 10_000_000)
+        self.assertEqual(self.maternity(is_priority_support_company=False, is_multiple_birth=True)
+                         .total_employer_benefit, 12_500_000)
+        explicit = self.maternity(is_priority_support_company=False, maternity_leave_type="maternity",
+                                  family_leave_days=90, family_leave_used_days=0,
+                                  family_leave_start_date="2026-05-01", family_leave_end_date="2026-07-29",
+                                  family_leave_insured_days=400, family_leave_eligible=True)
+        self.assertFalse(explicit.held_reason, explicit.held_reason)
+        self.assertEqual(explicit.total_employer_benefit, 10_000_000)
+
+    def test_premature_multiple_large_company_holds_insurance_total(self):
+        """P3: 미숙아이면서 다태아인 대규모는 보험 한도(40일·45일)를 법문이 정하지 않는다 — 보험 총액만 보류."""
+        from wage_calculator.facade import WageCalculator
+        r = self.maternity(is_priority_support_company=False, is_multiple_birth=True, is_premature_birth=True)
+        self.assertIsNone(r.total_insurance_benefit)
+        self.assertEqual(r.total_employer_benefit, 12_500_000)
+        self.assertTrue(any("법문이 정하지 않아" in w for w in r.warnings), r.warnings)
+        from wage_calculator.models import WorkSchedule
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=5_000_000, reference_year=2026,
+                        reference_date="2026-05-01", schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5),
+                        is_priority_support_company=False, is_multiple_birth=True, is_premature_birth=True)
+        summary = WageCalculator().calculate(inp, ["maternity_leave"]).summary
+        self.assertIn("미확정", summary["고용보험 지급 총액"])
+
+    def test_legal_basis_cites_article_76_items_not_article_75_paragraphs(self):
+        """P3: 제75조에는 항이 없고 제75조의2는 수급권 대위다 — 지급 기간 근거는 제76조①각 호."""
+        from wage_calculator.calculators.family_leave import calc_family_leave
+        texts = []
+        for kw in (dict(is_priority_support_company=True), dict(is_priority_support_company=False),
+                   dict(is_priority_support_company=True, reference_date="2026-10-01")):
+            texts += self.maternity(**kw).legal_basis
+        inp = WageInput(wage_type=WageType.MONTHLY, monthly_wage=3_000_000, maternity_leave_type="infertility",
+                        family_leave_start_date="2026-10-01", family_leave_end_date="2026-10-02", family_leave_days=2,
+                        family_leave_used_days=0, family_leave_insured_days=400, family_leave_eligible=True,
+                        is_priority_support_company=True)
+        texts += calc_family_leave(inp, calc_ordinary_wage(inp)).legal_basis
+        joined = " / ".join(texts)
+        for wrong in ("제75조제1항", "제75조제2항", "제75조의2", "급여등 규정"):
+            self.assertNotIn(wrong, joined)
+        for item in ("제76조제1항제1호", "제76조제1항제1호 단서", "제76조제1항제2호", "제76조제1항제3호",
+                     "제76조제1항제4호"):
+            self.assertIn(item, joined)
+
+    def infertility(self, start, end, days, used=0):
+        return _chat(dict(calculation_types=["maternity_leave"], wage_type="월급", wage_amount=5_000_000,
+                          weekly_work_days=5, daily_work_hours=8, maternity_leave_type="infertility",
+                          family_leave_days=days, family_leave_used_days=used, family_leave_start_date=start,
+                          family_leave_end_date=end, family_leave_insured_days=400, family_leave_eligible=True,
+                          is_priority_support_company=True),
+                     f"난임치료휴가 {start}~{end} {days}일. 월급 500만원, 우선지원대상기업")
+
+    def test_infertility_days_3_and_4_are_unconfirmed_after_20261127(self):
+        """P4(Q3 a): 고시는 최초 2일분 상한만 정한다 — 1·2일째는 확정, 3·4일째는 미확정. 사업주 유급액은 확정."""
+        out = self.infertility("2026-12-01", "2026-12-04", 4)
+        self.assertIn("난임치료휴가 사업주 유급액: 767,123원", out)
+        self.assertIn("2일분 168,420원은 그 상한 이내로 확정", out)
+        self.assertIn("나머지 2일분은 상한 고시가 정해지지 않아", out)
+        self.assertNotIn("336,840", out)
+        self.assertNotIn("사업주 잔여 부담", out)
+        self.assertNotIn("whatsnew.mofe.go.kr", out)
+        self.assertIn("168,420원", self.infertility("2026-10-05", "2026-10-06", 2))   # 2일 유급 시기는 그대로
+
+    def test_daily_cap_expires_with_the_notice(self):
+        """P4: 고시 제2026-67호는 2026-12-31까지 효력 — 그 뒤 1일 상한은 미등록(외삽 금지)."""
+        from wage_calculator.models import WorkSchedule
+        from wage_calculator.calculators.maternity_leave import calc_maternity_leave, daily_leave_cap
+        self.assertEqual(daily_leave_cap("infertility", "2026-12-31"), (84_210, 2))
+        self.assertEqual(daily_leave_cap("spouse_miscarriage", "2026-12-31"), (84_210, 3))
+        self.assertEqual(daily_leave_cap("infertility", "2027-01-01"), (None, 0))
+        inp = WageInput(wage_type=WageType.HOURLY, hourly_wage=15_000, reference_year=2026, reference_date="2026-12-01",
+                        schedule=WorkSchedule(daily_work_hours=8, weekly_work_days=5), is_priority_support_company=True)
+        r = calc_maternity_leave(inp, calc_ordinary_wage(inp))
+        self.assertEqual((r.infertility_paid_days, r.infertility_pay, r.infertility_insurance_benefit), (4, 480_000, None))
+        self.assertEqual(r.spouse_miscarriage_insurance_benefit, 252_630)
+
+    def test_infertility_paid_days_switch_at_20261127_and_count_prior_use(self):
+        """P4: 11-26 사용은 유급 2일, 11-27부터 4일. 시행 전 사용분도 4일에 센다(부칙 <제21700호> 제2조)."""
+        from wage_calculator.calculators.family_leave import calc_family_leave
+
+        def run(start, end, days, used):
+            inp = WageInput(wage_type=WageType.HOURLY, hourly_wage=15_000, maternity_leave_type="infertility",
+                            family_leave_start_date=start, family_leave_end_date=end, family_leave_days=days,
+                            family_leave_used_days=used, family_leave_insured_days=400, family_leave_eligible=True,
+                            is_priority_support_company=True)
+            return calc_family_leave(inp, calc_ordinary_wage(inp))
+
+        r = run("2026-11-24", "2026-11-26", 3, 0)
+        self.assertEqual((r.paid_days, r.employer_pay, r.insurance_benefit), (2, 240_000, 168_420))
+        r = run("2026-11-27", "2026-11-30", 4, 0)
+        self.assertEqual((r.paid_days, r.employer_pay, r.insurance_benefit), (4, 480_000, None))
+        r = run("2026-11-27", "2026-11-28", 2, 2)     # 시행 전 2일 사용 → 남은 유급 2일, 상한 확정분 0일
+        self.assertEqual((r.paid_days, r.employer_pay, r.insurance_benefit), (2, 240_000, None))
+        self.assertTrue(any("이번 사용분은 나머지 2일분" in w for w in r.warnings), r.warnings)
+        r = run("2026-11-27", "2026-11-27", 1, 3)     # 잔여 상한이 음수가 되지 않는다(확정 0일)
+        self.assertEqual((r.paid_days, r.employer_pay, r.insurance_benefit), (1, 120_000, None))
+        self.assertTrue(any("이번 사용분은 나머지 1일분" in w for w in r.warnings), r.warnings)
+        self.assertTrue(run("2026-11-26", "2026-11-27", 2, 0).held_reason)   # 시행일을 걸치면 구간별 확인
+
+    def test_public_pages_drop_old_maternity_and_parental_texts(self):
+        """P6·P6b: 공개 화면의 옛 육아휴직 상한과 대규모 다태아 60/60일 분배를 남기지 않는다."""
+        import json, subprocess
+        from pathlib import Path
+        root = Path(__file__).resolve().parent
+        menu = (root / "public/calculators.html").read_text(encoding="utf-8")
+        self.assertNotIn("상한 150만원", menu)
+        self.assertIn("1~3개월 100%(상한 250만)", menu)
+        self.assertIn("미숙아 100", menu)
+        flow = root / "public/calculator_flow/maternity_leave_benefit_flow.html"
+        html = flow.read_text(encoding="utf-8")
+        self.assertEqual(flow.read_bytes(), (root / "wage_calculator/calculator_flow" / flow.name).read_bytes())
+        self.assertIn("babyType==='single'?60:75", html)
+        self.assertIn(">처음 75일<", html)
+        self.assertIn(">나머지 45일<", html)
+        # 화면 계산식을 그대로 돌려 대규모 다태아(월 500만)의 분배를 계산기와 대조한다
+        script = next(b.split("</script>")[0] for b in html.split("<script>") if "function calc(" in b)
+        js = ("var els={};var document={getElementById:function(i){return els[i]||(els[i]={value:'500',"
+              "style:{},textContent:'',innerHTML:''});}};" + script
+              + ";setType('multi');setSize('large');calc();"
+                "console.log(JSON.stringify({d:els.detail.innerHTML,t:els.totalPay.textContent}));")
+        try:
+            out = json.loads(subprocess.check_output(["node", "-e", js], text=True))
+        except FileNotFoundError:
+            self.skipTest("node 없음")
+        self.assertIn("처음 75일 (사업주: 통상임금 전액)", out["d"])
+        self.assertIn("12,500,000원", out["d"])
+        self.assertIn("나머지 45일 (고용보험)", out["d"])
+        self.assertIn("3,300,000원", out["d"])
+        self.assertEqual(out["t"], "15,800,000원")
+
+
 if __name__ == '__main__':
     unittest.main()

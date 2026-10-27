@@ -157,12 +157,18 @@ def _anchor_warnings(key: str, today: str) -> list[str]:
     import fetch_official_rules as fo
     from app.core.rule_facts import RULE_FACTS
     from app.templates.prompts import ANSWER_RULE_ANCHORS
+    from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
     articles = {a[0]: a for a in fo.ARTICLES}
+    # 고시(ADMRULS)에는 eflaw 다음 판본이 없다 — 효력 기간은 계산기 상한표(effective_to)가 관리한다
+    notices = {a[0] for a in fo.ADMRULS}
     norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
     warnings, next_root = [], {}
-    groups = [(f.name, f.anchors) for f in RULE_FACTS] + [("answer_rules", ANSWER_RULE_ANCHORS)]
+    groups = ([(f.name, f.anchors) for f in RULE_FACTS] + [("answer_rules", ANSWER_RULE_ANCHORS)]
+              + [("calc_basis", CALC_BASIS_ANCHORS)])
     for group, anchors in groups:
         for doc_id, phrase in anchors:
+            if doc_id in notices:
+                continue
             if doc_id not in articles:
                 warnings.append(f"{group}: 앵커 문서 미등록 {doc_id}")
                 continue
