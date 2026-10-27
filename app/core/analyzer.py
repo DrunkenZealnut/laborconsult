@@ -280,7 +280,8 @@ def analyze_intent(
 
     # 1순위 → 다음 순위(설정 순서). 둘 다 실패하면 예외를 그대로 전파한다 — 호출부(pipeline)가
     # 레거시 추출 경로로 강등하는 기존 동작이 유지된다. 빈 tool 입력도 실패다(_stream_answer FR-01).
-    # temperature는 보내지 않는다 — Sonnet 5 이후는 거부(400). tool 강제 + 스키마로 결정성 유지.
+    # temperature는 보내지 않는다 — Sonnet 5 이후는 거부(400). 결정성은 tool 강제 + 스키마로 — 단 5.5 세대는
+    # 강제 tool_choice를 거절하므로 게이트웨이가 auto+지시로 자가치유한다(llm_gateway._CLAUDE_TOOL_NO_FORCE).
     provider, _name, inp = llm_gateway.tool(
         config, system=system_prompt, messages=messages, tools=[ANALYZE_TOOL],
         choice=ANALYZE_TOOL["name"], purpose="의도분석", max_tokens=llm_gateway.extraction_budget(messages),
