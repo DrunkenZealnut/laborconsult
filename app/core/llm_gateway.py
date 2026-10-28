@@ -23,6 +23,10 @@ Claude(Sonnet·Haiku)에 고정돼 있어, 1순위를 바꿔도 Anthropic 한도
   \"tool\" and \"any\" are not supported for this model", 2026-10-27 실측 — haiku-5-5만 받는다). **상태 코드 400 + 그 문구**면
   `auto` + 도구 호출 지시(+effort low)로 한 번 더 보내고 모델별로 기억한다(`_CLAUDE_TOOL_NO_FORCE`). 다른 400(잔액·한도)과
   400이 아닌 예외는 그대로 전파한다. 이 자가치유가 없으면 Claude 1순위에서 의도분석·파라미터 추출이 **매 질문** 다음 제공자로 폴백한다.
+  Vercel AI Gateway 경유(2026-10-28 실측)에서는 같은 강제 요청이 400이 아니라 **200 + 도구 미호출**(추론·텍스트, stop
+  max_tokens)로 오므로 그 응답도 같은 신호로 본다(refusal은 모델 특성으로 기억하지 않는다). 실측된 모델은
+  `_CLAUDE_TOOL_NO_FORCE_KNOWN`으로 **선등록**돼 첫 호출부터 auto다 — 두 신호 모두 '한 번 보내 봐야' 배우므로 콜드
+  인스턴스마다 의도분석 1회를 버렸다(Gateway에서는 max_tokens까지 생성하는 왕복, Check G-M1).
 """
 
 from __future__ import annotations
@@ -42,8 +46,13 @@ _MIN_REMAINING = 2.0      # 데드라인까지 이보다 적게 남으면 다음
 
 _CLAUDE_VERSION_RE = re.compile(r"claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
 _OPENAI_TOOL_NEEDS_NO_REASONING: set[str] = set()
-# 강제 tool_choice를 400으로 거절한 Claude 모델 — 이후 호출은 실패 왕복 없이 바로 auto+지시로 간다.
-_CLAUDE_TOOL_NO_FORCE: set[str] = set()
+# 강제 tool_choice를 받지 않는 Claude 모델 — 이후 호출은 실패 왕복 없이 바로 auto+지시로 간다.
+# 실측된 모델은 **선등록**한다(Check G-M1): 직접 API는 400(2026-10-27), Gateway 경유는 200 + 도구 미호출(2026-10-28)로
+# 거절하는데 둘 다 '한 번 보내 봐야' 알 수 있어, 콜드 인스턴스마다 의도분석 1회(Gateway에서는 max_tokens까지 생성)를
+# 버렸다 — 프로덕션 콜드 TTFT 43초에 그 왕복이 들어 있다. 응답이 INTENT_TIMEOUT(12초) 안에 오지 않으면 기억조차 못 한다.
+# 목록 밖 모델은 종전처럼 실측으로 배운다. haiku-5-5는 강제를 받으므로 넣지 않는다. 벤더 ID 표기다(상류는 슬러그를 쓰지 않는다).
+_CLAUDE_TOOL_NO_FORCE_KNOWN: frozenset[str] = frozenset({"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"})
+_CLAUDE_TOOL_NO_FORCE: set[str] = set(_CLAUDE_TOOL_NO_FORCE_KNOWN)
 _FORCE_UNSUPPORTED_RE = re.compile(r"tool_choice.*not supported", re.S)
 
 

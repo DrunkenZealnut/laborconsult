@@ -961,6 +961,63 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
     print("  ✅ Claude 강제 tool_choice 거절(400+문구) → auto+지시 자가치유·기억, 다른 400·비400 전파, 강제 가능 모델 불변")
 
 
+def test_claude_known_no_force_models_skip_forced_attempt() -> None:
+    """실측으로 강제 tool_choice를 거절하는 모델은 선등록돼 첫 호출부터 auto+지시다(Check G-M1).
+
+    자가치유는 '한 번 보내 봐야' 배우므로 콜드 인스턴스마다 의도분석 1회를 버렸다 — Gateway 경유에서는 그 1회가
+    max_tokens까지 생성하는 왕복이라 프로덕션 콜드 TTFT 43초에 들어 있었다. 목록 밖 모델은 종전처럼 배운다(앞 테스트).
+    """
+    from app.core import llm_gateway as gw
+    from app.templates.prompts import ANALYZE_TOOL
+
+    class _Block:
+        type = "tool_use"
+        name = ANALYZE_TOOL["name"]
+        input = {"question_summary": "x", "is_labor_related": True}
+
+    class _Resp:
+        stop_reason = "tool_use"
+        content = [_Block()]
+
+    class _Claude:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            return _Resp()
+
+    def cfg(client):
+        class Cfg:
+            claude_client = client
+            openai_client = None
+            gemini_api_key = None
+        return Cfg()
+
+    # 앞 테스트들이 discard한 뒤라 **초기화 상태**를 보려면 모듈을 다시 실행한다 — 집합을 손으로 채우면 '선등록이 비어 있는'
+    # 결함을 가린다(변이 검사에서 실제로 못 잡았다). reload는 같은 모듈 객체를 재실행하므로 다른 모듈의 참조는 그대로다.
+    import importlib
+    gw = importlib.reload(gw)
+    assert {"claude-opus-5-5", "claude-sonnet-5-5"} <= gw._CLAUDE_TOOL_NO_FORCE_KNOWN
+    assert "claude-haiku-5-5" not in gw._CLAUDE_TOOL_NO_FORCE_KNOWN, "haiku-5-5는 강제를 받는다"
+    assert gw._CLAUDE_TOOL_NO_FORCE_KNOWN <= gw._CLAUDE_TOOL_NO_FORCE, "선등록 모델은 import 직후부터 NO_FORCE 집합에 있어야 한다"
+    fake = _Claude()
+    with _quiet(), _with_primary("claude"):
+        label, name, _ = gw.tool(cfg(fake), system="s", messages=[{"role": "user", "content": "q"}],
+                                 tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert (label, name) == ("Claude", ANALYZE_TOOL["name"])
+    assert [c["tool_choice"]["type"] for c in fake.calls] == ["auto"], fake.calls
+    assert ANALYZE_TOOL["name"] in fake.calls[0]["system"], "auto에는 도구 호출 지시가 붙는다"
+    print("  ✅ 선등록 모델(opus-5-5·sonnet-5-5)은 강제 시도 없이 바로 auto+지시 — 콜드 왕복 0")
+
+
 def test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto() -> None:
     """Vercel AI Gateway 경유(2026-10-28 실측, opus-5.5): 강제 tool_choice가 400 대신 **200**으로 오되 도구를 부르지 않고
     추론·텍스트만 돌려준다(stop_reason max_tokens 포함). 400과 같은 신호로 auto+지시로 전환해 기억해야 한다 — 안 그러면
@@ -1061,6 +1118,7 @@ def main() -> None:
     test_gateway_vendor_quirks()
     test_claude_forced_tool_choice_rejected_falls_back_to_auto()
     test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto()
+    test_claude_known_no_force_models_skip_forced_attempt()
     test_llm_meta_intent_vs_primary()
     test_intent_both_vendors_fail_keeps_fail_open()
     test_analysis_result_vendor_neutral()
