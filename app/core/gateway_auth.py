@@ -55,13 +55,3 @@ def current_token() -> str | None:
             or (os.environ.get("VERCEL_OIDC_TOKEN") or "").strip()
             or (os.environ.get("AI_GATEWAY_API_KEY") or "").strip()
             or None)
-
-
-def require_token() -> str:
-    token = current_token()
-    if not token:
-        raise GatewayAuthError(
-            "LLM_TRANSPORT=gateway인데 OIDC 토큰이 없다 — Vercel 함수에서는 x-vercel-oidc-token 헤더, "
-            "로컬에서는 `vercel env pull .env.vercel.local`(VERCEL_OIDC_TOKEN, 12시간)이 필요하다. "
-            "제공자 키로 우회하지 않는다.")
-    return token

@@ -132,7 +132,8 @@ def run(fixture: dict, out_path: str | None) -> None:
 
         # 전체 랭킹 1회 — 기준선·승격을 같은 pool에서 파생한다(모듈 docstring).
         ranked = rag.rerank_results(q["query"], hits, config.cohere_api_key,
-                                    top_n=len(hits), ensure_textbook=False)
+                                    top_n=len(hits), ensure_textbook=False,
+                                    cohere_base_url=config.cohere_base_url)   # gateway면 토큰은 Gateway로만(T13)
         baseline = ranked[:top_n]
         promoted = rag._ensure_textbook_presence(ranked, top_n)
         was_promoted = any(h.get("promoted") for h in promoted)

@@ -106,6 +106,20 @@ class T1DirectUnchanged(unittest.TestCase):
         self.assertIs(llm_transport.bind(cfg), cfg)
         self.assertFalse(llm_transport.is_gateway(cfg))
 
+    def test_direct_clients_stay_sdk_objects_with_default_base_url(self):
+        """설계 T1 후반 — direct에서는 프록시가 끼지 않고 base_url도 SDK 기본값이다(Check M1)."""
+        import anthropic
+        import openai
+        with _env(ANTHROPIC_BASE_URL=None, OPENAI_BASE_URL=None):
+            cfg = AppConfig(openai_client=openai.OpenAI(api_key="not-a-real-key"), pinecone_index=None,
+                            claude_client=anthropic.Anthropic(api_key="not-a-real-key"))
+        bound = llm_transport.bind(cfg)
+        self.assertIs(bound, cfg)
+        self.assertNotIsInstance(bound.claude_client, llm_transport._Bound)
+        self.assertNotIsInstance(bound.openai_client, llm_transport._Bound)
+        self.assertEqual(str(bound.claude_client.base_url).rstrip("/"), "https://api.anthropic.com")
+        self.assertEqual(str(bound.openai_client.base_url).rstrip("/"), "https://api.openai.com/v1")
+
     def test_direct_from_env_still_requires_provider_keys(self):
         with _env(LLM_TRANSPORT="direct", OPENAI_API_KEY=None, ANTHROPIC_API_KEY=None, PINECONE_API_KEY="p"):
             with self.assertRaises(EnvironmentError):
@@ -362,9 +376,18 @@ class T10TokenTravelsWithObjectIntoThreads(unittest.TestCase):
 class T11AdminListUsesCatalog(unittest.TestCase):
     def test_fetch_raw_models_gateway(self):
         from app.core import model_settings as ms
-        fake = {"slug_by": {}, "listing": {"anthropic/claude-opus-5.5": {"type": "language", "name": "Claude Opus 5.5"},
-                                           "anthropic/claude-x-embed": {"type": "embedding", "name": "emb"}},
+        # /v1/models 실측 형태: created는 전 모델 동일 상수, released가 출시일(Check G-M3)
+        fake = {"slug_by": {}, "listing": {
+                    "anthropic/claude-opus-5.5": {"type": "language", "name": "Claude Opus 5.5",
+                                                  "released": 1790035200, "created": 1755815280},
+                    "anthropic/claude-sonnet-5.5": {"type": "language", "name": "Claude Sonnet 5.5",
+                                                    "released": 1790553600, "created": 1755815280},
+                    "anthropic/claude-sonnet-4.6": {"type": "language", "name": "Claude Sonnet 4.6",
+                                                    "released": 1771286400, "created": 1755815280},
+                    "anthropic/claude-x-embed": {"type": "embedding", "name": "emb"}},
                 "by_vendor": {"anthropic": [("claude-opus-5-5", "anthropic/claude-opus-5.5"),
+                                            ("claude-sonnet-5-5", "anthropic/claude-sonnet-5.5"),
+                                            ("claude-sonnet-4-6", "anthropic/claude-sonnet-4.6"),
                                             ("claude-x-embed", "anthropic/claude-x-embed")]}}
         llm_transport.reset_catalog_cache()
         cfg = _gw_config()
@@ -377,6 +400,169 @@ class T11AdminListUsesCatalog(unittest.TestCase):
         self.assertIn("claude-sonnet-5", ids, "정적 표의 모델도 포함된다")
         self.assertEqual(cfg.claude_client.log, [], "벤더 models.list를 부르지 않는다")
         self.assertTrue(all("/" not in i for i in ids), "관리자 목록은 벤더 ID다")
+        by = {r["id"]: r for r in rows}
+        self.assertEqual(by["claude-opus-5-5"]["created"], 1790035200,
+                         "created는 /v1/models의 released(출시일)다 — 전 모델 동일 상수인 created가 아니다")
+        latest = [m["id"] for m in ms.select_latest("claude", rows, None)]
+        self.assertEqual(latest[:3], ["claude-sonnet-5-5", "claude-opus-5-5", "claude-sonnet-4-6"],
+                         "출시일 역순 3개 — 날짜가 없으면 ID 역순으로 떨어져 sonnet 계열만 남는다(Check G-M3)")
+
+
+class T13RerankCallSitesPassBaseUrl(unittest.TestCase):
+    """config의 cohere_api_key를 넘기는 rerank_results 호출부는 cohere_base_url도 넘겨야 한다(Check G-M2).
+
+    gateway 모드에서 config.cohere_api_key는 OIDC 토큰이다 — base_url 없이 부르면 그 토큰이 Cohere 자체 호스트로
+    Bearer 송신된다(401 뒤 코사인 폴백이라 조용하다). from_env()가 환경 토큰으로 바인딩하므로 평가 스크립트도 해당된다
+    (eval_retrieval·eval_colloquial이 그랬다).
+    """
+
+    def test_every_config_keyed_call_passes_cohere_base_url(self):
+        import ast
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parent
+        files = [p for p in list(root.glob("*.py")) + list((root / "app").rglob("*.py")) + list((root / "api").rglob("*.py"))
+                 if not p.name.startswith("test_")]
+        offenders, checked = [], []
+        for path in files:
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fn = node.func
+                name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+                if name != "rerank_results":
+                    continue
+                values = list(node.args) + [k.value for k in node.keywords]
+                if not any(isinstance(v, ast.Attribute) and v.attr == "cohere_api_key" for v in values):
+                    continue
+                checked.append(f"{path.relative_to(root)}:{node.lineno}")
+                if not any(k.arg == "cohere_base_url" for k in node.keywords):
+                    offenders.append(checked[-1])
+        self.assertTrue(any(c.startswith("app/core/pipeline.py") for c in checked), checked)
+        self.assertTrue(any(c.startswith("eval_retrieval.py") for c in checked), checked)
+        self.assertTrue(any(c.startswith("eval_colloquial.py") for c in checked), checked)
+        self.assertEqual(offenders, [], "cohere_api_key만 넘기고 cohere_base_url을 빠뜨린 호출")
+
+
+class T14AdminListTokenComesFromBoundConfig(unittest.TestCase):
+    def test_fetch_raw_models_uses_bound_token_not_contextvar(self):
+        """관리자 목록 토큰은 바인딩 객체에서 — contextvar를 다시 읽지 않는다(규칙 ①, Check BS5)."""
+        from app.core import model_settings as ms
+        tok = gateway_auth._REQUEST_TOKEN.set(TOKEN)
+        try:
+            cfg = llm_transport.bind(_gw_config())
+        finally:
+            gateway_auth._REQUEST_TOKEN.reset(tok)
+        self.assertTrue(llm_transport.bound_token(cfg) == TOKEN, "bound_token은 바인딩된 토큰을 돌려준다")
+        other = gateway_auth._REQUEST_TOKEN.set("a-different-request-token")
+        try:
+            with mock.patch.object(llm_transport, "catalog_models", return_value=[]) as cm:
+                ms.fetch_raw_models("claude", cfg)
+        finally:
+            gateway_auth._REQUEST_TOKEN.reset(other)
+        self.assertTrue(cm.call_args.args[1] == TOKEN, "토큰은 바인딩 객체에서 와야 한다 — contextvar의 다른 값이 아니다")
+        plain = AppConfig(openai_client=object(), pinecone_index=None, claude_client=object())
+        self.assertIsNone(llm_transport.bound_token(plain))
+
+
+class T15CatalogFetchOutsideLockAndListingOptional(unittest.TestCase):
+    def test_fetch_runs_without_holding_lock(self):
+        """네트워크 조회 중 잠금을 쥐면 정적 표에 없는 모델을 해석하는 답변 경로가 뒤에 줄을 선다(Check BS6)."""
+        seen = []
+
+        def fake_fetch(token):
+            seen.append(llm_transport._catalog_lock.locked())
+            return {"slug_by": {}, "by_vendor": {}, "listing": {}}
+
+        llm_transport.reset_catalog_cache()
+        with mock.patch.object(llm_transport, "_fetch_catalog", side_effect=fake_fetch):
+            llm_transport.catalog(None)
+        llm_transport.reset_catalog_cache()
+        self.assertEqual(seen, [False])
+
+    def test_models_listing_failure_keeps_slug_table(self):
+        """/v1/models가 죽어도 카탈로그 슬러그 표는 살린다 — type·출시일만 빠진다(Check BS6)."""
+        import httpx
+
+        class _R:
+            def __init__(self, payload):
+                self._p = payload
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self._p
+
+        def fake_get(url, **kw):
+            if url.endswith("/v1/models/catalog"):
+                return _R({"models": [{"slug": "anthropic/claude-new-9",
+                                       "providers": [{"provider": "anthropic", "providerModelId": "claude-new-9"}]}]})
+            raise ConnectionError("models listing down")
+
+        with mock.patch.object(httpx, "get", side_effect=fake_get), \
+                self.assertLogs("app.core.llm_transport", level="WARNING") as logs:
+            cat = llm_transport._fetch_catalog(None)
+        self.assertEqual(cat["slug_by"].get(("anthropic", "claude-new-9")), "anthropic/claude-new-9")
+        self.assertEqual(cat["listing"], {})
+        self.assertIs(cat["listing_failed"], True, "실패는 빈 정상 응답과 구분해 표시한다(CodeRabbit #146)")
+        self.assertTrue(any("/v1/models" in m for m in logs.output))
+
+    def test_partial_listing_failure_is_refetched_after_fail_ttl(self):
+        """/v1/models만 실패한 부분 결과는 CATALOG_TTL(1시간)이 아니라 CATALOG_FAIL_TTL 뒤 다시 받는다(CodeRabbit #146).
+
+        그 사이에는 슬러그 표를 계속 쓴다(답변 경로 해석은 끊기지 않는다). 빈 **정상** 목록은 부분 실패가 아니라
+        CATALOG_TTL 동안 캐시한다 — 둘을 구분하는 것이 표식의 목적이다.
+        """
+        slug = {("anthropic", "claude-new-9"): "anthropic/claude-new-9"}
+        degraded = {"slug_by": slug, "by_vendor": {}, "listing": {}, "listing_failed": True}
+        full = {"slug_by": slug, "by_vendor": {}, "listing": {"anthropic/claude-new-9": {"type": "language"}},
+                "listing_failed": False}
+        empty_ok = {"slug_by": slug, "by_vendor": {}, "listing": {}, "listing_failed": False}
+        clock = {"t": 1000.0}
+        fetches: list[dict] = []
+
+        def fake_fetch(token):
+            fetches.append(token)
+            return results.pop(0)
+
+        results = [degraded, full]
+        llm_transport.reset_catalog_cache()
+        try:
+            with mock.patch.object(llm_transport, "_fetch_catalog", side_effect=fake_fetch), \
+                    mock.patch.object(llm_transport.time, "monotonic", side_effect=lambda: clock["t"]):
+                self.assertIs(llm_transport.catalog(None)["listing_failed"], True)
+                self.assertEqual(len(fetches), 1)
+                # FAIL_TTL 안에서는 재조회하지 않고 슬러그 표를 그대로 쓴다
+                clock["t"] += llm_transport.CATALOG_FAIL_TTL / 2
+                self.assertEqual(llm_transport.catalog(None)["slug_by"], slug)
+                self.assertEqual(len(fetches), 1)
+                # FAIL_TTL이 지나면 다시 받아 완전한 목록으로 바뀐다(1시간을 기다리지 않는다)
+                clock["t"] += llm_transport.CATALOG_FAIL_TTL
+                cat = llm_transport.catalog(None)
+                self.assertEqual(len(fetches), 2)
+                self.assertIs(cat["listing_failed"], False)
+                self.assertIn("anthropic/claude-new-9", cat["listing"])
+                # 정상 결과는 CATALOG_TTL 동안 캐시된다
+                clock["t"] += llm_transport.CATALOG_TTL - 1
+                llm_transport.catalog(None)
+                self.assertEqual(len(fetches), 2)
+
+            # 빈 정상 목록(실패 아님)은 부분 실패로 취급하지 않는다 — CATALOG_TTL 캐시
+            results = [empty_ok]
+            fetches.clear()
+            llm_transport.reset_catalog_cache()
+            with mock.patch.object(llm_transport, "_fetch_catalog", side_effect=fake_fetch), \
+                    mock.patch.object(llm_transport.time, "monotonic", side_effect=lambda: clock["t"]):
+                self.assertEqual(llm_transport.catalog(None)["listing"], {})
+                clock["t"] += llm_transport.CATALOG_FAIL_TTL * 2
+                llm_transport.catalog(None)
+                self.assertEqual(len(fetches), 1)
+        finally:
+            llm_transport.reset_catalog_cache()
 
 
 class T12GeminiStaysDirect(unittest.TestCase):

@@ -244,8 +244,8 @@ def fetch_raw_models(provider: str, config) -> list[dict]:
     """
     from app.core import llm_transport
     if llm_transport.is_gateway(config) and provider in ("claude", "openai"):
-        from app.core import gateway_auth
-        return llm_transport.catalog_models(provider, gateway_auth.current_token())
+        # 토큰은 바인딩된 config에서 — contextvar를 다시 읽지 않는다(llm_transport 규칙 ①, Check BS5). 카탈로그는 공개라 None도 된다.
+        return llm_transport.catalog_models(provider, llm_transport.bound_token(config))
     if provider == "claude":
         page = config.claude_client.with_options(timeout=10.0, max_retries=0).models.list(limit=100)
         return [{"id": m.id, "label": getattr(m, "display_name", None) or m.id,

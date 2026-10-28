@@ -12,7 +12,8 @@ import sys
 from dotenv import load_dotenv
 
 load_dotenv()
-load_dotenv(".env.vercel.local", override=False)
+# config.py와 같은 파일을 읽는다 — 저장소 루트 기준 절대경로(cwd 상대경로면 다른 디렉터리에서 실행할 때 조용히 빠진다, Check BS8).
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.vercel.local"), override=False)
 
 PROVIDER_KEYS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "COHERE_API_KEY"]
 REQUIRED_DIRECT = ["OPENAI_API_KEY", "PINECONE_API_KEY", "ANTHROPIC_API_KEY"]
