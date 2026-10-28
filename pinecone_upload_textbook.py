@@ -79,6 +79,9 @@ class BookPart:
     """
     path: str
     body_start: str
+    # 뒷머리(권말 색인·부록) 절단 마커(선택). 이 마커 **앞**까지만 본문이다. 지정했는데 없으면 중단한다.
+    body_end: str | None = None
+    dedupe_pages: bool = False
 
     def __post_init__(self) -> None:
         # Book과 같은 이유로 생성 시점에 막는다 — 레지스트리 상수라 손으로 쓰고,
@@ -104,6 +107,13 @@ class Book:
     title: str
     path: str
     body_start: str            # 표지·목차 절단 마커
+    # 권말 색인·부록 절단 마커(선택, 첫 조각에만). 사항색인은 "항목 / 쪽번호" 목록이라 저신호 게이트를
+    # 통과해 검색에 섞이고(sanan2 실측 6청크) 해설서 슬롯(G4)을 차지한다. 지정했는데 없으면 중단한다.
+    body_end: str | None = None
+    # 인접한 두 쪽의 본문이 같으면 뒤쪽을 버린다(선택). 재스캔 중복 파일("… - 355(1).jpg")이 PDF에 같이 묶여
+    # 같은 쪽이 두 번 변환된 책에 쓴다(sanan1 실측 53쪽). 같은 본문이 두 chunk_id로 임베딩되면 검색에서
+    # 해설서 슬롯을 중복으로 차지한다. 인접쌍만 본다 — 멀리 떨어진 동일 쪽은 실제 반복(서식 등)일 수 있다.
+    dedupe_pages: bool = False
     ocr_fixes: dict[str, str] = field(default_factory=dict)
     # 원본 스캔이 분할된 서적의 나머지 조각. 나열 순서가 곧 본문 순서다.
     # **뒤에만 추가할 것** — 중간에 끼우면 section_idx가 통째로 밀려 기존
@@ -127,6 +137,13 @@ class Book:
     # — 상한은 "규칙 오작동 감지기"라, 육안 없이 올리면 감지기를 끄는 것과
     # 같다. 전역 상한을 올리지 않는 이유도 같다(다른 서적의 감지력 보존).
     low_signal_cap: float | None = None
+    # 서적별 비경계 헤딩(옵트인). 전역 NON_BOUNDARY_RE(콜아웃)와 같이 헤딩을 경계로 쓰지
+    # 않고 본문을 직전 섹션에 흡수하되 폐기로 세지 않는다. marker가 쪽머리글("206 제 1 편
+    # 안전보건관리")을 h1~h3로 내보낸 책에 쓴다 — 그대로 두면 쪽머리글이 섹션 라벨이 되어
+    # 그 뒤 본문의 출처가 "206 제 1 편 …"으로 표시된다(sanan2 실측 39건). **전역 규칙으로
+    # 승격하지 말 것** — 기존 서적에 같은 패턴의 헤딩이 있으면 경계가 바뀌어 section_idx가
+    # 밀린다(heading_extractors와 같은 이유).
+    non_boundary_re: re.Pattern | None = None
 
     def __post_init__(self) -> None:
         # 레지스트리 상수라 사실상 타입 불변식이다 — main()에서만 검사하면
@@ -161,7 +178,7 @@ class Book:
     @property
     def parts(self) -> tuple[BookPart, ...]:
         """본문 순서대로의 전체 조각 — 단일 파일 서적은 길이 1."""
-        return (BookPart(self.path, self.body_start),) + tuple(self.extra_parts)
+        return (BookPart(self.path, self.body_start, self.body_end, self.dedupe_pages),) + tuple(self.extra_parts)
 
     @property
     def paths(self) -> tuple[str, ...]:
@@ -268,6 +285,9 @@ def _gaebyeol_md(name: str) -> str:
 
 _JUHAE3_DIR = "근로기준법주해-3"
 _YEONCHA_DIR = "연차휴가와노동법"
+_SANAN1_DIR = "산안법1"
+_SANAN2_DIR = "산안법2"
+_JUNGDAE_DIR = "중대재해"
 
 
 def _juhae3_scan(name: str) -> str:
@@ -436,9 +456,54 @@ BOOKS: dict[str, Book] = {
         # 빼므로 '관련법령' 섹션 73개가 생기는 문제는 없다.
         heading_max_level=4,
     ),
+    "sanan1": Book(
+        book_id="sanan1",
+        # 1권(제1편 총설·제2편 안전보건관리체제·제3편 재해예방조치). 서명은 sanan2와 같이 사용자 확인(2026-10-27).
+        title="산업안전보건법 판례·행정해석 1권 — 총설·안전보건관리체제·재해예방조치(이상국)",
+        path=_corpus_path(_SANAN1_DIR, "산안법1.md"),
+        # 스캔이 본문 3쪽(제1장)부터 시작해 표지·목차가 없다 — p0에 h1이 곧바로 나온다.
+        body_start="<!-- page: 0 -->",
+        # p767~773은 권말 사항색인.
+        body_end="<!-- page: 767 -->",
+        # 재스캔 중복 파일("… - 355(1).jpg" 63장, 원본과 바이트 동일)이 PDF에 같이 묶여 같은 쪽이 두 번
+        # 변환됐다(인접 동일 쪽 53쌍 실측). 뒤쪽을 버린다.
+        dedupe_pages=True,
+        non_boundary_re=re.compile(r"^\d{1,3}\s*제\s*\d\s*편\b"),
+        # 저신호 제외 353/2,697(13.1%) — 전량 검사(한글 30자 이상 + 어절 연쇄가 있는 청크 0건): "|" 조각 186·
+        # 표 구분선 91·OCR 환각 영문 61·깨진 표 15. sanan2와 같은 책의 1권이라 같은 성격이다(2026-10-27).
+        low_signal_cap=0.14,
+    ),
+    "sanan2": Book(
+        book_id="sanan2",
+        # 2권(제1편 안전보건관리·제2편 작업환경관리·제3편 재해예방관리감독). 서명은 사용자 확인
+        # (2026-10-27). 표지 스캔이 없어 판·연도는 적지 않는다(본문이 2026.6.25 대판 2024도5902를 인용).
+        title="산업안전보건법 판례·행정해석 2권 — 안전보건관리·작업환경관리·재해예방관리감독(이상국)",
+        path=_corpus_path(_SANAN2_DIR, "산안법2.md"),
+        # p0은 '제1편' 속표지(장 목차 3줄), p1부터 제1장 본문(h1)이 곧바로 나온다. p0·p1
+        # 어느 쪽으로 잘라도 청크 수는 2,668 vs 2,667로 같다(2026-10-27 dry-run).
+        body_start="<!-- page: 1 -->",
+        # p707~709는 권말 사항색인("가설기자재 / 202 …") — 저신호 게이트를 통과해 6청크가 실렸었다.
+        body_end="<!-- page: 707 -->",
+        # 짝수쪽 머리글 "206 제 1 편 안전보건관리"가 h1~h3로 39건 나온다 — 경계에서 뺀다.
+        non_boundary_re=re.compile(r"^\d{1,3}\s*제\s*\d\s*편\b"),
+        # 저신호 제외 315/2,668(11.8%) — 전량 검사(한글 30자 이상 + 어절 연쇄가 있는 청크 0건):
+        # 빈 표 조각·표 구분선·OCR 환각 영문("HE PERSON OF THE PROPERTY")뿐이다. 별표(別表)가
+        # 많은 책이라 표 잔해가 많다(2026-10-27).
+        low_signal_cap=0.13,
+    ),
+    "jungdae": Book(
+        book_id="jungdae",
+        title="중대재해처벌법 판례 분석 — 안전 전문가의 관점에서 살펴본"
+              "(최명기·강원복·정호식·최동식, 지우북스)",
+        path=_corpus_path(_JUNGDAE_DIR, "중대재해.md"),
+        # p0 표지, p1~5 목차(marker가 표로 깨뜨린 글자 스프). p6 '(01) 개요'(h1)부터 본문.
+        body_start="<!-- page: 6 -->",
+    ),
 }
 
 _PAGE_COMMENT_RE = re.compile(r"<!--\s*page:\s*\d+\s*-->")
+# 쪽 단위 분할용 — 마커를 보존하는 캡처 그룹(drop_adjacent_duplicate_pages)
+_PAGE_SPLIT_RE = re.compile(r"(<!-- page: \d+ -->)")
 
 
 @functools.lru_cache(maxsize=8)
@@ -597,7 +662,40 @@ def load_part_body(part: BookPart) -> str:
     if marker_pos == -1:
         sys.exit(f"[오류] body_start 마커를 찾을 수 없습니다: "
                  f"{part.body_start!r} ({part.path})")
-    return _PAGE_COMMENT_RE.sub("", content[marker_pos + len(part.body_start):])
+    start = marker_pos + len(part.body_start)
+    end = len(content)
+    if part.body_end:
+        end = content.find(part.body_end, start)
+        if end == -1:
+            # 조용히 전부 싣지 않는다 — 마커 오타 하나로 색인이 통째로 들어가고 알아챌 방법이 없다.
+            sys.exit(f"[오류] body_end 마커를 찾을 수 없습니다: {part.body_end!r} ({part.path})")
+    # 중복 쪽 제거는 body_start 마커를 **떼기 전에** 돌린다 — body_start가 쪽 마커(sanan1의 p0)면 마커를
+    # 먼저 떼었을 때 첫 쪽이 '앞머리'가 되어 둘째 쪽과 비교되지 않는다(Codex #143).
+    segment = content[marker_pos:end]
+    if part.dedupe_pages:
+        segment = drop_adjacent_duplicate_pages(segment)
+    return _PAGE_COMMENT_RE.sub("", segment[len(part.body_start):])
+
+
+def drop_adjacent_duplicate_pages(body: str) -> str:
+    """인접한 두 쪽의 본문(공백 정규화 후)이 같으면 뒤쪽을 버린다. 첫 쪽 앞의 텍스트는 그대로 둔다."""
+    parts = _PAGE_SPLIT_RE.split(body)          # [앞머리, 마커1, 본문1, 마커2, 본문2, ...]
+    if len(parts) < 3:
+        return body
+    out = [parts[0]]
+    prev_key = None
+    removed = 0
+    for i in range(1, len(parts), 2):
+        marker, text = parts[i], parts[i + 1]
+        key = re.sub(r"\s+", " ", text).strip()
+        if key and key == prev_key:
+            removed += 1
+            continue
+        out.extend((marker, text))
+        prev_key = key
+    if removed:
+        print(f"  인접 중복 쪽 제거: {removed}쪽")
+    return "".join(out)
 
 
 def load_parts(book: Book) -> list[str]:
@@ -687,7 +785,8 @@ def parse_sections(body: str, book: Book) -> tuple[list[dict], int, int, int]:
         # 비경계 판정을 위생 처리보다 **먼저** 한다 — 순서가 바뀌면 콜아웃이
         # sanitize_heading의 길이·의미비율 검사에 걸려 '폐기'로 세어지고,
         # 그것이 게이트를 밀어 올린다(구분해 세는 목적 자체가 무효).
-        demote = bool(NON_BOUNDARY_RE.match(raw_heading))
+        demote = bool(NON_BOUNDARY_RE.match(raw_heading)
+                      or (book.non_boundary_re and book.non_boundary_re.match(raw_heading)))
         heading = None if demote else sanitize_heading(
             raw_heading, book.ocr_fixes, book.heading_extractors)
         if heading is None:
