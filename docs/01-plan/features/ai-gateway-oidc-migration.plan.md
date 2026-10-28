@@ -94,7 +94,7 @@
 | Cohere 재정렬 | `cohere.ClientV2(api_key=token, base_url=Gateway)` → `/v2/rerank`, 모델 `cohere/rerank-v3.5`. 점수·순서 동일성 표본 확인. |
 | Gemini 3순위 | **기본은 직접 호출 유지**(보고 대상 잔존 경로). 이유: google SDK가 Gateway를 가리킬 수 없고, `gemini-pro-latest` 별칭 슬러그가 없어 모델을 바꾸지 않고는 전환이 불가능하다. 사용자가 슬러그(예: `google/gemini-2.5-pro`)를 정하면 OpenAI 호환 경로로 전환하는 옵션을 설계에 둔다(Design Q1). |
 | 관리자 모델 목록 | Gateway 모드에서는 카탈로그에서 벤더별 목록을 만든다(벤더 `models.list`는 Gateway 토큰으로 호출할 수 없다). |
-| 관측 | `metadata.llm.transport`에 `gateway|direct` 기록. 폴백 감시(`check_llm_fallback.py`)는 무변경. |
+| 관측 | `metadata.llm.transport`에 `gateway`·`direct` 기록. 폴백 감시(`check_llm_fallback.py`)는 무변경. |
 
 ### 4.3 단계
 

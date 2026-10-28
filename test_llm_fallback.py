@@ -1028,6 +1028,18 @@ def test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto(
             gw.tool(cfg(fake2), system=None, messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t")
         assert [c["tool_choice"]["type"] for c in fake2.calls] == ["auto"], fake2.calls
     gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+    # refusal은 모델 특성이 아니다 — 이번 요청만 auto로 재시도하고 기억하지 않는다(다음 호출은 다시 강제부터)
+    fake3 = _Claude(forced_stop="refusal")
+    with _quiet(), _with_primary("claude"):
+        label, name, inp = gw.tool(cfg(fake3), system="s", messages=msgs, tools=[ANALYZE_TOOL],
+                                   choice=ANALYZE_TOOL["name"], purpose="t")
+    assert (label, name) == ("Claude", ANALYZE_TOOL["name"])
+    assert [c["tool_choice"]["type"] for c in fake3.calls] == ["tool", "auto"], fake3.calls
+    assert "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE, "refusal 한 번으로 모델을 기억하면 안 된다"
+    fake4 = _Claude(forced_stop="refusal")
+    with _quiet(), _with_primary("claude"):
+        gw.tool(cfg(fake4), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert [c["tool_choice"]["type"] for c in fake4.calls] == ["tool", "auto"], fake4.calls
 
 
 def main() -> None:
