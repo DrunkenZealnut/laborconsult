@@ -733,6 +733,7 @@ def _llm_meta(
     outcome: "AnswerOutcome",
     citation_fixed: bool | None = None,
     intent_provider: str | None = None,
+    transport: str | None = None,
 ) -> dict:
     """qa_conversations.metadata.llm 페이로드 (FR-10).
 
@@ -751,6 +752,8 @@ def _llm_meta(
         meta["truncated"] = True
     if citation_fixed is not None:
         meta["citation_fixed"] = citation_fixed
+    if transport:
+        meta["transport"] = transport   # direct | gateway — Gateway 전환 증거(ai-gateway-oidc-migration)
     # 의도분석이 1순위가 아닌 제공자로 넘어갔는지 — 1순위 장애의 조기 신호다. 기준은 답변의
     # 첫 시도 제공자(= 설정 1순위, 순서 단일 출처가 같다). 1순위를 OpenAI로 두면 OpenAI가 정상이다.
     expected = outcome.attempts[0] if outcome.attempts else "Claude"
@@ -3795,6 +3798,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 pinecone_hits = rerank_results(
                     query, pinecone_hits, config.cohere_api_key,
                     top_n=adaptive_params["rerank_top_n"],
+                    cohere_base_url=config.cohere_base_url,
                 )
 
             # ③ Self-RAG 관련성 필터 (COMPLEX만)
@@ -3829,6 +3833,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                             wider_hits = rerank_results(
                                 query, wider_hits, config.cohere_api_key,
                                 top_n=adaptive_params["rerank_top_n"] + 3,
+                                cohere_base_url=config.cohere_base_url,
                             )
                         if wider_hits:
                             pinecone_hits = wider_hits
@@ -4474,12 +4479,13 @@ def process_question(query: str, session: Session, config: AppConfig,
     if assessor_info:
         conv_metadata["assessor"] = assessor_info
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
-    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
+    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider,
+                                     transport=getattr(config, "transport", None))
     logger.info(
         "llm_outcome provider=%s model=%s attempts=%s empty=%s truncated=%s "
-        "citation_fixed=%s intent=%s",
+        "citation_fixed=%s intent=%s transport=%s",
         outcome.provider, outcome.model, outcome.attempts, outcome.empty_providers,
-        outcome.truncated, citation_fixed, intent_provider,
+        outcome.truncated, citation_fixed, intent_provider, getattr(config, "transport", None),
     )
 
     record = ConversationRecord(

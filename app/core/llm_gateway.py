@@ -238,6 +238,10 @@ def _claude_auto_tool_kwargs(base: dict, model: str, choice: str | None) -> dict
     return kw
 
 
+def _has_tool_use(resp) -> bool:
+    return any(getattr(b, "type", "") == "tool_use" for b in (getattr(resp, "content", None) or []))
+
+
 def _claude_tool(config, model, system, messages, tools, choice, max_tokens, timeout):
     base = {"model": model, "max_tokens": max(max_tokens, _MIN_TOKENS["claude"]),
             "tools": tools, "messages": messages}
@@ -254,6 +258,16 @@ def _claude_tool(config, model, system, messages, tools, choice, max_tokens, tim
                 raise
             _CLAUDE_TOOL_NO_FORCE.add(model)
             logger.info("%s는 강제 tool_choice를 받지 않는다 — auto+지시로 전환해 기억한다", model)
+        else:
+            if not _has_tool_use(resp):
+                # Vercel AI Gateway 경유 실측(2026-10-28, opus-5.5): 같은 강제 요청이 400 대신 **200**으로 오되 도구를
+                # 부르지 않고 추론·텍스트만 돌려준다(stop_reason max_tokens 포함). 400과 같은 신호로 보고 auto+지시로
+                # 전환해 기억한다 — 안 그러면 Gateway 모드에서 의도분석·추출이 매 질문 "도구 호출 없음"으로 OpenAI 폴백이다
+                # (PR #142가 고친 증상의 재발). 강제가 통하는 모델은 tool_use가 있어 이 분기에 오지 않는다.
+                _CLAUDE_TOOL_NO_FORCE.add(model)
+                logger.info("%s는 강제 tool_choice에 도구를 부르지 않았다(stop=%s) — auto+지시로 전환해 기억한다",
+                            model, getattr(resp, "stop_reason", None))
+                resp = None
     if resp is None:
         resp = client.messages.create(**_claude_auto_tool_kwargs(base, model, choice))
     if getattr(resp,"stop_reason",None)=="max_tokens":

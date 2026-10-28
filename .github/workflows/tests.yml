@@ -55,6 +55,9 @@ jobs:
       - name: LLM 폴백 경화 테스트
         run: python3 test_llm_fallback.py
 
+      - name: LLM 전송 계층(AI Gateway OIDC) 테스트
+        run: python3 test_llm_transport.py
+
       - name: 답변 모델 설정 테스트
         run: python3 test_model_settings.py
 

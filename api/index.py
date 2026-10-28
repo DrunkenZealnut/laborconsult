@@ -39,6 +39,7 @@ from app.core.pipeline import process_question
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
 from app.anonymize import anonymize as _anonymize
 from app.core import abuse_guard
+from app.core import gateway_auth, llm_transport
 from app.core.abuse_guard import GuardContext, GuardRejection
 
 app = FastAPI(title="AI 노동상담 챗봇")
@@ -60,8 +61,17 @@ app.add_middleware(
 
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
-    """모든 응답에 기본 보안 헤더 부여 (clickjacking·MIME sniffing 방어)."""
-    resp = await call_next(request)
+    """모든 응답에 기본 보안 헤더 부여 (clickjacking·MIME sniffing 방어).
+
+    Vercel OIDC 토큰(x-vercel-oidc-token)도 여기서 contextvar에 둔다 — get_config()가 요청별로 바인딩한다
+    (ai-gateway-oidc-migration). call_next는 별도 태스크지만 생성 시 contextvar가 복사되어 엔드포인트와 SSE
+    반복자에서 보인다. 새 미들웨어를 더하지 않는 이유는 SSE 경로에서 검증된 계층을 늘리지 않기 위해서다.
+    """
+    oidc = gateway_auth.capture(request.headers)
+    try:
+        resp = await call_next(request)
+    finally:
+        gateway_auth.release(oidc)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -96,10 +106,15 @@ _config: AppConfig | None = None
 
 
 def get_config() -> AppConfig:
+    """전역 설정을 **요청별로 바인딩**해 돌려준다(ai-gateway-oidc-migration).
+
+    direct 모드면 전역 객체 그대로. gateway 모드면 이 요청의 OIDC 토큰을 묶은 사본이다 — 반드시 요청 스레드
+    (엔드포인트 본문)에서 부를 것. 전역 `_config`를 직접 쓰면 토큰 없는 클라이언트다.
+    """
     global _config
     if _config is None:
         _config = AppConfig.from_env()
-    return _config
+    return llm_transport.bind(_config)
 
 
 def _restore_fn(session_id: str) -> dict | None:
