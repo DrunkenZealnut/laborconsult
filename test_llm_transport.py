@@ -117,7 +117,7 @@ class T2GatewayReadsNoProviderKeys(unittest.TestCase):
         sentinel_o, sentinel_a, sentinel_c = "SENTINEL-OPENAI", "SENTINEL-ANTHROPIC", "SENTINEL-COHERE"
         with _env(LLM_TRANSPORT="gateway", OPENAI_API_KEY=sentinel_o, ANTHROPIC_API_KEY=sentinel_a,
                   COHERE_API_KEY=sentinel_c, PINECONE_API_KEY="pc-test", GEMINI_API_KEY=None,
-                  SUPABASE_URL=None, SUPABASE_KEY=None), \
+                  SUPABASE_URL=None, SUPABASE_KEY=None, VERCEL_OIDC_TOKEN=None, AI_GATEWAY_API_KEY=None), \
              mock.patch("app.config.Pinecone", side_effect=RuntimeError("no network")), \
              mock.patch("app.core.storage.make_supabase_client", return_value=None):
             with contextlib.redirect_stderr(io.StringIO()):
@@ -127,9 +127,10 @@ class T2GatewayReadsNoProviderKeys(unittest.TestCase):
                 finally:
                     logging.disable(logging.NOTSET)
         self.assertEqual(cfg.transport, "gateway")
-        self.assertIsNone(cfg.cohere_api_key, "gateway 모드는 COHERE_API_KEY를 읽지 않는다")
-        self.assertNotEqual(llm_transport._unwrap(cfg.openai_client).api_key, sentinel_o)
-        self.assertNotEqual(llm_transport._unwrap(cfg.claude_client).api_key, sentinel_a)
+        # 값이 실패 메시지에 찍히지 않게 assertTrue로 비교한다(키·토큰 비출력 규칙)
+        self.assertTrue(cfg.cohere_api_key is None, "gateway 모드는 COHERE_API_KEY를 읽지 않는다(토큰 없는 환경이면 None)")
+        self.assertTrue(llm_transport._unwrap(cfg.openai_client).api_key != sentinel_o, "OPENAI_API_KEY를 읽었다")
+        self.assertTrue(llm_transport._unwrap(cfg.claude_client).api_key != sentinel_a, "ANTHROPIC_API_KEY를 읽었다")
         self.assertIsInstance(cfg.claude_client, llm_transport._Bound, "from_env도 환경 토큰으로 바인딩한다(CLI·평가용)")
         self.assertTrue(str(cfg.openai_client.base_url).startswith(llm_transport.GATEWAY_OPENAI_URL))
         self.assertTrue(str(cfg.claude_client.base_url).startswith(llm_transport.GATEWAY_URL))
@@ -163,7 +164,7 @@ class T3ProxyTranslatesModelAtBoundary(unittest.TestCase):
         self.assertEqual(kw["model"], "anthropic/claude-opus-5.5")
         for k, v in extra.items():
             self.assertEqual(kw[k], v, k)
-        self.assertEqual(client._inner.api_key, TOKEN)
+        self.assertTrue(client._inner.api_key == TOKEN, "바인딩 토큰이 api_key로 들어가야 한다")
         self.assertEqual(client._inner.options["timeout"], 1.0)
         self.assertEqual(client._inner.options["max_retries"], 0)
         sm = client.messages.stream(model="claude-sonnet-5", max_tokens=1, messages=[])
@@ -279,7 +280,7 @@ class T7MiddlewareCapturesHeader(unittest.TestCase):
                 gateway_auth._REQUEST_TOKEN.reset(tok)
             self.assertIsInstance(b.claude_client, llm_transport._Bound)
             self.assertIsInstance(g.claude_client, _FakeSDK, "전역은 그대로다")
-            self.assertEqual(b.cohere_api_key, TOKEN)
+            self.assertTrue(b.cohere_api_key == TOKEN, "cohere_api_key는 바인딩 토큰이어야 한다")
             self.assertEqual(b.cohere_base_url, llm_transport.GATEWAY_URL)
 
 
