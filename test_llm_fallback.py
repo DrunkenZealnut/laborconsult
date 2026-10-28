@@ -961,6 +961,87 @@ def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
     print("  ✅ Claude 강제 tool_choice 거절(400+문구) → auto+지시 자가치유·기억, 다른 400·비400 전파, 강제 가능 모델 불변")
 
 
+def test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto() -> None:
+    """Vercel AI Gateway 경유(2026-10-28 실측, opus-5.5): 강제 tool_choice가 400 대신 **200**으로 오되 도구를 부르지 않고
+    추론·텍스트만 돌려준다(stop_reason max_tokens 포함). 400과 같은 신호로 auto+지시로 전환해 기억해야 한다 — 안 그러면
+    Gateway 모드에서 의도분석·추출이 매 질문 '도구 호출 없음' → OpenAI 폴백(PR #142가 고친 증상의 재발).
+    강제가 통하는 모델(tool_use 반환)은 종전과 같다.
+    """
+    from app.core import llm_gateway as gw
+    from app.templates.prompts import ANALYZE_TOOL
+
+    class _ToolUse:
+        type = "tool_use"
+        name = ANALYZE_TOOL["name"]
+        input = {"question_summary": "x", "is_labor_related": True}
+
+    class _Text:
+        type = "text"
+        text = "도구 대신 글로 답했다"
+
+    class _Thinking:
+        type = "thinking"
+
+    class _Resp:
+        def __init__(self, content, stop_reason):
+            self.content, self.stop_reason = content, stop_reason
+
+    class _Claude:
+        def __init__(self, forced_stop="max_tokens"):
+            self.calls: list[dict] = []
+            self.forced_stop = forced_stop
+
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            if kw["tool_choice"]["type"] in ("any", "tool"):
+                return _Resp([_Thinking(), _Text()], self.forced_stop)      # 200, 도구 미호출
+            return _Resp([_ToolUse()], "tool_use")
+
+    def cfg(client):
+        class Cfg:
+            claude_client = client
+            openai_client = _Exploding()
+            gemini_api_key = None
+        return Cfg()
+
+    msgs = [{"role": "user", "content": "q"}]
+    for stop in ("max_tokens", "end_turn"):
+        gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+        fake = _Claude(forced_stop=stop)
+        with _quiet(), _with_primary("claude"):
+            label, name, inp = gw.tool(cfg(fake), system="s", messages=msgs, tools=[ANALYZE_TOOL],
+                                       choice=ANALYZE_TOOL["name"], purpose="t")
+        assert (label, name, inp["is_labor_related"]) == ("Claude", ANALYZE_TOOL["name"], True), (stop, label, name)
+        assert [c["tool_choice"]["type"] for c in fake.calls] == ["tool", "auto"], (stop, fake.calls)
+        assert fake.calls[-1]["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
+        assert "claude-opus-5-5" in gw._CLAUDE_TOOL_NO_FORCE
+        # 기억 뒤에는 강제 호출 없이 바로 auto
+        fake2 = _Claude(forced_stop=stop)
+        with _quiet(), _with_primary("claude"):
+            gw.tool(cfg(fake2), system=None, messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t")
+        assert [c["tool_choice"]["type"] for c in fake2.calls] == ["auto"], fake2.calls
+    gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+    # refusal은 모델 특성이 아니다 — 이번 요청만 auto로 재시도하고 기억하지 않는다(다음 호출은 다시 강제부터)
+    fake3 = _Claude(forced_stop="refusal")
+    with _quiet(), _with_primary("claude"):
+        label, name, inp = gw.tool(cfg(fake3), system="s", messages=msgs, tools=[ANALYZE_TOOL],
+                                   choice=ANALYZE_TOOL["name"], purpose="t")
+    assert (label, name) == ("Claude", ANALYZE_TOOL["name"])
+    assert [c["tool_choice"]["type"] for c in fake3.calls] == ["tool", "auto"], fake3.calls
+    assert "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE, "refusal 한 번으로 모델을 기억하면 안 된다"
+    fake4 = _Claude(forced_stop="refusal")
+    with _quiet(), _with_primary("claude"):
+        gw.tool(cfg(fake4), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert [c["tool_choice"]["type"] for c in fake4.calls] == ["tool", "auto"], fake4.calls
+
+
 def main() -> None:
     test_t1_empty_first_provider_falls_back()
     test_t2_whitespace_only_not_leaked()
@@ -979,6 +1060,7 @@ def main() -> None:
     test_primary_setting_drives_every_stage()
     test_gateway_vendor_quirks()
     test_claude_forced_tool_choice_rejected_falls_back_to_auto()
+    test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto()
     test_llm_meta_intent_vs_primary()
     test_intent_both_vendors_fail_keeps_fail_open()
     test_analysis_result_vendor_neutral()

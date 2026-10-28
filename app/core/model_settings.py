@@ -236,7 +236,16 @@ def select_latest(provider: str, raw: list[dict], current: str | None) -> list[d
 
 
 def fetch_raw_models(provider: str, config) -> list[dict]:
-    """벤더 목록 API 호출(키는 서버에만). 실패는 호출부가 502로 변환."""
+    """벤더 목록 API 호출(키는 서버에만). 실패는 호출부가 502로 변환.
+
+    Gateway 모드(ai-gateway-oidc-migration)의 Claude·OpenAI는 벤더 목록 API를 OIDC 토큰으로 부를 수 없어
+    Gateway 카탈로그에서 벤더 ID(providerModelId)로 만든다 — 저장값·테스트 호출은 그 벤더 ID 그대로다.
+    Gemini는 Gateway로 보내지 않으므로(별칭 슬러그 없음) 현행 분기다.
+    """
+    from app.core import llm_transport
+    if llm_transport.is_gateway(config) and provider in ("claude", "openai"):
+        from app.core import gateway_auth
+        return llm_transport.catalog_models(provider, gateway_auth.current_token())
     if provider == "claude":
         page = config.claude_client.with_options(timeout=10.0, max_retries=0).models.list(limit=100)
         return [{"id": m.id, "label": getattr(m, "display_name", None) or m.id,
