@@ -121,12 +121,16 @@ def _fetch_catalog(token: str | None) -> dict:
     models = (r.json() or {}).get("models") or []
     # /v1/models는 type(언어·임베딩·재정렬)·name·released(출시일 epoch)를 준다 — 실패해도 슬러그 표는 살린다(Check BS6).
     # 그때는 type 필터와 출시일 정렬이 빠질 뿐이고, "카탈로그 전체 실패 → 정적 표"로 떨어지는 것보다 낫다.
+    # 실패는 빈 정상 응답과 구분해 표시한다(CodeRabbit #146) — catalog()가 그 결과를 CATALOG_TTL 동안 들고 있으면
+    # /v1/models가 복구돼도 관리자 목록이 한 시간 동안 ID 역순·type 필터 없음으로 남는다.
     listing: dict = {}
+    listing_failed = False
     try:
         r2 = httpx.get(GATEWAY_OPENAI_URL + "/models", headers=headers, timeout=CATALOG_TIMEOUT)
         r2.raise_for_status()
         listing = {e.get("id"): e for e in ((r2.json() or {}).get("data") or []) if e.get("id")}
     except Exception as exc:  # noqa: BLE001 — 토큰 값은 메시지에 없다
+        listing_failed = True
         logger.warning("Gateway /v1/models 조회 실패 — type·출시일 없이 카탈로그만 쓴다: %s", type(exc).__name__)
     slug_by: dict[tuple[str, str], str] = {}
     by_vendor: dict[str, list[tuple[str, str]]] = {}
@@ -139,7 +143,7 @@ def _fetch_catalog(token: str | None) -> dict:
             if vendor and pm:
                 slug_by.setdefault((vendor, pm), slug)
                 by_vendor.setdefault(vendor, []).append((pm, slug))
-    return {"slug_by": slug_by, "by_vendor": by_vendor, "listing": listing}
+    return {"slug_by": slug_by, "by_vendor": by_vendor, "listing": listing, "listing_failed": listing_failed}
 
 
 def catalog(token: str | None = None) -> dict:
@@ -151,7 +155,9 @@ def catalog(token: str | None = None) -> dict:
     global _catalog, _catalog_at, _catalog_failed_at
     now = time.monotonic()
     with _catalog_lock:
-        if _catalog and now - _catalog_at < CATALOG_TTL:
+        # /v1/models만 실패한 부분 결과는 슬러그 표로 계속 쓰되 CATALOG_FAIL_TTL 뒤 다시 받는다 — 정상 결과만 CATALOG_TTL.
+        fresh_for = CATALOG_FAIL_TTL if _catalog.get("listing_failed") else CATALOG_TTL
+        if _catalog and now - _catalog_at < fresh_for:
             return _catalog
         if now - _catalog_failed_at < CATALOG_FAIL_TTL:
             return _catalog

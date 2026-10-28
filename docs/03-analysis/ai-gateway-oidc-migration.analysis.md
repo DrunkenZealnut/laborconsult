@@ -28,7 +28,7 @@ worktree `/Users/zealnutkim/DEV/laborconsult-gw2`, 브랜치 `fix/ai-gateway-che
 | **G-M2** | `rerank_results(..., cohere_base_url=config.cohere_base_url)` 전달. AST 회귀 T13: `config.cohere_api_key`를 넘기는 모든 호출부(pipeline 2·eval 2)가 `cohere_base_url`을 넘긴다 | `eval_retrieval.py:134`, `eval_colloquial.py:112`, `test_llm_transport.py` T13 | 사각 → 조치 |
 | **G-M3** | `catalog_models`의 `created`를 `/v1/models`의 `released`(출시일 epoch)로 채운다 — 실측: `created`는 전 모델 동일 상수(1755815280), `released`는 모델별(opus-5.5 1790035200·sonnet-5.5 1790553600·haiku-5.5 1791331200). `select_latest` 무변경으로 "최신 3개"가 성립 | `llm_transport.py`, T11 보강 | 사각 → 조치 |
 | BS5 | `fetch_raw_models`가 contextvar 대신 `llm_transport.bound_token(config)`(바인딩 객체) 사용 | `model_settings.py`, `llm_transport.bound_token`, T14 | 사각 → 조치 |
-| BS6 | `catalog()`가 네트워크를 **잠금 밖**에서 탄다. `/v1/models` 실패는 WARNING + 슬러그 표 유지 | `llm_transport.py`, T15 | 사각 → 조치 |
+| BS6 | `catalog()`가 네트워크를 **잠금 밖**에서 탄다. `/v1/models` 실패는 WARNING + 슬러그 표 유지. **PR #146 CodeRabbit Minor**: 그 부분 결과가 `CATALOG_TTL`(1시간) 캐시돼 복구 뒤에도 관리자 목록이 ID 역순으로 남는다 → `listing_failed` 표식 + `CATALOG_FAIL_TTL`(60초) 뒤 재조회(빈 **정상** 목록은 구분해 1시간 캐시) | `llm_transport.py`, T15(+1) | 사각 → 조치 |
 | BS7 | 미사용 `require_token()` 제거 | `gateway_auth.py` | 사각 → 조치 |
 | BS8 | `check_env.py`의 `.env.vercel.local`을 저장소 루트 절대경로로 | `check_env.py` | 사각 → 조치 |
 | BS4·BS9 | 문서화(설계서 §3·§4.1, docstring) | 설계 v0.3, `llm_gateway.py` | 사각 → 조치 |
@@ -379,3 +379,4 @@ Q1(b) Gemini 옵트인은 "사용자가 슬러그를 정했을 때만 Do"라는 
 |---|---|---|---|
 | 1.0 | 2026-10-28 | 최초 Gap 분석(main 74aa04d, 설계 v0.2 대비). gap-detector 143항목 + 분석자 재검증(Medium 3·❌ 4·main 테스트 재실행) | gap-detector · Claude |
 | 1.1 | 2026-10-28 | Act 조치 기록(§1.1) — Medium 3·Low 8 코드/설계 v0.3/CLAUDE.md, 테스트 25/25·변이 5/5, 재집계 99.7% | Claude |
+| 1.2 | 2026-10-28 | PR #146 리뷰 반영 — Codex 코드·보안 0건, CodeRabbit Minor 1건(BS6 부분 실패 캐시 TTL) 조치, 테스트 26/26·변이 7/7 | Claude |

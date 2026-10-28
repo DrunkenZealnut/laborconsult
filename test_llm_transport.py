@@ -508,7 +508,61 @@ class T15CatalogFetchOutsideLockAndListingOptional(unittest.TestCase):
             cat = llm_transport._fetch_catalog(None)
         self.assertEqual(cat["slug_by"].get(("anthropic", "claude-new-9")), "anthropic/claude-new-9")
         self.assertEqual(cat["listing"], {})
+        self.assertIs(cat["listing_failed"], True, "실패는 빈 정상 응답과 구분해 표시한다(CodeRabbit #146)")
         self.assertTrue(any("/v1/models" in m for m in logs.output))
+
+    def test_partial_listing_failure_is_refetched_after_fail_ttl(self):
+        """/v1/models만 실패한 부분 결과는 CATALOG_TTL(1시간)이 아니라 CATALOG_FAIL_TTL 뒤 다시 받는다(CodeRabbit #146).
+
+        그 사이에는 슬러그 표를 계속 쓴다(답변 경로 해석은 끊기지 않는다). 빈 **정상** 목록은 부분 실패가 아니라
+        CATALOG_TTL 동안 캐시한다 — 둘을 구분하는 것이 표식의 목적이다.
+        """
+        slug = {("anthropic", "claude-new-9"): "anthropic/claude-new-9"}
+        degraded = {"slug_by": slug, "by_vendor": {}, "listing": {}, "listing_failed": True}
+        full = {"slug_by": slug, "by_vendor": {}, "listing": {"anthropic/claude-new-9": {"type": "language"}},
+                "listing_failed": False}
+        empty_ok = {"slug_by": slug, "by_vendor": {}, "listing": {}, "listing_failed": False}
+        clock = {"t": 1000.0}
+        fetches: list[dict] = []
+
+        def fake_fetch(token):
+            fetches.append(token)
+            return results.pop(0)
+
+        results = [degraded, full]
+        llm_transport.reset_catalog_cache()
+        try:
+            with mock.patch.object(llm_transport, "_fetch_catalog", side_effect=fake_fetch), \
+                    mock.patch.object(llm_transport.time, "monotonic", side_effect=lambda: clock["t"]):
+                self.assertIs(llm_transport.catalog(None)["listing_failed"], True)
+                self.assertEqual(len(fetches), 1)
+                # FAIL_TTL 안에서는 재조회하지 않고 슬러그 표를 그대로 쓴다
+                clock["t"] += llm_transport.CATALOG_FAIL_TTL / 2
+                self.assertEqual(llm_transport.catalog(None)["slug_by"], slug)
+                self.assertEqual(len(fetches), 1)
+                # FAIL_TTL이 지나면 다시 받아 완전한 목록으로 바뀐다(1시간을 기다리지 않는다)
+                clock["t"] += llm_transport.CATALOG_FAIL_TTL
+                cat = llm_transport.catalog(None)
+                self.assertEqual(len(fetches), 2)
+                self.assertIs(cat["listing_failed"], False)
+                self.assertIn("anthropic/claude-new-9", cat["listing"])
+                # 정상 결과는 CATALOG_TTL 동안 캐시된다
+                clock["t"] += llm_transport.CATALOG_TTL - 1
+                llm_transport.catalog(None)
+                self.assertEqual(len(fetches), 2)
+
+            # 빈 정상 목록(실패 아님)은 부분 실패로 취급하지 않는다 — CATALOG_TTL 캐시
+            results = [empty_ok]
+            fetches.clear()
+            llm_transport.reset_catalog_cache()
+            with mock.patch.object(llm_transport, "_fetch_catalog", side_effect=fake_fetch), \
+                    mock.patch.object(llm_transport.time, "monotonic", side_effect=lambda: clock["t"]):
+                self.assertEqual(llm_transport.catalog(None)["listing"], {})
+                clock["t"] += llm_transport.CATALOG_FAIL_TTL * 2
+                llm_transport.catalog(None)
+                self.assertEqual(len(fetches), 1)
+        finally:
+            llm_transport.reset_catalog_cache()
 
 
 class T12GeminiStaysDirect(unittest.TestCase):
