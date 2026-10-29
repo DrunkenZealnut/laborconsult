@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 29,
+  "sessionCount": 82,
   "lastSession": {
-    "startedAt": "2026-08-30T02:22:29.538Z",
+    "startedAt": "2026-10-28T14:41:06.007Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -156,5 +156,369 @@
     "planDoc": "docs/01-plan/features/naver-kin-answer-simplification.plan.md",
     "designDoc": "docs/02-design/features/naver-kin-answer-simplification.design.md",
     "updatedAt": "2026-09-21T20:46:28Z"
+  },
+  "anthropic-sdk-v1": {
+    "phase": "archived",
+    "matchRate": null,
+    "note": "cancelled after design",
+    "archivedAt": "2026-10-01T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/anthropic-sdk-v1/"
+  },
+  "admin-model-settings": {
+    "phase": "archived",
+    "matchRate": 95,
+    "iterationCount": 0,
+    "startedAt": "2026-09-29T00:00:00Z",
+    "archivedAt": "2026-10-01T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/admin-model-settings/"
+  },
+  "llm-fallback-alert": {
+    "phase": "archived",
+    "matchRate": null,
+    "note": "small cycle: plan/design only, verified in PR #89",
+    "startedAt": "2026-10-02T00:00:00Z",
+    "archivedAt": "2026-10-02T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/llm-fallback-alert/"
+  },
+  "kin-answer-accuracy": {
+    "phase": "archived",
+    "matchRate": 98,
+    "iterationCount": 0,
+    "startedAt": "2026-10-03T00:00:00Z",
+    "archivedAt": "2026-10-05T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/kin-answer-accuracy/",
+    "pr": 96
+  },
+  "currentFeature": "ai-gateway-oidc-migration",
+  "effective-law-and-graph-precedents": {
+    "phase": "archived",
+    "matchRate": 98,
+    "iterationCount": 0,
+    "startedAt": "2026-10-04T00:00:00Z",
+    "archivedAt": "2026-10-05T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/effective-law-and-graph-precedents/",
+    "pr": 98
+  },
+  "claim-authority-and-assessor-facts": {
+    "phase": "check",
+    "startedAt": "2026-10-05T00:00:00Z",
+    "planPath": "docs/01-plan/features/claim-authority-and-assessor-facts.plan.md",
+    "designPath": "docs/02-design/features/claim-authority-and-assessor-facts.design.md",
+    "designRev": 2,
+    "validatedAt": "2026-10-05",
+    "validatorFindings": 31,
+    "branch": "feat/claim-authority-and-assessor-facts",
+    "matchRate": 94.4,
+    "matchRateStrict": 90.7,
+    "iterationCount": 0,
+    "analysisPath": "docs/03-analysis/claim-authority-and-assessor-facts.analysis.md",
+    "checkedAt": "2026-10-05",
+    "checkFindings": {
+      "partial": 8,
+      "missing": 1,
+      "deviation": 1,
+      "risks": 11
+    },
+    "pendingVerification": "Live(지식iN 20·risk-04~06) — Anthropic 한도 해제 후"
+  },
+  "production-law-api-recovery": {
+    "phase": "do",
+    "startedAt": "2026-10-06T00:00:00Z",
+    "planPath": "docs/01-plan/features/production-law-api-recovery.plan.md",
+    "trigger": "외부 엄격 점검 topic30(2026-10-06, 프로덕션 74.5) + Vercel 로그: 법제처 인증 실패",
+    "dependsOn": "claim-authority-and-assessor-facts (PR #101 머지 204e59f)",
+    "openDecisions": [],
+    "designPath": "docs/02-design/features/production-law-api-recovery.design.md",
+    "decisions": {
+      "P0-1": "C(캐시 예열) 선행, A는 비용 확인 후",
+      "warm_laws": "기본안(_watched_laws + KEYWORD_LAWS)",
+      "prereq": "PR #101 먼저 머지"
+    },
+    "designRev": 2,
+    "validatedAt": "2026-10-06",
+    "validatorScore": 72,
+    "validatorFindings": {
+      "high": 3,
+      "medium": 8,
+      "low": 10
+    },
+    "doStartedAt": "2026-10-06",
+    "branch": "feat/production-law-api-recovery",
+    "doProgress": {
+      "implemented": [
+        "law_catalog.py",
+        "legal_api(LawApiAuthError·v5 키·LAW_API_LIVE·분류·v2 집계)",
+        "legal_consultation(exclude_keys·drop_refs)",
+        "pipeline(2-1 키워드·성희롱 D10·law_api v2)",
+        "warm_law_cache.py",
+        "check_law_freshness",
+        "check_llm_fallback ①②③",
+        "오프라인 스크립트 3종 인증 오류",
+        ".env.example",
+        "test_law_api_recovery.py R1~R13",
+        "기존 테스트 정정(M8+E5·E20·B1)",
+        "CLAUDE.md",
+        "run_eval --law-mode·--topic30·--repo"
+      ],
+      "deviations": [
+        "법령명 키에서 가운뎃점도 제거(_law_key) — LLM이 점 없이 씀(topic30 1번 실측)",
+        "canonical_law_name이 예열 대상 변형을 정식명으로 복원(official_name_index)",
+        "판례·판정문 키워드 검색·NLRC도 precedents에 집계",
+        "KEYWORD 규칙 소폭 확장(배우자 주어 구어·출산휴가·사업장 바꾸기)",
+        "L2 조회 1회 재시도·WARNING·error 분류·타임아웃 5초 — HTTP/2 재사용 연결 끊김(RemoteProtocolError) 실측·재현·검증(70회 부하 최종 실패 0)",
+        "키워드 구어 확장: 육아 근로단축·가정돌봄·임신 근무시간"
+      ],
+      "warmedAt": "2026-10-06T16:16+09:00 (7,473행·상태 행)",
+      "pending": [
+        "프로덕션 metadata.law_api 3일 관측(예열 법령 성공률 ≥95%)",
+        "10-08 00:10 예열이 근기법 새 판본(20261008) 수신 확인 + 오전 check_law_freshness --anchors",
+        "/pdca analyze production-law-api-recovery"
+      ],
+      "measured": {
+        "set": "topic30 30문항, gpt-6-sol 고정, before=main+prod 재현 / after=브랜치+cache",
+        "context_laws": "40 → 132",
+        "zero_law_items": "10 → 1",
+        "expected_hits": "1/17 → 13/17 (재측정 3·6·24 전부 적중)",
+        "drf_requests": "32 → 0",
+        "article_ok_rate": "132/137 (96%)",
+        "statute_absence_hedges": "7 → 6"
+      },
+      "followups": [
+        "다른 Supabase 읽기의 같은 일시 실패(model_settings·abuse guard·save_conversation)",
+        "예열 대상 확장 후보: 국민연금법·국민건강보험법·민법 일부",
+        "키워드 후보: 감봉→근기 제95조"
+      ],
+      "done_ops": [
+        "Vercel Production env LAW_API_LIVE=off(민감)",
+        "launchd com.laborconsult.law-cache-warm 설치·첫 실행 성공",
+        "CodeRabbit 2건 반영(cd6fa0e)",
+        "PR #102 머지·배포(health 200)",
+        "로컬 체크아웃 main"
+      ]
+    },
+    "pr": 102,
+    "mergedAt": "2026-10-06",
+    "mergeCommit": "db28ee8"
+  },
+  "law-article-coverage": {
+    "phase": "do",
+    "startedAt": "2026-10-07T00:00:00Z",
+    "planPath": "docs/01-plan/features/law-article-coverage.plan.md",
+    "trigger": "지식iN 20문항 블라인드 재채점(2026-10-06 프로덕션, 78.4·오답0·누락25) 리뷰 — 처방 1~3(키워드 조문·5인 조건·예열 확장)",
+    "dependsOn": "production-law-api-recovery (PR #102 머지·배포, 3일 관측 중)",
+    "openDecisions": [],
+    "designPath": "docs/02-design/features/law-article-coverage.design.md",
+    "designRev": 2,
+    "decisions": {
+      "warm_civil_criminal": "법령 전체 예열",
+      "size_rule": "ANSWER_ACCURACY_RULES",
+      "cardio_block": "이번 사이클 포함",
+      "deploy": "10-09 관측·Check 이후"
+    },
+    "validatedAt": "2026-10-07",
+    "validatorScore": 80,
+    "validatorFindings": {
+      "high": 2,
+      "medium": 10,
+      "low": 8
+    },
+    "branch": "feat/law-article-coverage (origin/main db28ee8 기반)",
+    "doStartedAt": "2026-10-07",
+    "worktree": "/Users/zealnutkim/DEV/laborconsult-lac"
+  },
+  "unemployment-separation-grounds": {
+    "phase": "design",
+    "startedAt": "2026-10-07T00:00:00Z",
+    "planPath": "docs/01-plan/features/unemployment-separation-grounds.plan.md",
+    "trigger": "코퍼스·실사용 질문 분석(2026-10-07): 실업급여 수요 1위(23%)·공공 근거 최저(0.02), 별표 2 공공 0건, 이직사유 답변 유보 48%",
+    "dependsOn": "law-article-coverage (PR #104, 자동 진행 10-10 머지 예정) — 머지 뒤 main에서 분기",
+    "openDecisions": [],
+    "designPath": "docs/02-design/features/unemployment-separation-grounds.design.md",
+    "designRev": 2,
+    "decisions": {
+      "annex_supply": "압축 규칙 블록 + 원문 앵커(이직사유 질문만)",
+      "adjudications": "별도 사이클(eiac 118 + iaciac 934)",
+      "block_scope": "이직 단서 있는 실업급여 질문만",
+      "start": "PR #104 머지 뒤 main에서 분기"
+    },
+    "validatedAt": "2026-10-07",
+    "validatorScore": 74,
+    "validatorFindings": {
+      "high": 5,
+      "medium": 9,
+      "low": 11
+    },
+    "designApprovedAt": "2026-10-07",
+    "measurementHarness": "~/DEV/laborconsult_eval/sep (synthetic 19, real R+25/R-7, compare_sep.py)",
+    "doBlockedBy": "PR #104 머지 + launchd 예열 운영 worktree 래퍼 전환(lac 자동 진행 post_merge)"
+  },
+  "audit-50-legal-accuracy": {
+    "phase": "archived",
+    "matchRate": 99.7,
+    "iterationCount": 6,
+    "startedAt": "2026-10-11T00:00:00Z",
+    "archivedAt": "2026-10-14T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/audit-50-legal-accuracy/",
+    "pr": 113
+  },
+  "calc-card-followups": {
+    "phase": "archived",
+    "matchRate": 95.6,
+    "iterationCount": 0,
+    "startedAt": "2026-10-15T00:00:00Z",
+    "pr": 115,
+    "mergeCommit": "4028ce8",
+    "hotfixPr": 116,
+    "hotfixMergeCommit": "281f3d6",
+    "archivedAt": "2026-10-16T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/calc-card-followups/",
+    "archivePr": 117,
+    "archiveMergeCommit": "56c621b"
+  },
+  "calc-card-consistency": {
+    "phase": "archived",
+    "matchRate": 98.4,
+    "iterationCount": 0,
+    "startedAt": "2026-10-18T00:00:00Z",
+    "plan": "docs/01-plan/features/calc-card-consistency.plan.md",
+    "worktree": "laborconsult-audit50",
+    "branch": "feat/calc-card-consistency",
+    "design": "docs/02-design/features/calc-card-consistency.design.md",
+    "designAt": "2026-10-18T00:00:00Z",
+    "doAt": "2026-10-18T00:00:00Z",
+    "baselineWorktree": "laborconsult-ccbase 제거(10-19)",
+    "doCompletedAt": "2026-10-18T00:00:00Z",
+    "designVersion": "0.5",
+    "review": "code-analyzer H1·M4·L4 반영(C10~C18)",
+    "pr": 118,
+    "commits": [
+      "fdf1de8 (A)",
+      "4373211 (B)",
+      "908afab (CR#118)",
+      "5bd39b0 (CR#118 재검토)"
+    ],
+    "ci": "pass",
+    "merged": "PR #118 → fdbd687 (2026-10-19T10:59:48Z)",
+    "deploy": "Vercel production success, /api/health 200",
+    "checkAt": "2026-10-19T00:00:00Z",
+    "analysis": "docs/03-analysis/calc-card-consistency.analysis.md (audit50 워크트리, 미커밋)",
+    "checkFindings": "gap-detector 122항목 98.4%(부분 4: G-1·G-3·G-4·G-5), 갭 9건 모두 Low — G-1·G-2·G-3·G-7 실행 재현. 설계 공백 Medium 1('총 N시간' 하루 합계 → 틀린 조건부 예시, 코퍼스 예시 95건 중 2건) + Low 3",
+    "hotfix": "fix/calc-card-consistency-check(audit50) 커밋 39b5c8e → PR #119 머지 345de0f: C21 '총' 1주 단서·C22 날짜 '1일'·C23 보류 줄 분리·C24 T8 공허 사례·C25 CLAUDE.md — 26단계·CLI 0·변이 44/44, Live kin-01 5/5(조건부 2)·fixture ×2 0·KiN 조문 18(kin-02 매처)",
+    "hotfixPr": 119,
+    "reportAt": "2026-10-20T00:00:00Z",
+    "report": "docs/04-report/features/calc-card-consistency.report.md v0.2 (audit50 워크트리, 미커밋)",
+    "completion": "완료 조건 6개: 충족 4 · 단서 1(#1 휴업수당 I3) · 부분 1(#4 지식iN 조문 18<19, kin-02 매처)",
+    "hotfixMerged": "PR #119 → 345de0f (2026-10-20T06:02:17Z)",
+    "hotfixDeploy": "Vercel production success(345de0f), /api/health 200, main Offline Tests success",
+    "archivedAt": "2026-10-21T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/calc-card-consistency/",
+    "archiveBranch": "docs/calc-card-consistency-report → 커밋 65ec4c4",
+    "archivePr": 120,
+    "archiveMerged": "PR #120 → bff4439 (2026-10-21T05:30:27Z)",
+    "archiveHead": "bb278f8 (65ec4c4 + CodeRabbit #120 4건)",
+    "archiveDeploy": "Vercel production success(bff4439), /api/health 200, main Offline Tests success",
+    "cycleClosed": "2026-10-21"
+  },
+  "chat-submission-lock": {
+    "phase": "archived",
+    "matchRate": 99.4,
+    "iterationCount": 0,
+    "startedAt": "2026-10-22T00:00:00Z",
+    "plan": "docs/01-plan/features/chat-submission-lock.plan.md",
+    "worktree": "laborconsult-submit-lock",
+    "branch": "feat/chat-submission-lock",
+    "base": "758f694 (PR #103 머지)",
+    "source": "외부 프런트엔드 패턴 도입 검토 P0(10-21) — 선행 PR #103 머지 후 착수",
+    "reproduced": "main vm 재현 A 첨부 인코딩 중 이중 전송 2건·B 진행 중 FAQ 2건·C 진행 중 다시 시도 2건·D 인코딩 중 입력 유실·E 읽기 실패 무안내",
+    "design": "docs/02-design/features/chat-submission-lock.design.md",
+    "designAt": "2026-10-22T00:00:00Z",
+    "designVersion": "0.5",
+    "prototype": "scratchpad csl/proto_patch.py(index.html 사본 121줄 변경) + csl/test_submission_proto.js(L7~L16): main 8 실패·2 통과, 시제품 10 통과, 기존 L1~L5 통과·L6은 갱신 필요",
+    "doAt": "2026-10-22T00:00:00Z",
+    "implementation": "index.html(시제품과 동일 + 주석 정리)·sw.js v11-2026-10-22·test_chat_lock.js(L6 갱신·L7~L16)·CLAUDE.md, 미커밋",
+    "verification": "test_chat_lock 16/16, CI 동등 28단계 PASS(리뷰 후 재실행), 변이 M1~M22 22/22, 브라우저(모의 서버 5571/5572): main 연타 3건·FAQ 2건·다시 시도 +1·초기화 후 잠김 → 새 코드 1건·1건·변화 없음·즉시 열림, 콘솔 오류 0",
+    "review": "code-analyzer: 결함 없음, Low 6건 반영(C1 인코딩 중 초기화 사례·C2 trim 복원·C3 테스트 공백 MA/MB/MD/ME·C4 CLAUDE.md '대화 초기화')",
+    "doCompletedAt": "2026-10-22T00:00:00Z",
+    "checkAt": "2026-10-22T00:00:00Z",
+    "commit": "f884a51 (코드·테스트·CLAUDE.md·Plan·Design v0.3·Analysis)",
+    "analysis": "docs/03-analysis/chat-submission-lock.analysis.md",
+    "checkFindings": "gap-detector 81항목 99.4%(일치 78·의도 변경 2·부분 1·누락 0), 동작 갭 0, 문서 갭 GAP-1~4 → Design v0.3 정정, DG-1(진행 중 FAQ가 초안 덮음)·DG-3(드롭 첨부 잠금 무시) 후속 기록, L14 헤더 전 abort 사례 추가",
+    "pr": 121,
+    "commits": [
+      "f884a51 (본 커밋)",
+      "a64fdb7 (CodeRabbit #121: 진행 중 FAQ 300ms 예약 전송)",
+      "55fab3a (Design v0.5 문서 정정)"
+    ],
+    "merged": "PR #121 → c5d33d2 (2026-10-23T01:23:44Z)",
+    "deploy": "Vercel production success(c5d33d2), /api/health 200, main Offline Tests success, sw v11-2026-10-22, 관문 코드 프로덕션 반영 확인",
+    "reportAt": "2026-10-23T00:00:00Z",
+    "report": "chat-submission-lock.report.md v0.2(report-generator 저장 241줄, Claude 대조 — 커밋·수치·단서 일치)",
+    "archivedAt": "2026-10-23T00:00:00Z",
+    "archivedTo": "docs/archive/2026-10/chat-submission-lock/",
+    "archiveBranch": "docs/chat-submission-lock-report → 커밋 a31315a",
+    "completion": "완료 조건 6개 충족(1·5는 실행 기록 의존)",
+    "archivePr": 122,
+    "archiveMerged": "PR #122 → 700f857 (2026-10-23T05:50:03Z)",
+    "cycleClosed": "2026-10-23"
+  },
+  "monthly-base-unification": {
+    "phase": "archived",
+    "matchRate": 100,
+    "iterationCount": 0,
+    "startedAt": "2026-10-23T00:00:00Z",
+    "archivedAt": "2026-10-23",
+    "archivedTo": "docs/archive/2026-10/monthly-base-unification/",
+    "prs": [
+      123,
+      124
+    ],
+    "merged": [
+      "d358047",
+      "ff0f99b"
+    ],
+    "followups": "연 상여 추출(의도분석 주기 필드)·채팅 경로 상여 미전달·DC/근로장려금 상여·S2/S4/S5",
+    "archivePR": "#125 머지 947d476 (2026-10-23)",
+    "worktreesRemoved": true
+  },
+  "wage-update-followups": {
+    "phase": "do",
+    "planPath": "docs/01-plan/features/wage-update-followups.plan.md",
+    "startedAt": "2026-10-26",
+    "baseline": "edaf904",
+    "source": "Codex PR #126~#132 review (Medium 18) after hotfix PR #134",
+    "designPath": "docs/02-design/features/wage-update-followups.design.md",
+    "designAt": "2026-10-26",
+    "doAt": "2026-10-26",
+    "doOrder": [
+      "PR-0",
+      "PR-2a",
+      "PR-1",
+      "PR-2b",
+      "PR-3",
+      "PR-4"
+    ],
+    "prs": {
+      "PR-0": 135,
+      "PR-2a": 136,
+      "PR-1": 137,
+      "PR-2b": 138,
+      "PR-3": 139,
+      "PR-4": 140
+    },
+    "liveGate": "blocked: LLM credits exhausted (2026-10-26)"
+  },
+  "ai-gateway-oidc-migration": {
+    "phase": "completed",
+    "matchRate": 99.7,
+    "iterationCount": 1,
+    "startedAt": "2026-10-28T00:00:00.000Z",
+    "updatedAt": "2026-10-29T00:36:39.000Z",
+    "description": "Vercel AI Gateway OIDC 전환 — 완료(Check 93.0% → Act 99.7%). PR #145(74aa04d)·#146(1c4f9cf) 머지, 프로덕션 transport=gateway·Claude opus-5-5·폴백 0 확인, 크레딧 $12.52/사용 $2.89. Report v1.1 작성. 후속 F-1~F-7(V-9 토큰 만료 실측, 제공자 키 삭제 ≈11-04 승인, check_llm_fallback 전 제공자 실패 사각 High, Gemini 슬러그). 다음: /pdca archive",
+    "documents": {
+      "plan": "docs/01-plan/features/ai-gateway-oidc-migration.plan.md",
+      "design": "docs/02-design/features/ai-gateway-oidc-migration.design.md",
+      "analysis": "docs/03-analysis/ai-gateway-oidc-migration.analysis.md",
+      "report": "docs/04-report/features/ai-gateway-oidc-migration.report.md"
+    }
   }
 }
