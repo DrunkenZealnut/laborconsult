@@ -1,6 +1,6 @@
 """LLM 전송 계층 — direct(제공자 직접 호출) | gateway(Vercel AI Gateway, OIDC) (ai-gateway-oidc-migration).
 
-설계: docs/02-design/features/ai-gateway-oidc-migration.design.md §2. 지킬 것:
+설계: docs/archive/2026-10/ai-gateway-oidc-migration/ai-gateway-oidc-migration.design.md §2. 지킬 것:
 - 스위치는 ``LLM_TRANSPORT``(기본 ``direct``) 하나다. **Vercel env에만** 두고 로컬 ``.env``에는 넣지 않는다 —
   오프라인 스크립트가 ``AppConfig.from_env()``를 import하면 Gateway 토큰을 요구하게 된다. Vercel env 변경은
   다음 배포부터 적용되므로 설정 뒤 반드시 재배포한다.

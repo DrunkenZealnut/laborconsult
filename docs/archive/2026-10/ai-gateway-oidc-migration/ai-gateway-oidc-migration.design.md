@@ -1,10 +1,10 @@
 # ai-gateway-oidc-migration — Design
 
-> Plan: `docs/01-plan/features/ai-gateway-oidc-migration.plan.md`(v0.1) · 작성 2026-10-28 · 기준 코드 main `9529cf1`
+> Plan: `ai-gateway-oidc-migration.plan.md`(같은 폴더)(v0.1) · 작성 2026-10-28 · 기준 코드 main `9529cf1`
 > 범위: Plan §4의 전송 계층·인증·모델 매핑·경로별 변경·검증·배포·롤백. Plan §9의 Q1~Q6을 §0에서 결정한다.
 > 검증 상태: 이 문서의 코드 사실(호출 지점·`with_options` 전수 사용·스레드 경로)은 2026-10-28 저장소 grep 실측이다. Gateway 쪽 사실은 공식 문서와 `GET /v1/models` 공개 응답에서 왔고, **인증이 필요한 항목(`/v1/credits`·카탈로그 필드명·Anthropic 호환 표면의 확장 필드 통과)은 아직 확인하지 못했다** — §12에 검증 항목 V-1~V-9로 모아 Do 단계 첫 작업으로 둔다.
 > 토큰·키 값은 이 문서에도, 구현의 로그에도 나오지 않는다.
-> **v0.3(2026-10-28, Check 반영)**: 구현과 어긋난 서술을 정정했다(§1·§2.1·§2.2·§2.4·§2.5·§2.6·§2.7·§3·§3.2·§4.1·§4.5·§4.7·§5·§6.1·§7.1·§12·§14), Q1(b) 옵트인 항목은 "미착수(조건부)"로 표기했고, Check에서 찾은 설계 사각 G-M1~G-M3·BS5~BS8의 조치를 적었다. Gap 분석: `docs/03-analysis/ai-gateway-oidc-migration.analysis.md`.
+> **v0.3(2026-10-28, Check 반영)**: 구현과 어긋난 서술을 정정했다(§1·§2.1·§2.2·§2.4·§2.5·§2.6·§2.7·§3·§3.2·§4.1·§4.5·§4.7·§5·§6.1·§7.1·§12·§14), Q1(b) 옵트인 항목은 "미착수(조건부)"로 표기했고, Check에서 찾은 설계 사각 G-M1~G-M3·BS5~BS8의 조치를 적었다. Gap 분석: `ai-gateway-oidc-migration.analysis.md`(같은 폴더).
 
 ## 0. 설계 결정 요약
 
