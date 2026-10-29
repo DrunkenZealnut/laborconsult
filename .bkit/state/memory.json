@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 82,
+  "sessionCount": 83,
   "lastSession": {
-    "startedAt": "2026-10-28T14:41:06.007Z",
+    "startedAt": "2026-10-29T01:55:40.537Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -189,7 +189,7 @@
     "archivedTo": "docs/archive/2026-10/kin-answer-accuracy/",
     "pr": 96
   },
-  "currentFeature": "ai-gateway-oidc-migration",
+  "currentFeature": null,
   "effective-law-and-graph-precedents": {
     "phase": "archived",
     "matchRate": 98,
@@ -508,17 +508,24 @@
     "liveGate": "blocked: LLM credits exhausted (2026-10-26)"
   },
   "ai-gateway-oidc-migration": {
-    "phase": "completed",
+    "phase": "archived",
     "matchRate": 99.7,
     "iterationCount": 1,
     "startedAt": "2026-10-28T00:00:00.000Z",
-    "updatedAt": "2026-10-29T00:36:39.000Z",
-    "description": "Vercel AI Gateway OIDC 전환 — 완료(Check 93.0% → Act 99.7%). PR #145(74aa04d)·#146(1c4f9cf) 머지, 프로덕션 transport=gateway·Claude opus-5-5·폴백 0 확인, 크레딧 $12.52/사용 $2.89. Report v1.1 작성. 후속 F-1~F-7(V-9 토큰 만료 실측, 제공자 키 삭제 ≈11-04 승인, check_llm_fallback 전 제공자 실패 사각 High, Gemini 슬러그). 다음: /pdca archive",
-    "documents": {
-      "plan": "docs/01-plan/features/ai-gateway-oidc-migration.plan.md",
-      "design": "docs/02-design/features/ai-gateway-oidc-migration.design.md",
-      "analysis": "docs/03-analysis/ai-gateway-oidc-migration.analysis.md",
-      "report": "docs/04-report/features/ai-gateway-oidc-migration.report.md"
-    }
+    "archivedAt": "2026-10-29",
+    "archivedTo": "docs/archive/2026-10/ai-gateway-oidc-migration/",
+    "prs": [
+      145,
+      146,
+      147
+    ],
+    "merged": [
+      "74aa04d",
+      "1c4f9cf",
+      "88f7f5b"
+    ],
+    "followups": "F-1 V-9 토큰 만료 실측(재pull 없이 만료 → 401 → 재pull 복구)·F-2 Vercel env 제공자 키 3종 삭제(≈11-04 뒤 사용자 승인, 제공자 측 키는 폐기 안 함)·F-4 check_llm_fallback 전 제공자 실패 사각(High)·F-6 Gemini 슬러그(직접 호출 잔존)·F-7 콜드 TTFT 다표본·F-3 예산/태그·F-5 anthropic 1.x",
+    "archivePR": "#148 (2026-10-29)",
+    "worktreesRemoved": true
   }
 }
