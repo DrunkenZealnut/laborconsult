@@ -3,7 +3,7 @@
 > **Status**: Complete (단, Gemini 직접 호출 잔존 · 후속 7건 명시 · V-9 토큰 만료 실측 미완)
 >
 > **Project**: laborconsult
-> **Version**: main `1c4f9cf` (Plan v0.1 · Design v0.3 · Analysis v1.2)
+> **Version**: main `1c4f9cf` (Plan v0.1 · Design v0.3 · Analysis v1.2) · Report v1.2
 > **Author**: Claude
 > **Completion Date**: 2026-10-28
 > **PDCA Cycle**: #1
@@ -130,7 +130,7 @@ PR · 커밋
 
 | # | Item | Reason | Priority | Estimated Effort |
 |---|------|--------|----------|------------------|
-| F-1 | V-9 OIDC 토큰 12시간 만료 실측 (만료 시 SDK 401 노출 확인) | 12시간 경과 후 로컬에서 1회 확인 필요 | Medium | 0.5시간 |
+| F-1 | V-9 OIDC 토큰 12시간 만료 실측 (만료 시 SDK 401 노출 확인) | 로컬 1회 — 토큰을 **재pull하지 않고** 12시간 경과 → 만료 토큰으로 호출해 401 노출 확인 → 재pull로 복구 확인 (`vercel env pull`이 토큰을 갱신하므로 순서가 바뀌면 검증이 안 된다, §7) | Medium | 0.5시간 |
 | F-2 | 복귀 창(≈2026-11-04) 뒤 Vercel env의 `ANTHROPIC_API_KEY`·`OPENAI_API_KEY`·`COHERE_API_KEY` 삭제 | 사용자 승인 필요 (제공자 측 키는 폐기하지 않음) | Medium | 0.2시간 |
 | F-3 | Gateway 예산 상한·태그(`feature:chat`) 도입 | 부가 기능, 범위 밖 | Low | 1시간 |
 | F-4 | `check_llm_fallback.py` 사각 보강: "최근 실사용 0건 + health 정상"을 정상으로 보는 문제, 전 제공자 실패는 미저장이라 ✅로 보임 | 기존 감시 사각, Gateway 장애도 같은 경로 | High | 2시간 |
@@ -245,7 +245,7 @@ PR · 커밋
 - [ ] BYOK 키가 Gateway에 등록돼 있지 않은지 대시보드 확인 (미확인 상태 — 등록돼 있으면 크레딧 대신 그 키로 과금됨)
 - [ ] Gemini 3순위 결정: 직접 호출 유지(현재) 또는 `google/<모델>` 슬러그 지정 (F-6)
 - [ ] 복귀 창 종료(≈2026-11-04) 뒤 Vercel env 제공자 키 3종 삭제 승인 (F-2)
-- [ ] 로컬 V-9: 12시간 뒤 `vercel env pull` 재실행으로 토큰 만료 시 동작 1회 확인 (F-1)
+- [ ] 로컬 V-9: 기존 `.env.vercel.local`의 토큰을 **재pull 없이** 12시간 넘게 둔 뒤 `LLM_TRANSPORT=gateway`로 Gateway 호출 1회 → `GatewayAuthError`(SDK 401)가 그대로 드러나고 제공자 키 폴백·토큰 값 출력이 없는지 확인 → 그 뒤 `vercel env pull .env.vercel.local --environment development`로 갱신해 정상 복구 확인 (F-1). `vercel env pull`은 토큰을 **갱신**하므로 먼저 실행하면 만료 동작을 볼 수 없다
 
 ### 8.2 Next PDCA Cycle
 
@@ -283,3 +283,4 @@ PR · 커밋
 |---------|------|---------|--------|
 | 1.0 | 2026-10-28 | 완료 보고서 작성 (Plan v0.1 · Design v0.3 · Analysis v1.2 기준, 1c4f9cf 기준 증거) | Claude |
 | 1.1 | 2026-10-28 | 증거 보정 — 크레딧 추이(13.97→13.21→12.77→12.52), 배포 식별(GitHub deployment·URL), 폴백 감시 실측(✅ 정상), 스위트 서술을 CI 기준으로 | Claude |
+| 1.2 | 2026-10-29 | PR #147 Codex P2 반영 — V-9(F-1) 절차를 '재pull 없이 만료 → 401 확인 → 재pull 복구' 순서로 정정(`vercel env pull`은 토큰 갱신) | Claude |
