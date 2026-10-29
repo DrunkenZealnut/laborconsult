@@ -451,6 +451,96 @@ class UnexecutedCardTests(unittest.TestCase):
                     self.assertHeld(card(labels, query))
 
 
+_CHAT_BASE = dict(requires_calculation=True, question_summary="q", is_labor_related=True, wage_type="월급",
+                  weekly_work_days=5, daily_work_hours=8, reference_year=2026)
+
+
+def _chat(query, **raw):
+    """프로덕션 변환기: analyzer._build_analysis_result → _analysis_to_extract_params → _run_calculator."""
+    from app.core.analyzer import _build_analysis_result
+    from app.core import pipeline as P
+    analysis = _build_analysis_result(dict(_CHAT_BASE, **raw), query)
+    return P._run_calculator(P._analysis_to_extract_params(analysis), query) or "", analysis
+
+
+class CardGuardFollowupTests(unittest.TestCase):
+    """빈 계산 유형 폴백·지나가는 연말정산·조건부 예시 지시(wage-update-followups G1·G2·G6)."""
+    HELD_TYPE = "요청한 계산 유형을 확인할 수 없습니다"
+    YEAR_END = "연말정산 환급·추가납부액 계산은 아직 지원하지 않습니다"
+
+    def test_empty_types_fall_back_only_for_explicit_calculation_requests(self):  # G1
+        cases = [
+            ("월급 200만원 주5일 하루 8시간인데 최저임금 위반인가요?", dict(wage_amount=2_000_000), "최저임금 충족: ❌ 미달"),
+            ("월급 300만원, 2023년 1월 2일 입사해 2026년 10월 1일 퇴사합니다. 퇴직금 얼마인가요?",
+             dict(wage_amount=3_000_000, start_date="2023-01-02", end_date="2026-10-01"), "퇴직금: 12,938,057원"),
+            ("월급 300만원이면 4대보험 공제액은요?", dict(wage_amount=3_000_000), "세전 월 급여: 3,000,000원"),
+            ("시급 12,000원, 주5일 하루 4시간 일해요. 주휴수당 얼마인가요?",
+             dict(wage_type="시급", wage_amount=12_000, daily_work_hours=4), "주휴수당(월): 208,571원"),
+        ]
+        for query, raw, expected in cases:
+            with self.subTest(query=query):
+                text, _ = _chat(query, calculation_types=[], **raw)
+                self.assertIn(expected, text)
+                self.assertNotIn(self.HELD_TYPE, text)
+
+    def test_empty_types_keep_notice_and_consultation_for_other_topics(self):  # G1 (R1)
+        cases = [
+            ("해고당했는데 월급 300만원 기준으로 뭘 받을 수 있나요?", dict(wage_amount=3_000_000)),
+            ("부당해고를 당했어요. 월급 300만원, 2023년 1월 2일 입사, 2026년 10월 1일 해고. 퇴직금은 얼마인가요?",
+             dict(wage_amount=3_000_000, start_date="2023-01-02", end_date="2026-10-01")),
+            ("퇴직금 중간정산이 가능한가요? 월급은 300만원입니다.", dict(wage_amount=3_000_000)),
+            ("시급 12,000원, 주5일 하루 4시간인데 이번 주 하루 결근하면 주휴수당 나오나요?",
+             dict(wage_type="시급", wage_amount=12_000, daily_work_hours=4)),
+        ]
+        for query, raw in cases:
+            with self.subTest(query=query):
+                text, analysis = _chat(query, calculation_types=[], consultation_type="labor_law", **raw)
+                self.assertIn(self.HELD_TYPE, text)
+                self.assertNotIn("해고예고수당", text)
+                self.assertNotIn("📊 임금 계산 결과", text)
+                self.assertTrue(_consultation_allowed(analysis, text, None, {}))
+
+    def test_passing_year_end_mention_keeps_requested_insurance(self):  # G2
+        for query in ("연말정산은 회사가 알아서 해준다는데, 월급 300만원이면 매달 떼는 4대보험은요?",
+                      "연말정산 시즌이라 궁금한데 월급 300만원이면 세후 실수령액이 얼마인가요?",
+                      # 지난 일의 서술 — Live 고정 사례 ww26-39 그대로, 결과어가 붙어 있어도 과거형이면 요청이 아니다
+                      "월급 300만원(세전, 비과세 수당 없음)을 받는 직장인입니다. 작년 연말정산 때는 환급을 조금 받았어요. "
+                      "부양가족은 본인 1명이고, 2026년 10월 기준으로 매달 4대보험을 떼고 나면 실수령액이 얼마인지 계산해주세요.",
+                      "연말정산 결과 추가납부가 나왔는데 월급 300만원이면 4대보험은요?"):
+            with self.subTest(query=query):
+                text, _ = _chat(query, calculation_types=["insurance"], wage_amount=3_000_000)
+                self.assertIn("세전 월 급여: 3,000,000원", text)
+                self.assertNotIn(self.YEAR_END, text)
+
+    def test_year_end_as_calculation_target_stays_unsupported(self):  # G2 반례
+        for query in ("연말정산 환급 얼마나 받을까요? 월급 300만원이에요.",
+                      "월급 300만원입니다. 연말정산 환급액 계산해 주세요.",
+                      # 결과어와 요청어가 떨어진 같은 절(Codex #137)
+                      "월급 300만원입니다. 연말정산 때 받을 수 있는 환급액은 얼마인가요?",
+                      "연말정산 환급 받으면 실수령액이 얼마나 늘어요? 월급 300만원이에요."):
+            with self.subTest(query=query):
+                text, _ = _chat(query, calculation_types=["insurance"], wage_amount=3_000_000)
+                self.assertIn(self.YEAR_END, text)
+                self.assertNotIn("세전 월 급여", text)
+                self.assertNotIn("월 실수령액", text)
+
+    def test_year_end_request_keeps_monthly_net_wording_variants(self):  # G2 실수령 앞말
+        text, _ = _chat("연말정산 환급액도 궁금하고 월급 실수령액도 얼마인지 알려주세요. 월급 300만원.",
+                        calculation_types=["insurance"], wage_amount=3_000_000)
+        self.assertIn(self.YEAR_END, text)
+        self.assertIn("세후 실수령액: 2,662,477원", text)
+
+    def test_conditional_example_instruction_survives_unsupported_notice(self):  # G6
+        from app.core import pipeline as P
+        params = {"needs_calculation": True, "reference_year": 2026, "wage_type": "시급", "wage_amount": 10320,
+                  "weekly_work_days": 3, "calculation_types_kr": ["주휴수당", "연말정산"]}
+        text = P._run_calculator(params, "시급 10,320원이고 주 3일 하루 6시간씩 일해요. 연말정산이랑 주휴수당 계산해 주세요.")
+        self.assertIn(P._CONDITIONAL_EXAMPLE_MARK, text)
+        heading = P._calculation_context_heading(text)
+        self.assertIn("완료된 항목만", heading)
+        self.assertIn("'조건부 예시'는 그 조건을 함께 밝혀서만", heading)
+
+
 class CalcBasisAnchorTests(unittest.TestCase):
     """계산기 근거 문구의 원문 앵커(wage_calculator/legal_anchors.py, wage-update-followups D-A)."""
 

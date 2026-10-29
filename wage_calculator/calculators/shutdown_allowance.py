@@ -69,8 +69,21 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
     # 평균임금 — 평균임금 계산기 하나로 구한다(monthly-base-unification). 산정 기준일은 휴업 시작일이다(shutdown_start_date).
     # 기준 월액(주휴분·통상임금에서 뺀 고정수당·연장 등 포함)·상여 3/12·제외기간과 근로기준법 제2조 제2항(평균임금이 통상임금보다
     # 적으면 통상임금)이 그 안에 있다. 예전에는 여기서 '시급 × 1일 시간 × 근무일수 × 52/12'(주휴분 없음)를 92일로 나눠 하한 없이
-    # 썼다 — 시급 12,000원·휴업 10일이 474,783원(맞는 값 672,000원)이었다
-    avg = calc_average_wage(replace(inp, end_date=inp.shutdown_start_date or inp.end_date), ow)
+    # 썼다 — 시급 12,000원·휴업 10일이 474,783원(맞는 값 672,000원)이었다.
+    # 입력한 평균임금 사유 발생일(average_wage_date)은 퇴직금 등 다른 계산의 기산일일 수 있어 휴업수당에는 쓰지 않는다 — 그 날짜가
+    # 휴업 시작일보다 우선해 휴업 중 인상분이 평균임금에 들어갔다(wage-update-followups G7, 근로기준정책과-2081·691)
+    if inp.shutdown_start_date:
+        if inp.average_wage_date and inp.average_wage_date != inp.shutdown_start_date:
+            warnings.append(
+                f"휴업수당의 평균임금은 휴업 시작일({inp.shutdown_start_date})을 산정 사유 발생일로 계산했습니다"
+                "(근로기준법 제2조제1항제6호·제46조). "
+                f"입력한 평균임금 사유 발생일({inp.average_wage_date})은 휴업수당에는 쓰지 않았습니다.")
+        avg = calc_average_wage(replace(inp, end_date=inp.shutdown_start_date, average_wage_date=None), ow)
+    else:
+        # 휴업 시작일이 없을 때 무엇으로 대신할지는 원문으로 정할 수 없다 — 계산은 그대로 두고 조건을 밝힌다
+        warnings.append("휴업 시작일 미확인 — 평균임금은 휴업 시작일을 산정 사유 발생일로 계산하므로, 휴업 시작일이 다르면 "
+                        "금액이 달라집니다")
+        avg = calc_average_wage(inp, ow)
     if avg.held_reason:
         return ShutdownAllowanceResult(held_reason=avg.held_reason, warnings=avg.warnings)
     avg_daily_wage = avg.avg_daily_wage

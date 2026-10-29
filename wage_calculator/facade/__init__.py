@@ -20,7 +20,7 @@ from ..result import WageResult, format_result, format_result_json
 from ..utils import fmt_hours
 
 from .conversion import _guess_start_date
-from .helpers import _merge, _merge_amount_held, _pop_retirement_tax, _pop_retirement_pension
+from .helpers import _merge, _merge_amount_held, _pop_retirement_tax, _pop_retirement_pension, _mark_full_month_insurance
 from .registry import (
     CALC_TYPES, CALC_TYPE_MAP, _STANDARD_CALCS, resolve_calc_type,
 )
@@ -406,6 +406,12 @@ class WageCalculator:
             # 휴직/단축 전 통상임금은 보험 급여의 기초액이다. 회사가 실제로
             # 지급하는 임금 또는 휴직 중 월 총수령액으로 표시하지 않는다.
             result.monthly_total = result.monthly_net = 0.0
+        if "prorated" in result.calculation_executed:
+            # 일할 카드에는 평월 머리줄(월 총·월 실수령)을 두지 않는다 — 정산월에 한 달 치 월급이 지급액처럼 읽혔다(G5).
+            # 함께 계산한 보험은 평월 기준임을 밝힌다(국민연금 기준소득월액은 일할하지 않는다)
+            result.monthly_total = result.monthly_net = 0.0
+            if {"insurance", "employer_insurance"} & set(result.calculation_executed):
+                _mark_full_month_insurance(result)
         if "arrears_principal" in requested and "wage_arrears" not in targets:
             result.warnings.append("이번 결과는 원금 정산입니다. 지연이자·총 청구액은 포함하지 않았습니다.")
         if not targets:

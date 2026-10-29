@@ -27,6 +27,7 @@ from app.core.storage import save_conversation, save_session_data, upload_attach
 from app.models.session import Session
 from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
 from wage_calculator.facade.registry import resolve_calc_type_strict, unsupported_calc_reason, split_calc_labels, CALC_TYPES
+from wage_calculator.facade.helpers import FULL_MONTH_SUFFIX
 from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize, HourSplit
 from wage_calculator.result import format_result, format_skipped_calculations, SKIPPED_CALCULATION_MARK
 from wage_calculator.calculators.shared import (
@@ -1260,6 +1261,10 @@ _TOTAL_CONTEXT_EXCLUDE_RE = re.compile(
     r"세후|실수령|실지급|통장|입금|최저|평균|전\s*직장|이전\s*직장|예전\s*직장|전\s*회사|이전\s*회사|육아|휴직|실업|구직|"
     r"출산|상여|퇴직|연봉|연간|희망|목표|예상|(?<![가-힣])연\s*$")
 _TOTAL_AFTER_EXCLUDE_RE = re.compile(r"^\s*\(?\s*(?:세후|실수령|실지급|통장)")
+# 의도분석이 채운 월 총액의 대조용(G3). 위 목록은 '상여'·'연봉'까지 걸러 "정기상여 포함 월 환산 총액 310만원"을 잃으므로
+# 세전 총액이 아닌 것이 분명한 말만 둔다
+_TOTAL_NOT_GROSS_BEFORE_RE = re.compile(
+    r"세후|실수령|실지급|통장|입금|전\s*직장|이전\s*직장|예전\s*직장|전\s*회사|이전\s*회사|최저|희망|목표")
 # 포괄임금제 언급 — 의도분석이 '포괄임금제'로 뽑아도 질문에 그 말이 있고 부정이 아닐 때만 R2 보류를 건다
 _COMPREHENSIVE_RE = re.compile(r"포괄\s*(?:임금|산정)")
 _COMPREHENSIVE_DENIED_RE = re.compile(
@@ -1427,11 +1432,12 @@ def _add_composition_alternative(result, calc, inp, targets) -> None:
     label = _WAGE_UNIT_LABEL.get(inp.wage_type, "임금")
     changed = []
     for key, value in list(result.summary.items()):
-        other = alt.summary.get(key)
+        # 일할 카드의 보험 줄에는 '(평월 기준)'이 붙는다 — 대안 계산(일할 제외)의 키는 붙지 않은 이름이다(Codex #137)
+        other = alt.summary.get(key.removesuffix(FULL_MONTH_SUFFIX))
         if key in _D4_SINGLE_READING_KEYS or other is None or other == value:
             continue
         result.summary[key] = f"{value}(연장수당 별도) 또는 {other}({label}에 포함)"
-        changed.append(key)
+        changed.append(key.removesuffix(FULL_MONTH_SUFFIX))
     if result.monthly_net and round(result.monthly_net) != round(alt.monthly_net or 0):
         result.monthly_net = 0.0
     if changed:
@@ -1612,6 +1618,40 @@ def _stated_total_pay(text: str, base: int) -> int | None:
 def _money_in_text(amount: float, text: str) -> bool:
     """의도분석 금액이 질문에 숫자로 적혀 있는가(천 원 오차 허용). 아니면 의도분석이 기본급 + 식대처럼 합산한 값일 수 있다."""
     return any(abs(_parse_won(m.group(1), m.group(2)) - amount) <= 1000 for m in _MONEY_RE.finditer(text or ""))
+
+
+def _total_in_text(amount: float, text: str) -> bool:
+    """의도분석 총액이 질문에 '세전 월 총액'으로 적혀 있는가 — 숫자가 있고, 같은 절 앞 15자에 세후·실수령·전 직장 등이
+    없고, 바로 뒤가 세후·실수령이 아닐 때."""
+    text = text or ""
+    for m in _MONEY_RE.finditer(text):
+        if abs(_parse_won(m.group(1), m.group(2)) - amount) > 1000:
+            continue
+        before = re.split(r"[,.;!?\n(]", text[max(0, m.start() - 15):m.start()])[-1]
+        if _TOTAL_NOT_GROSS_BEFORE_RE.search(before) or _TOTAL_AFTER_EXCLUDE_RE.search(text[m.end():m.end() + 12]):
+            continue
+        return True
+    return False
+
+
+def _drop_ungrounded_total_pay(params: dict, query: str) -> None:
+    """의도분석이 채운 월 총액은 질문에 근거가 있을 때만 받는다(wage-update-followups G3).
+
+    월급과 같은 값을 총액에 복사하면 연장수당이 따로인 질문에서 월 기준이 연장분 없이 고정됐고(4대보험 세전 3,000,000 vs
+    3,937,500), 질문에 없는 합산값·세후·전 직장 금액이 총액이 되면 평균임금·보험 기준이 그 값으로 바뀌었다.
+
+    앞 턴 캐시에서 채운 총액(`total_pay_trusted`)은 그 턴의 질문으로 이미 대조했다 — 후속 질문에 금액이 없다고 지우면 세전
+    기준이 기본급으로 조용히 바뀐다(Codex #137). 버린 총액은 `total_pay_rejected`로 알려 호출부가 캐시에서 뺀다."""
+    total = params.get("monthly_total_pay")
+    if total is None:
+        return
+    base = params.get("wage_amount")
+    grounded = params.get("total_pay_trusted") or _total_in_text(total, query)
+    if (isinstance(total, bool) or not isinstance(total, (int, float)) or not grounded
+            or (isinstance(base, (int, float)) and not isinstance(base, bool) and abs(total - base) <= 1000)):
+        params.pop("monthly_total_pay", None)
+        params["total_pay_rejected"] = True
+        logger.info("의도분석 월 총액 %r 미사용 — 질문에 세전 총액으로 적혀 있지 않거나 임금액과 같음", total)
 
 
 def _stated_other_pay(text: str) -> tuple[dict[str, int], bool]:
@@ -1997,8 +2037,11 @@ def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted
 
 
 def _note_rejected_hours(analysis, params) -> None:
-    """버린 소정근로시간을 확인 안내에 더하고 계산 캐시에서 뺀다 — 캐시(extracted_info)에 남으면 다음 턴이 대조 없이 그 값을
-    다시 채운다. 코드 누락 판정(_compute_missing_info)은 버리기 전 값을 보고 시간이 있다고 봤다."""
+    """버린 소정근로시간·월 총액을 계산 캐시에서 빼고, 시간은 확인 안내에 더한다 — 캐시(extracted_info)에 남으면 다음 턴이 대조
+    없이 그 값을 다시 채운다. 코드 누락 판정(_compute_missing_info)은 버리기 전 값을 보고 시간이 있다고 봤다."""
+    if params.get("total_pay_rejected"):
+        # 버린 월 총액도 캐시에 남기지 않는다 — 다음 턴에 대조를 거친 값(total_pay_trusted)으로 되살아난다
+        analysis.extracted_info.pop("monthly_total_pay", None)
     rejected = params.get("schedule_hours_rejected") or {}
     if not rejected:
         return
@@ -2402,6 +2445,48 @@ def _complete_explicit_reduced_calendar_month(inp, query):
     inp.reduced_end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
 
 
+# 분석기가 계산 유형을 비워 냈을 때의 표지(_analysis_to_extract_params). _run_calculator가 이 라벨만 제한 폴백으로 푼다
+_UNKNOWN_CALC_LABEL = "계산 유형 미확인"
+# 빈 계산 유형의 제한 폴백(wage-update-followups G1) — (유형, 키워드, 연산어, 거리, 같은 문장 제외어).
+# 키워드만으로는 계산 카드가 답이 되는 질문이 0~55%였다(상담 코퍼스 표본 — '퇴직금 중간정산이 가능한가요?'·'결근하면 주휴수당
+# 나오나요?'). 같은 문장에 연산어가 있을 때만 받는다. 레거시 경로(_resolve_targets)의 넓은 추론과는 별개다
+_KEYWORD_FALLBACK_RULES = (
+    ("minimum_wage", r"최저\s*(?:임금|시급)", r"미달|위반|충족|얼마|계산|산정", 35, None),
+    ("severance", r"퇴직\s*(?:금|급여)", r"얼마|계산|산정|금액|알려", 35, None),
+    ("annual_leave", r"연차\s*수당|미사용\s*연차", r"얼마|계산|산정|금액|알려", 35, None),
+    ("weekly_holiday", r"주휴\s*수당", r"얼마|계산|산정|금액|발생|나오|생기", 35,
+     r"연차|반차|결근|휴무|미출근|병가|휴가|지각|조퇴"),
+    ("insurance", r"(?:4대|사대)\s*보험\s*료?|실수령\s*액?|세후", r"얼마|공제\s*(?:액|금액)", 8, None),
+)
+# 이 말이 있으면 계산 카드보다 상담이 답이다 — 폴백하지 않고 안내문 + 2-2 상담 경로로 둔다
+_KEYWORD_FALLBACK_BLOCK_RE = re.compile(
+    r"해고|체불|밀린\s*임금|임금\s*미지급|산재|산업재해|요양급여|휴업급여|장해급여|괴롭힘|갑질|폭언|따돌림|실업급여|구직급여")
+# 연말정산이 계산 대상인 요청(공백을 지운 문장에 적용). 지나가는 언급("연말정산은 회사가 해준다는데")은 미지원 안내를 붙이지 않는다(G2)
+# 세 갈래: ① 같은 절에서 정산 결과어 뒤에 요청어("연말정산 때 받을 수 있는 환급액은 얼마" — Codex #137) ② 결과어가 바로 붙은
+# 명사구("연말정산 환급액과 …")이되 그 문장에 과거형이 없을 때("작년 연말정산 때는 환급을 조금 받았어요"는 지난 사실이다 — ww26-39)
+# ③ 바로 뒤의 계산 요청("연말정산이랑 주휴수당 계산")
+_YEAR_END_RESULT = r"(?:환급|추가(?:납부|징수)|정산(?:액|금)|결과|세액|돌려받)"
+# 과거 시제 음절 — 받침 ㅆ인 음절(았·었·했·왔·났·됐…) 중 '있'·'겠'(과거가 아니다)을 뺀 것
+_PAST_SYLLABLES = "".join(c for c in (chr(0xAC00 + i * 28 + 20) for i in range(19 * 21)) if c not in "있겠")
+_YEAR_END_REQUEST_RE = re.compile(
+    r"연말정산(?:[^.!?,]{0,15}?" + _YEAR_END_RESULT + r"[^.!?,]{0,10}?(?:계산|산정|얼마|알려|예상|궁금|받을까|나올까|될까)"
+    r"|[^.!?]{0,4}?" + _YEAR_END_RESULT + r"(?![^.!?]*[" + _PAST_SYLLABLES + r"])"
+    r"|(?:을|를|은|는|이|가|만|도|하면|시|때|에서)?[^.!?]{0,6}?(?:계산|산정|얼마|알려|예상))")
+
+
+def _keyword_fallback_targets(query: str) -> list[str]:
+    """빈 계산 유형일 때 질문이 명시적으로 요청한 계산만. 차단어가 있으면 []."""
+    if not query or _KEYWORD_FALLBACK_BLOCK_RE.search(query):
+        return []
+    sentences = re.split(r"[.!?\n]", query)
+    found = []
+    for target, keyword, operation, window, exclude in _KEYWORD_FALLBACK_RULES:
+        pattern = re.compile(f"(?:{keyword})[^.!?\\n]{{0,{window}}}?(?:{operation})")
+        if any(pattern.search(s) and not (exclude and re.search(exclude, s)) for s in sentences):
+            found.append(target)
+    return found
+
+
 def _run_calculator(params: dict, query: str = "") -> str | None:
     """지원하지 않는 정산의 안내를 보존한 뒤 실행 가능한 요청을 계산한다."""
     if not params or not params.get("needs_calculation"):
@@ -2412,6 +2497,9 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     supported = []
     # 구분자로 묶인 복수 요청도 각각 보존한다(미지원 항목 때문에 전체가 사라지지 않음).
     for label in [part for label in labels for part in split_calc_labels(label)]:
+        if label == _UNKNOWN_CALC_LABEL and (fallback := _keyword_fallback_targets(query)):
+            supported.extend(t for t in fallback if t not in supported)
+            continue
         reason = unsupported_calc_reason(label)
         if not reason and resolve_calc_type_strict(label) is None:
             reason = "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목과 필요한 입력을 확인해주세요."
@@ -2423,10 +2511,12 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     # 분석기의 제한된 유형 목록이 연말정산을 insurance, 선택근로 정산을 working_hours로
     # 바꿔도 다른 계산의 숫자를 내보내지 않는다. 별도로 요청한 일반 계산은 보존한다.
     compact = "".join(query.split())
-    if _affirmative_calculation_mention(compact, r"연말정산"):
+    if _affirmative_calculation_mention(compact, r"연말정산") and _YEAR_END_REQUEST_RE.search(compact):
         notes["연말정산"] = unsupported_calc_reason("연말정산")
+        # 앞말 없는 '실수령액'은 넣지 않는다 — "연말정산 환급 받으면 실수령액이 얼마나 늘어요?"는 4대보험 요청이 아니다
         if not _independent_supported_request(compact,
-                r"(?:4대보험|사대보험|국민연금|건강보험|고용보험|원천징수|(?:매?월|한달)실수령액?)", r"연말정산"):
+                r"(?:4대보험|사대보험|국민연금|건강보험|고용보험|원천징수|(?:매?월|매달|한달|월급|급여|세후)(?:의|에서|기준)?실수령액?)",
+                r"연말정산"):
             supported = [label for label in supported
                          if resolve_calc_type_strict(label) != ["insurance"]]
         supported = [label for label in supported if label not in ("임금계산", "임금 계산", "임금", "해당없음")]
@@ -2460,6 +2550,7 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
 def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     if not params or not params.get("needs_calculation"):
         return None
+    _drop_ungrounded_total_pay(params, query)
     from app.core.legal_rule_store import rules_enabled
     managed_rules = rules_enabled()
 
@@ -2969,7 +3060,8 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
             result.warnings.append(_SIZE_ASSUMED_NOTE)
         if composition_total == 0:
             result.monthly_total = 0.0
-        elif composition_total:
+        elif composition_total and "prorated" not in result.calculation_executed:
+            # 일할 카드에는 평월 머리줄이 없다 — 구성 판정의 총액을 다시 올리면 정산월에 한 달 치 월급이 나온다(G5).
             # 기본급으로 계산해도 카드의 '월 총 예상 수령액'은 사용자가 말한 총액이다 — 평균임금·안내문도 그 값을 쓴다. 파생 연장수당이
             # 총액 속 연장 등 몫보다 크면 계산 총액이 말한 총액을 넘었다(독립 리뷰 M4: 2,751,354원 vs 2,700,000원). 차이는 따로 밝힌다
             result.monthly_total = float(composition_total)
@@ -3242,7 +3334,7 @@ def _analysis_to_extract_params(analysis) -> dict:
     }
     # 전체 계산 유형을 라벨로 변환 — 첫 유형만 계산되던 결함 수정 (CALC-2)
     labels = [REVERSE_CALC_MAP.get(ct, ct) for ct in (analysis.calculation_types or [])]
-    calc_type = labels[0] if labels else "계산 유형 미확인"
+    calc_type = labels[0] if labels else _UNKNOWN_CALC_LABEL
 
     params = {
         "needs_calculation": analysis.requires_calculation,
@@ -3494,20 +3586,25 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
 _BLOCKED_RESULT_RE = re.compile(r"(?m)^계산 보류(?: \(|:)")
 
 
+_CONDITIONAL_EXAMPLE_CLAUSE = ". '조건부 예시'는 그 조건을 함께 밝혀서만 쓰세요"
+
+
 def _calculation_context_heading(calc_result: str) -> str:
     """보류 결과에는 수치 사용 지시 대신 추정 금지 지시를 붙인다."""
     if SKIPPED_CALCULATION_MARK in calc_result:
-        return "계산 상태 안내 — 완료된 항목만 사용하고, 보류 항목은 추정하지 말고 입력·지원 여부를 확인하세요"
-    if _BLOCKED_RESULT_RE.search(calc_result):
-        return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
-    if _AMOUNT_HOLD_MARK in calc_result:
+        heading = "계산 상태 안내 — 완료된 항목만 사용하고, 보류 항목은 추정하지 말고 입력·지원 여부를 확인하세요"
+    elif _BLOCKED_RESULT_RE.search(calc_result):
+        heading = "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
+    elif _AMOUNT_HOLD_MARK in calc_result:
         # 금액을 보류한 항목은 카드에 없다 — '이 수치를 사용하세요'만 붙이면 빈자리를 카드의 총액 기준 시급으로 채운다
         heading = "임금계산기 결과 — 이 수치를 사용하세요. 금액을 보류한 항목은 추정하지 마세요"
-        if _CONDITIONAL_EXAMPLE_MARK in calc_result:
-            # 조건부 예시는 조건과 함께여야 맞는 값이다 — 조건을 떼면 실제로 일한 시간이 소정근로시간으로 단정된다(D7)
-            heading += ". '조건부 예시'는 그 조건을 함께 밝혀서만 쓰세요"
-        return heading
-    return "임금계산기 결과 — 이 수치를 사용하세요"
+    else:
+        heading = "임금계산기 결과 — 이 수치를 사용하세요"
+    if _CONDITIONAL_EXAMPLE_MARK in calc_result:
+        # 조건부 예시는 조건과 함께여야 맞는 값이다 — 조건을 떼면 실제로 일한 시간이 소정근로시간으로 단정된다(D7).
+        # 미지원 안내가 함께 붙은 카드에서도 빠지면 안 된다(G6)
+        heading += _CONDITIONAL_EXAMPLE_CLAUSE
+    return heading
 
 
 def process_question(query: str, session: Session, config: AppConfig,
@@ -3644,6 +3741,8 @@ def process_question(query: str, session: Session, config: AppConfig,
             # 앞 턴 캐시에서 채운 소정근로시간은 그 턴에서 대조를 거쳤다 — 이번 질문으로 다시 대조하지 않는다
             params["schedule_hours_trusted"] = [k for k in prefilled_keys
                                                 if k in ("weekly_total_hours", "daily_work_hours")]
+            # 월 총액도 같다 — 버린 총액은 캐시에 남지 않으므로(_note_rejected_hours) 캐시 값은 대조를 통과한 것이다
+            params["total_pay_trusted"] = "monthly_total_pay" in prefilled_keys
             calc_result = _run_calculator(params, query)
             _note_rejected_hours(analysis, params)
             if calc_result:
