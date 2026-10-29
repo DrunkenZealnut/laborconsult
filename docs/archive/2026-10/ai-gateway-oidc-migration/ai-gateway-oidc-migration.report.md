@@ -53,9 +53,9 @@
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| Plan | [ai-gateway-oidc-migration.plan.md](../../01-plan/features/ai-gateway-oidc-migration.plan.md) | Finalized (v0.1) |
-| Design | [ai-gateway-oidc-migration.design.md](../../02-design/features/ai-gateway-oidc-migration.design.md) | Finalized (v0.3, Check 반영) |
-| Check/Act | [ai-gateway-oidc-migration.analysis.md](../../03-analysis/ai-gateway-oidc-migration.analysis.md) | Complete (v1.2, Act 99.7%) |
+| Plan | [ai-gateway-oidc-migration.plan.md](ai-gateway-oidc-migration.plan.md) | Finalized (v0.1) |
+| Design | [ai-gateway-oidc-migration.design.md](ai-gateway-oidc-migration.design.md) | Finalized (v0.3, Check 반영) |
+| Check/Act | [ai-gateway-oidc-migration.analysis.md](ai-gateway-oidc-migration.analysis.md) | Complete (v1.2, Act 99.7%) |
 | Report | Current document | Complete |
 
 PR · 커밋
@@ -105,7 +105,7 @@ PR · 커밋
 | Cohere base_url 전달 | `app/core/rag.py`, `app/core/pipeline.py`, `eval_retrieval.py`, `eval_colloquial.py` | Complete |
 | 관리자 모델 목록 (카탈로그 기반, released 정렬) | `app/core/model_settings.py` | Complete |
 | 전송 오프라인 테스트 | `test_llm_transport.py` (CI 등록 `.github/workflows/tests.yml`) | Complete |
-| 설계·분석·운영 절차 | `docs/02-design/…`, `docs/03-analysis/…`, `CLAUDE.md`, `.env.example`, `check_env.py` | Complete |
+| 설계·분석·운영 절차 | `docs/archive/2026-10/ai-gateway-oidc-migration/`(Plan·Design·Analysis·Report), `CLAUDE.md`, `.env.example`, `check_env.py` | Complete |
 
 ### 3.4 제약 준수 (Plan §1 10개 항목)
 
