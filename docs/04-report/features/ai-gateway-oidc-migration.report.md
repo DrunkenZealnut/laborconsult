@@ -3,7 +3,7 @@
 > **Status**: Complete (단, Gemini 직접 호출 잔존 · 후속 7건 명시 · V-9 토큰 만료 실측 미완)
 >
 > **Project**: laborconsult
-> **Version**: main `1c4f9cf` (Plan v0.1 · Design v0.3 · Analysis v1.2) · Report v1.2
+> **Version**: main `1c4f9cf` (Plan v0.1 · Design v0.3 · Analysis v1.2) · Report v1.3
 > **Author**: Claude
 > **Completion Date**: 2026-10-28
 > **PDCA Cycle**: #1
@@ -43,7 +43,7 @@
 | Perspective | Content |
 |-------------|---------|
 | **Problem** | 프로덕션 LLM 호출이 벤더 4곳의 장기 API 키와 벤더별 선불 잔액에 묶여 있었다. 2026-10-27에 Anthropic 크레딧이 하루 두 번 소진되고 Gemini 선불이 말라 답변이 폴백으로만 이어졌다. |
-| **Solution** | 요청 경로(`api/`·`app/`)의 Claude·OpenAI·임베딩·Cohere 호출을 Vercel AI Gateway로 보낸다. 인증은 요청마다 Vercel이 주는 OIDC 토큰(`x-vercel-oidc-token`)을 `config` 객체에 묶어 쓰고, `LLM_TRANSPORT=gateway`에서는 제공자 키를 읽지 않는다. 슬러그 변환은 SDK 경계 프록시 한 곳에서만 한다. |
+| **Solution** | Vercel env `LLM_TRANSPORT=gateway`일 때(기본값 `direct`는 기존 직접 호출 그대로) 요청 경로(`api/`·`app/`)의 Claude·OpenAI·임베딩·Cohere 호출을 Vercel AI Gateway로 보낸다. 인증은 요청마다 Vercel이 주는 OIDC 토큰(`x-vercel-oidc-token`)을 `config` 객체에 묶어 쓰고, `LLM_TRANSPORT=gateway`에서는 제공자 키를 읽지 않는다. 슬러그 변환은 SDK 경계 프록시 한 곳에서만 한다. |
 | **Function/UX Effect** | 사용자 화면·답변 동작은 바뀌지 않았다. 프로덕션 질문 3건(머지 배포 2건 + Act 배포 확인 1건)이 `metadata.llm.transport=gateway`, 폴백 0으로 완주했다. 임베딩 코사인 0.999999(3문장), Cohere 재정렬 상위 5 순서 동일(점수 차 ≤ 0.0003). 콜드 첫 글자 시간은 43~49초, 웜 26초(표본 적음, 개선 주장 아님). |
 | **Core Value** | 장기 키를 요청 경로에서 제거하고 결제를 Gateway 크레딧 하나로 모았다. 인증 실패는 제공자 키로 우회하지 않고 `GatewayAuthError`로 드러나며, 롤백은 env 한 줄 또는 이전 배포 승격으로 즉시 가능하다. |
 
@@ -151,7 +151,7 @@ PR · 커밋
 | 구분 | 항목 | 상태 |
 |------|------|------|
 | 잔존 직접 호출 | `pipeline.py::_stream_gemini`, `llm_gateway.py::_gemini_text/_gemini_tool`, `model_settings.py` Gemini 목록 | Gemini는 Google 직접 호출 (`GEMINI_API_KEY` 필요) |
-| 필요한 키 (Gateway 모드) | `PINECONE_API_KEY`(필수 키 — 코드상 Gateway 모드의 유일한 필수 키), `GEMINI_API_KEY`(잔존 직접 호출), 로컬 `VERCEL_OIDC_TOKEN`(12시간) | 프로덕션은 OIDC 헤더로 인증하므로 `AI_GATEWAY_API_KEY`를 두지 않음 |
+| 필요한 키 (Gateway 모드) | Gateway 경유 경로: `PINECONE_API_KEY`(`AppConfig.from_env()`가 gateway 모드에서 요구하는 유일한 **필수** 키) + 인증 토큰(프로덕션은 요청 헤더, 로컬은 `VERCEL_OIDC_TOKEN` 12시간) · Gemini 직접 호출(Gateway 밖): `GEMINI_API_KEY`(**선택** — 있을 때만 3순위에 들어가고 없으면 Gemini만 빠진다) | 프로덕션은 OIDC 헤더로 인증하므로 `AI_GATEWAY_API_KEY`를 두지 않음 |
 | 삭제 후보 (복귀 창 7일 뒤, 사용자 승인) | Vercel env의 `ANTHROPIC_API_KEY`·`OPENAI_API_KEY`·`COHERE_API_KEY` | 복귀 창 동안 유지 필수. 제공자 측 키는 다른 프로젝트·로컬·Actions가 공유하므로 폐기하지 않음 |
 | 정리 완료 | Preview 바이패스 비밀 폐기, 브랜치 한정 Preview env 삭제 | 완료 |
 
@@ -271,7 +271,7 @@ PR · 커밋
 | 재정렬 동일성 (V-5) | 상위 5 순서 동일, 점수 차 ≤ 0.0003 |
 | 크레딧 (`GET /v1/credits`) | 설계 검증 시작 $13.97 → 머지 배포 직전 $13.21 → 프로덕션 2질문 후 $12.77 (차액 $0.44) → Act 확인 1질문 후 $12.52, 누적 사용 $2.89 (전환 이후 로컬 검증 13회·Preview 2·프로덕션 3질문 포함) |
 | 폴백 감시 | `check_llm_fallback.py` 로컬 실행(2026-10-28 22:4x KST, 프로덕션 Supabase): **LLM 폴백 ✅ 정상**(최근 실사용 3건 전부 Claude `claude-opus-5-5`, attempts Claude, 저하 없음) · 법령 조회 ✅ 정상(예열 06:10 7,475행 18종 실패 0, 조문 성공률 100%, 분모 50). exit 0. 단 이 감시는 전 제공자 실패를 보지 못한다(F-4) |
-| 배포 | 전환 배포 = 머지 커밋 `74aa04d`의 Production 배포(2026-10-28 09:24 UTC) · Act 배포 = `1c4f9cf`의 Production 배포(13:36 UTC, GitHub deployment 7386871227, `laborconsult-oki78ujio-…vercel.app`) · 롤백 B 대상(이전 프로덕션) = `9529cf1` 배포 |
+| 배포 | 전환 배포 = 머지 커밋 `74aa04d`의 Production 배포(2026-10-28 09:24 UTC) · Act 배포 = `1c4f9cf`의 Production 배포(13:36 UTC, GitHub deployment 7386871227 — 배포 URL은 Vercel 대시보드 Deployments에서 커밋 `1c4f9cf`로 조회) · 롤백 B 대상(이전 프로덕션) = `9529cf1` 배포 |
 
 비용 변화: 전환 전후 청구처 변화(Anthropic·OpenAI·Cohere 3곳 → Gateway 1곳)는 확인됐다. 전후 월 비용 비교는 측정 기간이 짧아 미측정이다.
 
@@ -284,3 +284,4 @@ PR · 커밋
 | 1.0 | 2026-10-28 | 완료 보고서 작성 (Plan v0.1 · Design v0.3 · Analysis v1.2 기준, 1c4f9cf 기준 증거) | Claude |
 | 1.1 | 2026-10-28 | 증거 보정 — 크레딧 추이(13.97→13.21→12.77→12.52), 배포 식별(GitHub deployment·URL), 폴백 감시 실측(✅ 정상), 스위트 서술을 CI 기준으로 | Claude |
 | 1.2 | 2026-10-29 | PR #147 Codex P2 반영 — V-9(F-1) 절차를 '재pull 없이 만료 → 401 확인 → 재pull 복구' 순서로 정정(`vercel env pull`은 토큰 갱신) | Claude |
+| 1.3 | 2026-10-29 | PR #147 CodeRabbit Minor 3건 반영 — Solution에 `LLM_TRANSPORT=gateway` 조건 명시, 필요한 키를 Gateway 경유(필수 PINECONE)와 Gemini 직접 호출(선택 GEMINI)로 분리, 축약 배포 URL을 deployment ID로 대체. 2건은 미반영(크레딧 잔액은 Vercel이 USD로 정산하므로 원화 환산 안 함 · 타 사이클 문서 경로는 그 사이클 PR에서 커밋) | Claude |
