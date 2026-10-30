@@ -1,6 +1,6 @@
 # ai-gateway-oidc-migration — 완료 보고서
 
-> **Status**: Complete (단, Gemini 직접 호출 잔존 · 후속 7건 명시 · V-9 토큰 만료 실측 미완)
+> **Status**: Complete (단, Gemini 직접 호출 잔존 · 후속 7건 명시 — 그중 F-1 V-9 토큰 만료 실측은 2026-10-30 완료, §9)
 >
 > **Project**: laborconsult
 > **Version**: main `1c4f9cf` (Plan v0.1 · Design v0.3 · Analysis v1.2) · Report v1.3
@@ -34,7 +34,7 @@
 │  테스트:  test_llm_transport.py 26/26 · 변이 검사 7/7        │
 │  PR:      #145 머지(74aa04d) · #146 머지(1c4f9cf)            │
 │  배포:    Preview 2질문 · 롤백 리허설 · Production 3질문 │
-│  잔여:    V-9 토큰 만료 실측 · 복귀 창 뒤 키 삭제(승인 필요)   │
+│  잔여:    복귀 창 뒤 키 삭제(승인 필요) · V-9 실측 완료(10-30) │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -130,7 +130,7 @@ PR · 커밋
 
 | # | Item | Reason | Priority | Estimated Effort |
 |---|------|--------|----------|------------------|
-| F-1 | V-9 OIDC 토큰 12시간 만료 실측 (만료 시 SDK 401 노출 확인) | 로컬 1회 — 토큰을 **재pull하지 않고** 12시간 경과 → 만료 토큰으로 호출해 401 노출 확인 → 재pull로 복구 확인 (`vercel env pull`이 토큰을 갱신하므로 순서가 바뀌면 검증이 안 된다, §7) | Medium | 0.5시간 |
+| F-1 | ✅ V-9 OIDC 토큰 12시간 만료 실측 (만료 시 SDK 401 노출 확인) — **2026-10-30 완료**(§9 'V-9 실측' 행) | 로컬 1회 — 토큰을 **재pull하지 않고** 12시간 경과 → 만료 토큰으로 호출해 401 노출 확인 → 재pull로 복구 확인 (`vercel env pull`이 토큰을 갱신하므로 순서가 바뀌면 검증이 안 된다, §7). 수명 12.0시간 실측, 만료는 `GatewayAuthError`(토큰 부재 전용)가 아니라 SDK 401로 드러났다 | Medium | 0.5시간 (실측 약 7분) |
 | F-2 | 복귀 창(≈2026-11-04) 뒤 Vercel env의 `ANTHROPIC_API_KEY`·`OPENAI_API_KEY`·`COHERE_API_KEY` 삭제 | 사용자 승인 필요 (제공자 측 키는 폐기하지 않음) | Medium | 0.2시간 |
 | F-3 | Gateway 예산 상한·태그(`feature:chat`) 도입 | 부가 기능, 범위 밖 | Low | 1시간 |
 | F-4 | `check_llm_fallback.py` 사각 보강: "최근 실사용 0건 + health 정상"을 정상으로 보는 문제, 전 제공자 실패는 미저장이라 ✅로 보임 | 기존 감시 사각, Gateway 장애도 같은 경로 | High | 2시간 |
@@ -170,7 +170,7 @@ PR · 커밋
 | 오프라인 테스트 | 전부 통과 | test_llm_transport 20/20 | test_llm_transport 26/26 | +6 |
 | 변이 검사 | 되돌리면 실패 | — | 7/7 | — |
 
-남은 ⚠️ 1건은 O8 (V-9 토큰 만료 실측 미완, F-1).
+남은 ⚠️ 1건이었던 O8(V-9 토큰 만료 실측, F-1)은 2026-10-30 로컬 실측으로 해소됐다(§9 'V-9 실측' 행). 분석 문서의 Match Rate 수치는 Act 시점 기록이라 고치지 않는다.
 
 ### 5.2 Resolved Issues
 
@@ -245,7 +245,7 @@ PR · 커밋
 - [ ] BYOK 키가 Gateway에 등록돼 있지 않은지 대시보드 확인 (미확인 상태 — 등록돼 있으면 크레딧 대신 그 키로 과금됨)
 - [ ] Gemini 3순위 결정: 직접 호출 유지(현재) 또는 `google/<모델>` 슬러그 지정 (F-6)
 - [ ] 복귀 창 종료(≈2026-11-04) 뒤 Vercel env 제공자 키 3종 삭제 승인 (F-2)
-- [ ] 로컬 V-9: 기존 `.env.vercel.local`의 토큰을 **재pull 없이** 12시간 넘게 둔 뒤 `LLM_TRANSPORT=gateway`로 Gateway 호출 1회 → `GatewayAuthError`(SDK 401)가 그대로 드러나고 제공자 키 폴백·토큰 값 출력이 없는지 확인 → 그 뒤 `vercel env pull .env.vercel.local --environment development`로 갱신해 정상 복구 확인 (F-1). `vercel env pull`은 토큰을 **갱신**하므로 먼저 실행하면 만료 동작을 볼 수 없다
+- [x] 로컬 V-9 (**2026-10-30 완료**, §9 'V-9 실측' 행): 기존 `.env.vercel.local`의 토큰을 **재pull 없이** 12시간 넘게 둔 뒤 `LLM_TRANSPORT=gateway`로 Gateway 호출 1회 → 만료 토큰은 **SDK 401**(`anthropic.AuthenticationError`·`openai.AuthenticationError`·Cohere `UnauthorizedError`)이 그대로 드러나고 제공자 키 폴백·토큰 값 출력이 없는지 확인 → 그 뒤 `vercel env pull .env.vercel.local --environment development`로 갱신해 정상 복구 확인 (F-1). `vercel env pull`은 토큰을 **갱신**하므로 먼저 실행하면 만료 동작을 볼 수 없다. `GatewayAuthError`는 토큰이 **없을 때**만 나는 예외라 만료 경로에서는 나지 않는다(실측 0회) — 이전 판의 "`GatewayAuthError`(SDK 401)" 표기는 두 경우를 합쳐 쓴 것이라 정정
 
 ### 8.2 Next PDCA Cycle
 
@@ -269,7 +269,8 @@ PR · 커밋
 | Act 배포 확인 (배포 1c4f9cf, 2026-10-28 13:36 UTC) | health 200, 연차휴가 1질문 SSE 완주, TTFT 49.0초(콜드)·총 69.2초·2,659자. Supabase: transport=gateway, Claude, `claude-opus-5-5`, fallback·empty·intent_provider·synthetic 모두 없음 |
 | 임베딩 동일성 (L1) | 3문장 코사인 0.999999, 1536차원, 모델 에코 `openai/text-embedding-3-small` |
 | 재정렬 동일성 (V-5) | 상위 5 순서 동일, 점수 차 ≤ 0.0003 |
-| 크레딧 (`GET /v1/credits`) | 설계 검증 시작 $13.97 → 머지 배포 직전 $13.21 → 프로덕션 2질문 후 $12.77 (차액 $0.44) → Act 확인 1질문 후 $12.52, 누적 사용 $2.89 (전환 이후 로컬 검증 13회·Preview 2·프로덕션 3질문 포함) |
+| 크레딧 (`GET /v1/credits`) | 설계 검증 시작 $13.97 → 머지 배포 직전 $13.21 → 프로덕션 2질문 후 $12.77 (차액 $0.44) → Act 확인 1질문 후 $12.52, 누적 사용 $2.89 (전환 이후 로컬 검증 13회·Preview 2·프로덕션 3질문 포함) → 2026-10-30 V-9 실측 후 $12.30, 누적 사용 $3.11 (실측 비용 약 $0.22 = 로컬 질문 1건 + 호출 3종) |
+| V-9 실측 (2026-10-30 로컬, F-1) | 토큰 수명 **12.0시간** 실측(발급 10-28 17:42:19 KST → 만료 10-29 05:42:19 KST, 호출 시점 나이 37시간). **만료 토큰**: Claude `messages.create`·임베딩·`/v2/rerank`·`/v1/credits` 전부 HTTP 401(`anthropic.AuthenticationError`·`openai.AuthenticationError`·Cohere `UnauthorizedError`), `GatewayAuthError` 0회(토큰 부재 전용). 서버 경로 질문 1건: `/api/health` 200(토큰 불요) → 의도분석 Claude 401 → OpenAI 401 → 레거시 추출, 임베딩 401, 재정렬 401 → 코사인 폴백, 답변 Claude 401 → OpenAI 401 → Gemini 직접 호출(설계 3순위) 429 선불 소진 → 사용자 안내 "모든 AI 서비스에 연결할 수 없습니다", 본문 0자. 제공자 키 미사용(내부 Anthropic·OpenAI 클라이언트 키 ≠ `.env` 키, Cohere 키 자리 = OIDC 토큰), 모델명 설정값 그대로(`claude-opus-5-5`·`gpt-6-sol`), 토큰 값 유출 0건(SSE·로그·예외 메시지). **재pull**(`vercel env pull … --environment development`, 06:43:38 KST, 변경 항목 `VERCEL_OIDC_TOKEN` 1개, 새 만료 18:43:38 KST) 뒤 같은 호출 3종 정상(`anthropic/claude-sonnet-5` 응답·1536차원·재정렬 순서 정상), 같은 질문 54초에 2,625자 완주, 401 0건. 관찰: Gateway 401 본문은 `AI_GATEWAY_API_KEY` 생성을 안내하는데 로컬 OIDC의 처방은 재pull이다(로그 힌트 보강은 Low 후보, 미착수) |
 | 폴백 감시 | `check_llm_fallback.py` 로컬 실행(2026-10-28 22:4x KST, 프로덕션 Supabase): **LLM 폴백 ✅ 정상**(최근 실사용 3건 전부 Claude `claude-opus-5-5`, attempts Claude, 저하 없음) · 법령 조회 ✅ 정상(예열 06:10 7,475행 18종 실패 0, 조문 성공률 100%, 분모 50). exit 0. 단 이 감시는 전 제공자 실패를 보지 못한다(F-4) |
 | 배포 | 전환 배포 = 머지 커밋 `74aa04d`의 Production 배포(2026-10-28 09:24 UTC) · Act 배포 = `1c4f9cf`의 Production 배포(13:36 UTC, GitHub deployment 7386871227 — 배포 URL은 Vercel 대시보드 Deployments에서 커밋 `1c4f9cf`로 조회) · 롤백 B 대상(이전 프로덕션) = `9529cf1` 배포 |
 
@@ -284,4 +285,5 @@ PR · 커밋
 | 1.0 | 2026-10-28 | 완료 보고서 작성 (Plan v0.1 · Design v0.3 · Analysis v1.2 기준, 1c4f9cf 기준 증거) | Claude |
 | 1.1 | 2026-10-28 | 증거 보정 — 크레딧 추이(13.97→13.21→12.77→12.52), 배포 식별(GitHub deployment·URL), 폴백 감시 실측(✅ 정상), 스위트 서술을 CI 기준으로 | Claude |
 | 1.2 | 2026-10-29 | PR #147 Codex P2 반영 — V-9(F-1) 절차를 '재pull 없이 만료 → 401 확인 → 재pull 복구' 순서로 정정(`vercel env pull`은 토큰 갱신) | Claude |
+| 1.4 | 2026-10-30 | F-1 V-9 토큰 만료 실측 완료 반영 — §8.1 5번 체크, 만료 경로 표기를 `GatewayAuthError`에서 SDK 401로 정정(`GatewayAuthError`는 토큰 부재 전용), §9 'V-9 실측' 행·크레딧 추이($12.30·누적 $3.11) 추가, Status·§1.2 잔여·§4.1 F-1·§5.1 O8 갱신 | Claude |
 | 1.3 | 2026-10-29 | PR #147 CodeRabbit Minor 3건 반영 — Solution에 `LLM_TRANSPORT=gateway` 조건 명시, 필요한 키를 Gateway 경유(필수 PINECONE)와 Gemini 직접 호출(선택 GEMINI)로 분리, 축약 배포 URL을 deployment ID로 대체. 2건은 미반영(크레딧 잔액은 Vercel이 USD로 정산하므로 원화 환산 안 함 · 타 사이클 문서 경로는 그 사이클 PR에서 커밋) | Claude |
