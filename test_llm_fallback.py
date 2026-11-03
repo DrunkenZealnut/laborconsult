@@ -1099,6 +1099,244 @@ def test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto(
     assert [c["tool_choice"]["type"] for c in fake4.calls] == ["tool", "auto"], fake4.calls
 
 
+# ── 실패 행 (llm-fallback-alert-blindspot) ───────────────────────────────────
+
+class _AuthErr(Exception):
+    """SDK 인증 오류 모양 — status_code 속성 + 메시지에 비밀 조각."""
+    status_code = 401
+
+
+class _RespErr(Exception):
+    def __init__(self, status):
+        super().__init__("resp-shaped SECRET-sk-test-123")
+        self.response = type("R", (), {"status_code": status})()
+
+
+class _CodeErr(Exception):
+    code = 429
+
+
+class _StrCodeErr(Exception):
+    code = "UNAVAILABLE"
+
+
+class _ExplodingAttrErr(Exception):
+    """status_code 접근 자체가 예외를 던지는 예외 — 폴백 전환을 끊어서는 안 된다(Check L-1)."""
+    @property
+    def status_code(self):
+        raise ValueError("boom")
+
+
+def _raising(exc_factory):
+    def fn(messages, system, config):
+        raise exc_factory()
+        yield  # noqa — 제너레이터로 만들기 위함
+    return fn
+
+
+def _run_failed_pipeline(cfg, guard_ctx=None, save=None):
+    """전 제공자 실패로 process_question을 끝까지 돌리고 (events, saved) 를 돌려준다."""
+    from app.models.session import Session
+    from app.models.schemas import AnalysisResult
+    saved: list = []
+    prev_level = logging.getLogger().manager.disable
+    logging.disable(logging.CRITICAL)
+    real_analyze = pipeline.analyze_intent
+    real_providers = pipeline._answer_providers
+    real_save = pipeline.save_conversation
+    real_session_save = pipeline.save_session_data
+    try:
+        pipeline.analyze_intent = lambda *a, **kw: AnalysisResult(
+            question_summary="테스트", is_labor_related=True)
+        pipeline._answer_providers = lambda c: [
+            ("Claude", _raising(lambda: _AuthErr("x-api-key SECRET-sk-test-123 invalid"))),
+            ("OpenAI", _raising(lambda: _AuthErr("Bearer SECRET-sk-test-123"))),
+            ("Gemini", _raising(lambda: _CodeErr("quota SECRET-sk-test-123"))),
+        ]
+        pipeline.save_conversation = save or (lambda sb, rec: saved.append(rec) or "conv-f1")
+        pipeline.save_session_data = lambda *a, **kw: None
+        events = list(pipeline.process_question(
+            "주휴수당 알려줘", Session(id="fail1"), cfg, guard_ctx=guard_ctx))
+    finally:
+        pipeline.analyze_intent = real_analyze
+        pipeline._answer_providers = real_providers
+        pipeline.save_conversation = real_save
+        pipeline.save_session_data = real_session_save
+        logging.disable(prev_level)
+    return events, saved
+
+
+def test_f1_all_fail_records_failed_row() -> None:
+    """T-F1 — 전 제공자 실패: error→ping→done, 실패 행 1건, 페이로드 키 화이트리스트, 메시지 원문 부재."""
+    import json as _json
+
+    class FakeSB:
+        pass
+
+    cfg = _cfg(gemini=True)
+    cfg.supabase = FakeSB()
+    events, saved = _run_failed_pipeline(cfg)
+    types = [e["type"] for e in events]
+    assert types[-3:] == ["error", "ping", "done"], types[-5:]
+    assert "모든 AI 서비스" in [e for e in events if e["type"] == "error"][0]["text"]
+    assert len(saved) == 1, f"실패 행은 정확히 1건이어야 한다: {len(saved)}"
+    rec = saved[0]
+    assert rec.answer_text == "" and rec.question_text == "주휴수당 알려줘" and rec.category, rec
+    meta = rec.metadata
+    assert meta.get("failed") is True and meta.get("synthetic") is True, meta   # guard_ctx None → G-A
+    llm = meta["llm"]
+    assert llm["failed"] is True and llm["stage"] == "answer" and llm["provider"] is None, llm
+    assert llm["attempts"] == ["Claude", "OpenAI", "Gemini"], llm
+    assert [f["error_class"] for f in llm["failures"]] == ["_AuthErr", "_AuthErr", "_CodeErr"], llm
+    assert [f["status"] for f in llm["failures"]] == [401, 401, 429], llm
+    assert llm["error_class"] == "_CodeErr" and llm["status"] == 429, llm
+    assert set(llm) <= pipeline.FAILURE_META_KEYS, set(llm) - pipeline.FAILURE_META_KEYS
+    assert "fallback" not in llm and "model" not in llm, llm
+    dumped = _json.dumps(meta, ensure_ascii=False)
+    assert "SECRET" not in dumped and "sk-test" not in dumped, "예외 메시지 원문이 metadata에 새었다"
+    print("  ✅ T-F1 전 제공자 실패 → error·ping·done + 실패 행 1건(키 화이트리스트·메시지 원문 0)")
+
+
+def test_f2_record_failure_is_fail_open() -> None:
+    """T-F2 — save_conversation이 예외를 내도 사용자 이벤트는 그대로다."""
+    class FakeSB:
+        pass
+
+    cfg = _cfg(gemini=True)
+    cfg.supabase = FakeSB()
+    calls = []
+
+    def boom(sb, rec):
+        calls.append(rec)
+        raise RuntimeError("DB down SECRET-sk-test-123")
+
+    events, _ = _run_failed_pipeline(cfg, save=boom)
+    assert [e["type"] for e in events][-3:] == ["error", "ping", "done"]
+    assert len(calls) == 1, "저장 호출은 정확히 1회"
+    print("  ✅ T-F2 기록 실패에도 error·ping·done 불변(fail-open), 저장 호출 1회")
+
+
+def test_f3_no_supabase_skips_record() -> None:
+    """T-F3 — Supabase 미설정이면 저장을 시도하지 않고 이벤트는 같다."""
+    cfg = _cfg(gemini=True)
+    cfg.supabase = None
+    events, saved = _run_failed_pipeline(cfg)
+    assert [e["type"] for e in events][-3:] == ["error", "ping", "done"]
+    assert saved == []
+    print("  ✅ T-F3 supabase=None → 저장 시도 0회, 이벤트 동일")
+
+
+def test_f4_failure_meta_and_status_extraction() -> None:
+    """T-F4 — stage=pipeline 페이로드 + 상태 코드 추출 세 모양(status_code·response.status_code·code int)."""
+    m = pipeline._failure_llm_meta(None, _AuthErr("SECRET"), "pipeline", "gateway")
+    assert m["attempts"] == [] and m["stage"] == "pipeline" and m["transport"] == "gateway", m
+    assert m["failures"] == [{"provider": None, "error_class": "_AuthErr", "status": 401}], m
+    assert m["error_class"] == "_AuthErr" and m["status"] == 401 and "empty" not in m, m
+    assert pipeline._status_of(_RespErr(402)) == 402
+    assert pipeline._status_of(_CodeErr()) == 429
+    assert pipeline._status_of(_StrCodeErr()) is None, "문자열 code는 상태가 아니다"
+    assert pipeline._status_of(RuntimeError("x")) is None
+    assert pipeline._status_of(_ExplodingAttrErr()) is None, "속성 예외는 None으로 흡수해야 한다(L-1)"
+    assert pipeline._failure_entry("Claude", _ExplodingAttrErr())["error_class"] == "_ExplodingAttrErr"
+    m2 = pipeline._failure_llm_meta(None, _StrCodeErr(), "pipeline", None)
+    assert "status" not in m2 and "transport" not in m2, m2
+    m3 = pipeline._failure_llm_meta(AnswerOutcome(), RuntimeError("wrap"), "answer", "direct")
+    assert m3["failures"] == [{"provider": None, "error_class": "NoProvider", "status": None}], m3
+    for meta in (m, m2, m3):
+        assert set(meta) <= pipeline.FAILURE_META_KEYS, meta
+    print("  ✅ T-F4 stage=pipeline 페이로드 + 상태 코드 추출(status_code·response·code int, 문자열 무시)")
+
+
+def test_f5_synthetic_flag_matches_success_path() -> None:
+    """T-F5 — synthetic 판정은 성공 경로와 같은 규약(G-A·G-B)."""
+    from app.core.abuse_guard import GuardContext
+    assert pipeline._synthetic_flag(None) is True
+    assert pipeline._synthetic_flag(GuardContext(subject_key="ip:x", synthetic=False)) is False
+    assert pipeline._synthetic_flag(GuardContext(subject_key="ip:x", synthetic=True)) is True
+
+    class FakeSB:
+        pass
+
+    cfg = _cfg(gemini=True)
+    cfg.supabase = FakeSB()
+    events, saved = _run_failed_pipeline(cfg, guard_ctx=GuardContext(subject_key="ip:x", synthetic=False))
+    assert saved and "synthetic" not in saved[0].metadata, saved[0].metadata
+    print("  ✅ T-F5 synthetic: guard_ctx None → True, 프로덕션 요청 → 키 없음")
+
+
+def test_f6_category_shared_with_success_path() -> None:
+    """T-F6 — 실패 행의 카테고리는 성공 경로와 같은 함수·같은 값."""
+    from app.core.storage import classify_category, infer_calc_types
+    from app.models.schemas import AnalysisResult
+    q = "주휴수당 계산해 주세요"
+    calc, cat = pipeline._category_for(q, None, None, False)
+    assert calc == (infer_calc_types(q) or None) and cat == classify_category(calc, "none", q), (calc, cat)
+    a = AnalysisResult(question_summary="t", is_labor_related=True, calculation_types=["퇴직금"])
+    calc2, cat2 = pipeline._category_for(q, a, None, True)
+    assert calc2 == ["퇴직금"] and cat2 == classify_category(["퇴직금"], "none", q), (calc2, cat2)
+    calc3, cat3 = pipeline._category_for("상사가 괴롭혀요", None, {"is_harassment_question": True}, False)
+    assert cat3 == "직장내 괴롭힘", cat3
+    print("  ✅ T-F6 카테고리 단일 출처(_category_for) — 분석·params·폴백 세 경로 일치")
+
+
+def _answer_failure_handlers(node):
+    """'답변 생성 실패' 로그를 가진 except 핸들러만 — 초기화 실패 핸들러로 호출을 옮기면 잡힌다(Check L-6)."""
+    import ast
+    out = []
+    for h in ast.walk(node):
+        if not isinstance(h, ast.ExceptHandler):
+            continue
+        for c in ast.walk(h):
+            if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "error" and c.args \
+                    and isinstance(c.args[0], ast.Constant) and str(c.args[0].value).startswith("답변 생성 실패"):
+                out.append(h)
+                break
+    return out
+
+
+def _stmt_index(body, pred):
+    import ast
+    for i, stmt in enumerate(body):
+        if any(pred(n) for n in ast.walk(stmt)):
+            return i
+    return None
+
+
+def test_f7_api_paths_record_failures() -> None:
+    """T-F7 — api/index.py의 채팅 3경로가 **'답변 생성 실패' 예외 핸들러**에서 record_failed_conversation을 부르고,
+    SSE 두 경로는 error 이벤트를 먼저 낸 뒤 기록하고 done을 낸다(Check M-1: error → 기록 → done)."""
+    import ast
+    tree = ast.parse(open("api/index.py", encoding="utf-8").read())
+    is_record = lambda n: isinstance(n, ast.Call) and getattr(n.func, "id", None) == "record_failed_conversation"
+    is_yield_next = lambda n: isinstance(n, ast.Yield) and isinstance(n.value, ast.Call) \
+        and getattr(n.value.func, "id", None) == "next"
+    is_yield_from = lambda n: isinstance(n, ast.YieldFrom)
+    found, order_ok = {}, {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name in ("chat", "chat_stream", "chat_stream_with_files"):
+            handlers = _answer_failure_handlers(node)
+            found[node.name] = any(any(is_record(n) for n in ast.walk(h)) for h in handlers)
+            if node.name != "chat":
+                h = handlers[0]
+                i_err, i_rec, i_done = (_stmt_index(h.body, is_yield_next), _stmt_index(h.body, is_record),
+                                        _stmt_index(h.body, is_yield_from))
+                order_ok[node.name] = None not in (i_err, i_rec, i_done) and i_err < i_rec < i_done
+    assert found == {"chat": True, "chat_stream": True, "chat_stream_with_files": True}, found
+    assert order_ok == {"chat_stream": True, "chat_stream_with_files": True}, order_ok
+    print("  ✅ T-F7 API 3경로 '답변 생성 실패' 핸들러가 기록 + SSE 순서 error → 기록 → done")
+
+
+def test_f8_failures_record_empty_not_truncation() -> None:
+    """T-F8 — 빈 응답은 failures에 EmptyResponse, 절단은 기록하지 않는다."""
+    events, outcome = _run([
+        ("Claude", _fake([])),
+        ("OpenAI", _fake(["주휴", "수당"], raise_after=2)),
+    ])
+    assert outcome.truncated is True and outcome.provider == "OpenAI", outcome
+    assert outcome.failures == [{"provider": "Claude", "error_class": "EmptyResponse", "status": None}], outcome.failures
+    print("  ✅ T-F8 failures: 빈 응답 기록·절단 미기록")
+
+
 def main() -> None:
     test_t1_empty_first_provider_falls_back()
     test_t2_whitespace_only_not_leaked()
@@ -1127,6 +1365,14 @@ def main() -> None:
     test_rewrite_timeout_scaling()
     test_citation_stage_budget()
     test_gemini_stream_idle_not_total_deadline()
+    test_f1_all_fail_records_failed_row()
+    test_f2_record_failure_is_fail_open()
+    test_f3_no_supabase_skips_record()
+    test_f4_failure_meta_and_status_extraction()
+    test_f5_synthetic_flag_matches_success_path()
+    test_f6_category_shared_with_success_path()
+    test_f7_api_paths_record_failures()
+    test_f8_failures_record_empty_not_truncation()
     print("\n✅ LLM 폴백 경화 테스트 전부 통과")
 
 

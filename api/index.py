@@ -35,7 +35,7 @@ from app.core.storage import (
     is_public_excluded as _is_public_excluded,
     board_post_select as _board_post_select,
 )
-from app.core.pipeline import process_question
+from app.core.pipeline import process_question, record_failed_conversation
 from app.core.file_parser import parse_attachment, FileValidationError, MAX_ATTACHMENTS
 from app.anonymize import anonymize as _anonymize
 from app.core import abuse_guard
@@ -300,11 +300,18 @@ def chat(req: ChatRequest, request: Request):
     full_text = ""
     calc_result = None
 
-    for event in process_question(message, session, config, guard_ctx=guard_ctx):
-        if event["type"] == "meta":
-            calc_result = event.get("calc_result")
-        elif event["type"] == "chunk":
-            full_text += event["text"]
+    try:
+        for event in process_question(message, session, config, guard_ctx=guard_ctx):
+            if event["type"] == "meta":
+                calc_result = event.get("calc_result")
+            elif event["type"] == "chunk":
+                full_text += event["text"]
+    except Exception as e:
+        # 실패 행 기록(llm-fallback-alert-blindspot) 뒤 원 예외 그대로 — 500은 기존 동작이다.
+        # 파이프라인 안의 전 제공자 실패는 예외가 아니라 error 이벤트라 여기 오지 않는다(중복 기록 없음).
+        logging.error("답변 생성 실패(동기): %s\n%s", e, traceback.format_exc())
+        record_failed_conversation(config, session, message, guard_ctx, stage="pipeline", exc=e)
+        raise
 
     return {
         "message": full_text,
@@ -335,7 +342,13 @@ def chat_stream(request: Request, message: str, session_id: str | None = None):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패: %s\n%s", e, traceback.format_exc())
-            yield from _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            # 실패 행 기록(llm-fallback-alert-blindspot) — 저장 전 실패를 폴백 감시가 보게 한다. fail-open.
+            # 순서는 error → 기록 → done: 기록(PostgREST 3왕복, 기본 타임아웃 120초)이 안내를 막지 않게
+            # 안내를 먼저 내보내고, done만 저장 시간만큼 늦춘다(Check M-1).
+            gen = _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            yield next(gen)
+            record_failed_conversation(config, session, message, guard_ctx, stage="pipeline", exc=e)
+            yield from gen
 
     return StreamingResponse(
         event_generator(),
@@ -405,7 +418,12 @@ def chat_stream_with_files(req: ChatWithFilesRequest, request: Request):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logging.error("답변 생성 실패(POST): %s\n%s", e, traceback.format_exc())
-            yield from _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            # error → 기록 → done (GET 경로와 같은 이유, Check M-1)
+            gen = _sse_error_events("죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            yield next(gen)
+            record_failed_conversation(config, session, message, guard_ctx, stage="pipeline", exc=e,
+                                       has_attachments=bool(parsed_attachments))
+            yield from gen
 
     return StreamingResponse(
         event_generator(),

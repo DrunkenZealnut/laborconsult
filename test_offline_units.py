@@ -577,18 +577,20 @@ def test_public_exclude_keys() -> None:
     from app.core.storage import PUBLIC_EXCLUDE_KEYS, is_public_excluded
     from dedupe_board import PUBLIC_EXCLUDE_KEYS as SCRIPT_KEYS
 
-    for key in ("guard_flag", "truncated", "textbook", "synthetic"):
+    for key in ("guard_flag", "truncated", "textbook", "synthetic", "failed"):
         assert key in PUBLIC_EXCLUDE_KEYS, f"제외 키 누락: {key}"
     assert SCRIPT_KEYS is PUBLIC_EXCLUDE_KEYS, "정리 스크립트가 별도 집합을 씀"
 
     assert is_public_excluded({"synthetic": True})
+    # failed — 답변 없는 실패 행(llm-fallback-alert-blindspot). True만 기록한다.
+    assert is_public_excluded({"failed": True}) and not is_public_excluded({"failed": False})
     assert is_public_excluded({"guard_flag": "scope_monitor"})
     assert not is_public_excluded({"has_attachments": True})
     # PostgREST 필터는 키 부재(IS NULL)로 판정하므로 명시적 False를 쓰면 두 경로가
     # 갈라진다 — 이 키들은 True로만 기록한다는 계약을 여기서 고정한다.
     assert not is_public_excluded({"synthetic": False}), "False는 제외 대상이 아니다"
     assert not is_public_excluded(None) and not is_public_excluded("문자열")
-    print("  ✅ 공개 제외 키 4종 계약 + 단일 출처(app/core/storage.py) 공유")
+    print("  ✅ 공개 제외 키 6종 계약(failed 포함) + 단일 출처(app/core/storage.py) 공유")
 
 
 def test_board_posts_schema_source() -> None:

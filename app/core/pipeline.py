@@ -424,6 +424,10 @@ class AnswerOutcome:
     truncated: bool = False                                    # 실질 청크 후 스트림 중단
     error: str | None = None
     model: str | None = None                                   # provider가 실제로 쓴 모델명
+    # 제공자별 실패 — 클래스명·HTTP 상태만(메시지 원문은 담지 않는다: 토큰·키·URL이 섞인다).
+    # 전 제공자 실패 시 실패 행의 metadata.llm.failures가 된다(llm-fallback-alert-blindspot §3.2).
+    # 절단(실질 청크 뒤 끊김)은 실패가 아니라 넣지 않는다 — truncated가 담당한다.
+    failures: list[dict] = field(default_factory=list)
 
 
 # 판정 단일 출처는 llm_gateway — 보조 단계(effort=low)와 답변 경로가 같은 규칙을 쓴다.
@@ -665,6 +669,7 @@ def _stream_answer(
                 return
             logger.warning("%s 답변 생성 실패, 다음 제공자로 전환: %s", name, e)
             last_error = e
+            outcome.failures.append(_failure_entry(name, e))
             continue
 
         if chars:
@@ -672,6 +677,7 @@ def _stream_answer(
 
         # FR-01: 예외 없이 실질 0자로 종료 → 실패로 승격하고 다음 제공자로
         outcome.empty_providers.append(name)
+        outcome.failures.append({"provider": name, "error_class": "EmptyResponse", "status": None})
         logger.warning("%s 빈 응답(실질 0자) — 다음 제공자로 전환", name)
         last_error = last_error or RuntimeError(f"{name} returned an empty response")
 
@@ -760,6 +766,126 @@ def _llm_meta(
     if intent_provider and intent_provider != expected:
         meta["intent_provider"] = intent_provider
     return meta
+
+
+# ── 실패 행 (llm-fallback-alert-blindspot) ───────────────────────────────────
+# 전 제공자 실패·답변 중 예외는 지금까지 오류 이벤트만 내고 저장하지 않았다. 폴백 감시
+# (check_llm_fallback.py)는 저장된 대화만 읽으므로 전면 장애 중에도 '✅ 정상'이었다(2026-10-14 실측 —
+# gpt-6-luna 지연 + Claude 한도 + Gemini 소진). 그래서 실패도 답변 없는 행으로 남긴다.
+# 지킬 것: ① 예외 **메시지**는 어디에도 쓰지 않는다 — 클래스명·HTTP 상태만(Gateway 401 본문은 URL을,
+# SDK 메시지는 헤더 값을 담을 수 있다) ② 기록은 fail-open — 사용자에게 가는 error·done을 막지 않는다
+# ③ 카테고리·synthetic 판정은 성공 경로와 **같은 함수**다(복제하면 관리자 분포가 조용히 어긋난다).
+
+# 실패 페이로드의 키 전부 — 테스트(T-F1)가 이 집합 밖의 키를 거절한다.
+FAILURE_META_KEYS = frozenset({
+    "failed", "stage", "provider", "attempts", "empty", "failures", "error_class", "status", "transport",
+})
+
+
+def _status_of(exc) -> int | None:
+    """예외의 HTTP 상태 — SDK별 모양(anthropic·openai·cohere `status_code`, httpx `response.status_code`,
+    google.api_core `code`)만 본다. 메시지는 읽지 않는다. 정수가 아니면(grpc enum·메서드) 버린다."""
+    # 폴백 전환 중(_stream_answer의 except 블록 안)에서 불린다 — 속성 접근이 예외를 던지면 전환이 끊기므로
+    # 어떤 예외든 None으로 흡수한다(getattr 기본값은 AttributeError만 막는다, Check L-1).
+    try:
+        candidates = (
+            getattr(exc, "status_code", None),
+            getattr(getattr(exc, "response", None), "status_code", None),
+            getattr(exc, "code", None),
+        )
+        for value in candidates:
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _failure_entry(provider: str | None, exc: BaseException) -> dict:
+    return {"provider": provider, "error_class": type(exc).__name__, "status": _status_of(exc)}
+
+
+def _failure_llm_meta(
+    outcome: "AnswerOutcome | None", exc: BaseException | None, stage: str, transport: str | None = None,
+) -> dict:
+    """실패 행의 metadata.llm (Design §3.4).
+
+    stage="answer": 원인은 outcome.failures(제공자별)다 — 최종 RuntimeError는 _stream_answer의 포장이라
+    그 클래스명은 쓰지 않는다. stage="pipeline": 답변 밖 예외 1건이 전부다.
+    """
+    attempts = list(outcome.attempts) if outcome else []
+    failures = [dict(f) for f in outcome.failures] if outcome else []
+    if stage != "answer" and exc is not None:
+        failures.append(_failure_entry(None, exc))
+    if not failures:
+        failures.append({"provider": None, "error_class": "NoProvider", "status": None})
+    meta: dict = {"failed": True, "stage": stage, "provider": None, "attempts": attempts, "failures": failures,
+                  "error_class": failures[-1]["error_class"]}
+    if outcome and outcome.empty_providers:
+        meta["empty"] = list(outcome.empty_providers)
+    if failures[-1].get("status") is not None:
+        meta["status"] = failures[-1]["status"]
+    if transport:
+        meta["transport"] = transport
+    return meta
+
+
+def _category_for(query: str, analysis, params, use_analysis_params: bool) -> tuple[list | None, str]:
+    """저장 행의 (calculation_types, category) — 성공 경로와 실패 행이 공유하는 단일 출처."""
+    calc_types = None
+    tool_type_for_category = "none"
+    if use_analysis_params and analysis:
+        calc_types = analysis.calculation_types
+    elif params:
+        ct = params.get("calculation_type", "")
+        if ct:
+            calc_types = list(CALC_TYPE_MAP.get(ct, []))
+        if params.get("is_harassment_question"):
+            tool_type_for_category = "harassment"
+    # LLM 추출 실패 시 키워드 기반 폴백
+    if not calc_types:
+        calc_types = infer_calc_types(query) or None
+    return calc_types, classify_category(calc_types, tool_type_for_category, query)
+
+
+def _synthetic_flag(guard_ctx) -> bool:
+    """비웹 호출(G-A)·비프로덕션 출처 요청(G-B) — board-duplicate-cleanup. 성공·실패 행 공통."""
+    return guard_ctx is None or bool(getattr(guard_ctx, "synthetic", False))
+
+
+def record_failed_conversation(
+    config: AppConfig, session: Session, query: str, guard_ctx, *, stage: str,
+    outcome: "AnswerOutcome | None" = None, exc: BaseException | None = None,
+    has_attachments: bool = False, analysis=None, params=None, use_analysis_params: bool = False,
+) -> str | None:
+    """답변 없는 실패 행을 저장한다(Design §4.1). 실패해도 예외를 내지 않는다(fail-open).
+
+    호출부: process_question의 전 제공자 실패 분기(stage="answer")와 api/index.py의 답변 중 예외
+    분기(stage="pipeline"). 한 요청에서 두 분기는 배타라 실패 행은 최대 1건이다.
+    """
+    sb = getattr(config, "supabase", None)
+    if sb is None:
+        return None
+    try:
+        calc_types, category = _category_for(query, analysis, params, use_analysis_params)
+        metadata: dict = {
+            "has_attachments": bool(has_attachments),
+            "failed": True,   # 게시판 제외 키(storage.PUBLIC_EXCLUDE_KEYS) — True일 때만 기록
+            "llm": _failure_llm_meta(outcome, exc, stage, getattr(config, "transport", None)),
+        }
+        if _synthetic_flag(guard_ctx):
+            metadata["synthetic"] = True
+        record = ConversationRecord(
+            session_id=session.id, category=category, question_text=query, answer_text="",
+            calculation_types=calc_types or [], metadata=metadata,
+        )
+        conv_id = save_conversation(sb, record)
+        logger.info("실패 행 저장 (stage=%s, conv_id=%s, error_class=%s)",
+                    stage, conv_id, metadata["llm"]["error_class"])
+        return conv_id
+    except Exception as e:  # noqa: BLE001 — 기록 실패가 오류 안내를 막지 않는다
+        logger.warning("실패 행 기록 실패 (stage=%s): %s", stage, type(e).__name__)
+        return None
 
 
 # ── 임금계산기 ────────────────────────────────────────────────────────────────
@@ -4275,6 +4401,14 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "chunk", "text": text}
     except RuntimeError:
         yield {"type": "error", "text": "모든 AI 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}
+        # 실패 행 기록(llm-fallback-alert-blindspot) — 안내가 먼저 나가고, 저장 지연은 ping이 덮는다.
+        # 저장하지 않으면 폴백 감시가 전면 장애를 보지 못한다(2026-10-14 실측).
+        yield {"type": "ping"}
+        record_failed_conversation(
+            config, session, query, guard_ctx, stage="answer", outcome=outcome,
+            has_attachments=has_attachments, analysis=analysis, params=params,
+            use_analysis_params=use_analysis_params,
+        )
         yield {"type": "done"}
         return
 
@@ -4398,23 +4532,8 @@ def process_question(query: str, session: Session, config: AppConfig,
         yield {"type": "done"}
         return
 
-    # 카테고리 결정
-    calc_types = None
-    tool_type_for_category = "none"
-    if use_analysis_params and analysis:
-        calc_types = analysis.calculation_types
-    elif params:
-        ct = params.get("calculation_type", "")
-        if ct:
-            calc_types = list(CALC_TYPE_MAP.get(ct, []))
-        if params.get("is_harassment_question"):
-            tool_type_for_category = "harassment"
-
-    # LLM 추출 실패 시 키워드 기반 폴백
-    if not calc_types:
-        calc_types = infer_calc_types(query) or None
-
-    category = classify_category(calc_types, tool_type_for_category, query)
+    # 카테고리 결정 — 실패 행(record_failed_conversation)과 같은 함수다. 복제하면 분포가 어긋난다.
+    calc_types, category = _category_for(query, analysis, params, use_analysis_params)
 
     # monitor 모드 의심 대화는 저장하되 공개 게시판 노출에서 제외한다 (FR-09).
     # block 모드 차단·유출 적발 대화는 이 지점에 도달하지 않는다(저장 자체 생략).
@@ -4456,7 +4575,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     # None이면 비웹 호출이다 — ABUSE_GUARD_MODE=off에서도 _guard_chat_request()는
     # 모드 값만 "off"인 GuardContext를 만들어 반환하므로 웹 경로에서 None이 되지 않는다.
     # guard_ctx.synthetic은 비프로덕션 출처 HTTP 요청 표식(G-B)이다.
-    if guard_ctx is None or guard_ctx.synthetic:
+    if _synthetic_flag(guard_ctx):
         conv_metadata["synthetic"] = True
     # 정확성 관측(kin-answer-accuracy) — 값이 있을 때만 기록. 게시판 제외 사유가 아니다.
     if used_rule_facts:
