@@ -2,7 +2,7 @@
 
 > **Summary**: 전 제공자 실패(파이프라인)·답변 중 예외(API)에서 **답변 없는 실패 행**을 `qa_conversations`에 남기고, `check_llm_fallback.py`에 "최근 12시간 내 실패 행 1건 → 알림" 규칙(R2)과 마지막 실사용 경과 표시를 더한다. DDL·Secret·새 테이블 없음.
 >
-> **Project**: laborconsult · **Author**: Claude(Fable 5.1) + 사용자 · **Date**: 2026-10-30 · **Status**: v0.2 (2026-11-02 Check M-1·M-2·L-1·L-4 반영)
+> **Project**: laborconsult · **Author**: Claude(Fable 5.1) + 사용자 · **Date**: 2026-10-30 · **Status**: v0.3 (2026-11-03 PR #150 CodeRabbit 반영 — §4.2 ping 표현·§5.3 24h 창·§5.4 `last_ok`/'연속 실패'·§10 롤백)
 > **Planning Doc**: `docs/01-plan/features/llm-fallback-alert-blindspot.plan.md`(§8 확정: U1 12h · U2 동일 저장 · U3 포함+표지 · U4 범위 밖)
 > **Parent**: `docs/archive/2026-10/llm-fallback-alert/llm-fallback-alert.design.md`(R1·fail-closed·본문 비조회) · `docs/archive/2026-08/llm-fallback-hardening/`(`metadata.llm`·`AnswerOutcome`)
 
@@ -188,7 +188,7 @@ except RuntimeError:
     return
 ```
 
-- 순서 `error → ping → 기록 → done`: 사용자 안내가 먼저 나가고, `done`은 INSERT 1회만큼 늦어진다(정상 경로의 저장 지연과 같은 크기). 프런트는 `error`를 안내 요소로 그리고 `done`에서 전송 잠금을 푼다 — 그 사이가 수 초 늘어도 `ping`이 idle(60초)을 지킨다.
+- 순서 `error → ping → 기록 → done`: 사용자 안내가 먼저 나가고, `done`은 저장(PostgREST 3왕복)만큼 늦어진다(정상 경로의 저장 지연과 같은 크기). 프런트는 `error`를 안내 요소로 그리고 `done`에서 전송 잠금을 푼다. `ping`은 idle(60초) 타이머를 **한 번 리셋**해 저장에 60초 여유를 줄 뿐이다 — 그 이상 걸리면 프런트가 시간 초과 안내를 덧붙이고 끊는데, 이것은 정상 경로의 `save_conversation`(역시 `done` 앞)과 같은 노출이라 이 사이클은 따로 막지 않는다(CodeRabbit #150 — 저장 타임아웃 단축은 정상 경로와 함께 후속).
 - 이 분기는 `GatewayAuthError`·`UnsupportedModelError`(둘 다 `RuntimeError` 하위)가 `_stream_answer` 밖에서 났을 때도 잡는다 — 그때 `outcome.failures`가 비어 `error_class="NoProvider"`가 된다(원인은 Vercel 로그). 설계상 허용하되 요약 힌트가 "로그 확인"으로 안내한다.
 
 ### 4.3 API — 답변 중 예외·동기 경로
@@ -238,13 +238,13 @@ def judge(rows, window=3, now=None, fail_window=RECENT_FAIL_WINDOW) -> Verdict:
 
 ### 5.3 조회 — W 구간 커버리지
 
-`fetch_recent(db, window, now, fail_window)`는 종료 조건을 바꾼다: **(실사용 ≥ window) AND (가장 오래된 조회 행의 `created_at` < now − fail_window)** 또는 기록 끝·`MAX_PAGES`. 기존 조건(실사용 window건)만 두면 최근 12시간 안에 성공 3건 뒤의 실패 행이 **페이지 밖에 남아** R2가 보지 못한다(테스트 B5). 페이지 사이 중복은 기존처럼 `id`로 제거한다. 마지막 행의 `created_at`을 해석할 수 없으면 '창을 덮음'으로 보고 멈춘다(무한 조회 방지 — fail-open, `MAX_PAGES`가 상한). `MAX_PAGES=20`(1,000행)은 유지 — 12시간에 1,000행을 넘는 트래픽은 이 서비스에 없다(하루 0~5건 + 벤치 수십 건).
+`fetch_recent(db, window, now, fail_window)`는 종료 조건을 바꾼다: **(실사용 ≥ window) AND (가장 오래된 조회 행의 `created_at` < now − max(fail_window, 24h 요약 창))** 또는 기록 끝·`MAX_PAGES`. 요약의 '최근 24시간 실패 n건'도 같은 행으로 세므로 창은 둘 중 긴 쪽을 덮는다(CodeRabbit #150, B5c). 기존 조건(실사용 window건)만 두면 최근 12시간 안에 성공 3건 뒤의 실패 행이 **페이지 밖에 남아** R2가 보지 못한다(테스트 B5). 페이지 사이 중복은 기존처럼 `id`로 제거한다. 마지막 행의 `created_at`을 해석할 수 없으면 '창을 덮음'으로 보고 멈춘다(무한 조회 방지 — fail-open, `MAX_PAGES`가 상한). `MAX_PAGES=20`(1,000행)은 유지 — 12시간에 1,000행을 넘는 트래픽은 이 서비스에 없다(하루 0~5건 + 벤치 수십 건).
 
 ### 5.4 출력
 
 ```
-## LLM 폴백 감시: 🚨 최근 12시간 내 전 제공자 실패 2건 · 답변 처리 예외 1건   ← R2 제목. stage별로 센다(Check M-2). R1도 참이면 " · 🚨 최근 실사용 3건 연속 폴백"을 한 줄에 이어 붙인다
-- 마지막 실사용 답변: 10-14 09:12 KST (5.8시간 전) · 최근 24시간 실패 2건
+## LLM 폴백 감시: 🚨 최근 12시간 내 전 제공자 실패 2건 · 답변 처리 예외 1건   ← R2 제목. stage별로 센다(Check M-2). R1도 참이면 " · 🚨 최근 실사용 3건 연속 폴백"을 한 줄에 이어 붙인다(표본이 전부 실패 행이면 '연속 실패' — 폴백은 성공한 전환이다, CodeRabbit #150·L-5)
+- 마지막 성공 답변: 10-11 17:22 KST (69.6시간 전) · 최근 24시간 실패 2건      ← 실패 행은 제외(`last_ok`, CodeRabbit #150)
 - created_at 해석 불가로 R2에서 제외한 실패 행 n건                 ← 있을 때만
 | 시각(KST) | provider | model | attempts | 저하 사유 |
 | 10-14 09:12 | — | — | Claude → OpenAI → Gemini | failed:ResourceExhausted |
@@ -258,7 +258,7 @@ def judge(rows, window=3, now=None, fail_window=RECENT_FAIL_WINDOW) -> Verdict:
 ::error::최근 12시간 안에 실사용 답변 실패 — 전 제공자 실패 2건 · 답변 처리 예외 1건
 ```
 
-- 실사용 기록이 하나도 없으면 "마지막 실사용 답변: 기록 없음(조회 범위 안 실사용 0건)".
+- 성공 답변이 하나도 없으면 "마지막 성공 답변: 기록 없음(조회 범위 안 성공 답변 0건) · 최근 24시간 실패 n건".
 - `render`는 여전히 `question_text`를 읽지 않는다(행 select도 `id,created_at,metadata` 그대로). 힌트는 상수 문자열만 — 예외 메시지·토큰 값이 끼어들 경로가 없다.
 - 종료 코드 규약 불변: alert → 1, 조회 실패 → 2, 그 외 0. 법령 조회 감시(①②③)는 그대로.
 
@@ -343,7 +343,7 @@ def judge(rows, window=3, now=None, fail_window=RECENT_FAIL_WINDOW) -> Verdict:
 | D-2 | `_stream_answer`가 `failures`를 기록하고 최종 RuntimeError의 클래스는 쓰지 않는다 | 포장 예외의 클래스명(`RuntimeError`)은 정보가 없다. 원인은 제공자별 예외다 |
 | D-3 | `degraded()`에서 `failed`는 단독 사유 | "fallback"은 성공한 폴백을 뜻하는 기존 어휘라 실패 행에 함께 붙이면 표가 거짓이 된다 |
 | D-4 | R2는 표본 수와 무관 | 10-14 사례(실사용 1건 + 실패)를 잡으려면 `insufficient`에서도 울려야 한다 |
-| D-5 | 킬스위치(Plan FR-11) **도입 안 함** | 기록은 실패 경로에서만 돌고 fail-open이라 사용자 영향이 없다. 환경변수를 늘리면 재배포 반영 의미론을 또 설명해야 한다. 되돌리기는 PR revert |
+| D-5 | 킬스위치(Plan FR-11) **도입 안 함** | 기록은 실패 경로에서만 돌고 fail-open이라 사용자 영향이 없다. 환경변수를 늘리면 재배포 반영 의미론을 또 설명해야 한다. 되돌리기는 기록 호출부 revert(§10 — `PUBLIC_EXCLUDE_KEYS`의 `failed`는 남긴다) |
 | D-6 | 세션 스냅숏·첨부는 실패 행에 저장하지 않는다 | 답변이 없어 이력 가치가 없고, 첨부 업로드는 비용·지연만 더한다 |
 | D-7 | `fetch_recent` 종료 조건을 "W 구간까지"로 확장 | 최근 성공 3건 뒤의 실패가 페이지 밖에 남는 사각(B5) |
 | D-8 | 카테고리 블록을 `_category_for`로 추출해 양쪽이 공유 | 복제하면 실패 행의 카테고리가 성공 시와 달라진다 — 관리자 분포가 어긋나는 조용한 결함 |
@@ -353,8 +353,8 @@ def judge(rows, window=3, now=None, fail_window=RECENT_FAIL_WINDOW) -> Verdict:
 
 ## 10. 운영·롤백
 
-- 배포: PR 머지 → Vercel 자동 배포 → `workflow_dispatch` 1회(exit 0, 요약에 "마지막 실사용 답변" 줄) → 정상.
-- 롤백: PR revert. 이미 쌓인 실패 행은 `failed` 키로 게시판 제외·감시 `degraded`가 모르는 키면 무시 → 무해. 삭제 불요(365일 purge).
+- 배포: PR 머지 → Vercel 자동 배포 → `workflow_dispatch` 1회(exit 0, 요약에 "마지막 성공 답변" 줄) → 정상.
+- 롤백: **기록 호출부(pipeline·api)만 revert**하고 `storage.PUBLIC_EXCLUDE_KEYS`의 `failed`와 감시의 `failed` 처리는 남긴다. 전체 PR revert는 제외 키까지 지워 이미 쌓인 실패 행(질문 원문 + 빈 답변)이 공개 게시판 `board_recent`·`board_search`에 노출된다(CodeRabbit #150 — v0.2의 "revert 뒤 무해"는 틀렸다). 전체 revert가 꼭 필요하면 먼저 SQL Editor에서 `metadata->>'failed' = 'true'` 행을 삭제한다(anon DELETE 불가). 남긴 행은 365일 purge.
 - 알림 수신 시: 요약의 힌트 → Vercel 런타임 로그 → (401) OIDC/`LLM_TRANSPORT` → (402) 크레딧 잔액 — **충전·결제는 사용자 승인**.
 - 문서: `CLAUDE.md` "폴백 결과는 `qa_conversations.metadata.llm`에 기록한다" 절에 실패 행·R2를 덧붙이고, `_PUBLIC_EXCLUDE_KEYS` "현재 4종" → **6종**(`counsel`은 있었으나 미기재, `failed` 설명). `check_llm_fallback.py` docstring·`llm-fallback-alert.yml` 주석에 R2. memory `project-llm-fallback-alert`의 "사각" 문단을 해소 기록으로.
 
@@ -395,3 +395,4 @@ def judge(rows, window=3, now=None, fail_window=RECENT_FAIL_WINDOW) -> Verdict:
 |---|---|---|---|
 | 0.1 | 2026-10-30 | 초안 — 실패 행 모델·헬퍼·세 기록 경로·R2/W 커버리지·관리자 표지·테스트 18건·결정 D-1~D-9 | Claude |
 | 0.2 | 2026-11-02 | Check(95.1%) 반영 — M-1 SSE 순서 `error → 기록 → done`(3왕복·120초 전제 정정), M-2 stage별 제목·힌트·관리자 문구, L-1 `_status_of` 예외 보호, L-4 힌트 단언(B11), B12·B5b·T-F7 강화, 제외 키 6종, 목록 표지 보류, §5.3 해석 불가 동작, §7 범위 한정 | Claude |
+| 0.3 | 2026-11-03 | PR #150 CodeRabbit 반영 — §4.2 ping은 60초 여유(덮지 않음)·정상 경로와 같은 노출, §5.3 조회 창 = max(R2, 24h), §5.4 요약은 성공 답변(`last_ok`)·전부 실패면 '연속 실패', §9 D-5·§10 롤백은 호출부만(전체 revert는 실패 행 노출). 동기 로그 원문 제거는 §7 그대로(구현 수정). 테스트 B2b·B5c·B13·T-F7 stage/로그 검사 | Claude |

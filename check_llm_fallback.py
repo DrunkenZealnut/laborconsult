@@ -18,7 +18,7 @@ GitHub Actions(.github/workflows/llm-fallback-alert.yml)가 6시간마다 돌린
      pipeline.record_failed_conversation이 answer_text=""로 남긴다)이 1건이라도 있으면 → 알림. 표본 수와 무관하다.
      실측 2026-10-14: 전 제공자 실패 상태였는데 실패가 저장되지 않아 마지막 실사용(10-11) 기준 ✅였다.
      12시간은 cron 2주기 — 한 실행을 놓쳐도 다음이 잡고, 단일 blip의 메일은 최대 2통.
-  요약에 "마지막 실사용 답변 경과"·"최근 24시간 실패 n건"을 적지만 알림 사유는 아니다(10-11~10-27 트래픽 0 실측 —
+  요약에 "마지막 성공 답변 경과"(실패 행 제외)·"최근 24시간 실패 n건"을 적지만 알림 사유는 아니다(10-11~10-27 트래픽 0 실측 —
   경과 시간 단독은 오탐). 조회는 실사용 window건을 모은 뒤에도 R2 창을 덮을 때까지 페이지를 이어 읽는다.
 
 지킬 것 다섯:
@@ -29,7 +29,7 @@ GitHub Actions(.github/workflows/llm-fallback-alert.yml)가 6시간마다 돌린
 - **대화 본문은 읽지 않는다.** Actions 로그는 저장소 협업자에게 보인다. metadata만 조회한다.
 - **R2 창(`--fail-window`, 기본 12h = cron 2주기)을 6h로 줄이지 말 것.** 실행 하나가 지연·취소되면 그 실패를
   영영 못 본다. 조회는 실사용 window건을 모은 뒤에도 창을 덮을 때까지 페이지를 더 읽는다(최근 성공 뒤의 실패).
-- **"마지막 실사용 답변 경과"는 알림 사유가 아니다.** 10-11~10-27 트래픽 0 실측 — 경과 시간 단독은 오탐이다.
+- **"마지막 성공 답변 경과"는 알림 사유가 아니다.** 10-11~10-27 트래픽 0 실측 — 경과 시간 단독은 오탐이다.
 
 법령 조회 감시(production-law-api-recovery D11) — 같은 실행·같은 종료 코드 규약으로 판정한다.
 프로덕션 법제처 조회는 IP 미등록으로 6주 넘게 전부 실패했는데 아무에게도 보이지 않았다.
@@ -71,6 +71,7 @@ class Verdict:
     considered: list = field(default_factory=list)  # [(row, reasons)] 최근 → 과거 (R1 표본)
     recent_failed: list = field(default_factory=list)  # R2 — 창 안의 실사용 실패 행(최근 → 과거)
     last_real: dict | None = None                 # 가장 최근 실사용 행(요약용, 알림 아님)
+    last_ok: dict | None = None                   # 가장 최근 **성공** 답변 행 — 실패 행이 최신이면 그 시각이 '답변'으로 보였다(CodeRabbit #150)
     failed_24h: int = 0                           # 요약용
     unparsed: int = 0                             # created_at 해석 불가로 R2에서 제외한 실사용 행 수
     fail_window: timedelta = RECENT_FAIL_WINDOW
@@ -158,6 +159,7 @@ def judge(rows: list[dict], window: int = DEFAULT_WINDOW, now: datetime | None =
     else:
         status = "ok"
     return Verdict(status, picked, recent_failed=recent_failed, last_real=real[0] if real else None,
+                   last_ok=next((r for r in real if not _is_failed(r)), None),
                    failed_24h=failed_24h, unparsed=unparsed, fail_window=fail_window, now=now)
 
 
@@ -169,6 +171,8 @@ def fetch_recent(db, window: int = DEFAULT_WINDOW, now: datetime | None = None,
     창 밖으로 밀려나 '판정 불가'로 통과한다(CodeRabbit PR #89 — 실측 8-24에 수 분간 합성 ~25건).
     실사용 window건만 채우고 멈추면 최근 성공 3건 **뒤**의 실패 행이 페이지 밖에 남아 R2가 보지 못한다
     (llm-fallback-alert-blindspot D-7) — 그래서 가장 오래된 조회 행이 창보다 오래될 때까지 더 읽는다.
+    창은 R2(fail_window)와 요약의 24시간 창 중 긴 쪽이다 — R2만 덮고 멈추면 12~24시간 전 실패가 페이지 밖에
+    남아 '최근 24시간 실패 n건'이 실제보다 적게 나온다(CodeRabbit #150).
     기록을 다 읽었을 때만 표본 부족이다. MAX_PAGES(1,000행)가 상한이다.
     """
     now = now or datetime.now(timezone.utc)
@@ -181,7 +185,7 @@ def fetch_recent(db, window: int = DEFAULT_WINDOW, now: datetime | None = None,
         if len(chunk) < PAGE_SIZE:
             break
         oldest = _ts(chunk[-1])
-        window_covered = oldest is None or oldest < now - fail_window
+        window_covered = oldest is None or oldest < now - max(fail_window, SUMMARY_FAIL_WINDOW)
         if sum(map(is_real, rows)) >= window and window_covered:
             break
     return rows
@@ -384,24 +388,29 @@ def _hints(verdict: Verdict) -> list[str]:
     return [text[k] for k in kinds]
 
 
+def _all_failed(verdict: Verdict) -> bool:
+    """R1 표본이 전부 실패 행인가 — 그때 '폴백'(성공한 전환)이라고 말하면 거짓이다(CodeRabbit #150, Check L-5)."""
+    return bool(verdict.considered) and all(_is_failed(r) for r, _ in verdict.considered)
+
+
 def render(verdict: Verdict, window: int) -> str:
     parts = []
     if verdict.recent_failed:
         parts.append(f"🚨 최근 {_hours(verdict.fail_window)}시간 내 {_failure_label(verdict.recent_failed)}")
     if _r1_alert(verdict, window):
-        parts.append(f"🚨 최근 실사용 {window}건 연속 폴백")
+        parts.append(f"🚨 최근 실사용 {window}건 {'연속 실패' if _all_failed(verdict) else '연속 폴백'}")
     if not parts:
         parts.append("✅ 정상" if verdict.status == "ok"
                      else f"– 판정 불가(실사용 {len(verdict.considered)}건 < {window})")
     lines = [f"## LLM 폴백 감시: {' · '.join(parts)}", ""]
     now = verdict.now or datetime.now(timezone.utc)
-    if verdict.last_real is not None:
-        last_ts = _ts(verdict.last_real)
+    if verdict.last_ok is not None:
+        last_ts = _ts(verdict.last_ok)
         age = f" ({(now - last_ts).total_seconds() / 3600:.1f}시간 전)" if last_ts else ""
-        lines.append(f"- 마지막 실사용 답변: {_kst(verdict.last_real.get('created_at'))} KST{age} · "
+        lines.append(f"- 마지막 성공 답변: {_kst(verdict.last_ok.get('created_at'))} KST{age} · "
                      f"최근 24시간 실패 {verdict.failed_24h}건")
     else:
-        lines.append("- 마지막 실사용 답변: 기록 없음(조회 범위 안 실사용 0건)")
+        lines.append(f"- 마지막 성공 답변: 기록 없음(조회 범위 안 성공 답변 0건) · 최근 24시간 실패 {verdict.failed_24h}건")
     if verdict.unparsed:
         lines.append(f"- created_at 해석 불가로 R2에서 제외한 실패 행 {verdict.unparsed}건")
     lines += ["", "| 시각(KST) | provider | model | attempts | 저하 사유 |", "|---|---|---|---|---|"]
@@ -414,7 +423,7 @@ def render(verdict: Verdict, window: int) -> str:
                      f"{' → '.join(llm.get('attempts') or []) or '—'} | {', '.join(reasons) or '—'} |")
     if verdict.status == "alert":
         hints = _hints(verdict) if verdict.recent_failed else []
-        if _r1_alert(verdict, window):
+        if _r1_alert(verdict, window) and not _all_failed(verdict):   # 전부 실패면 R2 힌트가 원인을 가리킨다
             hints.append("폴백(1순위 실패 후 전환): Vercel 런타임 로그에서 `답변 생성 실패, 다음 제공자로 전환`·"
                          "`의도분석 Claude 실패` 줄의 오류 원문을 확인할 것(사용 한도·키·SDK 버전·모델 폐기가 지금까지의 원인이었다).")
         lines += [""] + [f"- 점검: {h}" for h in hints]
@@ -458,7 +467,8 @@ def main() -> int:
     if verdict.recent_failed:
         print(f"::error::최근 {_hours(fail_window)}시간 안에 실사용 답변 실패 — {_failure_label(verdict.recent_failed)}")
     if _r1_alert(verdict, args.window):
-        print(f"::error::최근 실사용 답변 {args.window}건이 모두 1순위 제공자 실패 후 폴백으로 생성됐습니다")
+        print(f"::error::최근 실사용 답변 {args.window}건이 모두 "
+              + ("실패했습니다(답변 없음)" if _all_failed(verdict) else "1순위 제공자 실패 후 폴백으로 생성됐습니다"))
     for reason in law_verdict.reasons:
         print(f"::error::법령 조회 감시 — {reason}")
     return 1 if (verdict.status == "alert" or law_verdict.status == "alert") else 0

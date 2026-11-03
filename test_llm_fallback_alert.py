@@ -186,6 +186,12 @@ class FailedRowTest(unittest.TestCase):
         self.assertEqual(v.recent_failed, [])
         self.assertEqual(v.failed_24h, 1)            # 요약에는 센다(알림 아님)
 
+    def test_b2b_failed_exactly_at_window_edge_alerts(self):
+        """CodeRabbit #150 — 창 경계(정확히 12h 전)는 포함(`>=`). `>`로 바뀌면 잡힌다."""
+        v = c.judge([ago(12, FAILED)], now=NOW)
+        self.assertEqual(v.status, "alert")
+        self.assertEqual(len(v.recent_failed), 1)
+
     def test_b3_synthetic_failed_rows_are_ignored(self):
         v = c.judge([ago(1, FAILED, synthetic=True), ago(2, FAILED, synthetic=True)], now=NOW)
         self.assertEqual(v.status, "insufficient")
@@ -217,6 +223,16 @@ class FailedRowTest(unittest.TestCase):
         c.fetch_recent(db, 3, now=NOW)
         self.assertEqual(db.pages, 1, "실사용 3건 + 창 밖 행이 첫 페이지에 있으면 더 읽지 않는다")
 
+    def test_b5c_fetch_covers_summary_window_for_failed_24h(self):
+        """CodeRabbit #150 — R2 창(12h)만 덮고 멈추면 12~24h 전 실패가 페이지 밖에 남아 요약 건수가 준다."""
+        rows_in = [ago(h, OK) for h in (0.5, 1.0, 1.5)] \
+            + [ago(13 + i / 60, OK, synthetic=True) for i in range(50)] + [ago(15, FAILED)]
+        db = FakeDb(rows_in)
+        v = c.judge(c.fetch_recent(db, 3, now=NOW), now=NOW)
+        self.assertGreaterEqual(db.pages, 2, "24시간 창을 덮기 전에 멈추면 요약의 실패 수가 준다")
+        self.assertEqual(v.failed_24h, 1)
+        self.assertEqual(v.status, "ok")             # 12h 밖이라 알림은 아니다
+
     def test_b6_render_r2_title_summary_hint_and_no_text(self):
         rows = [ago(3, FAILED), ago(30, OK)]
         for r in rows:
@@ -224,8 +240,9 @@ class FailedRowTest(unittest.TestCase):
         v = c.judge(rows, now=NOW)
         out = c.render(v, 3)
         self.assertIn("전 제공자 실패 1건", out)
-        self.assertIn("마지막 실사용 답변", out)
-        self.assertIn("3.0시간 전", out)
+        self.assertIn("마지막 성공 답변", out)
+        self.assertIn("30.0시간 전", out)            # 실패 행(3h)이 아니라 성공 행(30h)의 시각(CodeRabbit #150)
+        self.assertNotIn("3.0시간 전", out)
         self.assertIn("OIDC 토큰", out)                 # 401 힌트
         self.assertIn("한도", out)                      # 429 힌트
         self.assertNotIn("크레딧", out)                 # 402가 없으면 credit 힌트도 없다
@@ -262,6 +279,19 @@ class FailedRowTest(unittest.TestCase):
         mixed = c.render(c.judge([ago(1, pipe), ago(2, FAILED)], now=NOW), 3)
         self.assertIn("전 제공자 실패 1건 · 답변 처리 예외 1건", mixed)
         self.assertEqual(c._failure_label([ago(1, FAILED)]), "전 제공자 실패 1건")
+
+    def test_b13_all_failed_sample_says_failure_not_fallback(self):
+        """CodeRabbit #150(Check L-5) — 표본 3건이 전부 실패 행이면 R1 문구는 '연속 폴백'이 아니라 '연속 실패'."""
+        v = c.judge([ago(1, FAILED), ago(2, FAILED), ago(3, FAILED)], now=NOW)
+        out = c.render(v, 3)
+        self.assertTrue(c._all_failed(v))
+        self.assertIn("3건 연속 실패", out)
+        self.assertNotIn("연속 폴백", out)
+        self.assertNotIn("폴백(1순위 실패 후 전환)", out)
+        self.assertIn("마지막 성공 답변: 기록 없음(조회 범위 안 성공 답변 0건) · 최근 24시간 실패 3건", out)
+        mixed = c.judge([ago(1, FB), ago(2, FB), ago(3, FB)], now=NOW)
+        self.assertFalse(c._all_failed(mixed))
+        self.assertIn("3건 연속 폴백", c.render(mixed, 3))
 
     def test_b7_degraded_failed_is_sole_reason(self):
         self.assertEqual(c.degraded(FAILED), ["failed:ResourceExhausted"])

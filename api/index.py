@@ -309,7 +309,8 @@ def chat(req: ChatRequest, request: Request):
     except Exception as e:
         # 실패 행 기록(llm-fallback-alert-blindspot) 뒤 원 예외 그대로 — 500은 기존 동작이다.
         # 파이프라인 안의 전 제공자 실패는 예외가 아니라 error 이벤트라 여기 오지 않는다(중복 기록 없음).
-        logging.error("답변 생성 실패(동기): %s\n%s", e, traceback.format_exc())
+        # 예외 원문·traceback 마지막 줄(메시지)은 찍지 않는다 — 토큰·URL이 섞일 수 있다(설계 §7, CodeRabbit #150). 프레임만.
+        logging.error("답변 생성 실패(동기): %s\n%s", type(e).__name__, "".join(traceback.format_tb(e.__traceback__)))
         record_failed_conversation(config, session, message, guard_ctx, stage="pipeline", exc=e)
         raise
 

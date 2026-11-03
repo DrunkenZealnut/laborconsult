@@ -4401,7 +4401,9 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "chunk", "text": text}
     except RuntimeError:
         yield {"type": "error", "text": "모든 AI 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}
-        # 실패 행 기록(llm-fallback-alert-blindspot) — 안내가 먼저 나가고, 저장 지연은 ping이 덮는다.
+        # 실패 행 기록(llm-fallback-alert-blindspot) — 안내가 먼저 나가고, ping이 프런트 idle(60초) 타이머를
+        # 리셋해 저장에 60초 여유를 준다. 그 이상 걸리는 저장은 정상 경로의 save_conversation(역시 done 앞)과
+        # 같은 노출이라 따로 막지 않는다(CodeRabbit #150 — '덮는다'는 과장이었다).
         # 저장하지 않으면 폴백 감시가 전면 장애를 보지 못한다(2026-10-14 실측).
         yield {"type": "ping"}
         record_failed_conversation(

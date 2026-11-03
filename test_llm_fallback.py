@@ -1307,7 +1307,9 @@ def test_f7_api_paths_record_failures() -> None:
     SSE 두 경로는 error 이벤트를 먼저 낸 뒤 기록하고 done을 낸다(Check M-1: error → 기록 → done)."""
     import ast
     tree = ast.parse(open("api/index.py", encoding="utf-8").read())
-    is_record = lambda n: isinstance(n, ast.Call) and getattr(n.func, "id", None) == "record_failed_conversation"
+    is_record = lambda n: isinstance(n, ast.Call) and getattr(n.func, "id", None) == "record_failed_conversation" \
+        and any(k.arg == "stage" and isinstance(k.value, ast.Constant) and k.value.value == "pipeline"
+                for k in n.keywords)   # stage가 바뀌면 감시 제목·관리자 표지 분류가 틀어진다(CodeRabbit #150)
     is_yield_next = lambda n: isinstance(n, ast.Yield) and isinstance(n.value, ast.Call) \
         and getattr(n.value.func, "id", None) == "next"
     is_yield_from = lambda n: isinstance(n, ast.YieldFrom)
@@ -1316,6 +1318,13 @@ def test_f7_api_paths_record_failures() -> None:
         if isinstance(node, ast.FunctionDef) and node.name in ("chat", "chat_stream", "chat_stream_with_files"):
             handlers = _answer_failure_handlers(node)
             found[node.name] = any(any(is_record(n) for n in ast.walk(h)) for h in handlers)
+            if node.name == "chat":   # 신규 동기 로그는 예외 원문·traceback 원문을 찍지 않는다(설계 §7, CodeRabbit #150)
+                for h in handlers:
+                    for c in ast.walk(h):
+                        if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "error":
+                            assert not any(isinstance(a, ast.Name) and a.id == "e" for a in c.args), "동기 로그가 예외 원문을 출력"
+                            assert not any(isinstance(a, ast.Call) and getattr(a.func, "attr", None) == "format_exc"
+                                           for a in c.args), "동기 로그가 traceback 원문(메시지 포함)을 출력"
             if node.name != "chat":
                 h = handlers[0]
                 i_err, i_rec, i_done = (_stmt_index(h.body, is_yield_next), _stmt_index(h.body, is_record),
@@ -1323,7 +1332,7 @@ def test_f7_api_paths_record_failures() -> None:
                 order_ok[node.name] = None not in (i_err, i_rec, i_done) and i_err < i_rec < i_done
     assert found == {"chat": True, "chat_stream": True, "chat_stream_with_files": True}, found
     assert order_ok == {"chat_stream": True, "chat_stream_with_files": True}, order_ok
-    print("  ✅ T-F7 API 3경로 '답변 생성 실패' 핸들러가 기록 + SSE 순서 error → 기록 → done")
+    print("  ✅ T-F7 API 3경로 '답변 생성 실패' 핸들러가 stage=pipeline으로 기록 + SSE 순서 error → 기록 → done + 동기 로그 원문 없음")
 
 
 def test_f8_failures_record_empty_not_truncation() -> None:
