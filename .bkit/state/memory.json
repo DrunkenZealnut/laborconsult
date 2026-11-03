@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 83,
+  "sessionCount": 87,
   "lastSession": {
-    "startedAt": "2026-10-29T01:55:40.537Z",
+    "startedAt": "2026-11-02T15:09:56.447Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -189,7 +189,7 @@
     "archivedTo": "docs/archive/2026-10/kin-answer-accuracy/",
     "pr": 96
   },
-  "currentFeature": null,
+  "currentFeature": "llm-fallback-alert-blindspot",
   "effective-law-and-graph-precedents": {
     "phase": "archived",
     "matchRate": 98,
@@ -527,5 +527,38 @@
     "followups": "F-1 V-9 토큰 만료 실측(재pull 없이 만료 → 401 → 재pull 복구)·F-2 Vercel env 제공자 키 3종 삭제(≈11-04 뒤 사용자 승인, 제공자 측 키는 폐기 안 함)·F-4 check_llm_fallback 전 제공자 실패 사각(High)·F-6 Gemini 슬러그(직접 호출 잔존)·F-7 콜드 TTFT 다표본·F-3 예산/태그·F-5 anthropic 1.x",
     "archivePR": "#148 (2026-10-29)",
     "worktreesRemoved": true
+  },
+  "llm-fallback-alert-blindspot": {
+    "phase": "completed",
+    "startedAt": "2026-10-30T00:00:00Z",
+    "planPath": "docs/01-plan/features/llm-fallback-alert-blindspot.plan.md",
+    "trigger": "ai-gateway-oidc-migration 후속 F-4(High): 전 제공자 실패·답변 중 예외가 미저장이라 check_llm_fallback.py가 전면 장애를 ✅로 본다(10-14 실측). 10-30 V-9 실측으로 만료 토큰 재현 수단 확보.",
+    "dependsOn": "llm-fallback-alert(PR #89, 보관)·ai-gateway-oidc-migration(보관)",
+    "openDecisions": [],
+    "decisions": {
+      "U1_window_hours": 12,
+      "U2_question_text": "정상 대화와 동일 저장",
+      "U3_admin_stats": "포함 + 상세 '답변 실패' 표지",
+      "U4_canary": "범위 밖(결제 승인 필요)"
+    },
+    "decidedAt": "2026-10-30",
+    "designPath": "docs/02-design/features/llm-fallback-alert-blindspot.design.md",
+    "designRev": 1,
+    "designDecisions": {
+      "helper": "pipeline.record_failed_conversation (3 경로 공유)",
+      "payload": "metadata.failed + llm{failed,stage,attempts,empty,failures,error_class,status,transport}",
+      "monitor": "R2 12h·fetch W 커버리지·힌트",
+      "killswitch": "도입 안 함(D-5)"
+    },
+    "branch": "fix/fallback-alert-blindspot",
+    "doStatus": "구현 완료(미커밋) — pipeline·api·storage·check_llm_fallback·admin.html, 테스트 T-F1~F8·B1~B10, 변이 6/6, 로컬 재현 실패 행 1건(10-30 22:02 KST)",
+    "matchRate": 99,
+    "analysisPath": "docs/03-analysis/llm-fallback-alert-blindspot.analysis.md",
+    "checkSummary": "gap-detector 2026-10-30: 97/102 ✅, ⚠️5, ❌0. Medium 2(M-1 SSE 기록이 error 안내보다 먼저·타임아웃 120s, M-2 stage=pipeline을 '전 제공자 실패'로 표기), Low 10, 설계 정정 9, 놓친 위험 3(R-1 프로세스 사망 사각)",
+    "iterationCount": 1,
+    "actSummary": "2026-11-02 M-1(SSE error→기록→done)·M-2(stage별 문구·힌트)·L-1(_status_of 예외 보호)·L-4(B11 힌트 단언) 반영, B12·T-F7 강화, 설계 v0.2. 재계산 101/102=99.0%",
+    "reportPath": "docs/04-report/features/llm-fallback-alert-blindspot.report.md",
+    "completedAt": "2026-11-03",
+    "reportSummary": "Report v1.0 2026-11-03 — Check 95.1% → Act 99.0%, 테스트 7종 rc=0(alert 27), 변이 7/7, 로컬 재현 $0. 미완 DoD: PR·Codex·CodeRabbit·머지·배포·workflow_dispatch(커밋은 요청 시). 후속: R-1 /api/health 호출, L-2/3/5/9/10, 목록 표지, 카나리(U4). L-8 4건 반영. 보관 보고서 ai-gateway v1.5 F-4 진행 표기."
   }
 }
