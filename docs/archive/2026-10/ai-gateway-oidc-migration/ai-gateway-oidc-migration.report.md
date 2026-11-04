@@ -1,6 +1,6 @@
 # ai-gateway-oidc-migration — 완료 보고서
 
-> **Status**: Complete (단, Gemini 직접 호출 잔존 · 후속 7건 명시 — 그중 F-1 V-9 토큰 만료 실측은 2026-10-30 완료(§9), F-4 감시 사각 보강은 2026-11-03 별도 사이클로 완료 — PR #150 머지·배포·`workflow_dispatch` 양성 검증(§4.1))
+> **Status**: Complete (단, Gemini 직접 호출 잔존 · 후속 7건 명시 — 그중 F-1 V-9 토큰 만료 실측은 2026-10-30 완료(§9), F-4 감시 사각 보강은 2026-11-03 별도 사이클로 완료 — PR #150 머지·배포·`workflow_dispatch` 실행 검증(exit 0·실패 0건 요약, R2 양성 미측정)(§4.1))
 >
 > **Project**: laborconsult
 > **Version**: main `1c4f9cf` (Plan v0.1 · Design v0.3 · Analysis v1.2) · Report v1.6

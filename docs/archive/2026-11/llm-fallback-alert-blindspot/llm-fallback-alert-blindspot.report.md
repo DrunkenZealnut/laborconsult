@@ -1,6 +1,6 @@
 # llm-fallback-alert-blindspot — 완료 보고서
 
-> **Status**: Complete — PR #150 머지(`1766e60`, 2026-11-03) · 프로덕션 배포 Ready · `workflow_dispatch` 1회 exit 0(양성 검증) · 보관 `docs/archive/2026-11/llm-fallback-alert-blindspot/`
+> **Status**: Complete — PR #150 머지(`1766e60`, 2026-11-03) · 프로덕션 배포 Ready · `workflow_dispatch` 1회 exit 0(R2 음성 경로·요약 줄 확인, R2 양성 미확인) · 보관 `docs/archive/2026-11/llm-fallback-alert-blindspot/`
 >
 > **Project**: laborconsult
 > **Version**: main `1766e60`(PR #150 = `2c1f3bd` + 리뷰 반영 `3ef8215`) · Plan v0.2 · Design v0.3 · Analysis(Check 95.1% → Act 99.0%) · Report v1.2
@@ -18,7 +18,7 @@
 |------|---------|
 | Feature | llm-fallback-alert-blindspot: 저장 전에 끝나는 LLM 실패(전 제공자 실패, 답변 중 예외)를 답변 없는 실패 행으로 기록하고, 폴백 감시가 그 행을 읽어 알리게 한다 |
 | Start Date | 2026-10-30 (Plan v0.1 작성, U1~U4 확정) |
-| End Date | 2026-11-03 (PR #150 머지·배포·`workflow_dispatch` 양성 검증·보관). Act 반영은 2026-11-02 |
+| End Date | 2026-11-03 (PR #150 머지·배포·`workflow_dispatch` 실행 검증·보관). Act 반영은 2026-11-02 |
 | Duration | 2026-10-30 ~ 2026-11-03 (Plan·Design·Do·Check 10-30, Act 11-02, Report·PR·머지·보관 11-03) |
 | 변경 규모 | PR #150 17개 파일 +2,029 / -70 — `2c1f3bd`(17파일 +1,966 / -69: 코드·테스트·운영 문서 10개 +767 / -59, Plan·Design·Analysis·이 보고서, `.bkit/state/memory.json`, 보관 보고서 F-4 진행 표기 2파일) + 리뷰 반영 `3ef8215`(8파일 +106 / -44) |
 | 기록 방식 | `pipeline.record_failed_conversation()` 단일 헬퍼. 호출부 3곳(파이프라인, SSE 두 경로, 동기 경로)은 서로 배타라 요청당 최대 1행 |
@@ -315,4 +315,4 @@ Match Rate 99.0%는 설계 정정 9건과 Check 조치 반영 뒤 재계산한 �
 |---------|------|---------|--------|
 | 1.0 | 2026-11-03 | 완료 보고서 작성. Plan v0.2·Design v0.2·Analysis(95.1% → 99.0%) 기준, 브랜치 `fix/fallback-alert-blindspot` 미커밋 상태 기준 | Claude |
 | 1.1 | 2026-11-03 | PR #150 리뷰 반영 — CI 4/4·Codex 지적 0·CodeRabbit 10건 중 9건 반영(동기 로그 원문 제거, 24h 조회 창, '연속 실패', `last_ok`, 롤백 절차, T-F7 stage/로그 검사, B2b·B5c·B13), C2 미반영 사유. FR-04·FR-08·3.2·3.4·4.3·4.4·5.3·7.2·8.2 갱신, Design v0.3 | Claude |
-| 1.2 | 2026-11-03 | 머지·배포·양성 검증 반영 — PR #150 머지 `1766e60`, 프로덕션 배포 Ready, `workflow_dispatch` run 41654058777 exit 0("마지막 성공 답변" 줄). D-a·D-b·D-c·D-e 완료, 보관 보고서 F-4 v1.6 확정 표기, §2 링크를 보관 위치 기준으로, `docs/archive/2026-11/llm-fallback-alert-blindspot/` 보관 | Claude |
+| 1.2 | 2026-11-03 | 머지·배포·`workflow_dispatch` 실행 검증(R2 음성·요약 줄 — 양성은 미측정) 반영 — PR #150 머지 `1766e60`, 프로덕션 배포 Ready, `workflow_dispatch` run 41654058777 exit 0("마지막 성공 답변" 줄). D-a·D-b·D-c·D-e 완료, 보관 보고서 F-4 v1.6 확정 표기, §2 링크를 보관 위치 기준으로, `docs/archive/2026-11/llm-fallback-alert-blindspot/` 보관 | Claude |
