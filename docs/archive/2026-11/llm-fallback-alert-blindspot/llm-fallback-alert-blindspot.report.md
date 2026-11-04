@@ -1,9 +1,9 @@
 # llm-fallback-alert-blindspot — 완료 보고서
 
-> **Status**: Complete (코드·테스트·문서) — PR·배포·양성 검증은 머지 뒤
+> **Status**: Complete — PR #150 머지(`1766e60`, 2026-11-03) · 프로덕션 배포 Ready · `workflow_dispatch` 1회 exit 0(R2 음성 경로·요약 줄 확인, R2 양성 미확인) · 보관 `docs/archive/2026-11/llm-fallback-alert-blindspot/`
 >
 > **Project**: laborconsult
-> **Version**: main `a78921a` 기준 브랜치 `fix/fallback-alert-blindspot`(미커밋) · Plan v0.2 · Design v0.2 · Analysis(Check 95.1% → Act 99.0%) · Report v1.1
+> **Version**: main `1766e60`(PR #150 = `2c1f3bd` + 리뷰 반영 `3ef8215`) · Plan v0.2 · Design v0.3 · Analysis(Check 95.1% → Act 99.0%) · Report v1.2
 > **Author**: Claude
 > **Completion Date**: 2026-11-03
 > **PDCA Cycle**: #1 (ai-gateway-oidc-migration 후속 F-4)
@@ -18,9 +18,9 @@
 |------|---------|
 | Feature | llm-fallback-alert-blindspot: 저장 전에 끝나는 LLM 실패(전 제공자 실패, 답변 중 예외)를 답변 없는 실패 행으로 기록하고, 폴백 감시가 그 행을 읽어 알리게 한다 |
 | Start Date | 2026-10-30 (Plan v0.1 작성, U1~U4 확정) |
-| End Date | 2026-11-03 (Report 작성). Act 반영은 2026-11-02 |
-| Duration | 2026-10-30 ~ 2026-11-03 (Plan·Design·Do·Check 10-30, Act 11-02, Report 11-03) |
-| 변경 규모 | 코드·테스트·운영 문서 10개 파일 +767 / -59 (미커밋) + `.bkit/state/memory.json` · 보관 보고서 F-4 진행 표기 2파일 +7 / -6. 미추적 문서 3종(Plan·Design·Analysis)과 이 보고서 |
+| End Date | 2026-11-03 (PR #150 머지·배포·`workflow_dispatch` 실행 검증·보관). Act 반영은 2026-11-02 |
+| Duration | 2026-10-30 ~ 2026-11-03 (Plan·Design·Do·Check 10-30, Act 11-02, Report·PR·머지·보관 11-03) |
+| 변경 규모 | PR #150 17개 파일 +2,029 / -70 — `2c1f3bd`(17파일 +1,966 / -69: 코드·테스트·운영 문서 10개 +767 / -59, Plan·Design·Analysis·이 보고서, `.bkit/state/memory.json`, 보관 보고서 F-4 진행 표기 2파일) + 리뷰 반영 `3ef8215`(8파일 +106 / -44) |
 | 기록 방식 | `pipeline.record_failed_conversation()` 단일 헬퍼. 호출부 3곳(파이프라인, SSE 두 경로, 동기 경로)은 서로 배타라 요청당 최대 1행 |
 
 ### 1.2 Results Summary
@@ -30,8 +30,8 @@
 │  Match Rate (Check → Act):  95.1%  →  99.0%  (101/102)       │
 │  실패 행 기록:              전 제공자 실패 + 답변 중 예외      │
 │  로컬 재현:                 만료 토큰, 실패 행 1건 확인, 비용 $0│
-│  테스트:  T-F1~F8 · alert 27 OK · 변이 검사 7/7               │
-│  PR·배포:                   미실시 (커밋은 사용자 요청 시에만)  │
+│  테스트:  T-F1~F8 · alert 30 OK · 변이 검사 7/7               │
+│  PR·배포:  PR #150 머지 1766e60 · 배포 Ready · dispatch exit 0 │
 │  잔여:    ⚠️ 1건(#67 T-F6 수식 비교) · 후속 Low 4건 · 운영 사항 │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -42,7 +42,7 @@
 |-------------|---------|
 | **Problem** | 감시는 저장된 대화만 읽었다. 전 제공자가 실패하면 대화가 저장되지 않아 전면 장애가 "✅ 정상" 또는 "판정 불가"로 보였다. 2026-10-14 사례를 B4 테스트로 재구성하면 기존 판정은 `insufficient`(알림 없음)이고 신규 판정은 `alert`다. |
 | **Solution** | 전 제공자 실패와 답변 중 예외마다 실패 행을 남긴다(`answer_text=""`, `metadata.failed=True`, 예외 클래스명과 HTTP 상태만 저장). 감시에 "최근 12시간 안의 실사용 실패 행 1건이면 알림" 규칙(R2)을 더하고, 요약에 마지막 실사용 경과와 24시간 실패 수를 표시한다. 새 테이블·DDL·Secret은 없다. |
-| **Function/UX Effect** | 사용자 화면과 정상 답변 경로는 바뀌지 않는다. 로컬 재현(만료 토큰, 비용 $0)에서 SSE는 `error → ping → done`을 내고, DB에는 실패 행 1건이 생겼다(제공자 실패 3건: Claude 401, OpenAI 401, Gemini 429). 프로덕션에서 전면 장애가 cron 주기(최대 6시간) 안에 드러나는지는 머지·배포 뒤 확인이 필요하다. |
+| **Function/UX Effect** | 사용자 화면과 정상 답변 경로는 바뀌지 않는다. 로컬 재현(만료 토큰, 비용 $0)에서 SSE는 `error → ping → done`을 내고, DB에는 실패 행 1건이 생겼다(제공자 실패 3건: Claude 401, OpenAI 401, Gemini 429). 배포 뒤 `workflow_dispatch` 1회(2026-11-03)가 exit 0으로 "마지막 성공 답변 … · 최근 24시간 실패 0건" 줄을 냈다(음성 경로·요약 줄 확인). 전면 장애가 실제로 cron 주기(최대 6시간) 안에 드러나는지(R2 양성)는 실사용 실패가 처음 발생할 때 확인된다. |
 | **Core Value** | 감시 원칙 "실패가 조용히 사라지지 않게 한다"의 마지막 사각인 저장 전 실패를 닫았다. Gateway 크레딧 소진이나 토큰 장애가 답변 0건 상태로 숨는 경로를 끊는다. |
 
 ---
@@ -51,17 +51,17 @@
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| Plan | [llm-fallback-alert-blindspot.plan.md](../../01-plan/features/llm-fallback-alert-blindspot.plan.md) | Approved (v0.2, U1~U4 확정) |
-| Design | [llm-fallback-alert-blindspot.design.md](../../02-design/features/llm-fallback-alert-blindspot.design.md) | v0.3 (Check M-1·M-2 + PR #150 리뷰 반영) |
-| Check/Act | [llm-fallback-alert-blindspot.analysis.md](../../03-analysis/llm-fallback-alert-blindspot.analysis.md) | Complete (Check 95.1% → Act 99.0%) |
+| Plan | [llm-fallback-alert-blindspot.plan.md](llm-fallback-alert-blindspot.plan.md) | Approved (v0.2, U1~U4 확정) |
+| Design | [llm-fallback-alert-blindspot.design.md](llm-fallback-alert-blindspot.design.md) | v0.3 (Check M-1·M-2 + PR #150 리뷰 반영) |
+| Check/Act | [llm-fallback-alert-blindspot.analysis.md](llm-fallback-alert-blindspot.analysis.md) | Complete (Check 95.1% → Act 99.0%) |
 | Report | Current document | Complete |
-| Parent | [ai-gateway-oidc-migration.report.md](../../archive/2026-10/ai-gateway-oidc-migration/ai-gateway-oidc-migration.report.md) §4.1 F-4 | v1.5(2026-11-03) '구현 완료·머지 대기' 진행 표기 완료 · '완료' 확정은 머지·배포 뒤 |
+| Parent | [ai-gateway-oidc-migration.report.md](../../2026-10/ai-gateway-oidc-migration/ai-gateway-oidc-migration.report.md) §4.1 F-4 | v1.6(2026-11-03) '완료' 확정 표기(Status·§4.1·§8.2·§9) |
 
 PR·커밋
 
 | PR | 내용 | 상태 |
 |----|------|------|
-| #150 | 브랜치 `fix/fallback-alert-blindspot`(main `a78921a` 분기). 커밋 `2c1f3bd` + 리뷰 반영 커밋 | CI 4/4 pass · Codex 코드·보안 리뷰 지적 0 · CodeRabbit Minor 8·Trivial 2 → 9건 반영, 1건(저장을 응답 흐름 밖으로) 사유 회신 — §5.3 |
+| #150 | 브랜치 `fix/fallback-alert-blindspot`(main `a78921a` 분기). 커밋 `2c1f3bd` + 리뷰 반영 `3ef8215` | **머지 `1766e60`(2026-11-03, merge commit)** · CI 4/4 pass · Codex 코드·보안 리뷰 지적 0 · CodeRabbit Minor 8·Trivial 2 → 9건 반영, 1건(저장을 응답 흐름 밖으로) 사유 회신 뒤 CodeRabbit 철회, 스레드 8/8 resolved — §5.3 |
 
 ---
 
@@ -105,9 +105,9 @@ PR·커밋
 | 감시 R2, W 구간 조회, 요약, 힌트, `--fail-window` | `check_llm_fallback.py` | Complete |
 | 관리자 상세 표지(stage별 문구) | `public/admin.html` | Complete |
 | 오프라인 테스트 | `test_llm_fallback.py`, `test_llm_fallback_alert.py`, `test_offline_units.py` | Complete |
-| 설계·분석·계획 문서 | `docs/01-plan/`, `docs/02-design/`, `docs/03-analysis/` (미추적) | Complete |
+| 설계·분석·계획 문서 | PR #150으로 커밋, 이 보고서와 함께 `docs/archive/2026-11/llm-fallback-alert-blindspot/`에 보관 | Complete |
 | 운영 문서 | `CLAUDE.md`, `.github/workflows/llm-fallback-alert.yml` 주석 | Complete |
-| 보관 보고서 F-4 진행 표기 | `docs/archive/2026-10/ai-gateway-oidc-migration/ai-gateway-oidc-migration.report.md`(v1.5 — Status·§4.1·§8.2·§9), `docs/archive/2026-10/_INDEX.md` | Complete ('완료' 확정 표기는 머지 뒤) |
+| 보관 보고서 F-4 진행 표기 | `docs/archive/2026-10/ai-gateway-oidc-migration/ai-gateway-oidc-migration.report.md`(v1.5 — Status·§4.1·§8.2·§9), `docs/archive/2026-10/_INDEX.md` | Complete (v1.6 — 2026-11-03 머지·배포·`workflow_dispatch` 뒤 '완료' 확정 표기) |
 
 ### 3.4 제약 준수
 
@@ -126,15 +126,15 @@ PR·커밋
 
 ## 4. Incomplete Items
 
-### 4.1 Definition of Done 미완 항목
+### 4.1 Definition of Done 항목 (v1.2: D-a·D-b·D-c·D-e 완료, 미완은 D-d·D-f)
 
 | # | Item | Reason | Priority |
 |---|------|--------|----------|
-| D-a | PR 생성, Codex·CodeRabbit 리뷰 반영, 머지 | 커밋은 사용자 요청 시에만 진행 | High |
-| D-b | Vercel 배포 | PR 머지 뒤 | High |
-| D-c | `workflow_dispatch` 1회 수동 실행 exit 0, 요약에 "마지막 성공 답변" 줄 확인 | 배포 뒤 | High |
+| D-a | PR 생성, Codex·CodeRabbit 리뷰 반영, 머지 | ✅ 2026-11-03 완료 — PR #150(`2c1f3bd`·`3ef8215`) 머지 `1766e60`. CI 4/4, Codex 0건, CodeRabbit 10건 중 9건 반영·1건(C2) 사유 회신 뒤 철회, 스레드 8/8 resolved | High |
+| D-b | Vercel 배포 | ✅ 2026-11-03 완료 — 프로덕션 배포 Ready(sha `1766e60`, 23:27 KST, 빌드 26초) | High |
+| D-c | `workflow_dispatch` 1회 수동 실행 exit 0, 요약에 "마지막 성공 답변" 줄 확인 | ✅ 2026-11-03 완료 — Actions run 41654058777(23:28 KST, main `1766e60`) conclusion success. "## LLM 폴백 감시: ✅ 정상" · "마지막 성공 답변: 10-28 22:39 KST (144.8시간 전) · 최근 24시간 실패 0건" · 실사용 3건 Claude `claude-opus-5-5` 저하 없음 · 법령 조회 ✅(예열 7,475행 18종, 조문 성공률 100%). §9 | High |
 | D-d | 공개 게시판 API(`/api/board/recent`·`search`·`{id}`) 실패 행 미노출 회귀 | 현재는 키 단언과 구조 보장(`_apply_guard_filter`·`_drop_flagged`·상세 조회)만 있다. 엔드포인트 단위 테스트는 없다 | Medium |
-| D-e | 보관 보고서 F-4 '완료' 확정 표기 | 11-03 v1.5로 '구현 완료·머지 대기' 진행 표기까지 했다. 확정은 머지·배포·`workflow_dispatch` 뒤 | Low |
+| D-e | 보관 보고서 F-4 '완료' 확정 표기 | ✅ 2026-11-03 완료 — ai-gateway 보고서 v1.6(Status·§4.1·§8.2·§9) + `docs/archive/2026-10/_INDEX.md` | Low |
 | D-f | 로컬 재현의 `error`→`done` 간격 측정 | 미측정 | Low |
 
 ### 4.2 Cancelled/On Hold Items
@@ -193,7 +193,7 @@ Match Rate 99.0%는 설계 정정 9건과 Check 조치 반영 뒤 재계산한 �
 | 테스트 | 결과 |
 |--------|------|
 | `test_llm_fallback.py` (T-F1~F8) | 통과 |
-| `test_llm_fallback_alert.py` | 27 tests OK (Check 시 25건, Act에서 B11·B12 추가 등) |
+| `test_llm_fallback_alert.py` | 30 tests OK (Check 시 25건, Act에서 B11·B12, PR #150 리뷰 반영에서 B2b·B5c·B13 추가) |
 | `test_offline_units.py` | 통과 |
 | `test_abuse_guard.py` | 통과 |
 | `test_pipeline_wiring.py` | 통과 |
@@ -271,17 +271,18 @@ Match Rate 99.0%는 설계 정정 9건과 Check 조치 반영 뒤 재계산한 �
 
 ### 8.1 Immediate (사용자 작업)
 
-- [ ] 커밋과 PR 생성을 요청할지 결정 (커밋은 사용자 요청 시에만 진행)
+- [x] 커밋·PR #150·머지 — 2026-11-03 완료(`1766e60`)
+- [x] 보관 커밋·PR — `docs/archive/2026-11/` 이동·`memory.json`·ai-gateway 보고서 v1.6 → **PR #151(2026-11-04, 머지 대기)**
 - [ ] R-3 수용 여부 결정: 게이트 판정 전 예외의 질문 원문 저장
-- [ ] 머지·배포 뒤 `workflow_dispatch` 1회 실행, exit 0과 요약 줄 확인
-- [ ] 머지·배포 뒤 보관 보고서 F-4 '완료' 확정 표기(v1.5 진행 표기는 완료)
+- [x] 머지·배포 뒤 `workflow_dispatch` 1회 실행, exit 0과 요약 줄 확인 — 2026-11-03 완료(§9)
+- [x] 보관 보고서 F-4 '완료' 확정 표기 — v1.6(2026-11-03)
 - [ ] 카나리(U4) 도입은 결제 승인 뒤 별도 사이클로 결정
 
 ### 8.2 Next PDCA Cycle
 
 | Item | Priority | Expected Start |
 |------|----------|----------------|
-| 게시판 API 실패 행 미노출 엔드포인트 회귀 (D-d) | Medium | 머지 전 또는 직후 |
+| 게시판 API 실패 행 미노출 엔드포인트 회귀 (D-d) | Medium | 다음 사이클(머지 뒤 미착수) |
 | R-1 프로세스 사망 사각: `/api/health` 사전 호출 | Medium | 다음 사이클 |
 | R-2 운영 절차에 stage=pipeline 대응 명시 | Low | 다음 사이클 |
 | L-2·L-3·L-9·L-10 Low 잔여 정리 | Low | 다음 사이클 |
@@ -297,11 +298,13 @@ Match Rate 99.0%는 설계 정정 9건과 Check 조치 반영 뒤 재계산한 �
 |------|-----|
 | 로컬 재현 (2026-10-30 22:02 KST, 만료 OIDC 토큰, `LLM_TRANSPORT=gateway`, 비용 $0) | SSE `error → ping → done`. DB 실패 행 1건: `answer_text` 0자, `metadata.failed=True`, `synthetic=True`, `llm.stage="answer"`, 제공자 실패 3건(Claude 401, OpenAI 401, Gemini 429), `transport="gateway"`. 페이로드에 토큰 패턴과 URL 0건 |
 | 감시 로컬 실행 (2026-10-30, 변경된 감시 코드, 프로덕션 Supabase 조회) | exit 0. "마지막 실사용 답변: 10-28 22:39 KST (47.4시간 전) · 최근 24시간 실패 0건"(당시 문구 — PR #150 반영 뒤 "마지막 성공 답변"). 합성 실패 행은 R2에서 제외 확인 |
+| PR·머지·배포 (2026-11-03) | PR #150: `2c1f3bd`(17파일 +1,966 / -69) + `3ef8215`(리뷰 반영 8파일 +106 / -44), CI 4/4(offline-tests 3m08s·GitGuardian·Vercel Preview·Preview Comments), Codex 0건, CodeRabbit 10건 중 9건 반영·C2 철회·스레드 8/8 resolved. 머지 커밋 `1766e60`. 프로덕션 배포 Ready 23:27 KST(빌드 26초, GitHub deployment sha `1766e60`) |
+| 감시 `workflow_dispatch` (2026-11-03 23:28 KST, run 41654058777, main `1766e60`) | conclusion success(exit 0). "## LLM 폴백 감시: ✅ 정상" · "마지막 성공 답변: 10-28 22:39 KST (144.8시간 전) · 최근 24시간 실패 0건" · 표본 3건(10-28 22:39·18:26·18:26) 전부 Claude `claude-opus-5-5`, attempts Claude, 저하 없음 · "## 법령 조회 감시: ✅ 정상" 예열 11-03 06:10 7,475행 성공 18종 실패 0종, 조문 성공률 100%(최근 10건, 분모 50). 10-28 이후 실사용 0건이라 R2 음성과 요약 줄만 확인 — R2 양성은 실사용 실패 발생 시 |
 | 로그 확인 | "실패 행 저장" INFO 줄은 로그에 보이지 않았다(루트 로거 WARNING). 행은 Supabase 조회로 확인 |
 | 테스트 (2026-11-03, rc=0) | 5.2 표 참조 |
 | 변이 검사 | Do 6건(기록 호출 제거, `failed` 키 누락, 창 조건 제거, `degraded` failed 분기 제거, `_status_of` code 분기 제거, SSE GET 호출 제거) + Act 1건(SSE GET 순서 되돌림 → T-F7 실패). 7/7 |
 | DDL·Secret | `.sql` 변경 0건, 신규 Secret 0건 |
-| 변경 규모 | 코드·테스트·운영 문서 10개 파일 +767 / -59 (미커밋) + `.bkit/state/memory.json` · 보관 보고서 F-4 진행 표기 2파일 +7 / -6. 미추적 문서 3종(Plan·Design·Analysis)과 이 보고서. 정상 경로 변경은 함수 추출과 `failures.append` 2줄 |
+| 변경 규모 | PR #150 17개 파일 +2,029 / -70 — `2c1f3bd`(17파일 +1,966 / -69: 코드·테스트·운영 문서 10개 +767 / -59, Plan·Design·Analysis·이 보고서, `.bkit/state/memory.json`, 보관 보고서 F-4 진행 표기 2파일) + 리뷰 반영 `3ef8215`(8파일 +106 / -44). 정상 경로 변경은 함수 추출과 `failures.append` 2줄 |
 | 비용 | 로컬 재현 $0. 카나리 없음 |
 
 ---
@@ -312,3 +315,4 @@ Match Rate 99.0%는 설계 정정 9건과 Check 조치 반영 뒤 재계산한 �
 |---------|------|---------|--------|
 | 1.0 | 2026-11-03 | 완료 보고서 작성. Plan v0.2·Design v0.2·Analysis(95.1% → 99.0%) 기준, 브랜치 `fix/fallback-alert-blindspot` 미커밋 상태 기준 | Claude |
 | 1.1 | 2026-11-03 | PR #150 리뷰 반영 — CI 4/4·Codex 지적 0·CodeRabbit 10건 중 9건 반영(동기 로그 원문 제거, 24h 조회 창, '연속 실패', `last_ok`, 롤백 절차, T-F7 stage/로그 검사, B2b·B5c·B13), C2 미반영 사유. FR-04·FR-08·3.2·3.4·4.3·4.4·5.3·7.2·8.2 갱신, Design v0.3 | Claude |
+| 1.2 | 2026-11-03 | 머지·배포·`workflow_dispatch` 실행 검증(R2 음성·요약 줄 — 양성은 미측정) 반영 — PR #150 머지 `1766e60`, 프로덕션 배포 Ready, `workflow_dispatch` run 41654058777 exit 0("마지막 성공 답변" 줄). D-a·D-b·D-c·D-e 완료, 보관 보고서 F-4 v1.6 확정 표기, §2 링크를 보관 위치 기준으로, `docs/archive/2026-11/llm-fallback-alert-blindspot/` 보관 | Claude |
