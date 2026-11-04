@@ -1897,8 +1897,10 @@ def _label_held_total(result, unit: str = "월급") -> None:
 _SIZE_DEPENDENT_TARGETS = frozenset({"overtime", "annual_leave", "comprehensive", "flexible_work",
                                      "compensatory_leave", "public_holiday", "shutdown_allowance",
                                      "weekly_hours_check"})
-_SIZE_ASSUMED_NOTE = ("※ 사업장 규모가 질문에 없어 상시 5명 이상으로 계산했습니다. 상시 4명 이하이면 "
-                      "가산수당·연차휴가·휴업수당·관공서 공휴일 유급휴일 등은 적용되지 않습니다.")
+# 이름을 연장 가산 안내(_SIZE_ASSUMED_NOTE, calc-card-followups §3.4)와 분리한다 — 같은 이름으로 두면 모듈 뒤쪽 정의가
+# 앞쪽을 덮어 연장 카드의 가산 안내 문구가 조용히 바뀐다(law-article-coverage 머지 때 실제로 그랬다, CodeRabbit #104).
+_SIZE_ASSUMED_CALC_NOTE = ("※ 사업장 규모가 질문에 없어 상시 5명 이상으로 계산했습니다. 상시 4명 이하이면 "
+                           "가산수당·연차휴가·휴업수당·관공서 공휴일 유급휴일 등은 적용되지 않습니다.")
 
 
 def _wageless_weekly_holiday(weekly_days, daily_hours) -> str | None:
@@ -3168,8 +3170,12 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
             result.formulas = [line + _ASSUMED_DAYS_NOTE if line.startswith("[기준시간]") else line
                                for line in result.formulas]
         formatted = format_result(result)
-        if not params.get("business_size") and _SIZE_DEPENDENT_TARGETS.intersection(targets):
-            formatted = f"{formatted}\n\n{_SIZE_ASSUMED_NOTE}"
+        size_targets = _SIZE_DEPENDENT_TARGETS.intersection(result.calculation_executed)
+        if (not params.get("business_size") and size_targets
+                and result.calculation_status != "not_run" and result.legal_rule_status != "blocked"
+                # 연장 가산 안내가 이미 경고에 있고 규모 의존 계산이 연장·포괄뿐이면 같은 가정을 두 번 적지 않는다
+                and not (_SIZE_ASSUMED_NOTE in result.warnings and size_targets <= {"overtime", "comprehensive"})):
+            formatted = f"{formatted}\n\n{_SIZE_ASSUMED_CALC_NOTE}"
         # 시급 없는 계산기와 주휴 시간을 함께 물으면 둘 다 넘긴다 — 하나라도 실행되면
         # 주휴 블록이 버려지던 경로(CodeRabbit PR #91). 소정근로시간 미확인 안내도 같다.
         lead = holiday_hours_block or unknown_schedule_block

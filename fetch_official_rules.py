@@ -541,14 +541,22 @@ def check_updates(only: str | None = None) -> int:
         if dept not in BOARDS:
             print(f"  · {exact}: {dept} — 게시판 파서 없음, 수동 확인 필요")
             continue
+        board = None
         if doc_id in ADMRUL_LAW_GO_KR_ONLY:
             # 게시판 목록(최근 100건)에 오래된 고시가 없으면 매번 '조회 실패'로 찍힌다. 현행 대조는
             # check_law_freshness --anchors가 법제처 현행 고시로 한다(law-article-coverage D11).
-            print(f"  · {exact}: 법제처 고정 문서 — check_law_freshness --anchors가 현행 대조")
-            continue
+            # 다만 게시판에 **있으면** 새 발령번호를 놓치지 않도록 같은 대조를 거친다(CodeRabbit #104) —
+            # 없을 때만 조용히 넘기고, 그것은 조회 실패로 세지 않는다.
+            try:
+                board = board_find(dept, exact)
+            except Exception:
+                board = None
+            if not board:
+                print(f"  · {exact}: 법제처 고정 문서 — 게시판 최근 목록에 없음, check_law_freshness --anchors가 현행 대조")
+                continue
         checked += 1
         stored = stored_notice(doc_id)
-        board = board_find(dept, exact)          # 첨부는 받지 않는다(발령번호만 본다)
+        board = board or board_find(dept, exact)  # 첨부는 받지 않는다(발령번호만 본다)
         if not board:
             # **조용히 넘기지 말 것.** 세지 않으면 요약이 "갱신 필요 0건"으로 나와
             # 운영자가 '전부 최신'으로 읽는다 — 조회 실패와 최신은 다른 상태다.
@@ -787,11 +795,23 @@ def main(argv=None) -> int:
         # 게시판에서 가져온다(board_find 는 첨부를 받지 않아 싸다).
         notice_no = doc.get("notice_no", "")
         if not notice_no and dept in BOARDS:
+            # 게시판은 같은 제목의 **가장 최근** 글을 돌려준다 — 법제처 본문이 옛 판본이면 새 번호가 옛 본문에
+            # 찍힌다. record_notice_numbers()와 같은 대조: 게시글 발령일이 본문 시행일보다 나중이면 이 본문의
+            # 번호가 아니고, 근거(두 날짜)가 없으면 기록하지 않는다(CodeRabbit #104).
             try:
                 hit = board_find(dept, exact)
-                notice_no = hit["notice_no"] if hit else ""
             except Exception:
-                notice_no = ""
+                hit = None
+            if hit and hit.get("notice_no"):
+                posted = re.sub(r"\D", "", hit.get("posted") or "")
+                effective = re.sub(r"\D", "", doc["effective"] or doc["issued"] or "")
+                if len(posted) == 8 and len(effective) == 8 and posted <= effective:
+                    notice_no = hit["notice_no"]
+                elif len(posted) == 8 and len(effective) == 8:
+                    print(f"    ⚠️ {exact}: 게시판 제{hit['notice_no']}호가 {posted} 발령인데 본문 시행일은 {effective} — "
+                          f"더 새 고시라 번호를 기록하지 않습니다(재수집 필요)")
+                else:
+                    print(f"    · {exact}: 발령번호 판본 근거 없음(게시 {posted or '?'} · 시행 {effective or '?'}) — 기록하지 않습니다")
         header = {"doc_id": doc_id, "source_type": "regulation",
                   "title": f"{exact} ({dept})", "official_url": url,
                   "issuer": issuer,

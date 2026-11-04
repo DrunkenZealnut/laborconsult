@@ -287,9 +287,14 @@ def annex_listing(text: str) -> AnnexListing:
     body_wo_paren = _PAREN_RE.sub(lambda m: " " * len(m.group(0)), body)
 
     def qualified(end: int) -> bool:
-        """항목 바로 뒤('의규정' 건너뛰고)에 한정·제외 괄호가 붙었는가."""
+        """항목 바로 뒤('의규정' 건너뛰고)에 한정·제외 괄호가 붙었거나, 괄호 없이 '단서'·'본문' 제한이 붙었는가.
+
+        '제60조제1항 단서'·'제60조 본문'은 그 항·조의 일부만 적용한다는 뜻이라 ALL·항 집합으로 적으면 '있음' 주장이
+        잘못 참이 된다 — 부분(PARTIAL)으로 둔다(CodeRabbit #104; 현재 fixture에는 없는 행이지만 fail-closed)."""
         rest = body[end:]
         skip = len(rest) - len(rest.lstrip("의규정"))
+        if rest[skip:].startswith(("단서", "본문")):
+            return True
         return any(start == end + skip for start, _ in qualified_at)
 
     for m in _RANGE_RE.finditer(body_wo_paren):

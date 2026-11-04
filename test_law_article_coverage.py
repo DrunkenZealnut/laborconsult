@@ -210,6 +210,12 @@ class AnnexTest(unittest.TestCase):
         part = L("적용법규정 제50조(임산부에 한정한다)")
         self.assertFalse(c.annex_claim_holds(part, "제50조", True), "부분은 '있음'의 근거가 아니다")
         self.assertFalse(c.annex_claim_holds(part, "제50조", False), "부분이면 '없음'도 거짓")
+        proviso = L("적용법규정 제60조제1항 단서, 제61조 본문, 제62조의 규정 단서")
+        self.assertEqual(proviso.articles[(60, None)], c.ANNEX_PARTIAL, "'단서' 제한은 부분")
+        self.assertEqual(proviso.articles[(61, None)], c.ANNEX_PARTIAL, "'본문' 제한은 부분")
+        self.assertEqual(proviso.articles[(62, None)], c.ANNEX_PARTIAL, "'의 규정 단서'도 부분")
+        self.assertFalse(c.annex_claim_holds(proviso, "제60조제1항", True), "단서만 적용되면 항 '있음' 근거 아님")
+        self.assertFalse(c.annex_claim_holds(proviso, "제61조", True))
         merged = L("적용법규정 제23조제2항, 제23조제1항")
         self.assertEqual(merged.articles[(23, None)], frozenset({1, 2}), "같은 조는 합친다")
         self.assertFalse(c.annex_claim_holds(merged, "제23조", False), "항 한정으로라도 있으면 조 단위 '없음'은 거짓")
@@ -363,7 +369,7 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(skipped, [])
 
     def test_ac15_shutdown_under_5_and_size_assumption_note(self):
-        from app.core.pipeline import _SIZE_ASSUMED_NOTE, _analysis_to_extract_params, _run_calculator
+        from app.core.pipeline import _SIZE_ASSUMED_CALC_NOTE, _analysis_to_extract_params, _run_calculator
         stub = lambda info: NS(requires_calculation=True, calculation_types=["shutdown_allowance"],  # noqa: E731
                                extracted_info=info)
         base = {"wage_type": "시급", "wage_amount": 12000, "shutdown_days": 5, "daily_work_hours": 8,
@@ -373,9 +379,10 @@ class WiringTest(unittest.TestCase):
         self.assertNotIn("적용 기준: 평균임금 70%", small)
         self.assertIn("근로기준법 제46조(휴업수당)가 적용되지 않습니다", small)
         unknown = _run_calculator(_analysis_to_extract_params(stub(base)), "")
-        self.assertIn(_SIZE_ASSUMED_NOTE, unknown, "규모 미기재 → 5명 이상 가정 고지")
+        self.assertIn(_SIZE_ASSUMED_CALC_NOTE, unknown, "규모 미기재 → 5명 이상 가정 고지")
+        self.assertEqual(unknown.count("상시 5명 이상으로 계산했습니다"), 1, "가정 안내는 한 번만")
         known = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": "5인이상"})), "")
-        self.assertNotIn(_SIZE_ASSUMED_NOTE, known)
+        self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE, known)
         src = (ROOT / "wage_calculator" / "calculators" / "shutdown_allowance.py").read_text(encoding="utf-8")
         self.assertNotIn("- 5인 미만 사업장에도 적용", src, "핵심 규칙에서 4명 이하 적용 주장을 지웠다")
 
