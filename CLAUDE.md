@@ -533,6 +533,35 @@ wage_calculator/
   `RuleFact.anchors`와 같다. 등록(`fetch_official_rules.ARTICLES`/`ADMRULS`)은 CI가, 원문(`output_공식법령/`)은 로컬이,
   다음 판본은 `check_law_freshness --anchors`가 본다(`test_wage_update_2026.py::CalcBasisAnchorTests`). 근거 문구를 바꾸면
   자기 앵커를 더할 것. 현행판과 다음 시행 판본 **양쪽에서 참인** 구절을 고른다.
+- **분석기가 계산 유형을 비워 내면(`calculation_types=[]`) 제한 폴백만 쓴다**(`pipeline._keyword_fallback_targets`, 표지
+  `_UNKNOWN_CALC_LABEL`). 계산 키워드와 연산어가 **같은 문장**에 있고(`_KEYWORD_FALLBACK_RULES`: 최저임금·퇴직금·연차수당·
+  주휴수당·4대보험), 질문에 차단어(해고·체불·산재·괴롭힘·실업급여 등)가 없을 때만 그 계산을 돌린다. 주휴는 결근·연차·휴가 등이
+  같은 문장에 있으면 제외한다. 키워드만으로는 계산 카드가 답이 되는 질문이 0~55%였다(상담 코퍼스 표본 — "퇴직금 중간정산이
+  가능한가요?"). 폴백이 없으면 안내문 + 2-2 상담 경로다. 레거시 `_resolve_targets`의 넓은 추론은 별개 경로다 — 거기를 고치면
+  "해고예고수당 얼마인가요?"까지 안내문이 된다(wage-update-followups G1).
+- **연말정산 미지원 안내는 연말정산이 계산 대상일 때만이다**(`_YEAR_END_REQUEST_RE` — 환급·추가납부·세액·계산·얼마 등). "연말정산은
+  회사가 해준다는데 4대보험은요?" 같은 지나가는 언급에 안내만 나가고 물은 4대보험이 사라졌다. 함께 요청한 월 실수령은 '월급·
+  급여·세후·매달' 앞말이 있을 때만 4대보험 요청으로 본다 — 앞말 없는 '실수령액'("환급 받으면 실수령액이 늘어요?")은 아니다(G2).
+  요청 판정은 세 갈래다 — 같은 절에서 결과어 뒤 요청어("연말정산 때 받을 수 있는 환급액은 얼마"), 결과어가 붙은 명사구(그 문장에
+  과거형이 없을 때 — "작년 연말정산 때는 환급을 받았어요"는 지난 사실), 바로 뒤의 계산 요청. 과거형은 받침 ㅆ 음절에서 '있'·'겠'을
+  뺀 것이다(`_PAST_SYLLABLES` — '았·었·했'만 두면 '나왔'·'됐'을 놓친다). 설계서 원안의 정규식은 이 두 경우를 반대로 판정했다.
+- **의도분석이 채운 월 총액(`monthly_total_pay`)은 질문에 세전 총액으로 적혀 있을 때만 받는다**(`_drop_ungrounded_total_pay`,
+  `_run_supported_calculator` 첫 줄). 질문에 그 숫자가 없거나, `wage_amount`와 같거나, 같은 절 앞에 세후·실수령·전 직장·최저 등이
+  있으면 버린다. 월급을 총액에 복사하면 연장수당이 따로인 질문의 보험 세전이 연장분 없이 고정됐다(3,000,000 vs 3,937,500).
+  대조 목록은 `_TOTAL_NOT_GROSS_BEFORE_RE`다 — 기존 `_TOTAL_CONTEXT_EXCLUDE_RE`는 '상여'까지 걸러 "정기상여 포함 월 환산 총액
+  310만원"을 잃는다(G3). **앞 턴 캐시에서 채운 총액은 다시 대조하지 않는다**(`total_pay_trusted`, 소정근로시간의
+  `schedule_hours_trusted`와 같은 규칙) — 후속 질문에 금액이 없다고 지우면 세전 기준이 기본급으로 조용히 바뀐다. 그래서 버린 총액은
+  `total_pay_rejected`로 알려 `_note_rejected_hours`가 캐시(`extracted_info`)에서 뺀다 — 남기면 다음 턴에 대조를 거친 값으로 되살아난다.
+- **일할 카드에는 평월 머리줄(월 총·월 실수령)이 없다** — facade가 `prorated`를 실행하면 `monthly_total`·`monthly_net`을 0으로
+  두고, 함께 계산한 4대보험 줄에는 '(평월 기준)'과 `helpers.FULL_MONTH_INSURANCE_NOTE`를 붙인다(보험료를 다시 계산하지 않는다 —
+  국민연금 기준소득월액은 일할하지 않는다). 파이프라인의 구성 판정 총액도 일할 카드에서는 되살리지 않는다(G5). 접미사는
+  `helpers.FULL_MONTH_SUFFIX` 하나이고, 구성 미상 대안(`_add_composition_alternative`)은 그것을 뗀 키로 대안 결과를 찾는다 — 대안
+  계산은 일할을 빼고 돌아 접미사가 없다(그대로 찾으면 '연장수당 별도 또는 월급에 포함' 두 값이 통째로 빠진다).
+- **상여 중복 조정(`pay_inputs.bonus_already_included`)은 `premium=False`로 상여만 뺀다** — 기본값으로 빼면 상여가 올린 통상시급의
+  연장수당 차이까지 '이미 포함된 상여'로 잡혔다(3개월 1,500,000 vs 2,062,500, G4).
+- **휴업수당의 평균임금 산정 사유 발생일은 휴업 시작일이다**(근로기준법 제2조①6호·제46조, 근로기준정책과-2081). 입력한
+  `average_wage_date`는 퇴직금 등 다른 계산의 기산일일 수 있어 휴업수당에는 쓰지 않고, 다르면 고지한다. 휴업 시작일이 없으면
+  계산은 그대로 두고 조건을 밝힌다 — 무엇으로 대신할지는 원문으로 정할 수 없다(G7).
 - `shared.py` extracts common patterns: `DateRange` (tenure calc, 8 modules), `AllowanceClassifier` (minimum wage inclusion, 3 modules), `MultiplierContext` (sub-5-employee rates, 5 modules).
 
 ### Calculator Targets (30 types)
