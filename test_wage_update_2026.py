@@ -481,7 +481,7 @@ class CalcBasisAnchorTests(unittest.TestCase):
     def test_freshness_check_walks_calc_basis_anchors(self):
         import inspect
         import check_law_freshness
-        src = inspect.getsource(check_law_freshness._anchor_warnings)
+        src = inspect.getsource(check_law_freshness._anchor_checks)   # law-article-coverage D11에서 _anchor_warnings → (실패, 경고) 반환으로 개명
         self.assertIn('("calc_basis", CALC_BASIS_ANCHORS)', src)
 
 

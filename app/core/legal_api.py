@@ -98,10 +98,12 @@ def _failure_status(exc: Exception) -> str:
 
 # ── 조회 통계(metadata.law_api v2, D7·D7b) ───────────────────────────────────
 # 조문과 판례·판정문을 나눠 센다. 옛 대화는 평평한 구조(requested·ok·miss…)다.
+# deleted = 본문이 '제N조 삭제'뿐인 조문(싣지 않는다, law-article-coverage D5 ①). 존재하지 않는 조문 요청과 같은
+# 취급이라 감시 ②(check_llm_fallback)의 성공률 분모에서 skipped_unwarmed처럼 뺀다.
 ARTICLE_STAT_FIELDS = ("requested", "ok", "ok_cache", "ok_live", "miss", "auth_error",
-                       "error", "skipped_unwarmed", "skipped_circuit")
+                       "error", "skipped_unwarmed", "skipped_circuit", "deleted")
 PRECEDENT_STAT_FIELDS = ("requested", "ok", "rejected", "miss", "auth_error", "error", "skipped")
-_ARTICLE_FAILURES = ("miss", "auth_error", "error", "skipped_unwarmed", "skipped_circuit")
+_ARTICLE_FAILURES = ("miss", "auth_error", "error", "skipped_unwarmed", "skipped_circuit", "deleted")
 _PRECEDENT_FAILURES = ("auth_error", "error", "skipped")
 
 
@@ -205,6 +207,14 @@ _LAW_NAME_ALIASES: dict[str, str] = {
     "산재보험법": "산업재해보상보험법",
     "노동조합법": "노동조합 및 노동관계조정법",
     "근퇴법": "근로자퇴직급여 보장법",
+    # 의도분석 요청 법령의 예열(law-article-coverage D7)에 맞춘 약칭. '징수법'은 키가 정확히 '징수법'일 때만
+    # 맞으므로 국세징수법(다른 키)과 섞이지 않는다.
+    "성폭력처벌법": "성폭력범죄의 처벌 등에 관한 특례법",
+    "성폭력특례법": "성폭력범죄의 처벌 등에 관한 특례법",
+    "보험료징수법": "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률",
+    "고용산재보험료징수법": "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률",
+    "징수법": "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률",
+    "건강보험법": "국민건강보험법",
 }
 
 
@@ -418,10 +428,26 @@ def _law_key(name: str) -> str:
 _ALIASES_COMPACT = {_law_key(k): v for k, v in _LAW_NAME_ALIASES.items()}
 
 
+_DECREE_SUFFIX_RE = re.compile(r"^(.*?)\s*(시행령|시행규칙)$")
+
+
 def _alias_name(name: str) -> str:
-    """약칭만 정식명으로 바꾸고, 그 밖은 가운뎃점·공백만 정규화한 원명(예열 대상 색인 없이)."""
+    """약칭만 정식명으로 바꾸고, 그 밖은 가운뎃점·공백만 정규화한 원명(예열 대상 색인 없이).
+
+    "약칭 + 시행령·시행규칙"도 정식명으로 바꾼다("근기법 시행령" → "근로기준법 시행령", law-article-coverage
+    D6) — 시행령이 예열 대상이면 의도분석의 "○○법 시행령 제N조"가 바로 예열 키에 맞아야 한다(실호출이 꺼지면
+    비정형 이름을 메울 경로가 없다).
+    """
     n = _norm_law_name(name or "")
-    return _ALIASES_COMPACT.get(_law_key(n), n)
+    hit = _ALIASES_COMPACT.get(_law_key(n))
+    if hit:
+        return hit
+    m = _DECREE_SUFFIX_RE.match(n)
+    if m and m.group(1):
+        base = _ALIASES_COMPACT.get(_law_key(m.group(1)))
+        if base:
+            return f"{base} {m.group(2)}"
+    return n
 
 
 def _official_name_index() -> dict[str, str]:
@@ -731,6 +757,24 @@ def fetch_article(law_name: str, article_no: int, api_key: str,
                        "인증 오류" if isinstance(e, LawApiAuthError) else "실패", label, e)
         _circuit_record_failure()
         return _done(_failure_status(e))
+
+
+# '제125조 삭제 <2022.6.10>' — 조문 본문 줄이 이 형식뿐이면 삭제된 조문이다.
+_DELETED_LINE_RE = re.compile(r"제\d+조(?:의\d+)?\s*삭제(?:\s*<[^>]*>)?\s*$")
+_ARTICLE_NO_LINE_RE = re.compile(r"\d+(?:\([^)]*\))?")
+
+
+def is_deleted_article(text: str | None) -> bool:
+    """조문 텍스트가 **삭제된 조문**인가(law-article-coverage D5).
+
+    `_extract_article` 형식은 첫 줄이 조문번호("125" 또는 "112(시효)")이고 그다음이 본문이다
+    ('125\\n제125조 삭제 <2022.6.10>'). 첫 줄부터 정규식을 대면 맞지 않아 삭제 조문이 통과한다(검증 M2).
+    항 하나만 삭제된 조문("② 삭제 <2018.5.28>")은 살아 있는 조문이다.
+    """
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if lines and _ARTICLE_NO_LINE_RE.fullmatch(lines[0]):
+        lines = lines[1:]
+    return bool(lines) and all(_DELETED_LINE_RE.fullmatch(ln) for ln in lines)
 
 
 def _extract_article(root: ET.Element, article_no: int,
@@ -1364,6 +1408,12 @@ def fetch_relevant_articles(
                 outcome=outcome,
             )
             status = outcome.get("status")
+            if text and is_deleted_article(text):
+                # 출처(키워드·의도분석·주제 기본 조문)와 무관하게 막는다 — 삭제된 산재보험법 제125조가 분석
+                # 프롬프트 매핑으로 2-1에 실리고 있었다(law-article-coverage D5 ①, t30-09·12).
+                _count("articles", "deleted")
+                logger.info("삭제된 조문 제외: %s", ref)
+                return idx, None
             if text:
                 law_display = _resolve_law_name(parsed_law["law"])
                 sub_suffix = f"의{parsed_law['sub']}" if "sub" in parsed_law else ""
@@ -1428,10 +1478,11 @@ def fetch_relevant_articles(
     elapsed = time.time() - t0
     a, p = counts["articles"], counts["precedents"]
     logger.info("법령 API 조회 완료: %d/%d건 / %.2fs (live=%s · 조문 캐시 %d·실호출 %d·미스 %d·"
-                "인증 %d·오류 %d·건너뜀 %d · 판례 %d/%d 거부 %d)",
+                "인증 %d·오류 %d·건너뜀 %d·삭제 %d · 판례 %d/%d 거부 %d)",
                 len(results), len(tasks), elapsed, law_api_live_mode(),
                 a["ok_cache"], a["ok_live"], a["miss"], a["auth_error"], a["error"],
-                a["skipped_unwarmed"] + a["skipped_circuit"], p["ok"], p["requested"], p["rejected"])
+                a["skipped_unwarmed"] + a["skipped_circuit"], a["deleted"],
+                p["ok"], p["requested"], p["rejected"])
     _publish()
 
     if not results:

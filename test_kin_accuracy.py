@@ -184,7 +184,8 @@ class RuleFactsTest(unittest.TestCase):
     def test_k6_anchor_docs_are_registered_for_collection(self):
         import fetch_official_rules as fo
         from app.core.rule_facts import RULE_FACTS
-        ids = {a[0] for a in fo.ARTICLES}
+        # 고시 문서(ADMRULS)도 앵커 원문이 될 수 있다 — occupational_cardio(law-article-coverage D11)
+        ids = {a[0] for a in fo.ARTICLES} | {a[0] for a in fo.ADMRULS}
         for fact in RULE_FACTS:
             for doc_id, _ in fact.anchors:
                 self.assertIn(doc_id, ids, doc_id)
