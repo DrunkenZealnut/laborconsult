@@ -10,7 +10,7 @@
 ■ 구직급여 일액 (고용보험법 제46조)
   기준 일액 = 이직 전 평균임금 × 60%
   상한액    = 연도별 변동 (고용보험법 시행령 제68조)
-  하한액    = 최저임금 × 80% × 소정근로시간(8h)
+  하한액    = 최저임금 × 이직 전 1일 소정근로시간 × 80% (제45조 제4항·제46조, 시행규칙 제91조의2)
   → 기준 일액이 상·하한 범위를 벗어나면 상한 또는 하한 적용
 
 ■ 소정급여일수 (고용보험법 제50조)
@@ -31,15 +31,18 @@ from ..constants import (
     PLATFORM_INSURED_REQ_MONTHS,
     PLATFORM_INSURED_REQ_WINDOW,
 )
-from ..models import WageInput
+from ..models import WageInput, WorkType
+from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
-from .shared import DateRange
+from .average_wage import calc_average_wage
+from .shared import (DateRange, monthly_wage_extras, monthly_wage_total, ordinary_wage_from_total,
+                     weekly_holiday_hours)
 
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
 BENEFIT_RATE         = 0.60     # 평균임금 대비 지급률
 LOWER_LIMIT_RATE     = 0.80     # 최저임금 × 80%
-LOWER_LIMIT_HOURS    = 8        # 하한 산정 기준 소정근로시간
+LOWER_LIMIT_HOURS    = 8        # 노무제공자 하한 산정 시간(근로자는 1일 소정근로시간 — _ei_daily_scheduled_hours)
 MIN_INSURED_DAYS     = 180      # 수급 최소 피보험단위기간 (일)
 MAX_BENEFIT_MONTHS   = 12       # 수급기간 만료 (이직일 다음날부터 12개월)
 
@@ -89,7 +92,7 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
     실업급여(구직급여) 계산
 
     필요 입력:
-      - monthly_wage 또는 last_3m_wages + last_3m_days  (평균임금 산정)
+      - 임금(기준 월액) 또는 last_3m_wages [+ last_3m_days]  (평균임금 — 평균임금 계산기)
       - insurance_months 또는 start_date + end_date      (피보험기간)
       - age                                              (소정급여일수)
       - is_involuntary_quit                              (수급 자격)
@@ -197,45 +200,57 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         # 상여금/연차수당 3개월 비례분 가산 (nodong.kr 기준)
         avg_daily = None  # 아래에서 계산
 
-    # 단일 사업장 (기존 로직)
-    bonus_3m = (inp.annual_bonus_total / 12) * 3 if inp.annual_bonus_total else 0
-    leave_pay_3m = (inp.unused_annual_leave_pay / 12) * 3 if inp.unused_annual_leave_pay else 0
-    extra_3m = bonus_3m + leave_pay_3m
+    # 단일 사업장 — 기초일액은 근로기준법 제2조 제1항 제6호의 평균임금이다(고용보험법 제45조 제1항). 평균임금 계산기 하나로 구한다
+    # (monthly-base-unification): 3개월 총일수로 나누고(예전에는 92일 고정 — 같은 카드의 퇴직금과 분모가 달랐다), 기준 월액·상여·
+    # 연차수당 3/12·제외기간이 그 안에 있다. 하한 전 6호 금액(avg_daily_3m)을 받는다 — 통상임금 비교는 아래 제45조 제2항(일용근로자
+    # 예외 포함)이 한다
+    if avg_daily is None:
+        avg = calc_average_wage(inp, ow)
+        if avg.held_reason:
+            return UnemploymentResult(held_reason=avg.held_reason, warnings=avg.warnings)
+        avg_daily = avg.avg_daily_3m
+        extra_3m = avg.bonus_addition + avg.leave_addition
+        extras = (f" + 상여금 {avg.bonus_addition:,.0f}원 + 연차수당 {avg.leave_addition:,.0f}원" if extra_3m else "")
+        tail = f"{extras}) ÷ {avg.period_days}일 = {avg_daily:,.1f}원"
+        excluded = [f for f in avg.formulas if f.startswith("산정기간 제외")]
+        formulas.extend(excluded)
+        if inp.last_3m_wages:
+            formulas.append(f"평균임금 일액: ({avg.wage_total:,.0f}원" + tail)
+        elif excluded:
+            formulas.append(f"평균임금 일액(추정): (3개월 임금총액 {avg.wage_total:,.0f}원(제외 임금 차감 후)" + tail)
+        elif inp.monthly_total_pay or inp.monthly_wage:
+            formulas.append(f"평균임금 일액(추정): ({monthly_wage_total(inp, ow):,.0f}원 × 3" + tail)
+        else:
+            parts = f"통상임금 월 {ow.monthly_ordinary_wage:,.0f}원{monthly_wage_extras(inp, ow)}"
+            formulas.append(f"평균임금 일액(추정): ({f'({parts})' if ' + ' in parts else parts} × 3" + tail)
+        if not inp.last_3m_wages:
+            if inp.monthly_total_pay or inp.monthly_wage:
+                if not extra_3m:
+                    warnings.append(
+                        "평균임금은 이직 전 3개월 실지급 임금으로 산정합니다. "
+                        "상여금·성과금 등 변동 급여가 있으면 급여명세서로 재확인하세요."
+                    )
+            else:
+                # 월급이 없으면(시급제 등) 기준 월액(시급 × 월 기준시간 — 주휴 포함)으로 추정한다 — 예전에는 '통상시급 × 8h'라
+                # 단시간근로자의 평균임금을 부풀렸다(주 5일 × 4h: 82,560원, 실제 월 임금 기준 35,094원 — calc-card-followups R9)
+                warnings.append("평균임금을 통상임금 월액(시급 × 월 기준시간)으로 추정했습니다. 정확한 계산은 이직 전 3개월 임금으로 "
+                                "확인하세요.")
 
-    if avg_daily is not None:
-        pass  # 다중 사업장에서 이미 계산됨
-    elif inp.last_3m_wages and inp.last_3m_days:
-        base_3m   = sum(inp.last_3m_wages)
-        total_3m  = base_3m + extra_3m
-        avg_daily = total_3m / inp.last_3m_days
-        formulas.append(
-            f"평균임금 일액: ({base_3m:,.0f}원"
-            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
-            + f") ÷ {inp.last_3m_days}일 = {avg_daily:,.1f}원"
-        )
-    elif inp.monthly_wage:
-        base_3m   = inp.monthly_wage * 3
-        total_3m  = base_3m + extra_3m
-        avg_daily = total_3m / 92
-        formulas.append(
-            f"평균임금 일액(추정): ({inp.monthly_wage:,.0f}원 × 3"
-            + (f" + 상여금 {bonus_3m:,.0f}원 + 연차수당 {leave_pay_3m:,.0f}원" if extra_3m else "")
-            + f") ÷ 92일 = {avg_daily:,.1f}원"
-        )
-        if not extra_3m:
-            warnings.append(
-                "평균임금은 이직 전 3개월 실지급 임금으로 산정합니다. "
-                "상여금·성과금 등 변동 급여가 있으면 급여명세서로 재확인하세요."
-            )
-    else:
-        avg_daily = ow.hourly_ordinary_wage * 8
-        formulas.append(
-            f"평균임금 일액(통상시급 기준): {ow.hourly_ordinary_wage:,.1f}원 × 8h = {avg_daily:,.1f}원"
-        )
-        warnings.append("평균임금을 통상시급으로 추정했습니다. 정확한 계산은 이직 전 3개월 임금으로 확인하세요.")
+    # ── 3-1. 기초일액 — 평균임금이 통상임금보다 적으면 통상임금(고용보험법 제45조 제2항, 일용근로자 제외) ─────────────
+    # 통상임금이 수당이 섞인 총액에서 나온 경로(포괄임금 총액·구성 진술 보류 카드)는 비교하지 않는다 — 부풀린 '통상임금'이 하한이 된다
+    basic_daily = avg_daily
+    daily_worker = inp.work_type == WorkType.DAILY_WORKER or inp.is_daily_worker
+    if daily_worker and not is_pw and ow.daily_ordinary_wage > avg_daily:
+        formulas.append("기초일액: 이직 당시 일용근로자는 평균임금을 통상임금과 비교하지 않습니다(고용보험법 제45조 제2항 단서)")
+    if (not is_pw and not daily_worker and not ordinary_wage_from_total(inp)
+            and ow.daily_ordinary_wage > avg_daily):
+        basic_daily = ow.daily_ordinary_wage
+        formulas.append(f"기초일액: 평균임금 {avg_daily:,.0f}원 < 1일 통상임금 {basic_daily:,.0f}원 → 통상임금 적용 "
+                        "(고용보험법 제45조 제2항)")
+        legal.append("고용보험법 제45조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
 
     # ── 4. 구직급여 일액 산정 ─────────────────────────────────────────────────
-    base_daily = avg_daily * BENEFIT_RATE
+    base_daily = basic_daily * BENEFIT_RATE
 
     if is_pw:
         upper = float(PLATFORM_UNEMPLOYMENT_UPPER.get(
@@ -246,10 +261,16 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
             year, UNEMPLOYMENT_BENEFIT_UPPER[max(UNEMPLOYMENT_BENEFIT_UPPER)]
         ))
 
-    # 하한액: 최저임금 × 80% × 8h
+    # 하한액(최저구직급여일액) = 최저기초일액(이직 전 1일 소정근로시간 × 최저임금) × 80%(고용보험법 제45조 제4항·제46조).
+    # 예전에는 1일 8시간 고정이라 단시간근로자에게 2배를 냈다(주 5일 × 4h: 66,048원, 맞는 값 33,024원 — R9). 노무제공자
+    # 갈래는 기존대로 둔다(그 하한·기초일액은 별도 점검 대상).
     from ..constants import get_minimum_hourly_wage
     min_wage = get_minimum_hourly_wage(year)
-    lower    = min_wage * LOWER_LIMIT_RATE * LOWER_LIMIT_HOURS
+    daily_sched = LOWER_LIMIT_HOURS if is_pw else _ei_daily_scheduled_hours(inp)
+    lower    = min_wage * LOWER_LIMIT_RATE * daily_sched
+    if not is_pw:
+        formulas.append(f"하한액(최저구직급여일액): 최저임금 {min_wage:,.0f}원 × 1일 소정근로시간 {fmt_hours(daily_sched)}h × "
+                        f"{LOWER_LIMIT_RATE:.0%} = {lower:,.0f}원 (고용보험법 제45조 제4항·제46조, 시행규칙 제91조의2)")
 
     # 2026년 이후 하한 > 상한이 될 수 있음 → 경고
     if lower > upper:
@@ -265,19 +286,21 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         daily_benefit = upper
         limit_applied = "상한액 적용"
         warnings.append(
-            f"평균임금 일액({avg_daily:,.0f}원/일)이 높아 상한액 {upper:,.0f}원이 적용됩니다."
+            f"{'기초일액' if basic_daily != avg_daily else '평균임금 일액'}({basic_daily:,.0f}원/일)이 높아 상한액 "
+            f"{upper:,.0f}원이 적용됩니다."
         )
     elif base_daily <= lower:
         daily_benefit = lower
         limit_applied = "하한액 적용"
         warnings.append(
-            f"평균임금 일액({avg_daily:,.0f}원/일)이 낮아 하한액 {lower:,.0f}원이 적용됩니다."
+            f"{'기초일액' if basic_daily != avg_daily else '평균임금 일액'}({basic_daily:,.0f}원/일)이 낮아 하한액 "
+            f"{lower:,.0f}원이 적용됩니다."
         )
     else:
         daily_benefit = base_daily
 
     formulas.append(
-        f"구직급여 일액: {avg_daily:,.0f}원 × {BENEFIT_RATE:.0%} = {base_daily:,.0f}원"
+        f"구직급여 일액: {basic_daily:,.0f}원 × {BENEFIT_RATE:.0%} = {base_daily:,.0f}원"
         + (f" → {limit_applied}: {daily_benefit:,.0f}원" if limit_applied else f" = {daily_benefit:,.0f}원")
     )
 
@@ -325,9 +348,10 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         "피보험기간":      f"{insurance_months}개월 (약 {insured_days_approx}일)",
         "연령 구분":       f"{age_label}{age_detail}",
         "평균임금 일액":   f"{avg_daily:,.0f}원",
+        **({"기초일액": f"{basic_daily:,.0f}원 (통상임금 — 고용보험법 제45조 제2항)"} if basic_daily != avg_daily else {}),
         "구직급여 기준 일액": f"{base_daily:,.0f}원 (× {BENEFIT_RATE:.0%})",
         "상한액":          f"{upper:,.0f}원/일",
-        "하한액":          f"{lower:,.0f}원/일  (최저임금 {min_wage:,}원 × 80% × 8h)",
+        "하한액":          f"{lower:,.0f}원/일  (최저임금 {min_wage:,}원 × 80% × {fmt_hours(daily_sched)}h)",
         "실 지급 일액":    f"{daily_benefit:,.0f}원" + (f"  [{limit_applied}]" if limit_applied else ""),
         "소정급여일수":    f"{benefit_days}일",
         "총 구직급여":     f"{total:,.0f}원",
@@ -375,3 +399,17 @@ def _get_benefit_days(insurance_months: int, is_senior: bool) -> int:
         if insurance_months >= min_months:
             return days_senior if is_senior else days_young
     return 120   # 안전 기본값
+
+
+def _ei_daily_scheduled_hours(inp: WageInput) -> float:
+    """이직 전 1일 소정근로시간(고용보험법 시행규칙 제91조의2 제1항, 8시간 한도).
+
+    일 단위로 정했으면 그 시간(제1호 — 1일 8시간·주 40시간을 넘는 시간은 이미 연장근로로 나눴다), '주 N시간'으로 정했으면
+    (1주 소정근로시간 + 유급휴일 소정근로시간) ÷ 48시간 × 8시간(제2호). 시간을 모르면(미확인·기본값) 8시간."""
+    s = inp.schedule
+    daily = s.daily_work_hours or 8.0
+    if s.weekly_defined:
+        weekly = s.daily_work_hours * s.weekly_work_days
+        holiday = weekly_holiday_hours(s.weekly_work_days, s.daily_work_hours)[0] if weekly >= 15 else 0.0
+        daily = (weekly + holiday) / 48 * 8
+    return min(daily, 8.0)

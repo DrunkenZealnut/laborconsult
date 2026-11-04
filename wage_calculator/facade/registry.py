@@ -4,6 +4,8 @@
 facade.py 에서 분리 (Phase D)
 """
 
+import re
+
 from ..calculators.annual_leave import calc_annual_leave
 from ..calculators.average_wage import calc_average_wage
 from ..calculators.compensatory_leave import calc_compensatory_leave
@@ -18,7 +20,9 @@ from ..calculators.minimum_wage import calc_minimum_wage
 from ..calculators.overtime import calc_overtime
 from ..calculators.weekly_holiday import calc_weekly_holiday
 from ..calculators.parental_leave import calc_parental_leave
+from ..calculators.reduced_work_benefit import calc_reduced_work_benefit
 from ..calculators.prorated import calc_prorated
+from ..calculators.wage_claims import calc_wage_claims
 from ..calculators.public_holiday import calc_public_holiday
 from ..calculators.retirement_pension import calc_retirement_pension
 from ..calculators.retirement_tax import calc_retirement_tax
@@ -28,13 +32,14 @@ from ..calculators.unemployment import calc_unemployment
 from ..calculators.working_hours import calc_working_hours
 from ..calculators.ordinary_wage import calc_ordinary_wage as _calc_ow_raw, OrdinaryWageResult
 from ..base import BaseCalculatorResult
+from ..utils import fmt_hours, parse_date
 from ..models import WageType
 from .helpers import (
     _pop_overtime, _pop_minimum_wage, _pop_weekly_holiday, _pop_annual_leave,
-    _pop_dismissal, _pop_comprehensive, _pop_prorated, _pop_public_holiday,
+    _pop_dismissal, _pop_comprehensive, _pop_prorated, _pop_wage_claims, _pop_public_holiday,
     _pop_average_wage, _pop_severance, _pop_shutdown_allowance,
     _pop_unemployment, _pop_insurance, _pop_employer_insurance,
-    _pop_compensatory_leave, _pop_parental_leave, _pop_maternity_leave,
+    _pop_compensatory_leave, _pop_parental_leave, _pop_reduced_work_benefit, _pop_maternity_leave,
     _pop_flexible_work, _pop_eitc, _pop_industrial_accident,
     _pop_ordinary_wage, _pop_working_hours,
 )
@@ -46,7 +51,7 @@ def _calc_ordinary_wage_standalone(inp, ow: OrdinaryWageResult) -> BaseCalculato
         "통상시급": f"{ow.hourly_ordinary_wage:,.0f}원",
         "1일 통상임금": f"{ow.daily_ordinary_wage:,.0f}원",
         "월 통상임금": f"{ow.monthly_ordinary_wage:,.0f}원",
-        "월 기준시간": f"{ow.monthly_base_hours}시간 ({ow.base_hours_detail})",
+        "월 기준시간": f"{fmt_hours(ow.monthly_base_hours)}시간 ({ow.base_hours_detail})",
     }
     if ow.included_items:
         breakdown["포함 항목"] = ", ".join(ow.included_items)
@@ -71,7 +76,7 @@ CALC_TYPES = {
     "annual_leave":        "연차수당",
     "dismissal":           "해고예고수당",
     "comprehensive":       "포괄임금제 역산",
-    "prorated":            "중도입사 일할계산",
+    "prorated":            "월 임금 일할계산",
     "public_holiday":      "유급 공휴일",
     "insurance":           "4대보험·소득세 (세전/세후, 근로자)",
     "employer_insurance":  "사업주 4대보험 부담금",
@@ -79,7 +84,9 @@ CALC_TYPES = {
     "unemployment":        "실업급여(구직급여)",
     "compensatory_leave":  "보상휴가 환산",
     "wage_arrears":        "임금체불 지연이자",
+    "arrears_principal":   "체불 원금·차액 정산",
     "parental_leave":      "육아휴직급여",
+    "reduced_work_benefit": "육아기 단축급여",
     "maternity_leave":     "출산전후휴가급여",
     "flexible_work":       "탄력적 근로시간제 연장수당",
     "weekly_hours_check":  "주 52시간 준수 여부 체크",
@@ -107,10 +114,21 @@ CALC_TYPE_MAP = {
     "임금계산":   ["overtime", "minimum_wage", "weekly_holiday"],
     "해당없음":   ["minimum_wage"],
     "육아휴직":   ["parental_leave"],
+    "육아기 근로시간 단축급여": ["reduced_work_benefit"],
+    "육아기 단축급여": ["reduced_work_benefit"],
     "출산휴가":   ["maternity_leave"],
     "임금체불":   ["wage_arrears"],
+    "임금체불액": ["arrears_principal"],
+    "미지급 임금 계산": ["arrears_principal"],
+    "미지급임금계산": ["arrears_principal"],
+    "부당임금삭감액": ["arrears_principal"],
+    "체불 원금 정산": ["arrears_principal"],
     "보상휴가":   ["compensatory_leave", "overtime"],
     "탄력근무":   ["flexible_work"],
+    # 의도분석 유형 comprehensive의 라벨(pipeline REVERSE_CALC_MAP) — 없어서 다른 라벨이 함께 오면 역산이 빠졌다(Act-4 리뷰 H4).
+    # 역산 계산기는 임금 형태가 포괄임금제일 때만 돈다(precondition) — 그 밖이면 최저임금 검증이 맡는다. 연장시간이 있는
+    # 포괄임금제는 pipeline이 최저임금 검증을 빼고 역산으로만 판정한다
+    "포괄임금제": ["comprehensive", "minimum_wage"],
     "사업장규모": ["business_size"],
     "근로장려금": ["eitc"],
     "4대보험":    ["insurance"],
@@ -147,11 +165,11 @@ CALC_TYPE_MAP = {
     "임금계산 검증":       ["minimum_wage"],
     "공휴일수당":          ["public_holiday"],
     "시급환산":            ["ordinary_wage"],
-    "임금체불액":          ["wage_arrears"],
-    "미지급 임금 계산":     ["wage_arrears"],
-    "부당임금삭감액":       ["wage_arrears"],
     "중도입사 급여":        ["prorated"],
     "일할계산급여":         ["prorated"],
+    "중도퇴사 급여":        ["prorated"],
+    "주52시간":             ["weekly_hours_check"],
+    "주 52시간":            ["weekly_hours_check"],
     "소정근로시간":         ["working_hours"],
     "근로시간":             ["working_hours"],
     "근로시간 계산":        ["working_hours"],
@@ -162,9 +180,25 @@ CALC_TYPE_MAP = {
     "월근로시간":           ["working_hours"],
     "연차발생":             ["annual_leave"],
     "연차 발생일수 계산":    ["annual_leave"],
-    "연말정산":             ["insurance"],
     "휴일근무수당":         ["overtime", "minimum_wage"],
 }
+
+
+def unsupported_calc_reason(label: str) -> str | None:
+    """구현이 없는 정산을 이름이 비슷한 계산기로 대체하지 않는다."""
+    compact = "".join(label.split())
+    if ("유산" in compact or "사산" in compact) and "배우자" not in compact:
+        return "본인 유산·사산 휴가급여 계산은 아직 지원하지 않습니다. 임신 기간별 휴가일수를 확인해야 합니다."
+    if "연말정산" in compact:
+        return "연말정산 환급·추가납부액 계산은 아직 지원하지 않습니다. 월별 4대보험·원천징수 계산과 구분해야 합니다."
+    if "선택적근로" in compact or "선택근로" in compact:
+        return "선택적 근로시간제 정산은 아직 지원하지 않습니다. 정산기간과 실제 근로 내역을 확인해야 합니다."
+    return None
+
+
+def split_calc_labels(label: str) -> list[str]:
+    protected = re.sub(r"(유산)\s*[·/、]\s*(사산)", r"\1∎\2", label)
+    return [part.strip().replace("∎", "·") for part in re.split(r"[/,·、]", protected) if part.strip()]
 
 
 def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
@@ -172,25 +206,30 @@ def resolve_calc_type_strict(calc_type_str: str) -> list[str] | None:
     CALC_TYPE_MAP 정확 매칭 → 구분자 분리 → 키워드 fallback.
     모든 단계 매칭 실패 시 None — 묵시적 기본값 없음 (웹 파이프라인 라우팅용).
     """
+    parts = split_calc_labels(calc_type_str)
+    if len(parts) > 1:
+        resolved = [resolve_calc_type_strict(part) for part in parts]
+        return (list(dict.fromkeys(t for targets in resolved for t in (targets or [])))
+                if any(targets is not None for targets in resolved) else None)
+    if unsupported_calc_reason(calc_type_str):
+        return []
+    if calc_type_str in CALC_TYPES:
+        return [calc_type_str]
     if calc_type_str in CALC_TYPE_MAP:
         return CALC_TYPE_MAP[calc_type_str]
-
-    # 슬래시/콤마로 분리 후 개별 매칭 시도
-    for sep in ["/", ",", "·", "、"]:
-        if sep in calc_type_str:
-            parts = [p.strip() for p in calc_type_str.split(sep)]
-            for part in parts:
-                if part in CALC_TYPE_MAP:
-                    return CALC_TYPE_MAP[part]
 
     # 키워드 우선순위 fallback (구체적 키워드가 앞, generic이 뒤)
     _keyword_map = [
         # ── 구체적 키워드 (generic 규칙보다 우선) ──
+        (["육아기 근로시간 단축", "육아기근로시간단축", "육아기 단축", "육아기단축"], ["reduced_work_benefit"]),
+        (["지연이자", "체불이자", "퇴직금 이자"], ["wage_arrears"]),
+        (["난임", "배우자 유산", "배우자유산", "배우자 사산", "배우자사산"], ["maternity_leave"]),
         (["공휴일"],               ["public_holiday"]),
         (["소정근로시간", "월근로시간", "월 소정"], ["working_hours"]),
         (["통상임금", "통상시급"],  ["ordinary_wage"]),
         (["연차발생", "발생일수"],  ["annual_leave"]),
-        (["일할계산", "중도입사"],  ["prorated"]),
+        (["일할계산", "중도입사", "중도퇴사", "휴복직 급여"],  ["prorated"]),
+        (["미지급 임금", "미지급임금", "체불 원금", "체불원금", "체불 차액"], ["arrears_principal"]),
         (["임금체불"],             ["wage_arrears"]),
         # ── 일반 키워드 ──
         (["연장", "야간", "휴일"], ["overtime", "minimum_wage"]),
@@ -218,7 +257,8 @@ def resolve_calc_type(calc_type_str: str) -> list[str]:
     resolve_calc_type_strict + 미매칭 시 최저임금 검증 기본값.
     벤치마크·chatbot 양쪽에서 사용 (기존 동작 유지).
     """
-    return resolve_calc_type_strict(calc_type_str) or ["minimum_wage"]
+    resolved = resolve_calc_type_strict(calc_type_str)
+    return resolved if resolved is not None else ["minimum_wage"]
 
 
 # ── 디스패처 레지스트리 ──────────────────────────────────────────────────────
@@ -234,8 +274,8 @@ _STANDARD_CALCS = [
     ("dismissal",          calc_dismissal,           "해고예고수당",         _pop_dismissal,          None),
     ("comprehensive",      calc_comprehensive,       "포괄임금제 역산",      _pop_comprehensive,
      lambda inp: inp.wage_type == WageType.COMPREHENSIVE),
-    ("prorated",           calc_prorated,            "중도입사 일할계산",    _pop_prorated,
-     lambda inp: inp.join_date),
+    ("arrears_principal",  calc_wage_claims,         "체불 원금·차액 정산",   _pop_wage_claims, None),
+    ("prorated",           calc_prorated,            "월 임금 일할계산",    _pop_prorated, None),
     ("public_holiday",     calc_public_holiday,      "유급 공휴일",          _pop_public_holiday,
      lambda inp: inp.public_holiday_days > 0),
     ("average_wage",       calc_average_wage,        "평균임금",             _pop_average_wage,       None),
@@ -247,6 +287,7 @@ _STANDARD_CALCS = [
     ("employer_insurance", calc_employer_insurance,  "사업주 4대보험 부담금", _pop_employer_insurance,  None),
     ("compensatory_leave", calc_compensatory_leave,  "보상휴가 환산",        _pop_compensatory_leave,  None),
     ("parental_leave",     calc_parental_leave,      "육아휴직급여",         _pop_parental_leave,      None),
+    ("reduced_work_benefit",calc_reduced_work_benefit,"육아기 단축급여",      _pop_reduced_work_benefit,None),
     ("maternity_leave",    calc_maternity_leave,     "출산전후휴가급여",     _pop_maternity_leave,     None),
     ("flexible_work",      calc_flexible_work,       "탄력적 근로시간제",    _pop_flexible_work,
      lambda inp: getattr(inp, "flexible_work_unit", "")),

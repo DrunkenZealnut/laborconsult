@@ -76,6 +76,29 @@ ARTICLES = [
     ("ei_act_50",     "고용보험법",                     50,  None, []),
     # 상시 4명 이하 사업장 적용 규정(별표 1) — harassment_retaliation 블록의 미적용 문장 근거
     ("lsa_enf_7",     "근로기준법 시행령",               7,   None, []),
+    # 소정근로시간 정의(제2조 제1항 제8호)·근로조건 최저기준(제3조)·피보험 단위기간(제41조) —
+    # weekly_holiday·unemployment 블록과 ANSWER_RULE_ANCHORS의 근거(audit-50-legal-accuracy)
+    ("lsa_act_2",     "근로기준법",                     2,   None, []),
+    ("lsa_act_3",     "근로기준법",                     3,   None, []),
+    ("ei_act_41",     "고용보험법",                     41,  None, []),
+    # 법정근로시간(1일 8시간)·적용 제외·일급 통상임금(시간급 × 1일 소정근로시간)·최저기초일액(1일 소정근로시간 × 최저임금)·
+    # 최저구직급여일액·이직 전 1일 소정근로시간 산정·최저임금법의 근로자 — 계산 카드 근거 문구의 원문 대조용(calc-card-followups)
+    ("lsa_act_50",    "근로기준법",                     50,  None, []),
+    ("lsa_act_63",    "근로기준법",                     63,  None, []),
+    ("lsa_act_69",    "근로기준법",                     69,  None, []),
+    ("civ_act_160",   "민법",                           160, None, []),
+    ("lsa_enf_6",     "근로기준법 시행령",               6,   None, []),
+    ("ei_act_45",     "고용보험법",                     45,  None, []),
+    ("ei_act_46",     "고용보험법",                     46,  None, []),
+    ("ei_rule_91_2",  "고용보험법 시행규칙",             91,  2,    []),
+    ("mw_act_2",      "최저임금법",                     2,   None, []),
+    # 계산기 근거 문구의 원문 대조용(wage_calculator/legal_anchors.py::CALC_BASIS_ANCHORS, wage-update-followups) —
+    # 출산전후휴가 지급 기간(제76조①각 호)·사업주 유급(제74조④)·지급 간주(제18조②)·난임치료휴가·육아휴직 급여 상한
+    ("ei_act_76",     "고용보험법",                     76,  None, []),
+    ("lsa_act_74",    "근로기준법",                     74,  None, []),
+    ("eeo_act_18",    "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률", 18, None, []),
+    ("eeo_act_18_3",  "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률", 18, 3, []),
+    ("ei_enf_95",     "고용보험법 시행령",               95,  None, []),
     # '상시 5명 이상' 적용 조건 답변 규칙(ANSWER_RULE_ANCHORS)과 산재 시효(occupational_cardio 블록)의
     # 근거(law-article-coverage D12). 앵커 전용이라 keys가 비어 있고, 업로더가 Pinecone에 올리지 않는다.
     ("lsa_act_11",    "근로기준법",                     11,  None, []),

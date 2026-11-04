@@ -1,4 +1,4 @@
-"""Intent Analyzer — Claude tool_use로 노동상담 질문 분석 (실패 시 OpenAI 폴백)"""
+"""Intent Analyzer — 설정 1순위 모델의 도구 호출로 노동상담 질문 분석 (실패 시 다음 순위)"""
 
 from __future__ import annotations
 
@@ -11,25 +11,50 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.config import AppConfig
 
-from app.config import (
-    CRITICAL_MAX_RETRIES, INTENT_FALLBACK_ENABLED, INTENT_FALLBACK_MAX_TOKENS,
-    INTENT_FALLBACK_MODEL, INTENT_FALLBACK_TIMEOUT, INTENT_TIMEOUT,
-)
-from app.core.llm_fallback import call_openai_tool
+from app.config import INTENT_FALLBACK_ENABLED, INTENT_FALLBACK_TIMEOUT, INTENT_TIMEOUT
+from app.core import llm_gateway
 from app.models.schemas import AnalysisResult
 from app.templates.prompts import ANALYZE_TOOL, ANALYZER_SYSTEM
+from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
 
 logger = logging.getLogger(__name__)
 
 
-def _correct_date_year(date_str: str | None) -> str | None:
+# 질문(또는 대화 맥락)에 연도 단서가 있으면 LLM이 정한 연도를 그대로 둔다. 보정은 "연도를 말하지 않았는데
+# LLM이 과거 연도를 지어낸" 경우만 대상이다. 단서는 셋이다 — 명시 연도(2023·2023년·23.3.2), 기간("2년"·
+# "18개월"·"3달"·"730일"·"60주 동안" — LLM이 오늘에서 거슬러 시작일을 계산한다), 상대 연도(작년·재작년·지난해).
+# 일 단위는 세 자리 이상만 본다 — 날짜의 일(1~31)은 두 자리라 "3월 2일"과 겹치지 않는다. 주 단위는
+# "주 5일"처럼 숫자가 뒤에 오는 근무형태와 구분하려고 두 자리 이상 + 기간 접미어를 요구한다.
+# 실측(2026-10-11): 보정이 조건 없이 돌아 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가
+# 2026-03-02 입사·2026-03-01 퇴사(입사보다 퇴사가 앞선 날짜)로 계산기에 들어갔다. 벤더와 무관한 후처리다.
+_YEAR_CONTEXT_RE = re.compile(
+    r"(?<!\d)(?:19|20)\d{2}(?!\d)"
+    r"|(?<!\d)\d{2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}"
+    r"|\d+(?:\.\d+)?\s*(?:년|개월|달)"
+    r"|(?<!\d)\d{3,}\s*일"
+    r"|(?<!\d)\d{2,}\s*주\s*(?:전|동안|간|째|이상|넘게|정도|근무)"
+    r"|작년|재작년|지난\s*해|전년도?|이듬해|다음\s*해"
+)
+
+
+def _has_year_context(text: str | None) -> bool:
+    return bool(text) and _YEAR_CONTEXT_RE.search(text) is not None
+
+
+def _correct_date_year(date_str: str | None, context: str | None = None) -> str | None:
     """연도가 잘못 추정된 날짜를 현재 기준으로 보정.
 
     LLM이 연도 미명시 날짜를 과거 연도로 추정하는 경우,
     오늘 기준 가장 가까운 과거/현재 날짜로 보정한다.
-    예: 오늘=2026-03-08, LLM 추출="2025-02-28" → "2026-02-28"
+    예: 오늘=2026-03-08, 질문 "2월 28일 퇴사", LLM 추출="2025-02-28" → "2026-02-28"
+
+    context: LLM이 본 질문·대화 텍스트. 연도 단서(_YEAR_CONTEXT_RE)가 있으면 보정하지 않는다.
+        None이면 판단 근거가 없으므로 예전처럼 보정한다(맥락을 넘기지 않는 호출부 호환).
     """
     if not date_str or not re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
+        return date_str
+    if _has_year_context(context):
         return date_str
 
     try:
@@ -140,21 +165,63 @@ _INFO_KEYS = {
     "is_probation", "contract_months", "occupation_code",
     "is_platform_worker",
 }
+_INFO_KEYS.update(set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS)
+from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS, CLAIM_DEPENDENCY_FIELDS
+_INFO_KEYS.update(ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS)
 
 
-def _build_analysis_result(inp: dict) -> AnalysisResult:
+# 지급 주기가 회사마다 갈리는 수당(상여·성과급·명절 등) — 질문에 주기가 없으면 '미확인'으로 두고 그 수당에 기대는 계산을 보류한다
+_CYCLE_VARIES_RE = re.compile(r"상여|보너스|성과|인센티브|격려|포상|장려금|명절|설날|구정|추석|선물|귀성|김장|생일|경조|휴가비|하계|동계|"
+                              r"연말|연초|체력단련|분기|반기|연간|연차")
+# 주기 표현이 없어도 매월 지급으로 보는 월정 수당 — 허용 목록이다. 목록 밖 이름은 '미확인'으로 남긴다(거부 목록만 두면 '설날
+# 선물비'처럼 목록에 없는 연 1회 지급액이 월액으로 들어갔다 — PR #134 리뷰). 이름이 '…수당'이면 월정 수당으로 본다
+_MONTHLY_ALLOWANCE_RE = re.compile(r"식대|식비|중식|석식|교통|차량|유류|통신|직책|직급|직무|자격|면허|가족|자녀|부양|보육|육아|근속|위험|"
+                                   r"기술|연구|숙소|주거|주택|출장|야간|교대|당직|특수|벽지|현장|조정|팀장|반장|조장|관리|만근|개근|어학|"
+                                   r"업무|활동|복리|기본|고정")
+
+
+def _default_payment_cycle(allowance: dict) -> str:
+    """고정수당의 지급 주기. 명시된 주기는 그대로 두고, 생략·'미확인'이면 이름으로 정한다.
+
+    상여·성과급·명절처럼 주기가 갈리는 항목과 월정 수당으로 알아볼 수 없는 이름은 '미확인'으로 남긴다. 식대·직책·교통·가족수당
+    같은 월정 수당(허용 목록, 또는 이름이 '…수당')은 주기 표현이 없어도 매월 지급이다 — 모든 생략을 '미확인'으로 두면 수당 하나 때문에 최저임금·퇴직금·4대보험 카드 전체가 보류됐다(Codex 리뷰
+    High 1: "월급 250만 + 식대 20만, 최저임금 위반인가요?"가 판정 없이 끝남. 상담 코퍼스에서 수당을 금액과 함께 적은 질문의
+    93%가 주기를 적지 않는다)."""
+    if allowance.get("annual") is True:
+        return allowance.get("payment_cycle") or "연"
+    cycle = allowance.get("payment_cycle")
+    if cycle and cycle != "미확인":
+        return cycle
+    name = re.sub(r"\s+", "", str(allowance.get("name") or ""))
+    if _CYCLE_VARIES_RE.search(name):
+        return "미확인"
+    return "매월" if (_MONTHLY_ALLOWANCE_RE.search(name) or name.endswith("수당")) else "미확인"
+
+
+def _build_analysis_result(inp: dict, context: str | None = None) -> AnalysisResult:
     """도구 입력 dict → AnalysisResult.
 
     **벤더 무관** — Claude tool_use와 OpenAI function calling이 같은 스키마로
     같은 dict를 만들어 이 함수를 통과한다. 후처리를 한 곳에 모아야 두 벤더의
     추출 결과가 조용히 갈라지지 않는다 (llm-fallback-hardening FR-05).
+
+    context: LLM이 본 질문·대화 텍스트 — 날짜 연도 보정 여부를 정한다(_correct_date_year).
     """
     extracted = {k: v for k, v in inp.items() if k in _INFO_KEYS and v is not None}
+
+    if isinstance(extracted.get("fixed_allowances"), list):
+        extracted["fixed_allowances"] = [
+            dict(a, payment_cycle=_default_payment_cycle(a)) if isinstance(a, dict) else a
+            for a in extracted["fixed_allowances"]]
 
     # 날짜 보정: LLM이 연도를 잘못 추정한 경우 현재 기준으로 수정
     for date_key in ("start_date", "end_date", "arrear_due_date"):
         if date_key in extracted:
-            extracted[date_key] = _correct_date_year(extracted[date_key])
+            extracted[date_key] = _correct_date_year(extracted[date_key], context)
 
     # 숫자 범위 검증: 비현실적 값 제거 → missing_info에 추가
     missing_from_llm = inp.get("missing_info", [])
@@ -196,32 +263,6 @@ def _build_messages(question: str, history: list[dict], summary: str) -> list[di
     return messages
 
 
-def _analyze_claude(messages: list[dict], system_prompt: str, config) -> dict | None:
-    """1순위 — Claude tool_use. 도구 입력 dict를 반환(미반환 시 None)."""
-    # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
-    # tool_choice 강제 + 스키마 제약으로 추출 결정성은 유지된다.
-    # 임계경로 타임아웃 (DB-6) — 항상 실행되는 호출이라 지연 시 전체가 행(hang)하던 지점
-    response = config.anthropic_client.with_options(
-        timeout=INTENT_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
-    ).messages.create(
-        model=config.analyzer_model,
-        max_tokens=1024,
-        system=system_prompt,
-        tools=[ANALYZE_TOOL],
-        tool_choice={"type": "tool", "name": "analyze_labor_question"},
-        messages=messages,
-    )
-    for block in response.content:
-        if block.type == "tool_use":
-            if not block.input:
-                break          # 빈 입력도 실패로 취급 (아래 raise)
-            return block.input
-    # tool_use 없이 종료 = 빈 응답. 예외 없이 None을 돌려주면 호출부의 except를
-    # 타지 못해 OpenAI 폴백이 통째로 생략된다 — _stream_answer의 FR-01과 같은
-    # 규약("빈 응답은 실패다")을 여기에도 적용한다.
-    raise RuntimeError("Claude 의도분석이 tool_use를 반환하지 않음(빈 응답)")
-
-
 def analyze_intent(
     question: str,
     history: list[dict],
@@ -230,37 +271,29 @@ def analyze_intent(
 ) -> AnalysisResult:
     """사용자 질문을 분석하여 계산 유형, 추출 정보, 누락 정보를 반환.
 
-    Claude(1순위) → OpenAI(2순위) 교차벤더 폴백 (FR-05). Anthropic 장애 시
+    관리자 설정 1순위 → 2순위 교차벤더 폴백 (FR-05, unified-model-provider). 1순위 장애 시
     이 함수가 실패하면 계산기 라우팅과 스코프 게이트가 함께 죽어 "숫자 없는
     일반론"이 정상 답변처럼 나가므로, 벤더 하나에 걸어두지 않는다.
     """
     messages = _build_messages(question, history, summary)
     system_prompt = ANALYZER_SYSTEM.format(today=date.today().isoformat())
-    used_fallback = False
 
-    try:
-        inp = _analyze_claude(messages, system_prompt, config)
-    except Exception as e:
-        if not INTENT_FALLBACK_ENABLED:
-            raise
-        logger.warning("의도분석 Claude 실패 — OpenAI 폴백 시도: %s", e)
-        # 폴백도 실패하면 예외를 그대로 전파한다 — 호출부(pipeline)가 이를 받아
-        # 레거시 추출 경로로 강등하는 기존 동작이 유지된다.
-        inp = call_openai_tool(
-            config.openai_client,
-            model=INTENT_FALLBACK_MODEL,
-            system=system_prompt,
-            messages=messages,
-            tool=ANALYZE_TOOL,
-            timeout=INTENT_FALLBACK_TIMEOUT,
-            max_tokens=INTENT_FALLBACK_MAX_TOKENS,
-        )
-        if not inp:
-            # 폴백도 빈 응답 — 예외로 전파해 호출부가 레거시 경로로 강등하게 한다
-            raise RuntimeError(f"OpenAI({INTENT_FALLBACK_MODEL}) 의도분석이 빈 응답 반환")
-        logger.info("의도분석 OpenAI 폴백 성공 (model=%s)", INTENT_FALLBACK_MODEL)
-        used_fallback = True
+    # 1순위 → 다음 순위(설정 순서). 둘 다 실패하면 예외를 그대로 전파한다 — 호출부(pipeline)가
+    # 레거시 추출 경로로 강등하는 기존 동작이 유지된다. 빈 tool 입력도 실패다(_stream_answer FR-01).
+    # temperature는 보내지 않는다 — Sonnet 5 이후는 거부(400). 결정성은 tool 강제 + 스키마로 — 단 5.5 세대는
+    # 강제 tool_choice를 거절하므로 게이트웨이가 auto+지시로 자가치유한다(llm_gateway._CLAUDE_TOOL_NO_FORCE).
+    provider, _name, inp = llm_gateway.tool(
+        config, system=system_prompt, messages=messages, tools=[ANALYZE_TOOL],
+        choice=ANALYZE_TOOL["name"], purpose="의도분석", max_tokens=llm_gateway.extraction_budget(messages),
+        timeout=(INTENT_TIMEOUT, INTENT_FALLBACK_TIMEOUT),
+        attempts=2 if INTENT_FALLBACK_ENABLED else 1,
+    )
 
-    result = _build_analysis_result(inp)
-    result.intent_provider = "OpenAI" if used_fallback else "Claude"
+    # 연도 단서는 LLM이 본 전부(요약·이전 턴·질문)에서 찾는다 — 앞 턴에서 "2023년 입사"를 말하고
+    # 후속 질문에 연도가 없어도 LLM은 앞 턴의 연도를 쓴다.
+    from app.core.llm_fallback import flatten_content
+    context = "\n".join([summary or ""] + [flatten_content(t.get("content", "")) for t in history[-8:]]
+                         + [question])
+    result = _build_analysis_result(inp, context)
+    result.intent_provider = provider
     return result

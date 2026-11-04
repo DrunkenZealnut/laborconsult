@@ -32,10 +32,11 @@ from datetime import date
 from ..base import BaseCalculatorResult
 from ..constants import SEVERANCE_MIN_SERVICE_DAYS
 from ..models import WageInput, WorkType, BusinessSize
-from ..utils import parse_date
+from ..utils import fmt_hours, parse_date
 from .average_wage import calc_average_wage
 from .ordinary_wage import OrdinaryWageResult
 from .shared import DateRange
+from .shared import monthly_wage_extras, monthly_wage_total
 
 
 @dataclass
@@ -111,6 +112,8 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
 
     # A. 3개월 평균임금 — average_wage 모듈 재사용
     avg_result = calc_average_wage(inp, ow)
+    if avg_result.held_reason:
+        return SeveranceResult(held_reason=avg_result.held_reason, warnings=avg_result.warnings)
     avg_daily_3m = avg_result.avg_daily_3m
 
     # B. 1년 평균임금 (대법원 2023다302579)
@@ -135,7 +138,7 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
         )
 
     if avg_daily_ordinary > avg_daily_3m:
-        legal.append("근로기준법 시행령 제2조 (평균임금 < 통상임금 시 통상임금 적용)")
+        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
         warnings.append(
             f"평균임금({avg_daily_3m:,.0f}원/일)이 통상임금 환산액({avg_daily_ordinary:,.0f}원/일)보다 낮아 "
             f"통상임금 기준 적용"
@@ -146,10 +149,15 @@ def calc_severance(inp: WageInput, ow: OrdinaryWageResult) -> SeveranceResult:
     avg_daily = candidates[best]
     used_basis = best
 
-    formulas.append(f"3개월 평균임금: {avg_daily_3m:,.0f}원/일")
+    # 월 임금으로 추정했고 통상임금 위에 더한 것(통상임금에서 뺀 고정수당·연장 등)이 있으면 그 사실을 밝힌다(shared.monthly_wage_total)
+    estimated = not inp.last_3m_wages and not inp.monthly_total_pay
+    extras = monthly_wage_extras(inp, ow) if estimated else ""
+    formulas.append(f"3개월 평균임금: {avg_daily_3m:,.0f}원/일" + (f" (월 임금{extras} 기준 추정)" if extras else ""))
     if avg_daily_1y > 0:
         formulas.append(f"1년 평균임금:   {avg_daily_1y:,.0f}원/일")
-    formulas.append(f"통상임금 환산:  {avg_daily_ordinary:,.0f}원/일 ({ow.hourly_ordinary_wage:,.0f}원 × 8h)")
+    # 1일 통상임금 = 시간급 × 1일 소정근로시간(시행령 제6조 제3항) — 계산에 쓴 그 시간을 적는다(예전에는 '× 8h' 고정, F2)
+    formulas.append(f"통상임금 환산:  {avg_daily_ordinary:,.0f}원/일 ({ow.hourly_ordinary_wage:,.0f}원 × "
+                    f"{fmt_hours(ow.daily_hours_used)}h)")
     formulas.append(f"적용 기준:      {used_basis} ({avg_daily:,.0f}원/일)")
 
     # ── 퇴직금 산정 ──────────────────────────────────────────────────────────
@@ -230,13 +238,8 @@ def _calc_avg_daily_1y(inp: WageInput, ow: OrdinaryWageResult) -> float:
         total = sum(inp.last_1y_wages)
         return total / period_days
 
-    # 1년 데이터 미제공 시 monthly_wage × 12 추정 (명시적 안내)
-    if inp.monthly_wage:
-        total = inp.monthly_wage * 12
-        return total / period_days
-
-    # 통상임금 기반 추정
-    return ow.monthly_ordinary_wage * 12 / period_days
+    # 1년 데이터 미제공 시 기준 월액 × 12 추정 — 카드의 월 총액과 같은 함수(shared.monthly_wage_total)
+    return monthly_wage_total(inp, ow) * 12 / period_days
 
 
 def _ineligible(
@@ -253,7 +256,7 @@ def _ineligible(
         avg_daily_wage=0.0,
         avg_daily_3m=0.0,
         avg_daily_1y=0.0,
-        avg_daily_ordinary=ow.hourly_ordinary_wage * 8,
+        avg_daily_ordinary=ow.daily_ordinary_wage,
         used_basis="-",
         service_days=service_days,
         service_years=service_years,

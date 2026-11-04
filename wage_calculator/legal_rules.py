@@ -153,6 +153,25 @@ def used_scope():
         raise
 
 
+def used_mark():
+    """지금까지 소비한 기준 키 — `forget_used_since`와 짝이다(관리 모드가 아니면 None)."""
+    snapshot = _snapshot.get()
+    return set(snapshot.used) if snapshot is not None else None
+
+
+def forget_used_since(mark) -> None:
+    """표시 이후 새로 소비한 기준을 provenance에서 되돌린다 — `used_scope`의 예외 없는 판.
+
+    금액을 보류한 섹션(facade `amount_hold`)은 계산은 끝났지만 그 금액을 싣지 않는다. 그 섹션이 읽은 승인 기준을
+    '적용된 버전'으로 보고하면 금액이 없는 카드 머리에 기준 버전이 붙는다(Act-2 재검토 N3).
+    """
+    snapshot = _snapshot.get()
+    if snapshot is None or mark is None:
+        return
+    for key in set(snapshot.used) - mark:
+        snapshot.used.pop(key, None)
+
+
 @contextmanager
 def rule_scope(snapshot):
     token = _snapshot.set(snapshot)

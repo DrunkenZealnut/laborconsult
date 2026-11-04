@@ -9,6 +9,7 @@ Phase D 분리: registry.py (유형·매핑), helpers.py (_pop_*), conversion.py
 
 from ..calculators.business_size import calc_business_size
 from ..calculators.ordinary_wage import calc_ordinary_wage
+from ..calculators.shared import apply_hour_split, fixed_overtime_monthly, monthly_wage_total
 from ..calculators.overtime import check_weekly_hours_compliance
 from ..calculators.retirement_pension import calc_retirement_pension
 from ..calculators.retirement_tax import calc_retirement_tax
@@ -16,9 +17,10 @@ from ..calculators.wage_arrears import calc_wage_arrears
 from ..legal_hints import generate_legal_hints, format_hints, LegalHint
 from ..models import WageInput, WageType, BusinessSize
 from ..result import WageResult, format_result, format_result_json
+from ..utils import fmt_hours
 
 from .conversion import _guess_start_date
-from .helpers import _merge, _pop_retirement_tax, _pop_retirement_pension
+from .helpers import _merge, _merge_amount_held, _pop_retirement_tax, _pop_retirement_pension
 from .registry import (
     CALC_TYPES, CALC_TYPE_MAP, _STANDARD_CALCS, resolve_calc_type,
 )
@@ -26,7 +28,7 @@ from .registry import (
 
 def _clamp_negative_inputs(inp: WageInput) -> None:
     """음수 임금/근로시간 입력을 0으로 보정 — 비현실적 결과·계산오류 방지."""
-    for field in ("hourly_wage", "daily_wage", "monthly_wage", "annual_wage"):
+    for field in ("hourly_wage", "daily_wage", "monthly_wage", "annual_wage", "monthly_total_pay"):
         v = getattr(inp, field, None)
         if v is not None and v < 0:
             setattr(inp, field, 0.0)
@@ -45,8 +47,14 @@ class WageCalculator:
         self.rule_store = rule_store
 
     def calculate(
-        self, inp: WageInput, targets: list[str] | None = None,
+        self, inp: WageInput, targets: list[str] | None = None, *, amount_hold=(), hold_compliant=(), auxiliary=(),
     ) -> WageResult:
+        """amount_hold: 계산은 하되 금액만 빼고 실을 계산 유형(통상임금이 총액이라 금액이 부풀려지는 경우 — pipeline이 넘긴다).
+        hold_compliant: 계산은 하되 '충족' 판정이면 싣지 않을 판정 유형(현재 minimum_wage — 수당이 섞인 총액은 시급을
+        부풀리기만 하므로 미달만 확정이다).
+        auxiliary: 묻지 않았지만 호출자가 카드 금액을 맞추려고 더한 계산 유형(pipeline의 연장수당 — 파생 연장·G2). '시도한
+        계산이 전부 보류면 요청 보류' 판정에서 세지 않는다 — 세면 물은 계산이 전부 보류돼도 더한 섹션이 성공해 보류 신호가
+        사라지고 세전 총액과 '이 수치를 사용하세요'가 나갔다(calc-card-consistency 독립 리뷰 M2)."""
         from copy import deepcopy
         from ..legal_rules import (
             RuleSnapshot, RuleUnavailable, resolve_reference_date, rule_scope,
@@ -56,7 +64,7 @@ class WageCalculator:
         # A snapshot belongs to one call, not a process-global mutable constants table.
         if self.rule_store is None and not rules_enabled():
             with rule_scope(None):
-                return self._calculate(inp, targets)
+                return self._calculate(inp, targets, amount_hold, hold_compliant, auxiliary)
         reference_date = None
         try:
             # Resolve (and validate) before the store round trip: an unusable date
@@ -74,10 +82,11 @@ class WageCalculator:
                 managed_input.wage_type = WageType.HOURLY
                 managed_input.hourly_wage = snapshot.get("minimum_hourly_wage")
             with rule_scope(snapshot):
-                result = self._calculate(managed_input, targets)
+                result = self._calculate(managed_input, targets, amount_hold, hold_compliant, auxiliary)
             # 시도한 계산이 **전부** 보류면 부분 결과가 아니라 보류다. 통상임금만 남은
-            # 껍데기를 정상 결과로 내보내면 '계산 보류' 신호가 사라진다.
-            if result.legal_rule_attempted and len(result.legal_rule_blocked) == result.legal_rule_attempted:
+            # 껍데기를 정상 결과로 내보내면 '계산 보류' 신호가 사라진다. 호출자가 더한 섹션(auxiliary)은 세지 않는다.
+            asked_blocked = [b for b in result.legal_rule_blocked if b["target"] not in auxiliary]
+            if result.legal_rule_attempted and len(asked_blocked) == result.legal_rule_attempted:
                 raise RuleUnavailable(" / ".join(
                     item["reason"] for item in result.legal_rule_blocked))
             # 승인 기준이 한 건도 소비되지 않았으면 'managed'로 부르지 않는다 — 빈
@@ -100,6 +109,9 @@ class WageCalculator:
         self,
         inp: WageInput,
         targets: list[str] | None = None,
+        amount_hold=(),
+        hold_compliant=(),
+        auxiliary=(),
     ) -> WageResult:
         """
         지정된 계산 유형에 대해 통합 계산 수행
@@ -111,9 +123,50 @@ class WageCalculator:
         Returns:
             WageResult: 통합 계산 결과
         """
+        # 아직 나누지 않은 입력(CLI·직접 호출)은 사본에서 계산한다 — 호출자의 일정을 바꾸지 않고, 같은 입력을 일정만 고쳐 다시 넘기면
+        # 새로 나눈다(apply_hour_split은 이미 나눈 입력을 그대로 돌려준다, CodeRabbit PR #115). 파이프라인처럼 먼저 나눈 입력은 그대로 쓴다
+        from copy import deepcopy
+        settlement_input = deepcopy(inp)  # 정산 계약 금액은 음수 보정 전 원본으로 검증한다.
+        if inp.hour_split is None:
+            inp = deepcopy(inp)
         _clamp_negative_inputs(inp)
+        # 1일 8시간·1주 40시간을 넘는 시간은 연장근로로 나눈다(calc-card-followups D9). 파이프라인이 먼저 나눴으면 그대로다 —
+        # 모든 계산기가 정규화된 같은 일정을 읽는다. 자동 대상 결정(연장 유무)보다 앞이어야 한다
+        apply_hour_split(inp)
         if targets is None:
             targets = self._auto_detect_targets(inp)
+        # 초기 CLI·골든 소비자가 쓰던 이름도 실제 독립 계산기로 연결한다.
+        targets = ["ordinary_wage" if target == "ordinary" else target for target in targets]
+
+        if "arrears_principal" in targets and inp.wage_claim_include_interest and "wage_arrears" not in targets:
+            targets = [*targets, "wage_arrears"]
+
+        # 지급 주기가 불명확한 수당을 월액으로 확정하지 않는다. 임금 기반과
+        # 무관한 명시 체불 원금 이자·시간 계산은 그대로 실행할 수 있다.
+        from ..calculators.shared import normalize_allowances
+        from ..calculators.pay_inputs import PayInputError
+        try:
+            for allowance in normalize_allowances(inp.fixed_allowances):
+                allowance.monthly_amount
+        except PayInputError as exc:
+            from dataclasses import replace
+            independent = {"wage_arrears", "working_hours", "weekly_hours_check", "business_size"}
+            if (inp.proration_all_items_proportional is not True
+                    and inp.proration_items_complete is True
+                    and isinstance(inp.proration_items, list) and inp.proration_items):
+                independent.add("prorated")
+            from ..calculators.wage_claims import claims_are_independent
+            if claims_are_independent(inp):independent.add("arrears_principal")
+            remaining = [t for t in targets if t in independent]
+            result = (self._calculate(replace(inp, fixed_allowances=[]), remaining)
+                      if remaining else WageResult(minimum_wage_ok=None))
+            result.calculation_skipped.extend({"target": t, "section": CALC_TYPES.get(t,t), "reason": str(exc)}
+                                              for t in targets if t not in independent)
+            result.monthly_total = result.monthly_net = result.ordinary_hourly = 0.0
+            if result.calculation_skipped:
+                result.warnings.append(str(exc))
+            result.calculation_status = ("partial" if result.calculation_executed else "not_run") if result.calculation_skipped else "complete"
+            return result
 
         # 통상임금 계산 (모든 계산의 기반)
         ow = calc_ordinary_wage(inp)
@@ -125,24 +178,34 @@ class WageCalculator:
             "통상시급": f"{ow.hourly_ordinary_wage:,.0f}원",
             "1일 통상임금": f"{ow.daily_ordinary_wage:,.0f}원",
             "월 통상임금": f"{ow.monthly_ordinary_wage:,.0f}원",
-            "기준시간": f"{ow.monthly_base_hours}h",
+            "기준시간": f"{fmt_hours(ow.monthly_base_hours)}h",
             "기준시간 산출": ow.base_hours_detail,
         }
 
-        monthly_total = ow.monthly_ordinary_wage
+        # 월 총액은 기준 월액(shared.monthly_wage_total)이다 — 보험 세전·평균임금과 같은 함수. 예전에는 여기서 섹션 금액을 따로
+        # 더해 포괄임금 명세 총액이 기본급으로 나오고 공휴일 수당 ÷ 12가 월급에 이중으로 들어갔다(monthly-base-unification)
+        flexible_added = 0.0
         all_w, all_l = [], ["근로기준법 (통상임금)"]
 
         # 승인 기준 누락은 **그 섹션만** 제외한다. 기반 단계(통상임금·사업장 규모)는
         # 뒤따르는 모든 계산의 입력이라 여기서 감싸지 않는다 — 그쪽 실패는 요청 전체 보류다.
-        from ..legal_rules import RuleUnavailable, used_scope
+        from ..legal_rules import RuleUnavailable, forget_used_since, used_mark, used_scope
         blocked: list = []
         blocked_targets: set = set()
 
         def guarded(target, section, run):
-            result.legal_rule_attempted += 1
+            if target not in auxiliary:
+                result.legal_rule_attempted += 1
             try:
                 with used_scope():        # 보류된 섹션이 읽은 기준은 provenance에서 제외
-                    return run()
+                    value = run()
+                    if getattr(value, "held_reason", ""):
+                        result.calculation_skipped.append({
+                            "target": target, "section": section, "reason": value.held_reason})
+                        blocked_targets.add(target)
+                        return None
+                    result.calculation_executed.append(target)
+                    return value
             except RuleUnavailable as exc:
                 blocked.append({"target": target, "section": section, "reason": str(exc)})
                 blocked_targets.add(target)
@@ -151,39 +214,115 @@ class WageCalculator:
         # ── 상시근로자 수 판정 (다른 계산기보다 먼저 실행) ────────────────────
         if "business_size" in targets and inp.business_size_input is not None:
             bs = calc_business_size(inp.business_size_input)
+            result.calculation_executed.append("business_size")
             inp.business_size = bs.business_size
             result.summary["상시근로자 수"] = f"{bs.regular_worker_count:.1f}명"
             result.summary["사업장 규모"] = bs.business_size.value
             result.summary["법 적용 여부"] = "적용" if bs.is_law_applicable else "미적용"
             _merge(result, "상시근로자 수 판정", bs, all_w, all_l)
 
+        # 원본 금액의 음수 검증은 유지하고, 파생 채권은 확정된 분류·정규화된 시간을 사용한다.
+        from dataclasses import replace
+        claims_input=replace(settlement_input,business_size=inp.business_size,
+                             schedule=deepcopy(inp.schedule),hour_split=inp.hour_split)
+        claims_ow=calc_ordinary_wage(inp) if 'arrears_principal' in targets else ow
+
         # ── 표준 계산기 디스패처 ─────────────────────────────────────────────
+        _claims_result = None
         _severance_cache = None
+        overtime_monthly = 0.0
         for key, func, section, populate, precondition in _STANDARD_CALCS:
             if key not in targets:
                 continue
             if precondition and not precondition(inp):
                 continue
-            r = guarded(key, section, lambda: func(inp, ow))
+            if key == "maternity_leave" and inp.maternity_leave_type:
+                from ..calculators.family_leave import FAMILY_LABELS
+                section = FAMILY_LABELS.get(inp.maternity_leave_type, section)
+            mark = used_mark()
+            r = guarded(key, section, lambda: func(claims_input, claims_ow) if key == "arrears_principal" else func(settlement_input if key == "prorated" else inp, ow))
             if r is None:
                 continue
+            if key == "arrears_principal":
+                _claims_result = r
             if key == "severance":
                 _severance_cache = r
-            monthly_total += populate(r, result)
+            # 금액 보류 대상은 금액만 빼고 싣는다(자격 판정으로 0이면 그대로 — 미발생·면제는 통상임금과 무관하다).
+            # 버린 금액이 읽은 승인 기준은 적용 버전으로 보고하지 않는다.
+            if key in amount_hold and _merge_amount_held(result, key, section, r, populate, all_w, all_l):
+                forget_used_since(mark)
+                continue
+            # 믿을 수 없는 '충족'은 싣지 않는다 — 판정은 None(보류)으로 남고, 읽은 승인 기준도 적용 버전으로 보고하지 않는다
+            if key in hold_compliant and getattr(r, "is_compliant", False):
+                forget_used_since(mark)
+                result.minimum_wage_state = "held"
+                continue
+            added = populate(r, result)
+            if key == "overtime":
+                overtime_monthly = added
+            elif key == "flexible_work":
+                flexible_added = added   # 탄력적 근로시간제의 연장 근로 임금 — 기준 월액의 연장 등과 따로 계산한다
             _merge(result, section, r, all_w, all_l)
 
+        # 월 총액 = 기준 월액(연장 등은 연장수당 섹션을 계산한 카드만) + 탄력적 근로시간제 연장 임금. 공휴일 수당 ÷ 12는 더하지 않는다 —
+        # 월급제는 공휴일 임금이 월급에 들어 있고(이중 계산), 시급제는 질문의 공휴일 일수를 12로 나눈 값이라 월 임금이 아니다
+        monthly_total = monthly_wage_total(inp, ow, premium=overtime_monthly > 0.5) + flexible_added
+
+        # 고정연장수당(통상임금에서 빼고 월 총액에 넣은 고정수당)과 계산한 연장·야간·휴일 근로 임금은 같은 근로의 대가다 — 둘 다
+        # 더하면 같은 근로를 두 번 센다(독립 리뷰 M2). 금액은 monthly_wage_total이 큰 쪽만 센다 — 여기서는 그 사실을 알린다
+        fixed_ot = fixed_overtime_monthly(inp) if overtime_monthly > 0.5 else 0.0
+        if fixed_ot:
+            gap = (f" 계산한 금액이 고정연장수당보다 월 {overtime_monthly - fixed_ot:,.0f}원 많습니다."
+                   if overtime_monthly > fixed_ot + 0.5 else "")
+            all_w.append(f"고정연장수당 등 월 {fixed_ot:,.0f}원과 계산한 연장·야간·휴일 근로 임금 월 {overtime_monthly:,.0f}원(매주 "
+                         f"같은 시간으로 봄)은 같은 근로의 대가라 합치지 않았습니다.{gap}")
+
         # ── 특수 계산기: 임금체불 (독립 함수, WageInput 미사용) ───────────────
-        if "wage_arrears" in targets and inp.arrear_amount > 0 and inp.arrear_due_date:
-            wa = guarded("wage_arrears", "임금체불 지연이자", lambda: calc_wage_arrears(
-                arrear_amount=inp.arrear_amount,
-                arrear_due_date=inp.arrear_due_date,
-                is_post_retirement_arrear=inp.is_post_retirement_arrear,
-                arrear_calc_date=inp.arrear_calc_date or None,
-            ))
+        if "wage_arrears" in targets:
+            independent_interest=(inp.wage_claim_include_interest is False and
+                                  bool(inp.arrear_amount or inp.arrear_claims))
+            if "arrears_principal" in targets and not independent_interest:
+                from ..calculators.wage_claims import calc_claim_interest
+                wa = guarded("wage_arrears", "임금체불 지연이자", lambda: calc_claim_interest(inp, _claims_result))
+            else:
+                wa = guarded("wage_arrears", "임금체불 지연이자", lambda: calc_wage_arrears(
+                    arrear_amount=inp.arrear_amount,
+                    arrear_due_date=inp.arrear_due_date,
+                    is_post_retirement_arrear=inp.is_post_retirement_arrear,
+                    arrear_calc_date=inp.arrear_calc_date,
+                    claim_kind=inp.arrear_claim_kind,
+                    retirement_effective_date=inp.arrear_retirement_effective_date,
+                    last_employed_date=inp.arrear_last_employed_date,
+                    debtor_is_merchant=inp.debtor_is_merchant,
+                    payments=inp.arrear_payments, exclusions=inp.arrear_exclusions,
+                    claims=inp.arrear_claims, deadline_holidays=inp.arrear_deadline_holidays,
+                    reference_date=inp.reference_date, reference_year=inp.reference_year,
+                    is_employee=not inp.is_platform_worker,
+                ))
             if wa is not None:
-                result.summary["임금체불 지연이자"] = f"{wa.interest_amount:,.0f}원"
-                result.summary["총 청구액"] = f"{wa.total_claim:,.0f}원"
-                result.summary["지연일수"] = f"{wa.delay_days}일"
+                if "arrears_principal" in targets and independent_interest:
+                    all_w.append('지연이자와 원금·이자 합계는 별도로 입력한 기존 채권에만 해당합니다. 새 원금 정산과 자동 합산하지 않습니다.')
+                result.summary["남은 체불 원금"] = f"{wa.arrear_amount:,.0f}원"
+                if wa.conditional_scenarios:
+                    for scenario in wa.conditional_scenarios:
+                        label = "상사채무" if scenario["debtor_is_merchant"] else "민사채무"
+                        result.summary[f"{label} 조건 지연이자"] = f'{scenario["interest_amount"]:,.0f}원'
+                        if scenario["total_claim"] is not None:
+                            result.summary[f"{label} 조건 남은 이자"] = f'{scenario["remaining_interest"]:,.0f}원'
+                            result.summary[f"{label} 조건 원금·이자 합계"] = f'{scenario["total_claim"]:,.0f}원'
+                else:
+                    result.summary["임금체불 누적 지연이자"] = f"{wa.interest_amount:,.0f}원"
+                    if wa.total_claim is not None:
+                        result.summary["남은 지연이자"] = f"{wa.remaining_interest:,.0f}원"
+                        result.summary["남은 원금·이자 합계"] = f"{wa.total_claim:,.0f}원"
+                if wa.interest_paid is None:
+                    result.summary["청구 합계"] = "보류 — 이미 지급한 이자 충당액 확인 필요"
+                elif wa.interest_paid:
+                    result.summary["이미 지급한 이자"] = f"{wa.interest_paid:,.0f}원"
+                if len(wa.claims)==1:
+                    result.summary["지연일수"] = f"{wa.delay_days}일"
+                else:
+                    result.summary["이자 계산 채권 수"] = f"{len(wa.claims)}건"
                 _merge(result, "임금체불 지연이자", wa, all_w, all_l)
 
         # ── 특수 계산기: 주 52시간 체크 (ow 미사용) ──────────────────────────
@@ -211,8 +350,15 @@ class WageCalculator:
                                 "reason": "퇴직금 계산이 보류되어 함께 보류합니다"})
                 blocked_targets.add(key)
                 continue
+            mark = used_mark()
             r = guarded(key, section, lambda f=func: f(inp, ow, _severance_cache))
             if r is None:
+                continue
+            # 이 둘의 자격은 퇴직금 결과가 정한다(결과에 자격 플래그가 없다)
+            severance_ineligible = _severance_cache is not None and not _severance_cache.is_eligible
+            if key in amount_hold and _merge_amount_held(result, key, section, r, populate, all_w, all_l,
+                                                         ineligible=severance_ineligible):
+                forget_used_since(mark)
                 continue
             populate(r, result)
             _merge(result, section, r, all_w, all_l)
@@ -223,8 +369,10 @@ class WageCalculator:
             for a in inp.fixed_allowances
         )
         if {"minimum_wage", "comprehensive"} & blocked_targets:
-            # 기본값 True 를 그대로 두면 '최저임금 충족 ✅'라는 없는 판정이 나간다.
+            # 보류된 계산은 판정을 남기지 않는다 — 값이 남아 있으면 '최저임금 충족 ✅'라는 없는 판정이 나간다
+            # (필드 기본값은 None).
             result.minimum_wage_ok = None
+            result.minimum_wage_state = "held"
         if "legal_hints" in targets or has_conditions:
             # 판정 보류(None)를 falsy 로 넘기면 '미달' 힌트가 생긴다 — 모르는 것을
             # 위반으로 단정하게 되므로 보류일 때는 위반 힌트를 만들지 않는다.
@@ -239,10 +387,55 @@ class WageCalculator:
                 if hint_text:
                     all_w.append(hint_text)
 
+        if not inp.monthly_total_pay and any(a.annual or a.payment_cycle != "매월" for a in normalize_allowances(inp.fixed_allowances)):
+            result.monthly_total_is_equivalent = True
+            all_w.append("연·분기·반기 수당은 월 환산액입니다. 실제 매월 지급액과 지급기일별 채권은 지급 내역을 별도로 확인해야 합니다.")
         result.monthly_total = round(monthly_total, 0)
         result.warnings = list(dict.fromkeys(all_w))
         result.legal_basis = list(dict.fromkeys(all_l))
         result.legal_rule_blocked = blocked
+
+        # 선행조건 때문에 조용히 건너뛴 계산도 결과로 보고한다. 통상임금 기반 계산이나
+        # 호출자가 추가한 연장수당만으로 요청 계산이 완료된 것으로 간주하지 않는다.
+        requested = set(targets) - set(auxiliary) - {"legal_hints"}
+        if requested & {"prorated", "arrears_principal"} and requested <= {"prorated", "arrears_principal", "wage_arrears"}:
+            result.ordinary_hourly = 0.0
+            result.breakdown.pop("통상임금", None)
+            result.formulas = [f for f in result.formulas if not f.startswith(("[기준시간]", "[통상임금]"))]
+        if requested and requested <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave", "prorated", "arrears_principal"}:
+            # 휴직/단축 전 통상임금은 보험 급여의 기초액이다. 회사가 실제로
+            # 지급하는 임금 또는 휴직 중 월 총수령액으로 표시하지 않는다.
+            result.monthly_total = result.monthly_net = 0.0
+        if "arrears_principal" in requested and "wage_arrears" not in targets:
+            result.warnings.append("이번 결과는 원금 정산입니다. 지연이자·총 청구액은 포함하지 않았습니다.")
+        if not targets:
+            result.calculation_skipped.append({"target": "", "section": "계산 유형",
+                "reason": "실행할 계산 유형이 없습니다. 지원하는 계산 유형을 지정해주세요."})
+        for target in dict.fromkeys(targets):
+            if target in requested and target not in result.calculation_executed and target not in blocked_targets:
+                reasons = {
+                    "prorated": "정산 대상월·재직 날짜·약정한 일할 방식과 항목별 지급 조건을 확인해주세요.",
+                    "wage_arrears": "확정된 체불 원금과 원래 지급기일이 필요합니다. 이 계산은 원금 산정이 아닌 지연이자 계산입니다.",
+                    "comprehensive": "포괄임금제 입력이 필요합니다.",
+                    "public_holiday": "계산할 유급 공휴일 수가 필요합니다.",
+                    "shutdown_allowance": "계산할 휴업일 수가 필요합니다.",
+                    "flexible_work": "탄력적 근로시간제의 단위기간 입력이 필요합니다.",
+                    "business_size": "상시근로자 수 판정을 위한 사업장 인원 자료가 필요합니다.",
+                }
+                result.calculation_skipped.append({
+                    "target": target, "section": CALC_TYPES.get(target, target),
+                    "reason": reasons.get(target, "지원하지 않는 계산 유형입니다."),
+                })
+        if not targets or (requested and not requested.intersection(result.calculation_executed)):
+            result.calculation_status = "not_run"
+            result.ordinary_hourly = result.monthly_total = result.monthly_net = 0.0
+            result.minimum_wage_ok = None
+            result.minimum_wage_state = ""
+            result.summary.clear()
+            result.breakdown.clear()
+            result.formulas.clear()
+        elif result.calculation_skipped:
+            result.calculation_status = "partial"
 
         return result
 
@@ -250,7 +443,9 @@ class WageCalculator:
         """입력 정보를 보고 필요한 계산 유형 자동 결정"""
         is_pw = getattr(inp, "is_platform_worker", False)
 
-        targets = ["minimum_wage"]   # 항상 최저임금 검증
+        if inp.wage_claim_items is not None:
+            return ["arrears_principal"]
+        targets = ["minimum_wage"]   # 일반 임금 입력의 최저임금 검증
 
         # 상시근로자 수 산정 입력이 있으면 맨 앞에 삽입 (최우선 실행)
         if inp.business_size_input is not None:
@@ -279,7 +474,7 @@ class WageCalculator:
             if inp.shutdown_days > 0:
                 targets.append("shutdown_allowance")
 
-            if inp.join_date:
+            if inp.join_date or inp.settlement_month is not None or inp.proration_items is not None:
                 targets.append("prorated")
 
             if inp.public_holiday_days > 0:
@@ -308,7 +503,11 @@ class WageCalculator:
         if getattr(inp, "is_multiple_birth", False) or getattr(inp, "is_premature_birth", False):
             targets.append("maternity_leave")
 
-        if inp.arrear_amount > 0 and inp.arrear_due_date:
+        if (inp.arrear_claims is not None or inp.arrear_amount != 0 or inp.arrear_due_date
+                or inp.arrear_calc_date is not None or inp.is_post_retirement_arrear
+                or inp.arrear_claim_kind != "regular_wage"
+                or inp.arrear_retirement_effective_date is not None or inp.arrear_last_employed_date is not None
+                or inp.arrear_payments is not None or inp.arrear_exclusions is not None):
             targets.append("wage_arrears")
 
         if getattr(inp, "flexible_work_unit", ""):

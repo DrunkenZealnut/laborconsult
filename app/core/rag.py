@@ -14,6 +14,8 @@ import logging
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from app.core import llm_transport
+
 logger = logging.getLogger(__name__)
 
 # 병렬 검색 그룹 정의
@@ -633,6 +635,8 @@ def rerank_results(
     cohere_api_key: str,
     top_n: int = RERANK_TOP_N,
     ensure_textbook: bool = True,
+    cohere_base_url: str | None = None,
+    model: str | None = None,
 ) -> list[dict]:
     """Cohere Rerank로 검색 결과 재정렬 + 해설서 다양성 승격.
 
@@ -643,6 +647,8 @@ def rerank_results(
         top_n: 반환할 상위 결과 수
         ensure_textbook: 다양성 승격(해설서·법률근거 모두) 적용 여부. False는
             평가 스크립트의 기준선(A/B) 측정 전용 — 파이프라인은 기본값을 쓴다.
+        cohere_base_url: Gateway 모드에서 llm_transport.GATEWAY_URL(Cohere 호환 /v2/rerank). None이면 Cohere 직접.
+        model: 벤더 모델 ID(기본 RERANK_MODEL). Gateway면 슬러그로 변환된다 — 호출부는 벤더 표기를 쓴다.
 
     Returns:
         재정렬된 상위 top_n건. 실패 시 원본 hits[:top_n] 반환.
@@ -678,9 +684,7 @@ def rerank_results(
         return _finalize(hits)  # RRF/cosine 순서가 랭킹을 대행
 
     try:
-        import cohere
-
-        co = cohere.ClientV2(api_key=cohere_api_key)
+        co = llm_transport.rerank_client(cohere_api_key, cohere_base_url)
 
         # Rerank용 문서 텍스트 추출
         documents = []
@@ -698,7 +702,7 @@ def rerank_results(
         # 해설서)의 순위를 알아야 랭크 창을 적용할 수 있다. Cohere 과금은
         # search 단위(쿼리+문서셋)라 top_n을 올려도 비용은 같다(설계 §2.2).
         result = co.rerank(
-            model=RERANK_MODEL,
+            model=llm_transport.rerank_model(cohere_base_url, model or RERANK_MODEL),
             query=query,
             documents=documents,
             top_n=len(documents),

@@ -303,6 +303,7 @@ class _FakeOpenAITool:
         args = self._args
 
         class _Fn:
+            name = "analyze_labor_question"
             arguments = args
         class _Call:
             function = _Fn()
@@ -315,8 +316,66 @@ class _FakeOpenAITool:
         return _Resp()
 
 
+class _ClaudeRaises:
+    """messages.create가 항상 실패하는 Anthropic 클라이언트 대역(장애 모사)."""
+
+    def with_options(self, **kw):
+        return self
+
+    @property
+    def messages(self):
+        return self
+
+    def create(self, **kw):
+        raise RuntimeError("Anthropic 장애 모사 (400 usage limit)")
+
+
+class _Exploding:
+    """어떤 속성에 닿아도 실패 — '호출되면 안 되는 제공자' 단언용."""
+
+    def __init__(self, calls: list | None = None):
+        self._calls = calls if calls is not None else []
+
+    def __getattr__(self, name):
+        self._calls.append(name)
+        raise AssertionError(f"호출되면 안 되는 제공자에 접근: {name}")
+
+
+def _with_primary(primary: str | None):
+    """model_settings.resolve()를 고정한다 — 저장소(Supabase) 없이 1순위를 지정."""
+    from contextlib import contextmanager
+    from app.core import model_settings as ms
+
+    @contextmanager
+    def ctx():
+        real = ms.resolve
+        ms.resolve = lambda settings=None: ms.Resolved(
+            models={"claude": ("claude-opus-5-5", "settings"), "openai": ("gpt-6-sol", "settings"),
+                    "gemini": ("gemini-3.8-flash", "settings")},
+            primary=(primary, "settings"), revision=None, store_available=True)
+        try:
+            yield
+        finally:
+            ms.resolve = real
+    return ctx()
+
+
+def _quiet():
+    from contextlib import contextmanager
+
+    @contextmanager
+    def ctx():
+        prev = logging.getLogger().manager.disable
+        logging.disable(logging.CRITICAL)
+        try:
+            yield
+        finally:
+            logging.disable(prev)
+    return ctx()
+
+
 def test_intent_cross_vendor_fallback() -> None:
-    """Claude 의도분석 실패 시 OpenAI 폴백이 실제로 결과를 채우는지 (FR-05).
+    """1순위(Claude) 의도분석 실패 시 2순위(OpenAI)가 실제로 결과를 채우는지 (FR-05).
 
     이 분기는 실장애에서만 실행되므로 테스트가 없으면 죽어 있어도 알 수 없다 —
     이 사이클의 출발점이 정확히 그 상황이었다(3순위 Gemini 404).
@@ -332,37 +391,31 @@ def test_intent_cross_vendor_fallback() -> None:
     })
 
     class Cfg:
+        claude_client = _ClaudeRaises()
         openai_client = fake
-        analyzer_model = "claude-sonnet-5"
+        gemini_api_key = None
 
-    prev_level = logging.getLogger().manager.disable
-    logging.disable(logging.CRITICAL)
-    real = analyzer._analyze_claude
-    try:
-        def boom(*a, **kw):
-            raise RuntimeError("Anthropic 장애 모사 (401)")
-        analyzer._analyze_claude = boom
+    with _quiet(), _with_primary("claude"):
         result = analyzer.analyze_intent("퇴직금 얼마인가요?", [], Cfg())
-    finally:
-        analyzer._analyze_claude = real
-        logging.disable(prev_level)
 
     assert result.requires_calculation is True, result
     assert result.calculation_types == ["severance"], result
     assert result.extracted_info.get("monthly_wage") == 3_000_000, result
     assert result.is_labor_related is True, "스코프 게이트 입력이 유실됨"
-    # tool 호출이 강제됐는지 + 재시도가 꺼져 있는지
+    assert result.intent_provider == "OpenAI", result.intent_provider
+    # tool 호출이 강제됐는지 + 재시도가 꺼져 있는지 + 설정 모델을 썼는지
     forced = [c for c in fake.calls if c.get("tool_choice")]
     assert forced and forced[0]["tool_choice"]["function"]["name"] == "analyze_labor_question"
+    assert forced[0]["model"] == "gpt-6-sol", forced[0]["model"]
     assert any(c.get("max_retries") == 0 for c in fake.calls), "폴백 호출에 재시도가 살아 있음"
-    print("  ✅ 교차벤더 폴백: Claude 실패 → OpenAI가 계산 유형·임금·스코프를 채움")
+    print("  ✅ 교차벤더 폴백: 1순위 실패 → 2순위(설정 모델)가 계산 유형·임금·스코프를 채움")
 
 
 def test_intent_empty_tool_response_falls_back() -> None:
-    """Claude가 tool_use 없이 완료해도 폴백해야 한다 (CodeRabbit #4).
+    """1순위가 tool_use 없이 완료해도 폴백해야 한다 (CodeRabbit #4).
 
     _stream_answer의 FR-01("빈 응답은 실패다")과 같은 규약이다. 예외 없이 None을
-    돌려주면 호출부의 except를 못 타서 OpenAI 폴백이 통째로 생략됐다.
+    돌려주면 호출부의 except를 못 타서 2순위 폴백이 통째로 생략됐다.
     """
     from app.core import analyzer
 
@@ -376,60 +429,206 @@ def test_intent_empty_tool_response_falls_back() -> None:
     class _EmptyResp:
         content = ()          # tool_use 블록 없음 (불변 — RUF012)
 
+    class _EmptyClaude:
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        def create(self, **kw):
+            return _EmptyResp()
+
     class Cfg:
+        claude_client = _EmptyClaude()
         openai_client = fake
-        analyzer_model = "claude-sonnet-5"
+        gemini_api_key = None
 
-        class anthropic_client:
-            @staticmethod
-            def with_options(**kw):
-                class _M:
-                    class messages:
-                        @staticmethod
-                        def create(**kw):
-                            return _EmptyResp()
-                return _M
-
-    prev_level = logging.getLogger().manager.disable
-    logging.disable(logging.CRITICAL)
-    try:
+    with _quiet(), _with_primary("claude"):
         result = analyzer.analyze_intent("연차 며칠인가요?", [], Cfg())
-    finally:
-        logging.disable(prev_level)
 
     assert result.calculation_types == ["annual_leave"], \
         f"빈 tool 응답에서 폴백이 생략됨: {result}"
     assert result.intent_provider == "OpenAI", result.intent_provider
-    print("  ✅ 빈 tool 응답(tool_use 없음) → OpenAI 폴백 발동")
+    print("  ✅ 빈 tool 응답(tool_use 없음) → 2순위 폴백 발동")
 
 
 def test_intent_fallback_disabled_degrades() -> None:
     """INTENT_FALLBACK_ENABLED=false면 폴백 없이 예외를 전파해 레거시로 강등 (FR-05)."""
     from app.core import analyzer
 
-    class Cfg:
-        openai_client = None
-        analyzer_model = "claude-sonnet-5"
+    touched: list = []
 
-    prev_level = logging.getLogger().manager.disable
-    logging.disable(logging.CRITICAL)
-    real_fn, real_flag = analyzer._analyze_claude, analyzer.INTENT_FALLBACK_ENABLED
+    class Cfg:
+        claude_client = _ClaudeRaises()
+        openai_client = _Exploding(touched)
+        gemini_api_key = None
+
+    real_flag = analyzer.INTENT_FALLBACK_ENABLED
     try:
-        def boom(*a, **kw):
-            raise RuntimeError("Anthropic 장애 모사")
-        analyzer._analyze_claude = boom
         analyzer.INTENT_FALLBACK_ENABLED = False
-        try:
-            analyzer.analyze_intent("퇴직금 얼마인가요?", [], Cfg())
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError("폴백 비활성인데 예외가 전파되지 않음")
+        with _quiet(), _with_primary("claude"):
+            try:
+                analyzer.analyze_intent("퇴직금 얼마인가요?", [], Cfg())
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("폴백 비활성인데 예외가 전파되지 않음")
     finally:
-        analyzer._analyze_claude = real_fn
         analyzer.INTENT_FALLBACK_ENABLED = real_flag
-        logging.disable(prev_level)
+    assert not touched, f"폴백 비활성인데 2순위를 호출함: {touched}"
     print("  ✅ INTENT_FALLBACK_ENABLED=false → 예외 전파(레거시 경로 강등)")
+
+
+def test_primary_setting_drives_every_stage() -> None:
+    """1순위를 바꾸면 답변과 보조 단계가 같은 순서·같은 모델을 쓴다 (unified-model-provider).
+
+    2026-10-11 실측: 1순위를 Gemini로 바꿔도 의도분석·추출·Self-RAG·인용 교정이 Claude에 고정돼
+    Anthropic 한도 400에 그대로 묶였다. 순서를 두 곳에서 따로 정하면 그 갈라짐이 다시 생긴다.
+    """
+    from app.core import analyzer, llm_gateway, self_rag
+
+    fake = _FakeOpenAITool({"requires_calculation": False, "is_labor_related": True,
+                            "question_summary": "해고 문의"})
+
+    class Cfg:
+        claude_client = _Exploding()
+        openai_client = fake
+        gemini_api_key = "fake-key"
+
+    with _quiet(), _with_primary("openai"):
+        answer_order = [n for n, _ in pipeline._answer_providers(Cfg())]
+        chain = llm_gateway.provider_chain(Cfg())
+        result = analyzer.analyze_intent("해고됐어요", [], Cfg())
+    assert answer_order == ["OpenAI", "Claude", "Gemini"], answer_order
+    assert [llm_gateway.PROVIDER_LABEL[p] for p, _ in chain] == answer_order, chain
+    assert result.intent_provider == "OpenAI", result.intent_provider
+
+    # Gemini 1순위: 텍스트 단계(Self-RAG)가 Gemini 어댑터로 가고 Claude는 건드리지 않는다
+    seen = []
+    real = llm_gateway._TEXT["gemini"]
+    llm_gateway._TEXT["gemini"] = lambda cfg, model, system, user, mt, to: seen.append(model) or "irrelevant"
+    try:
+        with _quiet(), _with_primary("gemini"):
+            assert self_rag.judge_relevance("질문", "문서", Cfg()) is False
+    finally:
+        llm_gateway._TEXT["gemini"] = real
+    assert seen == ["gemini-3.8-flash"], seen
+    print("  ✅ 설정 1순위가 답변·의도분석·Self-RAG 순서와 모델을 함께 결정")
+
+
+def test_gateway_vendor_quirks() -> None:
+    """벤더별 함정 회귀 — 토큰 하한·재작성 거부 시 다음 순위·데드라인·정수 복원·추론 off 재시도."""
+    import time
+    from app.core import llm_gateway as gw
+
+    # ① 작은 max_tokens도 하한으로 올린다(추론 토큰이 한도를 함께 써 빈 응답이 났다)
+    sent = {}
+
+    class _OAI:
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def chat(self):
+            return self
+
+        @property
+        def completions(self):
+            return self
+
+        def create(self, **kw):
+            sent.update(kw)
+
+            class _M:
+                content = "relevant"
+
+            class _C:
+                message = _M()
+
+            class _R:
+                choices = [_C()]
+            return _R()
+
+    class Cfg:
+        claude_client = None
+        openai_client = _OAI()
+        gemini_api_key = None
+
+    with _quiet(), _with_primary("openai"):
+        out, label = gw.text(Cfg(), system=None, user="q", purpose="t", max_tokens=10, timeout=5)
+    assert (out, label) == ("relevant", "OpenAI")
+    assert sent["max_completion_tokens"] >= 4096, sent
+    assert "temperature" not in sent, "temperature는 Claude 5·추론 모델이 거부한다"
+
+    # ② accept 거부 → 다음 순위, ③ 데드라인 소진 → 호출 없음
+    calls = []
+    real = dict(gw._TEXT)
+    gw._TEXT["gemini"] = lambda *a: calls.append("gemini") or "짧음"
+    gw._TEXT["openai"] = lambda *a: calls.append("openai") or "충분히 긴 재작성"
+
+    class Cfg2:
+        claude_client = None
+        openai_client = object()
+        gemini_api_key = "k"
+    try:
+        with _quiet(), _with_primary("gemini"):
+            out, label = gw.text(Cfg2(), system=None, user="q", purpose="t", attempts=None,
+                                 accept=lambda t: len(t) > 5)
+            assert label == "OpenAI" and calls == ["gemini", "openai"], (label, calls)
+            calls.clear()
+            try:
+                gw.text(Cfg2(), system=None, user="q", purpose="t", attempts=None,
+                        deadline=time.monotonic() - 1)
+            except gw.LLMUnavailable:
+                pass
+            assert not calls, calls
+    finally:
+        gw._TEXT.update(real)
+
+    # ④ Gemini 함수 호출의 실수 → 스키마 integer는 정수로
+    schema = {"type": "object", "properties": {
+        "days": {"type": "integer"}, "wage": {"type": "number"},
+        "items": {"type": "array", "items": {"type": "integer"}}}}
+    got = gw._coerce({"days": 3.0, "wage": 2500000.0, "items": [1.0, 2.0]}, schema)
+    assert got == {"days": 3, "wage": 2500000.0, "items": [1, 2]}, got
+    assert isinstance(got["days"], int) and isinstance(got["wage"], float)
+
+    # ⑤ gpt-6-sol: function tool + 추론 400 → reasoning_effort='none'으로 재시도하고 기억
+    attempts = []
+
+    class _OAITool(_FakeOpenAITool):
+        def create(self, **kw):
+            attempts.append(kw.get("reasoning_effort"))
+            if kw.get("reasoning_effort") != "none":
+                raise RuntimeError("Function tools with reasoning_effort are not supported "
+                                   "... set reasoning_effort to 'none'.")
+            return super().create(**kw)
+
+    class Cfg3:
+        claude_client = None
+        openai_client = _OAITool({"question_summary": "x", "is_labor_related": True})
+        gemini_api_key = None
+    gw._OPENAI_TOOL_NEEDS_NO_REASONING.discard("gpt-6-sol")
+    from app.templates.prompts import ANALYZE_TOOL
+    with _quiet(), _with_primary("openai"):
+        for _ in range(2):
+            gw.tool(Cfg3(), system="s", messages=[{"role": "user", "content": "q"}],
+                    tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert attempts == [None, "none", "none"], attempts
+    print("  ✅ 게이트웨이: 토큰 하한·temperature 미전송·거부/데드라인·정수 복원·추론 off 재시도")
+
+
+def test_llm_meta_intent_vs_primary() -> None:
+    """의도분석 폴백 기록은 '1순위가 아닌 제공자'일 때만 — 1순위를 바꾸면 그 제공자가 정상이다."""
+    ok = pipeline._llm_meta(AnswerOutcome(provider="Gemini", attempts=["Gemini"]),
+                            intent_provider="Gemini")
+    assert "intent_provider" not in ok, ok
+    fb = pipeline._llm_meta(AnswerOutcome(provider="Gemini", attempts=["Gemini"]),
+                            intent_provider="Claude")
+    assert fb["intent_provider"] == "Claude", fb
+    print("  ✅ _llm_meta: 의도분석 폴백 판정 기준 = 답변 1순위 제공자")
 
 
 def test_intent_both_vendors_fail_keeps_fail_open() -> None:
@@ -559,12 +758,13 @@ def test_rewrite_timeout_scaling() -> None:
     """FR-07 — 교정 타임아웃이 입력 길이에 비례하고 상하한이 걸리는지."""
     from app.core.citation_validator import _rewrite_timeout
 
-    assert _rewrite_timeout(100) == 12.0, "하한 미적용"
+    assert _rewrite_timeout(100) == 15.0, "하한 미적용"
     assert _rewrite_timeout(100_000) == 40.0, "상한 미적용"
-    # 실측 기준선: 1,960자 재생성에 7.7초 → 타임아웃은 그보다 커야 한다
+    # 실측 기준선: 1,960자 Haiku 7.7초, 1,596자 gemini-3.8-flash 11.1초 → 타임아웃은 그보다 커야 한다
     assert _rewrite_timeout(1960) > 7.7, "실측 소요보다 짧은 타임아웃"
+    assert _rewrite_timeout(1596) > 11.1, "Gemini 실측 소요보다 짧은 타임아웃"
     assert _rewrite_timeout(6000) > _rewrite_timeout(2000), "길이 비례 아님"
-    print("  ✅ 교정 타임아웃: 길이 비례 + [12, 40]초 클램프")
+    print("  ✅ 교정 타임아웃: 길이 비례 + [15, 40]초 클램프")
 
 
 def test_citation_stage_budget() -> None:
@@ -582,10 +782,14 @@ def test_citation_stage_budget() -> None:
     prev_level = logging.getLogger().manager.disable
     logging.disable(logging.CRITICAL)
     try:
+        class Cfg:
+            claude_client = Exploding()
+            openai_client = Exploding()
+            gemini_api_key = "fake"
+
         result = cv.correct_hallucinated_citations(
             response_text="원본 답변", hallucinated=["대법원 2023다1234"],
-            anthropic_client=Exploding(), gemini_api_key="fake",
-            openai_client=Exploding(),
+            config=Cfg(),
             deadline=time.monotonic() - 1,     # 이미 소진된 예산
         )
     finally:
@@ -593,6 +797,553 @@ def test_citation_stage_budget() -> None:
     assert result is None, result
     assert not calls, f"예산 소진 후에도 제공자를 호출함: {calls}"
     print("  ✅ 교정 단계 예산 소진 시 전 제공자 생략")
+
+
+def test_gemini_stream_idle_not_total_deadline() -> None:
+    """Gemini 스트림은 '전체 마감'이 아니라 '청크 사이 무응답'으로 끊는다(2026-10-11 생성 중단 18%)."""
+    import time as _t
+    from app.core import pipeline as pl
+
+    def slow(n, gap):
+        def gen():
+            for i in range(n):
+                _t.sleep(gap)
+                yield f"c{i}"
+        return gen
+
+    # 총 0.5초 > idle 0.3초여도 청크 간격(0.1초)이 짧으면 끝까지 받는다
+    assert list(pl._iter_with_idle_timeout(slow(5, 0.1), 0.3)) == [f"c{i}" for i in range(5)]
+    # 간격이 idle을 넘으면 TimeoutError — 받은 청크는 그 전까지 그대로 나간다
+    got = []
+    try:
+        for c in pl._iter_with_idle_timeout(slow(3, 0.4), 0.2):
+            got.append(c)
+        raise AssertionError("무응답인데 TimeoutError가 나지 않았다")
+    except TimeoutError:
+        pass
+    assert got == [], got
+    # SDK 예외는 그대로 올라온다(절단·폴백 판정이 예외 종류를 본다)
+    def boom():
+        yield "a"
+        raise ValueError("sdk")
+    got = []
+    try:
+        for c in pl._iter_with_idle_timeout(boom, 1.0):
+            got.append(c)
+        raise AssertionError("SDK 예외가 삼켜졌다")
+    except ValueError:
+        pass
+    assert got == ["a"], got
+    # 소비자가 시간 초과로 떠나면 생산 스레드도 다음 청크에서 멈춘다(버려진 스트림이 마감까지 쌓이지 않게)
+    pulled = []
+    def late():
+        _t.sleep(0.3)
+        for i in range(50):
+            pulled.append(i)
+            yield f"x{i}"
+            _t.sleep(0.01)
+    try:
+        list(pl._iter_with_idle_timeout(late, 0.1))
+        raise AssertionError("무응답인데 TimeoutError가 나지 않았다")
+    except TimeoutError:
+        pass
+    _t.sleep(0.5)
+    assert len(pulled) <= 2, f"소비자 종료 후에도 {len(pulled)}청크를 더 끌어왔다"
+    # SDK 마감은 답변 길이를 감당해야 한다 — 읽기 한도와 같은 값으로 두면 긴 답변이 전부 잘린다
+    assert pl.GEMINI_STREAM_DEADLINE >= 120, pl.GEMINI_STREAM_DEADLINE
+    print("  ✅ Gemini 스트림: 전체 마감 아닌 청크 간 무응답으로 판정")
+
+
+def test_claude_forced_tool_choice_rejected_falls_back_to_auto() -> None:
+    """Claude 5.5 세대(opus·sonnet)는 강제 tool_choice(any/tool)를 400으로 거절한다 — auto+지시로 자가치유.
+
+    2026-10-27 실측: rev 13(Claude 1순위)에서 의도분석·파라미터 추출이 매 질문 400
+    `tool_choice: type "tool" and "any" are not supported for this model` → OpenAI 폴백. 수정 뒤에는
+    ① 그 400이면 auto + 도구 호출 지시 + effort low로 한 번 더 보내고 모델별로 기억한다(다음 호출은 바로 auto)
+    ② 다른 400(잔액·한도)과 400이 아닌 예외는 그대로 전파해 다음 제공자로 넘어간다 ③ 강제가 통하는 모델(haiku)은 종전과 같다.
+    """
+    from app.core import llm_gateway as gw
+    from app.templates.prompts import ANALYZE_TOOL
+
+    class _Block:
+        type = "tool_use"
+        name = ANALYZE_TOOL["name"]
+        input = {"question_summary": "x", "is_labor_related": True}
+
+    class _Resp:
+        stop_reason = "tool_use"
+        content = [_Block()]
+
+    class _Bad(RuntimeError):
+        """anthropic.BadRequestError처럼 status_code를 가진 400 대역."""
+        status_code = 400
+
+    class _Claude:
+        """강제 tool_choice는 400, auto는 성공하는 Anthropic 대역."""
+
+        def __init__(self, reject_forced: bool = True, error: str | None = None, error_cls=None):
+            self.calls: list[dict] = []
+            self.reject_forced = reject_forced
+            self.error = error
+            self.error_cls = error_cls or _Bad
+
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            if self.error:
+                raise self.error_cls(self.error)
+            if self.reject_forced and kw["tool_choice"]["type"] in ("any", "tool"):
+                raise _Bad('Error code: 400 - {"type": "error", "error": {"type": "invalid_request_error", '
+                           '"message": "tool_choice: type \\"tool\\" and \\"any\\" are not supported for this model."}}')
+            return _Resp()
+
+    def cfg(client):
+        class Cfg:
+            claude_client = client
+            openai_client = _Exploding()
+            gemini_api_key = None
+        return Cfg()
+
+    msgs = [{"role": "user", "content": "q"}]
+    # ① 거절 → auto 재시도, 기억
+    gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+    fake = _Claude()
+    with _quiet(), _with_primary("claude"):
+        label, name, inp = gw.tool(cfg(fake), system="s", messages=msgs, tools=[ANALYZE_TOOL],
+                                   choice=ANALYZE_TOOL["name"], purpose="t")
+        assert (label, name, inp["is_labor_related"]) == ("Claude", ANALYZE_TOOL["name"], True)
+        assert [c["tool_choice"]["type"] for c in fake.calls] == ["tool", "auto"], fake.calls
+        auto = fake.calls[-1]
+        assert auto["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}, auto["tool_choice"]
+        assert ANALYZE_TOOL["name"] in auto["system"] and auto["system"].startswith("s"), auto["system"]
+        assert auto["output_config"] == {"effort": "low"}, auto.get("output_config")
+        assert "output_config" not in fake.calls[0], "강제 경로는 종전과 같아야 한다"
+        assert "claude-opus-5-5" in gw._CLAUDE_TOOL_NO_FORCE
+        # 두 번째 호출은 실패 호출 없이 바로 auto
+        fake2 = _Claude()
+        gw.tool(cfg(fake2), system=None, messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t")
+        assert [c["tool_choice"]["type"] for c in fake2.calls] == ["auto"], fake2.calls
+        assert "목록" in fake2.calls[0]["system"], fake2.calls[0]["system"]   # choice=None → 목록 중 하나
+    # ② 다른 400은 전파 — 다음 제공자(여기선 폭발 대역)로 넘어가 LLMUnavailable
+    gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+    broke = _Claude(error="Error code: 400 - credit balance is too low")
+    with _quiet(), _with_primary("claude"):
+        try:
+            gw.tool(cfg(broke), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t", attempts=1)
+        except gw.LLMUnavailable:
+            pass
+        else:
+            raise AssertionError("잔액 400을 auto 재시도로 삼키면 안 된다")
+    assert len(broke.calls) == 1 and "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE
+    # ②' 같은 문구라도 400이 아니면(5xx 본문·네트워크 오류) auto로 전환하지 않는다(CodeRabbit #142)
+    class _Server(RuntimeError):
+        status_code = 529
+    not400 = _Claude(error='overloaded: tool_choice ... not supported (upstream)', error_cls=_Server)
+    with _quiet(), _with_primary("claude"):
+        try:
+            gw.tool(cfg(not400), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t", attempts=1)
+        except gw.LLMUnavailable:
+            pass
+    assert len(not400.calls) == 1 and "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE
+    assert not gw._is_forced_tool_choice_rejection(RuntimeError("tool_choice: not supported"))   # status_code 없음
+    # ③ 강제가 통하면 단일 호출, 지시 접미 없음
+    ok = _Claude(reject_forced=False)
+    with _quiet(), _with_primary("claude"):
+        gw.tool(cfg(ok), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert len(ok.calls) == 1 and ok.calls[0]["tool_choice"] == {"type": "tool", "name": ANALYZE_TOOL["name"]}
+    assert ok.calls[0]["system"] == "s"
+    print("  ✅ Claude 강제 tool_choice 거절(400+문구) → auto+지시 자가치유·기억, 다른 400·비400 전파, 강제 가능 모델 불변")
+
+
+def test_claude_known_no_force_models_skip_forced_attempt() -> None:
+    """실측으로 강제 tool_choice를 거절하는 모델은 선등록돼 첫 호출부터 auto+지시다(Check G-M1).
+
+    자가치유는 '한 번 보내 봐야' 배우므로 콜드 인스턴스마다 의도분석 1회를 버렸다 — Gateway 경유에서는 그 1회가
+    max_tokens까지 생성하는 왕복이라 프로덕션 콜드 TTFT 43초에 들어 있었다. 목록 밖 모델은 종전처럼 배운다(앞 테스트).
+    """
+    from app.core import llm_gateway as gw
+    from app.templates.prompts import ANALYZE_TOOL
+
+    class _Block:
+        type = "tool_use"
+        name = ANALYZE_TOOL["name"]
+        input = {"question_summary": "x", "is_labor_related": True}
+
+    class _Resp:
+        stop_reason = "tool_use"
+        content = [_Block()]
+
+    class _Claude:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            return _Resp()
+
+    def cfg(client):
+        class Cfg:
+            claude_client = client
+            openai_client = None
+            gemini_api_key = None
+        return Cfg()
+
+    # 앞 테스트들이 discard한 뒤라 **초기화 상태**를 보려면 모듈을 다시 실행한다 — 집합을 손으로 채우면 '선등록이 비어 있는'
+    # 결함을 가린다(변이 검사에서 실제로 못 잡았다). reload는 같은 모듈 객체를 재실행하므로 다른 모듈의 참조는 그대로다.
+    import importlib
+    gw = importlib.reload(gw)
+    assert {"claude-opus-5-5", "claude-sonnet-5-5"} <= gw._CLAUDE_TOOL_NO_FORCE_KNOWN
+    assert "claude-haiku-5-5" not in gw._CLAUDE_TOOL_NO_FORCE_KNOWN, "haiku-5-5는 강제를 받는다"
+    assert gw._CLAUDE_TOOL_NO_FORCE_KNOWN <= gw._CLAUDE_TOOL_NO_FORCE, "선등록 모델은 import 직후부터 NO_FORCE 집합에 있어야 한다"
+    fake = _Claude()
+    with _quiet(), _with_primary("claude"):
+        label, name, _ = gw.tool(cfg(fake), system="s", messages=[{"role": "user", "content": "q"}],
+                                 tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert (label, name) == ("Claude", ANALYZE_TOOL["name"])
+    assert [c["tool_choice"]["type"] for c in fake.calls] == ["auto"], fake.calls
+    assert ANALYZE_TOOL["name"] in fake.calls[0]["system"], "auto에는 도구 호출 지시가 붙는다"
+    print("  ✅ 선등록 모델(opus-5-5·sonnet-5-5)은 강제 시도 없이 바로 auto+지시 — 콜드 왕복 0")
+
+
+def test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto() -> None:
+    """Vercel AI Gateway 경유(2026-10-28 실측, opus-5.5): 강제 tool_choice가 400 대신 **200**으로 오되 도구를 부르지 않고
+    추론·텍스트만 돌려준다(stop_reason max_tokens 포함). 400과 같은 신호로 auto+지시로 전환해 기억해야 한다 — 안 그러면
+    Gateway 모드에서 의도분석·추출이 매 질문 '도구 호출 없음' → OpenAI 폴백(PR #142가 고친 증상의 재발).
+    강제가 통하는 모델(tool_use 반환)은 종전과 같다.
+    """
+    from app.core import llm_gateway as gw
+    from app.templates.prompts import ANALYZE_TOOL
+
+    class _ToolUse:
+        type = "tool_use"
+        name = ANALYZE_TOOL["name"]
+        input = {"question_summary": "x", "is_labor_related": True}
+
+    class _Text:
+        type = "text"
+        text = "도구 대신 글로 답했다"
+
+    class _Thinking:
+        type = "thinking"
+
+    class _Resp:
+        def __init__(self, content, stop_reason):
+            self.content, self.stop_reason = content, stop_reason
+
+    class _Claude:
+        def __init__(self, forced_stop="max_tokens"):
+            self.calls: list[dict] = []
+            self.forced_stop = forced_stop
+
+        def with_options(self, **kw):
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            if kw["tool_choice"]["type"] in ("any", "tool"):
+                return _Resp([_Thinking(), _Text()], self.forced_stop)      # 200, 도구 미호출
+            return _Resp([_ToolUse()], "tool_use")
+
+    def cfg(client):
+        class Cfg:
+            claude_client = client
+            openai_client = _Exploding()
+            gemini_api_key = None
+        return Cfg()
+
+    msgs = [{"role": "user", "content": "q"}]
+    for stop in ("max_tokens", "end_turn"):
+        gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+        fake = _Claude(forced_stop=stop)
+        with _quiet(), _with_primary("claude"):
+            label, name, inp = gw.tool(cfg(fake), system="s", messages=msgs, tools=[ANALYZE_TOOL],
+                                       choice=ANALYZE_TOOL["name"], purpose="t")
+        assert (label, name, inp["is_labor_related"]) == ("Claude", ANALYZE_TOOL["name"], True), (stop, label, name)
+        assert [c["tool_choice"]["type"] for c in fake.calls] == ["tool", "auto"], (stop, fake.calls)
+        assert fake.calls[-1]["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
+        assert "claude-opus-5-5" in gw._CLAUDE_TOOL_NO_FORCE
+        # 기억 뒤에는 강제 호출 없이 바로 auto
+        fake2 = _Claude(forced_stop=stop)
+        with _quiet(), _with_primary("claude"):
+            gw.tool(cfg(fake2), system=None, messages=msgs, tools=[ANALYZE_TOOL], choice=None, purpose="t")
+        assert [c["tool_choice"]["type"] for c in fake2.calls] == ["auto"], fake2.calls
+    gw._CLAUDE_TOOL_NO_FORCE.discard("claude-opus-5-5")
+    # refusal은 모델 특성이 아니다 — 이번 요청만 auto로 재시도하고 기억하지 않는다(다음 호출은 다시 강제부터)
+    fake3 = _Claude(forced_stop="refusal")
+    with _quiet(), _with_primary("claude"):
+        label, name, inp = gw.tool(cfg(fake3), system="s", messages=msgs, tools=[ANALYZE_TOOL],
+                                   choice=ANALYZE_TOOL["name"], purpose="t")
+    assert (label, name) == ("Claude", ANALYZE_TOOL["name"])
+    assert [c["tool_choice"]["type"] for c in fake3.calls] == ["tool", "auto"], fake3.calls
+    assert "claude-opus-5-5" not in gw._CLAUDE_TOOL_NO_FORCE, "refusal 한 번으로 모델을 기억하면 안 된다"
+    fake4 = _Claude(forced_stop="refusal")
+    with _quiet(), _with_primary("claude"):
+        gw.tool(cfg(fake4), system="s", messages=msgs, tools=[ANALYZE_TOOL], choice=ANALYZE_TOOL["name"], purpose="t")
+    assert [c["tool_choice"]["type"] for c in fake4.calls] == ["tool", "auto"], fake4.calls
+
+
+# ── 실패 행 (llm-fallback-alert-blindspot) ───────────────────────────────────
+
+class _AuthErr(Exception):
+    """SDK 인증 오류 모양 — status_code 속성 + 메시지에 비밀 조각."""
+    status_code = 401
+
+
+class _RespErr(Exception):
+    def __init__(self, status):
+        super().__init__("resp-shaped SECRET-sk-test-123")
+        self.response = type("R", (), {"status_code": status})()
+
+
+class _CodeErr(Exception):
+    code = 429
+
+
+class _StrCodeErr(Exception):
+    code = "UNAVAILABLE"
+
+
+class _ExplodingAttrErr(Exception):
+    """status_code 접근 자체가 예외를 던지는 예외 — 폴백 전환을 끊어서는 안 된다(Check L-1)."""
+    @property
+    def status_code(self):
+        raise ValueError("boom")
+
+
+def _raising(exc_factory):
+    def fn(messages, system, config):
+        raise exc_factory()
+        yield  # noqa — 제너레이터로 만들기 위함
+    return fn
+
+
+def _run_failed_pipeline(cfg, guard_ctx=None, save=None):
+    """전 제공자 실패로 process_question을 끝까지 돌리고 (events, saved) 를 돌려준다."""
+    from app.models.session import Session
+    from app.models.schemas import AnalysisResult
+    saved: list = []
+    prev_level = logging.getLogger().manager.disable
+    logging.disable(logging.CRITICAL)
+    real_analyze = pipeline.analyze_intent
+    real_providers = pipeline._answer_providers
+    real_save = pipeline.save_conversation
+    real_session_save = pipeline.save_session_data
+    try:
+        pipeline.analyze_intent = lambda *a, **kw: AnalysisResult(
+            question_summary="테스트", is_labor_related=True)
+        pipeline._answer_providers = lambda c: [
+            ("Claude", _raising(lambda: _AuthErr("x-api-key SECRET-sk-test-123 invalid"))),
+            ("OpenAI", _raising(lambda: _AuthErr("Bearer SECRET-sk-test-123"))),
+            ("Gemini", _raising(lambda: _CodeErr("quota SECRET-sk-test-123"))),
+        ]
+        pipeline.save_conversation = save or (lambda sb, rec: saved.append(rec) or "conv-f1")
+        pipeline.save_session_data = lambda *a, **kw: None
+        events = list(pipeline.process_question(
+            "주휴수당 알려줘", Session(id="fail1"), cfg, guard_ctx=guard_ctx))
+    finally:
+        pipeline.analyze_intent = real_analyze
+        pipeline._answer_providers = real_providers
+        pipeline.save_conversation = real_save
+        pipeline.save_session_data = real_session_save
+        logging.disable(prev_level)
+    return events, saved
+
+
+def test_f1_all_fail_records_failed_row() -> None:
+    """T-F1 — 전 제공자 실패: error→ping→done, 실패 행 1건, 페이로드 키 화이트리스트, 메시지 원문 부재."""
+    import json as _json
+
+    class FakeSB:
+        pass
+
+    cfg = _cfg(gemini=True)
+    cfg.supabase = FakeSB()
+    events, saved = _run_failed_pipeline(cfg)
+    types = [e["type"] for e in events]
+    assert types[-3:] == ["error", "ping", "done"], types[-5:]
+    assert "모든 AI 서비스" in [e for e in events if e["type"] == "error"][0]["text"]
+    assert len(saved) == 1, f"실패 행은 정확히 1건이어야 한다: {len(saved)}"
+    rec = saved[0]
+    assert rec.answer_text == "" and rec.question_text == "주휴수당 알려줘" and rec.category, rec
+    meta = rec.metadata
+    assert meta.get("failed") is True and meta.get("synthetic") is True, meta   # guard_ctx None → G-A
+    llm = meta["llm"]
+    assert llm["failed"] is True and llm["stage"] == "answer" and llm["provider"] is None, llm
+    assert llm["attempts"] == ["Claude", "OpenAI", "Gemini"], llm
+    assert [f["error_class"] for f in llm["failures"]] == ["_AuthErr", "_AuthErr", "_CodeErr"], llm
+    assert [f["status"] for f in llm["failures"]] == [401, 401, 429], llm
+    assert llm["error_class"] == "_CodeErr" and llm["status"] == 429, llm
+    assert set(llm) <= pipeline.FAILURE_META_KEYS, set(llm) - pipeline.FAILURE_META_KEYS
+    assert "fallback" not in llm and "model" not in llm, llm
+    dumped = _json.dumps(meta, ensure_ascii=False)
+    assert "SECRET" not in dumped and "sk-test" not in dumped, "예외 메시지 원문이 metadata에 새었다"
+    print("  ✅ T-F1 전 제공자 실패 → error·ping·done + 실패 행 1건(키 화이트리스트·메시지 원문 0)")
+
+
+def test_f2_record_failure_is_fail_open() -> None:
+    """T-F2 — save_conversation이 예외를 내도 사용자 이벤트는 그대로다."""
+    class FakeSB:
+        pass
+
+    cfg = _cfg(gemini=True)
+    cfg.supabase = FakeSB()
+    calls = []
+
+    def boom(sb, rec):
+        calls.append(rec)
+        raise RuntimeError("DB down SECRET-sk-test-123")
+
+    events, _ = _run_failed_pipeline(cfg, save=boom)
+    assert [e["type"] for e in events][-3:] == ["error", "ping", "done"]
+    assert len(calls) == 1, "저장 호출은 정확히 1회"
+    print("  ✅ T-F2 기록 실패에도 error·ping·done 불변(fail-open), 저장 호출 1회")
+
+
+def test_f3_no_supabase_skips_record() -> None:
+    """T-F3 — Supabase 미설정이면 저장을 시도하지 않고 이벤트는 같다."""
+    cfg = _cfg(gemini=True)
+    cfg.supabase = None
+    events, saved = _run_failed_pipeline(cfg)
+    assert [e["type"] for e in events][-3:] == ["error", "ping", "done"]
+    assert saved == []
+    print("  ✅ T-F3 supabase=None → 저장 시도 0회, 이벤트 동일")
+
+
+def test_f4_failure_meta_and_status_extraction() -> None:
+    """T-F4 — stage=pipeline 페이로드 + 상태 코드 추출 세 모양(status_code·response.status_code·code int)."""
+    m = pipeline._failure_llm_meta(None, _AuthErr("SECRET"), "pipeline", "gateway")
+    assert m["attempts"] == [] and m["stage"] == "pipeline" and m["transport"] == "gateway", m
+    assert m["failures"] == [{"provider": None, "error_class": "_AuthErr", "status": 401}], m
+    assert m["error_class"] == "_AuthErr" and m["status"] == 401 and "empty" not in m, m
+    assert pipeline._status_of(_RespErr(402)) == 402
+    assert pipeline._status_of(_CodeErr()) == 429
+    assert pipeline._status_of(_StrCodeErr()) is None, "문자열 code는 상태가 아니다"
+    assert pipeline._status_of(RuntimeError("x")) is None
+    assert pipeline._status_of(_ExplodingAttrErr()) is None, "속성 예외는 None으로 흡수해야 한다(L-1)"
+    assert pipeline._failure_entry("Claude", _ExplodingAttrErr())["error_class"] == "_ExplodingAttrErr"
+    m2 = pipeline._failure_llm_meta(None, _StrCodeErr(), "pipeline", None)
+    assert "status" not in m2 and "transport" not in m2, m2
+    m3 = pipeline._failure_llm_meta(AnswerOutcome(), RuntimeError("wrap"), "answer", "direct")
+    assert m3["failures"] == [{"provider": None, "error_class": "NoProvider", "status": None}], m3
+    for meta in (m, m2, m3):
+        assert set(meta) <= pipeline.FAILURE_META_KEYS, meta
+    print("  ✅ T-F4 stage=pipeline 페이로드 + 상태 코드 추출(status_code·response·code int, 문자열 무시)")
+
+
+def test_f5_synthetic_flag_matches_success_path() -> None:
+    """T-F5 — synthetic 판정은 성공 경로와 같은 규약(G-A·G-B)."""
+    from app.core.abuse_guard import GuardContext
+    assert pipeline._synthetic_flag(None) is True
+    assert pipeline._synthetic_flag(GuardContext(subject_key="ip:x", synthetic=False)) is False
+    assert pipeline._synthetic_flag(GuardContext(subject_key="ip:x", synthetic=True)) is True
+
+    class FakeSB:
+        pass
+
+    cfg = _cfg(gemini=True)
+    cfg.supabase = FakeSB()
+    events, saved = _run_failed_pipeline(cfg, guard_ctx=GuardContext(subject_key="ip:x", synthetic=False))
+    assert saved and "synthetic" not in saved[0].metadata, saved[0].metadata
+    print("  ✅ T-F5 synthetic: guard_ctx None → True, 프로덕션 요청 → 키 없음")
+
+
+def test_f6_category_shared_with_success_path() -> None:
+    """T-F6 — 실패 행의 카테고리는 성공 경로와 같은 함수·같은 값."""
+    from app.core.storage import classify_category, infer_calc_types
+    from app.models.schemas import AnalysisResult
+    q = "주휴수당 계산해 주세요"
+    calc, cat = pipeline._category_for(q, None, None, False)
+    assert calc == (infer_calc_types(q) or None) and cat == classify_category(calc, "none", q), (calc, cat)
+    a = AnalysisResult(question_summary="t", is_labor_related=True, calculation_types=["퇴직금"])
+    calc2, cat2 = pipeline._category_for(q, a, None, True)
+    assert calc2 == ["퇴직금"] and cat2 == classify_category(["퇴직금"], "none", q), (calc2, cat2)
+    calc3, cat3 = pipeline._category_for("상사가 괴롭혀요", None, {"is_harassment_question": True}, False)
+    assert cat3 == "직장내 괴롭힘", cat3
+    print("  ✅ T-F6 카테고리 단일 출처(_category_for) — 분석·params·폴백 세 경로 일치")
+
+
+def _answer_failure_handlers(node):
+    """'답변 생성 실패' 로그를 가진 except 핸들러만 — 초기화 실패 핸들러로 호출을 옮기면 잡힌다(Check L-6)."""
+    import ast
+    out = []
+    for h in ast.walk(node):
+        if not isinstance(h, ast.ExceptHandler):
+            continue
+        for c in ast.walk(h):
+            if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "error" and c.args \
+                    and isinstance(c.args[0], ast.Constant) and str(c.args[0].value).startswith("답변 생성 실패"):
+                out.append(h)
+                break
+    return out
+
+
+def _stmt_index(body, pred):
+    import ast
+    for i, stmt in enumerate(body):
+        if any(pred(n) for n in ast.walk(stmt)):
+            return i
+    return None
+
+
+def test_f7_api_paths_record_failures() -> None:
+    """T-F7 — api/index.py의 채팅 3경로가 **'답변 생성 실패' 예외 핸들러**에서 record_failed_conversation을 부르고,
+    SSE 두 경로는 error 이벤트를 먼저 낸 뒤 기록하고 done을 낸다(Check M-1: error → 기록 → done)."""
+    import ast
+    tree = ast.parse(open("api/index.py", encoding="utf-8").read())
+    is_record = lambda n: isinstance(n, ast.Call) and getattr(n.func, "id", None) == "record_failed_conversation" \
+        and any(k.arg == "stage" and isinstance(k.value, ast.Constant) and k.value.value == "pipeline"
+                for k in n.keywords)   # stage가 바뀌면 감시 제목·관리자 표지 분류가 틀어진다(CodeRabbit #150)
+    is_yield_next = lambda n: isinstance(n, ast.Yield) and isinstance(n.value, ast.Call) \
+        and getattr(n.value.func, "id", None) == "next"
+    is_yield_from = lambda n: isinstance(n, ast.YieldFrom)
+    found, order_ok = {}, {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name in ("chat", "chat_stream", "chat_stream_with_files"):
+            handlers = _answer_failure_handlers(node)
+            found[node.name] = any(any(is_record(n) for n in ast.walk(h)) for h in handlers)
+            if node.name == "chat":   # 신규 동기 로그는 예외 원문·traceback 원문을 찍지 않는다(설계 §7, CodeRabbit #150)
+                for h in handlers:
+                    for c in ast.walk(h):
+                        if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "error":
+                            assert not any(isinstance(a, ast.Name) and a.id == "e" for a in c.args), "동기 로그가 예외 원문을 출력"
+                            assert not any(isinstance(a, ast.Call) and getattr(a.func, "attr", None) == "format_exc"
+                                           for a in c.args), "동기 로그가 traceback 원문(메시지 포함)을 출력"
+            if node.name != "chat":
+                h = handlers[0]
+                i_err, i_rec, i_done = (_stmt_index(h.body, is_yield_next), _stmt_index(h.body, is_record),
+                                        _stmt_index(h.body, is_yield_from))
+                order_ok[node.name] = None not in (i_err, i_rec, i_done) and i_err < i_rec < i_done
+    assert found == {"chat": True, "chat_stream": True, "chat_stream_with_files": True}, found
+    assert order_ok == {"chat_stream": True, "chat_stream_with_files": True}, order_ok
+    print("  ✅ T-F7 API 3경로 '답변 생성 실패' 핸들러가 stage=pipeline으로 기록 + SSE 순서 error → 기록 → done + 동기 로그 원문 없음")
+
+
+def test_f8_failures_record_empty_not_truncation() -> None:
+    """T-F8 — 빈 응답은 failures에 EmptyResponse, 절단은 기록하지 않는다."""
+    events, outcome = _run([
+        ("Claude", _fake([])),
+        ("OpenAI", _fake(["주휴", "수당"], raise_after=2)),
+    ])
+    assert outcome.truncated is True and outcome.provider == "OpenAI", outcome
+    assert outcome.failures == [{"provider": "Claude", "error_class": "EmptyResponse", "status": None}], outcome.failures
+    print("  ✅ T-F8 failures: 빈 응답 기록·절단 미기록")
 
 
 def main() -> None:
@@ -610,12 +1361,27 @@ def main() -> None:
     test_intent_cross_vendor_fallback()
     test_intent_empty_tool_response_falls_back()
     test_intent_fallback_disabled_degrades()
+    test_primary_setting_drives_every_stage()
+    test_gateway_vendor_quirks()
+    test_claude_forced_tool_choice_rejected_falls_back_to_auto()
+    test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto()
+    test_claude_known_no_force_models_skip_forced_attempt()
+    test_llm_meta_intent_vs_primary()
     test_intent_both_vendors_fail_keeps_fail_open()
     test_analysis_result_vendor_neutral()
     test_notices_survive_citation_correction()
     test_rewrite_guard_rejects_empty_and_short()
     test_rewrite_timeout_scaling()
     test_citation_stage_budget()
+    test_gemini_stream_idle_not_total_deadline()
+    test_f1_all_fail_records_failed_row()
+    test_f2_record_failure_is_fail_open()
+    test_f3_no_supabase_skips_record()
+    test_f4_failure_meta_and_status_extraction()
+    test_f5_synthetic_flag_matches_success_path()
+    test_f6_category_shared_with_success_path()
+    test_f7_api_paths_record_failures()
+    test_f8_failures_record_empty_not_truncation()
     print("\n✅ LLM 폴백 경화 테스트 전부 통과")
 
 

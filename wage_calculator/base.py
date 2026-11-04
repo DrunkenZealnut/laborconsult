@@ -12,3 +12,4 @@ class BaseCalculatorResult:
     formulas: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     legal_basis: list = field(default_factory=list)
+    held_reason: str = ""  # 필수 사실 미확인/입력 오류: 확정 0원과 구분

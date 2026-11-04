@@ -147,12 +147,12 @@ def _hints_minimum_wage(inp: WageInput, minimum_wage_ok: bool) -> list[LegalHint
     if inp.is_probation:
         hints.append(LegalHint(
             category="최저임금",
-            condition="수습기간 최저임금 90% 특례 적용 중",
+            condition="수습 감액 요건 확인",
             hint=(
-                "수습 사용 후 3개월 이내이면 최저임금의 90%를 적용할 수 있습니다. "
-                "단, 고용노동부 고시 단순노무직은 특례 미적용."
+                "수습 중 최저임금 감액(최대 10%)은 1년 이상의 기간을 정한 근로계약이고, 수습을 시작한 날부터 3개월 이내이며, "
+                "단순노무업무로 고용노동부장관이 고시한 직종이 아닐 때만 가능합니다. 하나라도 빠지면 최저임금 전액을 지급해야 합니다."
             ),
-            basis="최저임금법 제5조 제2항",
+            basis="최저임금법 제5조 제2항, 같은 법 시행령 제3조",
             priority=2,
         ))
 
@@ -254,10 +254,10 @@ def _hints_nontaxable(inp: WageInput) -> list[LegalHint]:
     if inp.non_taxable_detail is None and inp.monthly_non_taxable == 200_000:
         hints.append(LegalHint(
             category="비과세소득",
-            condition="식대 20만원만 비과세 적용 중",
+            condition="비과세 항목과 지급 요건 확인 필요",
             hint=(
-                "자가운전보조금, 자녀보육수당, 연구보조비 등 추가 비과세 항목이 있으면 "
-                "non_taxable_detail로 상세 입력 시 실수령액이 증가할 수 있습니다."
+                "식대 등 수당의 지급 사실과 비과세 요건은 확인되지 않았습니다. "
+                "실수령액 계산을 요청할 때 실제 지급 항목·금액과 비과세 요건을 확인해주세요."
             ),
             basis="소득세법 제12조 (비과세소득)",
             priority=2,

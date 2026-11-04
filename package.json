@@ -1,0 +1,10 @@
+{
+  "name": "laborconsult",
+  "version": "1.0.0",
+  "description": "AI Labor Consultation Chatbot",
+  "private": true,
+  "scripts": {},
+  "dependencies": {
+    "@vercel/analytics": "^1.4.1"
+  }
+}

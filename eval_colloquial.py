@@ -110,7 +110,8 @@ def eval_llm_and_search(queries: list[dict]) -> None:
         if not hits:
             return 0, 0
         ranked = rag.rerank_results(user_query, hits, config.cohere_api_key,
-                                    top_n=params["rerank_top_n"])
+                                    top_n=params["rerank_top_n"],
+                                    cohere_base_url=config.cohere_base_url)   # gateway면 토큰은 Gateway로만(T13)
         kinds = [h.get("source_type") for h in ranked]
         return (sum(1 for k in kinds if k in LEGAL_CORPUS_SOURCES),
                 sum(1 for k in kinds if k in rag.LEGAL_PROMOTE_SOURCES))

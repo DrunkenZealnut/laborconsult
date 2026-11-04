@@ -13,15 +13,29 @@ DISCLAIMER = (
     "정확한 판단은 고용노동부(1350) 또는 노무사에게 문의하세요."
 )
 
+# 카드 첫 줄 시급의 기본 이름. '통상시급'이 아닌 값(연장·야간·휴일수당이 섞인 월급 총액 ÷ 소정근로시간 등)을
+# 싣는 호출부만 바꾼다 — 통상임금은 소정근로의 대가라 그 수당을 포함하지 않는다(audit-50-legal-accuracy P0-5).
+DEFAULT_HOURLY_LABEL = "통상시급"
+SKIPPED_CALCULATION_MARK = "계산 보류 (아래 항목은 계산 결과에 포함되지 않음):"
+
 
 @dataclass
 class WageResult:
     """통합 임금 계산 결과"""
     # 핵심 요약
     ordinary_hourly: float = 0.0          # 통상시급 (원)
+    hourly_label: str = DEFAULT_HOURLY_LABEL   # 위 시급이 카드 첫 줄에 붙는 이름
+    amount_held: list = field(default_factory=list)  # 금액만 보류한 계산 유형 키(facade `amount_hold`) — 일수·시간은 남는다
+    calculation_status: str = "complete"  # complete / partial / not_run (요청 계산 기준, 보조 계산 제외)
+    calculation_executed: list = field(default_factory=list)
+    calculation_skipped: list = field(default_factory=list)  # [{target, section, reason}]
     monthly_total: float = 0.0            # 월 총 예상 수령액 (세전, 원)
+    monthly_total_is_equivalent: bool = False
     monthly_net: float = 0.0             # 월 실수령액 (세후, 원) — insurance 계산 시 채워짐
     minimum_wage_ok: bool | None = None   # None: 미실행 또는 계산 보류
+    # 표시용 상태(calc-card-followups D6) — ""(미실행)·compliant·violation·held(보류)·not_applicable(노무제공자). None인
+    # minimum_wage_ok를 판정 값으로 쓰는 곳(법률 힌트·JSON·단언)은 그대로 두고, 헤더만 이 값으로 가른다
+    minimum_wage_state: str = ""
     # legacy(내장표) / managed_parameters(승인 기준 소비함) /
     # managed_no_parameters(관리 모드지만 이 계산엔 해당 기준 없음) / blocked(보류)
     legal_rule_status: str = "legacy"
@@ -58,9 +72,13 @@ def format_result(result: "WageResult") -> str:
         day = f" (기준일 {result.legal_reference_date})" if result.legal_reference_date else ""
         return ("계산 보류" + day + ": " + " / ".join(result.warnings)
                 + "\n승인된 기준 확인 전에는 금액을 추정 계산하지 마세요.")
+    if result.calculation_status == "not_run":
+        return format_skipped_calculations(result.calculation_skipped)
     lines = []
 
     lines.append("=" * 50)
+    if result.calculation_skipped:
+        lines.append(format_skipped_calculations(result.calculation_skipped))
     if result.legal_rule_status == "managed_parameters":
         lines.append(f"수치 기준 적용일: {result.legal_reference_date} (산식의 법률 검토는 별도)")
         for version in result.legal_rule_versions:
@@ -80,11 +98,11 @@ def format_result(result: "WageResult") -> str:
 
     # 임금 미제공(통상시급 0원) 부분 실행 시 최저임금 판정도 무의미 — 함께 숨김
     if result.ordinary_hourly:
-        lines.append(f"통상시급: {result.ordinary_hourly:,.0f}원")
-        # None 은 '판정 보류'다. falsy 라고 '미달'로 찍으면 없는 위반을 만들어낸다.
-        verdict = ("⏸ 판정 보류" if result.minimum_wage_ok is None
-                   else "✅ 충족" if result.minimum_wage_ok else "❌ 미달")
-        lines.append(f"최저임금 충족: {verdict}")
+        lines.append(f"{result.hourly_label}: {result.ordinary_hourly:,.0f}원")
+        # 보류를 falsy 라고 '미달'로 찍으면 없는 위반을 만들어낸다. 계산하지 않았으면 줄을 내지 않는다 — 보류가 아니다(F4b)
+        verdict = minimum_wage_verdict(result)
+        if verdict:
+            lines.append(f"최저임금 충족: {verdict}")
     lines.append("")
 
     if result.summary:
@@ -94,7 +112,8 @@ def format_result(result: "WageResult") -> str:
         lines.append("")
 
     if result.monthly_total:
-        lines.append(f"월 총 예상 수령액(세전): {result.monthly_total:,.0f}원")
+        label = "월 환산 임금(세전)" if result.monthly_total_is_equivalent else "월 총 예상 수령액(세전)"
+        lines.append(f"{label}: {result.monthly_total:,.0f}원")
     if result.monthly_net:
         lines.append(f"월 실수령액(세후):       {result.monthly_net:,.0f}원")
     if result.monthly_total or result.monthly_net:
@@ -123,12 +142,37 @@ def format_result(result: "WageResult") -> str:
     return "\n".join(lines)
 
 
+def format_skipped_calculations(items: list) -> str:
+    """미실행을 정상 계산 카드와 구별하고, 혼합 요청에서도 누락 사유를 남긴다."""
+    lines = [SKIPPED_CALCULATION_MARK]
+    lines.extend(f"  · {item['section']}: {item['reason']}" for item in items)
+    lines.append("보류 항목의 금액은 확정하지 마세요. 다른 항목의 월 총액을 대신 사용하지 마세요.")
+    return "\n".join(lines)
+
+
+MW_COMPLIANT, MW_VIOLATION, MW_HELD, MW_NOT_APPLICABLE = "compliant", "violation", "held", "not_applicable"
+
+
+def minimum_wage_verdict(result: "WageResult") -> str | None:
+    """헤더의 최저임금 판정 표기 — 계산하지 않았으면 None."""
+    state = result.minimum_wage_state
+    if state == MW_NOT_APPLICABLE:
+        return "➖ 해당 없음 — 노무제공자(근로자성이 인정되면 적용)"
+    if state == MW_HELD:
+        return "⏸ 판정 보류"
+    if result.minimum_wage_ok is not None:
+        return "✅ 충족" if result.minimum_wage_ok else "❌ 미달"
+    return None
+
+
 def format_result_json(result: "WageResult") -> dict:
     """WageResult를 JSON 직렬화 가능한 dict로 변환"""
-    return {
+    payload = {
         "ordinary_hourly": result.ordinary_hourly,
         "monthly_total": result.monthly_total,
+        "monthly_total_is_equivalent": result.monthly_total_is_equivalent,
         "minimum_wage_ok": result.minimum_wage_ok,
+        "minimum_wage_state": result.minimum_wage_state,
         "legal_rule_status": result.legal_rule_status,
         "legal_rule_versions": result.legal_rule_versions,
         "legal_rule_blocked": result.legal_rule_blocked,
@@ -140,3 +184,13 @@ def format_result_json(result: "WageResult") -> dict:
         "warnings": result.warnings,
         "disclaimer": result.disclaimer,
     }
+    if result.hourly_label != DEFAULT_HOURLY_LABEL:
+        # 통상시급이 아닌 값이면 이름을 함께 싣는다. 기본값일 때는 키를 더하지 않아 기존 소비자의 출력이 그대로다.
+        payload["hourly_label"] = result.hourly_label
+    if result.amount_held:
+        payload["amount_held"] = list(result.amount_held)
+    if result.calculation_skipped or result.calculation_status == "not_run":
+        payload["calculation_status"] = result.calculation_status
+        payload["calculation_executed"] = list(result.calculation_executed)
+        payload["calculation_skipped"] = list(result.calculation_skipped)
+    return payload

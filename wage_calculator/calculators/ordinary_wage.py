@@ -11,8 +11,9 @@
 from dataclasses import dataclass
 from ..models import WageInput, WageType, WorkType
 from ..constants import MONTHLY_STANDARD_HOURS, SHIFT_MONTHLY_HOURS, WEEKLY_HOLIDAY_MIN_HOURS
-from ..utils import WEEKS_PER_MONTH
-from .shared import normalize_allowances
+from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours
+from .shared import AllowanceClassifier, holiday_divisor, normalize_allowances, split_note
+from .shared import weekly_holiday_hours as paid_weekly_holiday_hours
 
 
 @dataclass
@@ -26,6 +27,11 @@ class OrdinaryWageResult:
     included_items: list                 # 통상임금 포함 항목 목록
     excluded_items: list                 # 통상임금 제외 항목 목록
     formula: str                         # 계산식 설명
+    # 이름으로 통상임금에서 뺀 고정수당(연장·연차수당 등)의 월액 합계 — 통상임금은 아니어도 매월 받는 돈이라 카드의
+    # '월 총 예상 수령액'에는 넣는다(Act-4 리뷰 L8)
+    not_ordinary_fixed_total: float = 0.0
+    # 1일 통상임금에 곱한 1일 소정근로시간(시행령 제6조 제3항) — 퇴직금 '통상임금 환산' 표기가 같은 값을 쓴다(F2)
+    daily_hours_used: float = 8.0
 
 
 def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
@@ -51,7 +57,7 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     if inp.wage_type == WageType.HOURLY:
         hourly = inp.hourly_wage or 0.0
         monthly_base = hourly * base_hours
-        formula = f"시급 {hourly:,.0f}원 × {base_hours}h = {monthly_base:,.0f}원"
+        formula = f"시급 {hourly:,.0f}원 × {fmt_hours(base_hours)}h = {monthly_base:,.0f}원"
         included_items.append(f"기본 시급: {hourly:,.0f}원")
 
     elif inp.wage_type == WageType.DAILY:
@@ -59,8 +65,8 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         daily_hours = inp.schedule.daily_work_hours or 8.0
         hourly = daily / daily_hours
         monthly_base = hourly * base_hours
-        formula = (f"일급 {daily:,.0f}원 ÷ {daily_hours}h = 시급 {hourly:,.0f}원"
-                   f" × {base_hours}h = {monthly_base:,.0f}원")
+        formula = (f"일급 {daily:,.0f}원 ÷ {fmt_hours(daily_hours)}h = 시급 {hourly:,.0f}원"
+                   f" × {fmt_hours(base_hours)}h = {monthly_base:,.0f}원")
         included_items.append(f"기본 일급: {daily:,.0f}원")
 
     elif inp.wage_type == WageType.MONTHLY:
@@ -91,6 +97,10 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
     # ── Step 2: 고정수당 중 통상임금 포함분 합산 ─────────────────────────────
     # 대법원 2023다302838: 재직조건·근무일수 조건부도 통상임금 포함 가능
     allowance_total = 0.0
+    allowance_terms = []
+    excluded_brief: list[str] = []
+    excluded_notes: list[str] = []
+    not_ordinary_fixed_total = 0.0
     allowances = normalize_allowances(inp.fixed_allowances)
     for a in allowances:
         is_ordinary, note = _resolve_is_ordinary_fa(a)
@@ -102,10 +112,11 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         else:
             effective_amount = a.amount
 
-        monthly_amount = effective_amount / 12 if a.annual else effective_amount
+        monthly_amount = a.monthly_amount * effective_amount / a.amount if a.amount else a.monthly_amount
 
         if is_ordinary:
             allowance_total += monthly_amount
+            allowance_terms.append(f"{a.name} 월 환산 {monthly_amount:,.0f}원")
             label = f"{a.name}: {monthly_amount:,.0f}원/월"
             if note:
                 label += f" ({note})"
@@ -115,11 +126,27 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
             if note:
                 label += f" — {note}"
             excluded_items.append(label)
+            excluded_brief.append(f"{a.name} {monthly_amount:,.0f}원")
+            if note == NOT_ORDINARY_NOTE:
+                not_ordinary_fixed_total += monthly_amount
+            if note and note not in excluded_notes:
+                excluded_notes.append(note)
 
     monthly_ordinary = monthly_base + allowance_total
 
     if allowance_total > 0:
-        formula += f" + 통상임금 포함 수당 {allowance_total:,.0f}원 = {monthly_ordinary:,.0f}원"
+        terms = (" + ".join(allowance_terms) if any(a.annual or a.payment_cycle != "매월" for a in allowances)
+                 else f"통상임금 포함 수당 {allowance_total:,.0f}원")
+        formula += f" + {terms} = {monthly_ordinary:,.0f}원"
+    if excluded_brief:
+        # 제외한 수당을 밝힌다 — 질문에 적힌 수당이 계산식에서 말없이 사라지면 빠뜨린 것처럼 읽힌다
+        reasons = f" — {'; '.join(excluded_notes)}" if excluded_notes else ""
+        formula += f" (통상임금 제외: {', '.join(excluded_brief)}{reasons})"
+
+    for a in allowances:
+        if a.annual or a.payment_cycle != "매월":
+            cycle = "연간 총액" if a.annual else f"{a.payment_cycle} 지급 회차액"
+            formula += f"; {a.name}: {cycle} {a.amount:,.0f}원 → 월 환산 {a.monthly_amount:,.0f}원 (동일 항목의 환산)"
 
     hourly_ordinary = monthly_ordinary / base_hours
     daily_work_hours = inp.schedule.daily_work_hours or 8.0
@@ -130,11 +157,16 @@ def calc_ordinary_wage(inp: WageInput) -> OrdinaryWageResult:
         daily_ordinary_wage=round(daily_ordinary, 0),
         monthly_ordinary_wage=round(monthly_ordinary, 0),
         monthly_base_hours=base_hours,
+        daily_hours_used=daily_work_hours,
         base_hours_detail=base_hours_detail,
         included_items=included_items,
         excluded_items=excluded_items,
         formula=formula,
+        not_ordinary_fixed_total=not_ordinary_fixed_total,
     )
+
+
+NOT_ORDINARY_NOTE = "소정근로의 대가가 아닌 연장·야간·휴일근로·연차수당(근로기준법 시행령 제6조 제1항)"
 
 
 def _resolve_is_ordinary_fa(allowance) -> tuple[bool, str]:
@@ -154,6 +186,12 @@ def _resolve_is_ordinary_fa(allowance) -> tuple[bool, str]:
         if explicit is True:
             return False, "성과조건부로 통상임금 제외 처리 (명시 설정 무시)"
         return False, ""
+
+    # 연장·야간·휴일근로·연차수당은 조건과 무관하게 제외 — 고정 지급이어도 통상임금으로 계산하는 수당이다(근로기준법 제56조·
+    # 제60조 제5항). 의도분석이 고정수당으로 뽑으면 조건 '없음'으로 와서 통상시급·연장수당이 부풀었다(audit-50 Act-4).
+    # 명시적으로 포함한 값만 존중한다
+    if explicit is not True and AllowanceClassifier.is_not_ordinary_by_name(name):
+        return False, NOT_ORDINARY_NOTE
 
     # 최소보장 성과급: 보장분만 통상임금 포함 (대법원 2023다302838)
     if condition == "최소보장성과":
@@ -180,7 +218,7 @@ def _get_base_hours(inp: WageInput) -> tuple[float, str]:
     2. shift_monthly_hours (교대근무 직접 지정)
     3. 교대근무 유형별 조회
     4. 스케줄 기반 자동 계산: (주 소정근로 + 주휴시간) × WEEKS_PER_MONTH
-       - 주휴시간 = min(주 소정근로 / 5, 8) (대법원 2022다291153)
+       - 주휴시간 = shared.weekly_holiday_hours(주휴수당 계산기와 같은 함수, 대법원 2022다291153)
        - 주 15시간 미만이면 주휴 0
 
     Returns:
@@ -212,17 +250,29 @@ def _get_base_hours(inp: WageInput) -> tuple[float, str]:
     s = inp.schedule
     weekly_work_hours = s.daily_work_hours * s.weekly_work_days
     if weekly_work_hours >= WEEKLY_HOLIDAY_MIN_HOURS:
-        weekly_holiday_hours = min(weekly_work_hours / 5, 8.0)
-        holiday_detail = f"min({weekly_work_hours}h÷5, 8h) = {weekly_holiday_hours:.1f}h"
+        # 주휴수당 계산기와 같은 함수 — 여기만 '÷5'를 따로 쓰던 때 주 6일 × 4.1667h 카드에 기준시간 주휴 5h와 주휴수당
+        # 4.1667h가 함께 실렸다(외부 점검 40번 후속)
+        weekly_holiday_hours, _ = paid_weekly_holiday_hours(s.weekly_work_days, s.daily_work_hours)
+        divisor = holiday_divisor(s.weekly_work_days)
+        holiday_detail = (f"min({fmt_hours(weekly_work_hours)}h÷{fmt_hours(divisor)}"
+                          f"{'일' if s.weekly_work_days >= 5 else ''}, 8h) = {fmt_hours(weekly_holiday_hours)}h")
     else:
         weekly_holiday_hours = 0.0
-        holiday_detail = f"0h (주 {weekly_work_hours}h < {WEEKLY_HOLIDAY_MIN_HOURS}h)"
+        holiday_detail = f"0h (주 {fmt_hours(weekly_work_hours)}h < {WEEKLY_HOLIDAY_MIN_HOURS}h)"
     total_weekly = weekly_work_hours + weekly_holiday_hours
-    monthly_hours = round(total_weekly * WEEKS_PER_MONTH, 1)
+    # 반올림하지 않는다 — 월 기준시간 = 1주 기준시간 × 1년 평균 주 수 ÷ 12(근로기준법 시행령 제6조②4호·최저임금법 시행령
+    # 제5조①3호, 둘 다 반올림 규정 없음).
+    # 소수 첫째 자리로 반올림해 계산하면 단시간 근로자 월 환산액이 달라졌다(83.4286h → 83.4h: 860,983원 → 860,688원, 외부 점검 #45)
+    monthly_hours = total_weekly * WEEKS_PER_MONTH
 
+    # 1일 8시간·1주 40시간을 넘는 시간은 이미 연장근로로 나눴다(apply_hour_split) — 원래 시간과 나눈 결과를 함께 밝힌다
+    note = split_note(getattr(inp, "hour_split", None))
+    lead = (note if note else
+            f"주 소정근로: {fmt_hours(s.daily_work_hours)}h×{fmt_hours(s.weekly_work_days)}일 = {fmt_hours(weekly_work_hours)}h")
     detail = (
-        f"주 소정근로: {s.daily_work_hours}h×{s.weekly_work_days:.0f}일 = {weekly_work_hours}h, "
+        f"{lead}, "
         f"주휴시간: {holiday_detail}, "
-        f"월 환산: ({weekly_work_hours}h+{weekly_holiday_hours:.1f}h)×{WEEKS_PER_MONTH:.3f} = {monthly_hours}h"
+        f"월 환산: ({fmt_hours(weekly_work_hours)}h+{fmt_hours(weekly_holiday_hours)}h)×{WEEKS_PER_MONTH_LABEL} = "
+        f"{fmt_hours(monthly_hours)}h"
     )
     return monthly_hours, detail

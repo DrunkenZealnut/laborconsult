@@ -33,15 +33,17 @@ def main() -> None:
     r = run(["wage_arrears"], {
         "wage_type": "월급", "monthly_wage": 3_000_000,
         "arrear_amount": 10_000_000, "arrear_due_date": "2026-01-10",
-    })
-    assert r and "임금체불 지연이자" in r, f"W1 실패:\n{r}"
+        "arrear_calc_date": "2026-01-31",
+    }, "2026년 1월 10일 지급기일, 1월 31일까지 지연이자")
+    assert r and "누적 지연이자: 115,068원" in r, f"W1 실패:\n{r}"
     print("  ✅ W1 체불 배선 → 지연이자 섹션 생성")
 
     # ── W2. 체불 + 임금 정보 없음: wageless 부분 실행 경로에서도 계산됨 ──
     r = run(["wage_arrears"], {
         "arrear_amount": 5_000_000, "arrear_due_date": "2026-03-01",
-    })
-    assert r and "임금체불 지연이자" in r, f"W2 실패:\n{r}"
+        "arrear_calc_date": "2026-03-31",
+    }, "2026년 3월 1일 지급기일, 3월 31일까지 지연이자")
+    assert r and "누적 지연이자: 82,192원" in r, f"W2 실패:\n{r}"
     print("  ✅ W2 임금 없는 체불 질문도 지연이자 계산 실행")
 
     # ── W3. 육아휴직 배선 ──
@@ -153,15 +155,58 @@ def main() -> None:
     # ── W13. 출산 유형 배선: 다태아·미숙아가 휴가 일수를 바꾼다 ──
     # 두 필드는 계산기·흐름도만 지원하고 상담 경로에는 배선이 없어, 챗봇이 다태아
     # 질문에도 90일로 답했다(실측 2026-09-23). 일수는 급여 총액을 직접 바꾼다.
-    base = {"wage_type": "월급", "monthly_wage": 5_000_000, "reference_year": 2026}
+    base = {"wage_type": "월급", "monthly_wage": 5_000_000, "reference_year": 2026,
+            "family_leave_days": 90, "family_leave_used_days": 0, "family_leave_start_date": "2026-05-01",
+            "family_leave_end_date": "2026-07-29", "family_leave_insured_days": 180,
+            "family_leave_eligible": True, "is_priority_support_company": True}
     r90 = run(["maternity_leave"], base)
-    r120 = run(["maternity_leave"], {**base, "is_multiple_birth": True})
+    r120 = run(["maternity_leave"], {**base, "is_multiple_birth": True, "family_leave_days": 120, "family_leave_end_date": "2026-08-28"})
     r100 = run(["maternity_leave"], {**base, "is_premature_birth": True,
-                                     "reference_date": "2026-05-01"})
+                                     "reference_date": "2026-05-01", "family_leave_days": 100, "family_leave_end_date": "2026-08-08"})
     assert r90 and "90일" in r90, f"W13 실패(단태아 90일 누락):\n{r90}"
     assert r120 and "120일" in r120, f"W13 실패(다태아 배선 없음):\n{r120}"
     assert r100 and "100일" in r100, f"W13 실패(미숙아 배선 없음):\n{r100}"
     print("  ✅ W13 출산 유형 배선 → 단태아 90일 / 다태아 120일 / 미숙아 100일")
+
+    # ── W14. 날짜 연도 보정은 질문에 연도 단서가 없을 때만 ──
+    # 보정이 조건 없이 돌아 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가 2026-03-02 입사·
+    # 2026-03-01 퇴사가 되어 퇴직금 0원이 나왔다(실측 2026-10-11 — 당시 월 기준시간 208.6h로 5,752,620원, 반올림 없는
+    # 208.5714h(최저임금법 시행령 제5조①3호)로 5,753,400원 — audit-50 Act-4).
+    from datetime import date as _d
+    from app.core.analyzer import _build_analysis_result, _correct_date_year
+    sev = {"requires_calculation": True, "calculation_types": ["severance"], "wage_type": "월급",
+           "wage_amount": 2_500_000, "start_date": "2023-03-02", "end_date": "2025-03-01"}
+    a14 = _build_analysis_result(dict(sev), "월급 250만원, 2023년 3월 2일 입사 2025년 3월 1일 퇴사. 퇴직금은?")
+    assert (a14.extracted_info["start_date"], a14.extracted_info["end_date"]) == \
+        ("2023-03-02", "2025-03-01"), a14.extracted_info
+    r14 = run(["severance"], a14.extracted_info)
+    assert r14 and "5,753,400원" in r14, f"W14 실패(명시 연도 보존 후 퇴직금):\n{r14}"
+    old = (_d.today().replace(year=_d.today().year - 3)).isoformat()
+    for ctx in ("23.3.2 입사했어요", "2년 일하고 그만뒀어요", "18개월 근무", "재작년 3월에 입사",
+                "작년 3월 입사", "1.5년 일했어요", "730일 전에 입사해 오늘 퇴사했습니다",
+                "60주 동안 일했어요"):
+        assert _correct_date_year(old, ctx) == old, f"W14 실패(연도 단서 무시): {ctx}"
+    # 연도 단서가 없으면 보정한다 — 본래 목적(LLM이 지어낸 과거 연도)
+    fixed = _correct_date_year(old, "3월 2일에 입사해서 지난달 퇴사했어요")
+    # 날짜의 일·근무형태의 주는 기간이 아니다
+    for ctx in ("12월 31일 입사, 3월 15일 퇴사", "주 5일, 주 40시간 근무하다 3월 2일 퇴사"):
+        assert _correct_date_year(old, ctx) != old, f"W14 실패(날짜를 기간으로 오인): {ctx}"
+    assert fixed != old and int(fixed[:4]) >= _d.today().year - 1, fixed
+    assert _correct_date_year(old) != old, "맥락 없는 호출부의 기존 보정이 깨짐"
+    print("  ✅ W14 날짜 보정: 명시 연도·기간·상대 연도면 보존, 연도 없을 때만 보정")
+
+    # W14b. 후속 질문 — 연도는 앞 턴에만 있어도 LLM이 그것을 쓴다. analyze_intent는 대화 맥락 전체로 판정한다.
+    from app.core import analyzer as _an
+    real_tool = _an.llm_gateway.tool
+    _an.llm_gateway.tool = lambda *a, **kw: ("Gemini", "analyze_labor_question", dict(sev))
+    try:
+        a14b = _an.analyze_intent("그럼 퇴직금은 얼마예요?",
+                                  [{"role": "user", "content": "2023년 3월 2일 입사해서 2025년 3월 1일 퇴사했어요"},
+                                   {"role": "assistant", "content": "네, 확인했습니다."}], object())
+    finally:
+        _an.llm_gateway.tool = real_tool
+    assert a14b.extracted_info["start_date"] == "2023-03-02", a14b.extracted_info
+    print("  ✅ W14b 후속 질문: 앞 턴의 명시 연도도 보정을 막는다")
 
     # ── 파라미터 변환 계층 자체 검증 ──
     p = _analysis_to_extract_params(stub(

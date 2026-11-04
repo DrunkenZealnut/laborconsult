@@ -18,7 +18,7 @@ ANALYZE_TOOL = {
                         "overtime", "minimum_wage", "weekly_holiday",
                         "annual_leave", "dismissal", "severance",
                         "unemployment", "insurance", "comprehensive",
-                        "parental_leave", "maternity_leave", "prorated",
+                        "parental_leave", "reduced_work_benefit", "maternity_leave", "prorated",
                         "wage_arrears", "flexible_work", "compensatory_leave",
                         # 주 분석경로에서 분류 불가능하던 계산기들 (CALC-6).
                         # industrial_accident·business_size는 여기서 제외 —
@@ -29,6 +29,8 @@ ANALYZE_TOOL = {
                         "eitc", "average_wage",
                         "shutdown_allowance", "working_hours", "public_holiday",
                         "ordinary_wage", "retirement_tax", "retirement_pension",
+                        # 지원하지 않는 요청도 의도를 보존해 다른 계산으로 대체하지 않는다.
+                        "year_end_settlement", "selective_work_settlement", "arrears_principal",
                     ],
                 },
                 "description": "필요한 계산 유형 (복수 가능)",
@@ -42,7 +44,7 @@ ANALYZE_TOOL = {
                 "type": "string",
                 "enum": ["5인미만", "5인이상", "30인이상", "300인이상"],
             },
-            "weekly_work_days": {"type": "integer", "description": "주당 근무일수"},
+            "weekly_work_days": {"type": "number", "description": "주당 근무일수. 평균이면 소수 그대로(격일제 평균 주 3.5일 → 3.5)"},
             "daily_work_hours": {"type": "number", "description": "1일 소정근로시간 (하루 단위). 주당 총시간이 주어진 경우 여기에 넣지 말고 weekly_total_hours를 사용하세요."},
             "weekly_total_hours": {"type": "number", "description": "주 소정근로시간 합계. '주 17시간' 등 주당 총근로시간으로 제시된 경우 사용. daily_work_hours와 동시에 설정하지 마세요."},
             "weekly_overtime_hours": {"type": "number", "description": "주당 연장근로시간"},
@@ -140,6 +142,99 @@ ANALYZE_TOOL = {
     },
 }
 
+# 지급 주기와 평균임금 실제 자료. 분석기가 월액·제외 사유를 만들어내지 않는다.
+_PAY_PROPS = ANALYZE_TOOL["input_schema"]["properties"]
+_PAY_PROPS["fixed_allowances"]["items"]["properties"].update({
+    "annual": {"type": "boolean", "description": "amount가 연간 총액인 경우에만 true. 분기 지급이라도 연간 총액으로 말했으면 true"},
+    "payment_cycle": {"type": "string", "enum": ["매월", "분기", "반기", "연", "미확인"],
+                      "description": "지급 회차. amount는 회차별 금액(annual=true는 연간 총액). 상여·성과급·명절수당처럼 주기가 갈리는 항목은 질문에 주기가 없으면 미확인(월 지급으로 추정 금지). 식대·직책·교통·가족수당 등 월정 수당은 주기 표현이 없으면 매월"},
+    "source_id": {"type": "string", "description": "질문 속 동일 수당의 식별자. 같은 금액의 서로 다른 수당은 다른 ID"},
+})
+_PAY_PROPS.update({
+    "settlement_month": {"type": "string", "description": "임금 정산 대상월 YYYY-MM. 입사월·오늘로 대체하지 않음"},
+    "proration_method": {"type": "string", "enum": ["calendar","scheduled"], "description": "약정한 일할 방식. 역일수=calendar, 소정근로일 및 유급처리일=scheduled. 방식 미확인은 생략"},
+    "join_date": {"type": "string", "description": "실제 입사일 YYYY-MM-DD. 퇴직·복직일을 넣지 않음"},
+    "proration_retirement_effective_date": {"type": "string", "description": "명시한 퇴직 효력일 YYYY-MM-DD. 이 날 제외. 마지막 재직일은 last_employed_date에 그대로 보존"},
+    "proration_employed_at_month_start": {"type": "boolean", "description": "정산월 월초부터 재직 중임을 사용자가 명시한 경우 true. 실제 입사일을 모를 때 사용"},
+    "proration_all_items_proportional": {"type": "boolean", "description": "월급액에 일할 약정을 명시하면 true. 단일 월급액을 제시하며 역일수 약정이라고 한 경우도 그 금액의 비례 약정이다. 수당별 조건이 다르거나 미확인이라고 명시하면 true 금지. true이면 proration_items는 생략"},
+    "proration_items_complete": {"type": "boolean", "description": "요청 정산의 전체 급여항목·지급조건이 proration_items에 들어 있음을 명시한 경우 true"},
+    "proration_scheduled_dates": {"type": "array", "items": {"type":"string"}, "description": "scheduled 방식의 해당 월 전체 분모 날짜 목록 YYYY-MM-DD. 소정근로일·유급 처리일 포함. 평일을 임의 생성하지 말 것"},
+    "proration_unpaid_periods": {"type":"array", "items":{"type":"object","properties":{
+        "start":{"type":"string"},"end":{"type":"string"},"reason":{"type":"string"},
+        "confirmed":{"type":"boolean"}}}, "description":"확정 무급 기간, 시작·종료일 모두 포함. 휴직 종료 다음날 복직. 결근일만으로 주휴일까지 추가 공제 금지"},
+    "proration_items": {"type":"array", "items":{"type":"object","properties":{
+        "id":{"type":"string"},"name":{"type":"string"},"amount":{"type":"number"},
+        "payment_cycle":{"type":"string","enum":["매월","분기","반기","연"]},
+        "policy":{"type":"string","enum":["prorate","full","actual"]},
+        "actual_amount":{"type":"number"}}},
+        "description":"급여항목별 확정 지급 조건. prorate=월 계약액 비례, full=이 달 전액 지급 확인, actual=별도로 산정된 실제 금액(actual_amount 필수). 실제수당을 다시 비례하지 말 것. 연 상여 월 환산액을 월 지급액으로 추정 금지"},
+    "average_wage_date": {"type": "string", "description": "평균임금 산정 사유 발생일(YYYY-MM-DD). 퇴직을 말하지 않아도 사유 발생일·산정일을 명시하면 반드시 추출. 조회 기준일(reference_date)과 다르며 오늘 날짜로 추정 금지"},
+    "monthly_total_pay": {"type": "number", "description": "명시된 월 총액·월 환산 총액. 기본급이 따로 있으면 wage_amount에는 기본급, 여기에 총액. 연 상여 포함액은 monthly_total_bonus_included로 구분"},
+    "annual_bonus_total": {"type": "number", "description": "직전 12개월 실제 평균임금 산입 대상 연 상여 총액. 계약상 장래 상여를 실제 지급액으로 추정 금지. 정기적·일률적 연 상여로 명시되면 통상임금 비교를 위해 같은 항목을 fixed_allowances에도 연 주기로 보존하고 annual_bonus_allowance_ids로 연결. 다른 수당 없음은 해당 상여를 제외한다는 뜻이 아님"},
+    "last_3m_wages": {"type": "array", "items": {"oneOf": [
+        {"type": "number"}, {"type": "object", "properties": {"base": {"type": "number"}, "allowance": {"type": "number"}}, "additionalProperties": False}]},
+        "description": "평균임금 산정기간 실제 임금 목록. 월급×3으로 만들어 넣지 말 것. 상여 포함 여부는 last_3m_bonus_included에 명시"},
+    "last_3m_days": {"type": "integer", "description": "평균임금 제외 전 달력일수. 제외 후 일수를 다시 넣지 말 것. 모르면 생략"},
+    "annual_bonus_allowance_ids": {"type": "array", "items": {"type": "string"},
+        "description": "annual_bonus_total과 동일 항목인 fixed_allowances.source_id 목록. 명시적으로 별개인 경우만 빈 배열. 이름/금액 일치만으로 추정 금지"},
+    "last_3m_bonus_included": {"type": "number", "description": "last_3m_wages에 이미 포함된 위 연 상여 실제 금액. 별도·미포함이 확인되면 0. 모르면 생략"},
+    "monthly_total_bonus_included": {"type": "number", "description": "월 총액·연봉 월액에 이미 포함된 위 연 상여 월 환산액. 별도면 0. 불명확하면 생략"},
+    "excluded_periods": {"type": "array", "items": {"type": "object", "properties": {
+        "start": {"type": "string"}, "end": {"type": "string"},
+        "reason": {"type": "string", "enum": ["사용자귀책휴업", "출산전후휴가", "유산사산휴가", "업무상재해요양", "육아휴직", "쟁의행위", "사용자승인휴업", "수습3개월", "무급병역의무", "미확인"]},
+        "paid": {"type": "number", "description": "해당 제외기간에 지급되어 실제 3개월 임금총액에 포함된 금액. 무급이 명확하면 0, 모르면 생략"}},
+        "required": ["start", "end", "reason"]}, "description": "평균임금 법정 제외 구간. 시작/끝 포함. 사유·지급액을 가정하지 말 것"},
+})
+
+_PAY_PROPS.update({
+    "maternity_leave_type": {"type": "string", "enum": ["maternity", "spouse_birth", "infertility", "spouse_miscarriage", "own_miscarriage", "multiple"],
+        "description": "출산 관련 요청 유형. 본인 출산/배우자 출산/난임/배우자 유산사산/본인 유산사산을 구분. 여러 휴가 급여를 각각 요청하면 multiple"},
+    "family_leave_days": {"type": "integer", "description": "이번 실제 사용(예정) 휴가 일수. 법정 전체 일수로 추정하지 말 것"},
+    "family_leave_used_days": {"type": "integer", "description": "같은 법정 한도에서 이미 사용한 휴가 일수. 난임은 해당 연도, 배우자는 같은 출산·유산사산 건. 처음 사용이면 0, 불명이면 생략"},
+    "family_leave_insured_days": {"type": "integer", "description": "휴가 종료 전 고용보험 피보험 단위기간. 단순 재직일수를 넣지 말 것"},
+    "family_leave_eligible": {"type": "boolean", "description": "법정 사용 요건·신청 가능 기간 충족이 명시된 경우만 true. 모르면 생략"},
+    "is_priority_support_company": {"type": "boolean", "description": "우선지원대상기업 여부. 단순 중소기업 추정 금지, 명시 확인된 경우만"},
+    "family_leave_start_date": {"type": "string", "description": "이번 휴가 실제 사용 시작일 YYYY-MM-DD. 입사일과 구분"},
+    "family_leave_end_date": {"type": "string", "description": "이번 휴가 실제 사용 종료일 YYYY-MM-DD. 퇴사일과 구분. 계산하여 추정하지 말 것"},
+})
+
+# 육아급여 입력: 기간·자격·시간을 계산기까지 보존한다.
+from .childcare_inputs import CHILDCARE_PROPERTIES
+ANALYZE_TOOL["input_schema"]["properties"].update(CHILDCARE_PROPERTIES)
+from .arrears_inputs import ARREARS_PROPERTIES
+ANALYZE_TOOL["input_schema"]["properties"].update(ARREARS_PROPERTIES)
+
+# 법률상담 분류 필드 추가
+ANALYZE_TOOL["input_schema"]["properties"].update({
+    "annual_leave_used": {"type": "number", "description": "현재 계산 대상 발생분에서 사용한 연차일수. 과거 첫해 사용분과 더하지 않음. 미기재는 생략"},
+    "first_year_leave_used": {"type": "number", "description": "입사 1년 미만에 발생한 휴가의 사용일수. 현재 연차 15일에서 차감하지 않음"},
+    "first_year_leave_used_hours": {"type": "number", "description": "첫해 발생분에서 실제 차감된 시간. 단축 중 사용 일수를 원래 8시간으로 추정하지 않음. 현재 연도 사용시간과 별도"},
+    "attendance_rate": {"type": "number", "description": "연차 산정기간 출근율 0~1. 일수 기준이며 육아기/임신기 단축시간을 결근율로 환산하지 않음. 질문에서 확인된 경우만"},
+    "annual_full_attendance_months": {"type": "integer", "description": "현재 산정기간의 실제 월 개근 수. 1년 미만 또는 연간 출근율 80% 미만에 필요. 전체 출근율로 추정 금지"},
+    "first_year_full_attendance_months": {"type": "integer", "description": "과거 첫해 실제 개근 개월 수(0~11). 현재 연도 출근율로 추정하지 않음"},
+    "annual_scheduled_days": {"type": "number", "description": "해당 연차 산정기간 소정근로일수. 역일수 아님"},
+    "annual_attended_days": {"type": "number", "description": "해당 산정기간 실제 출근일수. 휴직 출근 간주일수는 제외하고, 단축근무일은 출근으로 포함"},
+    "annual_deemed_periods": {
+        "type": "array",
+        "description": "해당 연차 산정기간의 법정 휴직·단축 구간. 질문에 나온 사실만. 개인 휴직·일반 결근은 포함 금지",
+        "items": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["occupational_injury", "maternity_leave", "childcare_leave",
+                                                "short_childcare_leave", "childcare_reduced", "pregnancy_reduced"]},
+            "start_date": {"type": "string", "description": "휴직/단축 시작일 YYYY-MM-DD. 개정 적용 판단용 원래 시작일 보존"},
+            "end_date": {"type": "string", "description": "종료일 YYYY-MM-DD (포함)"},
+            "application_date": {"type": "string", "description": "육아휴직 최초 신청일. 시작일로 추정하지 않음"},
+            "scheduled_days": {"type": "number", "description": "해당 휴직 구간의 소정근로일수. 단축시간을 일수로 바꿔 넣지 않음"},
+        }, "required": ["kind", "start_date", "end_date"]},
+    },
+    "annual_original_weekly_hours": {"type": "number", "description": "법정 단축 전 주 소정시간. 산정기간의 기준시간이 동일한 경우"},
+    "annual_original_daily_hours": {"type": "number", "description": "법정 단축 전 1일 소정시간. 발생 일수의 시간 단위"},
+    "annual_leave_used_hours": {"type": "number", "description": "현재 발생분에서 실제 차감된 연차시간. 단축근무 중 사용 일수만으로 추정 금지"},
+    "use_fiscal_year": {"type": "boolean", "description": "회사 회계연도 기준으로 발생·사용 정산하는 경우"},
+    "fiscal_year_granted_days": {"type": "number", "description": "회사가 해당 회계연도에 실제 부여한 휴가일수. 입사월만으로 계산·추정 금지"},
+    "leave_use_promotion": {"type": "boolean", "description": "법정 서면 사용촉진 절차가 적법하게 완료되고 실제 사용 기회가 보장된 사실이 확인된 경우만 true"},
+    "last_employed_date": {"type": "string", "description": "근로관계가 존재한 마지막 날(포함). '12월31일까지 재직'처럼 명시된 경우만. 퇴직 효력일·일반적인 퇴사일에서 임의로 하루 빼거나 더하지 않음"},
+})
+
 # 법률상담 분류 필드 추가
 ANALYZE_TOOL["input_schema"]["properties"]["consultation_type"] = {
     "type": "string",
@@ -197,6 +292,42 @@ ANALYZE_TOOL["input_schema"]["properties"]["precedent_keywords"] = {
     ),
 }
 
+# 체불 원금 정산: 현재 월급으로 과거 채권이나 세후 지급액을 추정하지 않는다.
+_PAY_PROPS.update({
+    "weekly_attendance_days":{"type":"number","description":"확인된 주 소정근로일 중 실제 출근 일수. 주휴 채권의 개근 여부 보존. 미확인은 생략"},
+    "wage_claim_scope_complete": {"type":"boolean","description":"사용자가 요청한 월·항목 범위의 의무액과 지급 내역이 명시되면 true. 다른 채권까지 모두 포함한다는 뜻 아님. 미지급은 paid_amount=0, 지급 내역 미상은 생략"},
+    "wage_claim_amount_basis": {"type":"string","enum":["gross","net","unknown"],"description":"의무액과 지급 원금이 같은 세전 기준이면 gross. 세후 통장 입금만 알면 net/unknown. 세전 의무액에서 세후 입금액을 바로 차감 금지"},
+    "wage_claim_calc_date": {"type":"string","description":"명시된 원금 잔액 기준일 YYYY-MM-DD"},
+    "wage_claim_include_interest": {"type":"boolean","description":"원금 정산과 그 채권의 지연이자를 함께 요청하면 true. C5가 이자 채권을 만들므로 arrear_amount/arrear_due_date/arrear_claims를 중복 생성하지 말 것"},
+    "wage_claim_items": {"type":"array","maxItems":100,"description":"요청 범위의 월별 지급 의무액·기지급 원금·지급기일. 원금 차액을 LLM이 계산해서 amount에 넣지 말고 의무액과 지급액을 분리. 명시 금액은 source=explicit. 실제 월 시간 수당·일할·최저임금은 아래 source로 기존 계산기를 사용. 지급액의 귀속이 불명확하면 전체 지급 목록에 보존하고 임의 배분 금지.","items":{"type":"object","properties":{
+        "id":{"type":"string","description":"월·항목별 고유 ID"},"month":{"type":"string","description":"귀속월 YYYY-MM"},
+        "name":{"type":"string"},"due_date":{"type":"string","description":"그 항목의 원래 지급기일 YYYY-MM-DD"},
+        "components":{"type":"array","items":{"type":"string"},"description":"임금 요소 식별자: regular(기본 임금), weekly_holiday(주휴), overtime, night, holiday, annual_leave, retirement, bonus:항목ID, other:항목ID. 월급은 regular·weekly_holiday. 고정연장 포함 월급은 overtime도 포함. 동일 월의 같은 요소를 다시 독립 항목으로 생성 금지"},
+        "amount":{"type":"number","description":"확정된 세전 지급 의무액. 미지급 차액이 아님. source가 explicit 이외이면 생략"},
+        "payment_cycle":{"type":"string","enum":["매월","분기","반기","연"],"description":"실제 지급 회차. 연 상여의 월 환산액을 매월 채권으로 생성하지 않음"},
+        "paid_amount":{"type":"number","description":"이 항목에 지급·충당된 세전 원금. 전혀 미지급이면 0. 귀속 불명이면 생략"},
+        "paid_date":{"type":"string","description":"실제 지급일 YYYY-MM-DD. 날짜가 다르면 wage_claim_payments에 개별 기록"},
+        "paid_interest_amount":{"type":"number","description":"이미 지급한 이자 충당액. 없다고 확인되면 0, 미확인은 생략"},
+        "source":{"type":"string","enum":["explicit","ordinary_hours","overtime","night","holiday","weekly_holiday","minimum_wage","prorated","monthly_estimate"],"description":"explicit=명시 의무액, ordinary_hours=통상시급×실제 시간, overtime/night/holiday=해당 월 확정 가산시간, weekly_holiday=확정 주 수, minimum_wage=계약 월액을 최저임금으로 보충한 총 의무액, prorated=일할 명세 항목, monthly_estimate=평균 월 추정. minimum_wage 행에 실제 paid_amount를 한 번 차감하며 같은 월급 차액 행을 중복 생성 금지"},
+        "basis_confirmed":{"type":"boolean","description":"파생 source의 실제 근로·개근·전체월·지급 조건이 질문에 확인되면 true. 같은 월은 상위 settlement_month에도 보존"},
+        "source_item_id":{"type":"string","description":"prorated 출처의 원본 항목 ID. 전체 월급 비례는 monthly_contract, 항목별은 proration_items의 id"},
+        "hours":{"type":"number","description":"해당 월에 실제 확정된 시간. 매주 시간이 아니며 weekly_overtime_hours에 중복 입력 금지"},
+        "holiday_overtime_hours":{"type":"number","description":"휴일별 8시간 초과분으로 확정된 월 합계, hours는 8시간 이내 부분"},
+        "weeks":{"type":"integer","description":"개근 등 동일 조건으로 주휴 자격이 확인된 완전한 주 수"},
+        "monthly_hours":{"type":"number","description":"minimum_wage의 명시된 월 유급시간(예:209). 명시한 209를 평균 주수로 재환산하지 않음"},
+        "exclusions":ARREARS_PROPERTIES["arrear_exclusions"]
+    }}},
+    "wage_claim_payments":{"type":"array","description":"실제 지급 건별 전체 금액과 항목별 충당. 귀속 불명이면 allocation_confirmed=false로 보존해 보류하며 날짜순 자동 배분 금지","items":{"type":"object","properties":{
+        "id":{"type":"string"},"date":{"type":"string"},"amount":{"type":"number"},"allocation_confirmed":{"type":"boolean"},
+        "allocations":{"type":"array","items":{"type":"object","properties":{
+            "item_id":{"type":"string"},"principal_amount":{"type":"number"},"interest_amount":{"type":"number"},"cost_amount":{"type":"number"}}}}
+    }}},
+    "wage_claim_adjustments":{"type":"array","description":"확인된 지급 의무액의 정정. 세금·손해배상·징계 공제를 임의로 정정으로 넣지 말 것","items":{"type":"object","properties":{
+        "id":{"type":"string"},"item_id":{"type":"string"},"amount":{"type":"number","description":"의무액 증감액, 감소는 음수"},
+        "reason":{"type":"string"},"confirmed":{"type":"boolean"}
+    }}}
+})
+
 ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 사용자의 노동상담 질문을 분석하여 analyze_labor_question 도구를 호출하세요.
 
@@ -204,12 +335,29 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 
 분석 규칙:
 1. 임금/수당/퇴직금 등 수치 계산이 필요하면 requires_calculation=true
+   - 연말정산 환급·추가납부액은 year_end_settlement, 월별 보험료·원천징수는 insurance로 구분하세요.
+   - 선택적 근로시간제 정산은 selective_work_settlement, 일반 소정근로시간은 working_hours입니다.
+   - 미지급 임금 원금·차액 산정은 arrears_principal이며 wage_claim_items에 의무액·기지급 원금을 분리합니다. 차액을 대신 계산해 넣지 마세요. 원금과 그 이자를 함께 요청하면 wage_claim_include_interest=true로 하고 별도 arrear_amount/arrear_claims는 생성하지 마세요. 이미 확정된 체불 원금의 이자만 요청하면 기존 wage_arrears입니다. 새 정산과 별개인 기존 채권 이자를 명시적으로 요청하면 wage_claim_include_interest=false와 기존 arrear 입력을 함께 보존하세요. 관계 미상은 생략하며 임의 분리하지 마세요. 이자 제외 기간은 적용되는 wage_claim_items의 exclusions에 보존하고 귀속 미상은 상위 arrear_exclusions에 남겨 보류하세요.
+   - 체불 차액만 묻는 경우 기초 산출인 연장·최저임금·일할은 wage_claim_items.source로 연결하고 독립 계산 유형에 중복 추가하지 마세요. 파생 항목의 month는 상위 settlement_month와 같아야 합니다. 실제 월 20시간은 hours=20이며 주 20시간으로 바꾸지 마세요. 주휴 source는 질문의 개근 여부를 weekly_attendance_days로 보존하세요.
+   - 월급 계약이 최저임금보다 낮고 일부만 지급됐다면 source=minimum_wage 한 행에 계약 임금은 상위 wage_amount, 실제 지급액은 paid_amount로 넣습니다. 월 209시간 등 명시 유급시간은 monthly_hours로 보존합니다. 계약 미지급분과 최저임금 미달분을 별도 중복 행으로 만들지 마세요.
+   - 긴 정산 명세를 요약·생략하거나 일부 행만 전체 범위로 표시하지 마세요. 전체 항목·지급을 보존할 수 없으면 wage_claim_scope_complete=false로 하고 분할 명세를 요청하세요.
+   - 초과 지급은 해당 월 원금 지급액으로 보존하며 다른 월의 체불에서 자동 차감하지 마세요. 세전 기준·요청 범위와 지급 귀속이 명시되면 scope_complete와 amount_basis를 보존하세요.
+   - 중도입사·중도퇴사·휴복직 급여 일할계산은 prorated입니다. 일반 임금계산으로 대신하지 마세요.
+   - 일할계산은 정산월·약정 방식·항목별 지급 조건·무급 기간을 보존하세요. 'N일까지 재직'은 last_employed_date, 'N일 퇴직 효력'은 proration_retirement_effective_date입니다. 단순 '퇴사일'의 뜻은 확인하세요. 단일 월급액에 역일수 등 일할 약정을 명시하면 그 금액의 proration_all_items_proportional=true이며 proration_items는 생략합니다. 수당별 지급 조건이 다르거나 미확인이라고 명시되면 전체 비례를 추정하지 말고 항목별 조건을 보존하세요. 실제 지급 확정 수당은 proration_items의 actual로 넣고 정기 고정수당으로 중복 생성하지 마세요.
+   - 사용자가 요청한 계산만 유형에 넣으세요. 과거 보험 납부 사실·제도 부정 표현은 계산 요청이 아닙니다.
+     복합 질문에서는 지원 여부와 관계없이 각 요청을 별도 유형으로 보존하세요.
 2. 질문에서 추출 가능한 정보는 최대한 추출 (임금액, 근무시간, 근무기간 등)
+   - 수당의 지급 주기를 보존하세요. 연 120만원을 월 120만원으로 넣지 마세요. amount는 회차 금액, 연간 총액이면 annual=true입니다.
+   - 같은 상여를 고정수당과 연간 상여에 넣으면 source_id와 annual_bonus_allowance_ids로 연결하세요. 포함 여부 미확인은 추가 질문입니다.
+   - 평균임금 사유 발생일은 average_wage_date에 반드시 보존하세요. 퇴직 언급이 없어도 이 날짜가 제외 기간 검증의 기준입니다.
+   - 실제 3개월 임금·달력일수·제외 기간은 그대로 추출하고, 월급으로 실지급액이나 무급·제외 사유를 만들지 마세요.
 3. 추출 불가능하지만 계산에 필수인 정보는 missing_info에 추가
 4. 관련 법조문을 relevant_laws에 키워드로 추출 (예: "근로기준법 제56조")
 5. 숫자 추론 금지: 사용자가 명시적으로 말한 숫자만 추출하세요.
-   - "하루 10시간 주5일" → daily_work_hours와 weekly_overtime_hours를 추출하지 마세요.
-     missing_info에 "1일 소정근로시간", "주당 연장근로시간" 추가.
+   - "하루 10시간 주5일" → daily_work_hours=10, weekly_work_days=5 (질문의 숫자 그대로 — 1일 8시간·주 40시간을 넘는
+     시간은 계산기가 연장근로로 나눕니다). weekly_overtime_hours는 질문이 연장시간을 따로 말했을 때만 넣으세요.
+   - 근로계약·근무표로 정해 매일 반복하는 하루 근로시간만 daily_work_hours에 넣으세요. "어제 12시간", "지난주 3일 동안
+     25시간"처럼 특정 날·기간에 실제로 일한 시간은 넣지 말고 missing_info에 "1일 소정근로시간"을 추가하세요.
    - "소정근로 8시간, 연장 2시간" → daily_work_hours=8, weekly_overtime_hours=2×근무일수 (명시적 → OK)
    - "월급 250만원" → wage_amount=2500000 (명시적 → OK)
    - "주 3일 근무" → weekly_work_days=3 (명시적 → OK)
@@ -241,7 +389,11 @@ ANALYZER_SYSTEM = """당신은 한국 노동법 전문 분석 AI입니다.
 - 연차수당 → annual_leave
 - 실업급여 → unemployment
 - 육아휴직급여 → parental_leave
-- 출산전후휴가급여 → maternity_leave
+- 육아기 근로시간 단축급여 → reduced_work_benefit (휴직 개월 수 없이 독립 계산)
+- 육아 급여는 입사일과 실제 휴직/단축 사용일을 구분한다. 실제 사건에 시작일을 만들지 않는다. 날짜 없는 현행 일반형 예시 요청만 childcare_example=true로 표시한다. 입력 임금은 개시일 기준 월 통상임금이다.
+- 부모별 사용 기간·같은 자녀·자격·피보험 단위기간은 질문에 있는 사실만 전달한다. 6+6, 18개월 연장, 단기형 자격을 두 번째 사용자라는 이유로 추정하지 않는다.
+- 출산전후휴가급여·배우자 출산휴가·난임치료휴가·배우자 유산사산휴가 → maternity_leave + maternity_leave_type 필수
+  실제 사용일수·기사용·구간·요건을 보존하세요. 본인 유산사산은 own_miscarriage, 여러 유형은 multiple로 보류하고 개별 입력을 확인합니다.
 - 임금체불 지연이자 → wage_arrears
 - 근로장려금(EITC) → eitc
 - 평균임금 산정 → average_wage
@@ -332,8 +484,12 @@ WAGE_CALC_RULES = """
 
 ## 임금 계산 규칙
 - 참고 자료에 '임금계산기 결과'나 '주휴시간 산정'이 있으면 그 시간·금액을 그대로 쓰세요. 직접 다시 계산하지 마세요.
+- 계산식에 항목명·원래 지급 주기·월 환산액이 함께 있으면 같은 상여의 환산입니다. 연 상여의 월 환산액을 질문에 없는 별도 수당으로 오해하거나 다시 합산하지 마세요.
+- 휴가 사용일과 계산 카드의 법률 시행일을 대조하세요. 미래 사용일에 적용될 공포된 개정 기준이 카드에 명시되어 있으면 오늘 시행 중인 개정 전 조문을 그 미래 기간에 적용하지 마세요. 사용 예정이라는 조건은 유지하세요.
+- 계산 카드의 '조건부 예시'는 그 조건(근로계약상 소정근로시간이 질문의 근무와 같다면)을 함께 적어 쓰세요. 조건을 빼고 확정값처럼 쓰거나, 질문의 실제 근무시간을 소정근로시간으로 단정하지 마세요.
 - 주휴 유급시간은 이 시스템 계산기와 같은 산식으로 설명하세요. **주 5일 미만** 근무는 근로기준법 시행령 별표2에 따른 비례 산정으로 1주 소정근로시간 ÷ 40시간 × 8시간(= 1주 소정근로시간 ÷ 5)입니다. 예: 주 3일 × 6시간 = 18시간 → 18 ÷ 40 × 8 = 3.6시간 — 1일 소정근로시간(6시간)을 그대로 쓰지 마세요. **주 5일 이상** 근무는 1일 소정근로시간(최대 8시간)입니다.
 - 주휴수당 판단의 기준은 계약상 소정근로일·소정근로시간입니다. 실제 근무시간이나 연장근로시간을 넣지 마세요.
+- 월 환산(1주 금액 × 365÷7÷12, 약 4.345주)은 월급제 비교용 예시입니다. 계산 카드에 월 금액이 있으면 그 금액을 쓰고 4.345로 다시 곱하지 마세요 — 줄인 계수로 곱하면 카드와 금액이 달라집니다. 시급제의 실제 지급액은 그 급여기간 달력의 실제 근로시간과 주휴 발생 횟수로 계산하고, 중간 단계에서 반올림하지 마세요. 월 환산액을 '법정 표준 월급'이라고 부르지 마세요.
 - 질문에 시급이 없어 예시 금액이 필요하면 참고 자료의 '검증된 법정 최저임금'에서 질문이 묻는 연도(정하지 않았으면 오늘 날짜가 속한 연도)의 시급을 쓰세요. 그 자료가 없으면 금액 예시 없이 산식만 보여 주세요. 10,000원 같은 어림값은 쓰지 마세요.
 """
 
@@ -351,7 +507,11 @@ ANSWER_ACCURACY_RULES = """
 - 입사일·퇴사일·신고일을 바꾸라는 조언은 근거 조문, 기간을 세는 방식, "고용센터 등 관할 기관에서 확정 확인"을 함께 쓸 때만 하세요. 특정 날짜 하나만 권하지 마세요.
 - 절차의 순서·일정을 안내할 때는 교육 이수·서류 제출의 유효기간과 처리기한을 고용센터·고용24 안내로 확인하도록 함께 쓰세요. 근거 자료에 없는 기한 숫자는 지어내지 마세요.
 - 계약서·통상임금·소정근로시간 같은 사용자 자료로 확정되지 않은 금액은 "예시"라고 밝히세요.
+- 사용자가 적은 숫자와 단위를 그대로 보존하세요. 단위 없는 '30 정도 적게'를 '30만 원'으로 바꾸지 말고 통화 단위와 지급 주기를 확인하세요. 확인되지 않은 숫자를 계산 입력이나 확정 사실로 쓰지 마세요.
+- 실제 발생한 지급 지연·근무 기간과 앞으로 발생할 것으로 가정한 기간을 별도로 표시하고 계산하세요. 예정일을 실제 지급일이나 확정된 사실로 대체하지 마세요.
 - 참고 자료에 [구 기준 주의] 표시가 있으면 그 내용을 현행 기준으로 안내하지 마세요. '현행 기준' 블록이 있으면 그것을 따르세요.
+- 근로기준법의 근로조건은 최저기준입니다(제3조). 법정 기준보다 근로자에게 유리하게 정한 지급 약정(예: 결근한 달에도 고정 수당을 지급)은 그 자체로 위법이 아니므로 위법이라고 쓰지 말고, 법정 기준에 미달하는지와 약정 내용을 확인하세요.
+- 판례·행정해석을 근거로 들 때는 참고 자료에 나온 그 문서의 사안·요지가 지금 주장과 같은 쟁점일 때만 직접 근거로 쓰세요. 사안이 다르면 '사안은 다르지만 참고'라고 밝히거나 인용하지 마세요.
 - 피보험자격 확인청구를 언급할 때는 확인 업무를 근로복지공단이 맡고(고용보험법 시행령 제145조 제2항) 언제든지 청구할 수 있다고 쓰세요(고용보험법 제17조 제1항). 이직사유 판단과 수급자격 인정은 고용센터가 합니다. '3년'은 신고되지 않은 기간의 피보험기간을 계산하는 범위(고용보험법 제50조 제5항)이지 확인청구의 기한이 아니므로 '최대 3년까지만 청구'처럼 쓰지 마세요.
 - 상시 근로자 수가 질문에 없는데 쟁점이 아래 '5명 이상 전용' 규정이면 "상시 5명 이상 사업장이라면" 조건을 붙이고, 4명 이하면 적용되지 않는다고 한 줄로 쓰세요(근로기준법 제11조, 같은 법 시행령 제7조 별표 1). 규모가 질문에 있으면 그대로 판단하세요.
   - 5명 이상 전용: 해고 제한(제23조 제1항)·경영상 해고(제24조)·해고 서면통지(제27조)·부당해고 구제신청(제28조), 휴업수당(제46조), 근로시간(제50조)·연장근로 한도(제53조)·가산임금(제56조), 관공서 공휴일 유급휴일(제55조 제2항), 연차휴가(제60조), 취업규칙 불이익 변경(제94조)·감봉 한도(제95조), 기간제 2년 초과 무기계약 전환(기간제법 제4조·제3조 — 국가·지방자치단체 기관은 규모와 무관).
@@ -377,6 +537,8 @@ ANSWER_RULE_ANCHORS: tuple[tuple[str, str], ...] = (
     ("ei_act_43", "그 신청인에 대한 수급자격의 인정 여부를 결정"),
     ("ei_act_58", "해당한다고 직업안정기관의 장이 인정하는 경우에는 수급자격이 없는 것으로 본다"),
     ("ei_act_50", "소급하여 3년이 되는 날이 속하는 보험연도의 첫 날에 그 피보험자격을 취득한 것으로 보아"),
+    # 유리한 약정은 위법이 아니다(10-11 외부 점검 32번, audit-50-legal-accuracy P1-2)
+    ("lsa_act_3", "이 법에서 정하는 근로조건은 최저기준이므로"),
     # '상시 5명 이상' 적용 조건(law-article-coverage D8). 별표 1의 조문별 있음·없음은 구절 앵커가 아니라
     # rule_facts.ANNEX_CLAIMS(별표 파서)가 대조한다 — 부재 주장은 구절로 검증할 수 없다.
     ("lsa_act_11", "이 법은 상시 5명 이상의 근로자를 사용하는 모든 사업 또는 사업장에 적용한다"),

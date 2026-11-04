@@ -11,7 +11,7 @@
 from dataclasses import dataclass
 
 from ..base import BaseCalculatorResult
-from ..utils import WEEKS_PER_MONTH
+from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours
 from ..models import WageInput, BusinessSize
 from .ordinary_wage import OrdinaryWageResult
 from .shared import MultiplierContext
@@ -111,7 +111,7 @@ def calc_compensatory_leave(inp: WageInput, ow: OrdinaryWageResult) -> Compensat
 
     # ── 월 환산 ─────────────────────────────────────────────────────────
     monthly_unused = unused_leave_pay * WEEKS_PER_MONTH
-    formulas.append(f"월 환산: {unused_leave_pay:,.0f}원 × {WEEKS_PER_MONTH:.3f}주 = {monthly_unused:,.0f}원")
+    formulas.append(f"월 환산: {unused_leave_pay:,.0f}원 × ({WEEKS_PER_MONTH_LABEL})주 = {monthly_unused:,.0f}원")
 
     # ── 현금 수당과 비교 (참고용) ────────────────────────────────────────
     original_pay = hourly * (
@@ -134,7 +134,7 @@ def calc_compensatory_leave(inp: WageInput, ow: OrdinaryWageResult) -> Compensat
         "휴일근로 보상휴가(8h이내)": f"{holiday_comp:.2f}h/주",
         "휴일근로 보상휴가(8h초과)": f"{holiday_ot_comp:.2f}h/주",
         "총 보상휴가(주)": f"{total_comp:.2f}h",
-        "총 보상휴가(월 환산)": f"{total_comp * WEEKS_PER_MONTH:.2f}h",
+        "총 보상휴가(월 환산)": f"{fmt_hours(total_comp * WEEKS_PER_MONTH)}h",
         "미사용 보상휴가 수당(주)": f"{unused_leave_pay:,.0f}원",
         "미사용 보상휴가 수당(월)": f"{monthly_unused:,.0f}원",
         "비고": "현금 수당 = 미사용 보상휴가 수당 (동일 금액)",

@@ -3,6 +3,10 @@
 
 facade.py 에서 분리 (Phase D)
 """
+import re
+
+from ..result import WageResult
+from ..utils import fmt_hours
 
 
 def _merge(result, section, calc_result, all_warnings, all_legal):
@@ -14,8 +18,67 @@ def _merge(result, section, calc_result, all_warnings, all_legal):
     all_legal.extend(calc_result.legal_basis)
 
 
+# 금액 보류(`calculate(..., amount_hold=)`) — pipeline 월급 구성 가드가 넘긴다. 그 경로의 통상임금은 연장·야간·휴일·연차수당이
+# 섞인 월급 총액이라 그 값으로 낸 금액이 부풀려진다. 계산은 그대로 하고 금액만 뺀다 — 대상을 통째로 빼면 연차 발생일수·
+# '퇴직금 미발생' 같은 시급과 무관한 판정까지 사라진다(Act-2 코드 리뷰 M2).
+_WON_AMOUNT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*원")
+_WON_ANY_RE = re.compile(r"\d\s*원")
+_QUANTITY_RE = re.compile(r"\d[\d,.]*\s*(?:일|h|시간|개월|년|주)")
+
+
+def _has_amount(text) -> bool:
+    """0이 아닌 원화 금액이 들어 있는가."""
+    return any(float(m.group(1).replace(",", "")) for m in _WON_AMOUNT_RE.finditer(str(text)))
+
+
+def _basis_free(text) -> bool:
+    """금액(0원 포함)도 통상임금 비교('적용 기준: 통상임금')도 없는 줄 — 부풀린 통상임금과 무관하다. 0원 줄도 빼는 것은
+    '과세표준: 2,865,414 - 2,865,414 = 0원'처럼 결론만 0이고 중간값은 부풀린 줄이 있어서다(Act-2 재검토 N4)."""
+    text = str(text)
+    return not _WON_ANY_RE.search(text) and "통상" not in text
+
+
+def _ineligible(calc_result) -> bool:
+    """계산기가 자격 판정으로 0을 냈는가(퇴직금 미발생·주휴 미발생·해고예고 면제·공휴일 미적용)."""
+    return (getattr(calc_result, "is_eligible", None) is False
+            or getattr(calc_result, "eligible", None) is False
+            or getattr(calc_result, "is_exempt", None) is True)
+
+
+def _merge_amount_held(result, key, section, calc_result, populate, all_warnings, all_legal,
+                       ineligible=None) -> bool:
+    """계산기 결과에서 금액만 빼고 병합한다. 자격 판정으로 금액이 0이면 False — 호출부가 그대로 병합한다.
+
+    0원을 통과시키는 것은 자격 판정(`ineligible`, 없으면 결과의 자격 플래그)일 때뿐이다. 입력이 없어 0인 결과(연장시간·입사일
+    미기재)를 통과시키면 사용자가 '포함돼 있다'고 한 수당에 '0원'과 '이 수치를 사용하세요'가 붙는다(Act-2 재검토 N1).
+
+    남기는 것: 요약은 수량 사실(연차 발생일수·계속근로일수·보상휴가 시간 등)만, 계산식·안내·법적 근거는 금액과 통상임금
+    비교가 없는 줄만('평균임금이 통상임금보다 적으면 통상임금' 근거는 보류한 금액의 근거라 뺀다). 요약의 비교 결과('적용 기준:
+    통상임금'·'평균임금 70%')도 부풀린 통상임금과 비교해 나온 것이라 수량이 아니면 버린다. 금액은 monthly_total에 더하지
+    않는다(호출부).
+    """
+    probe = WageResult()
+    populate(calc_result, probe)
+    formulas = getattr(calc_result, "formulas", [])
+    if ineligible is None:
+        ineligible = _ineligible(calc_result)
+    texts = (*probe.summary.values(), *formulas, *calc_result.warnings)
+    if ineligible and not any(_has_amount(text) for text in texts):
+        return False
+    result.amount_held.append(key)
+    result.summary.update({k: v for k, v in probe.summary.items()
+                           if _basis_free(f"{k} {v}") and _QUANTITY_RE.search(str(v))})
+    result.formulas.extend(f for f in formulas if _basis_free(f))
+    all_warnings.extend(w for w in calc_result.warnings if _basis_free(w))
+    all_legal.extend(line for line in calc_result.legal_basis if _basis_free(line))
+    breakdown = calc_result.breakdown if isinstance(calc_result.breakdown, dict) else {}
+    result.breakdown[section] = {k: v for k, v in breakdown.items() if _basis_free(f"{k} {v}")}
+    return True
+
+
 # ── populate 함수: 각 계산기의 summary/특수필드 설정 ──────────────────────────
-# 반환값 = monthly_total에 더할 금액 (0이면 미반영)
+# 반환값 = 그 섹션의 월 금액. facade 월 총액은 기준 월액(shared.monthly_wage_total)이고, 반환값은 연장수당(premium 판정)과
+# 탄력적 근로시간제(가산)만 읽는다 — 나머지는 쓰지 않는다(monthly-base-unification)
 
 
 def _pop_overtime(r, result):
@@ -26,6 +89,29 @@ def _pop_overtime(r, result):
 
 def _pop_minimum_wage(r, result):
     """result.summary에 최저임금 충족 여부·실질시급·부족분 추가. 반환: 0."""
+    from ..result import MW_COMPLIANT, MW_HELD, MW_NOT_APPLICABLE, MW_VIOLATION
+    if getattr(r, "not_applicable", False):
+        # 노무제공자는 원칙적으로 최저임금법의 근로자가 아니다(제2조) — 판정하지 않고 근로자로 인정될 때의 참고값만 둔다(F4)
+        result.summary["최저임금 충족"] = "➖ 해당 없음(노무제공자)"
+        result.summary["실질시급"] = f"{r.effective_hourly:,.0f}원(근로자로 인정될 때 참고)"
+        result.minimum_wage_ok = None
+        result.minimum_wage_state = MW_NOT_APPLICABLE
+        return 0
+    if getattr(r, "undetermined", False):
+        # 기준(주휴 판례 원칙 vs 시행령 별표 2, 연장 별도 vs 연장 포함 역산, 수습 감액 여부)에 따라 판정이 갈린다 — 판정은
+        # 보류(None), 실질시급을 함께 싣는다. 수습 감액 여부만 갈리면 실질시급은 하나고 최저임금 기준이 둘이다
+        alternatives = getattr(r, "alternative_hourlies", ()) or ((r.alternative_hourly,) if r.alternative_hourly else ())
+        values = list(dict.fromkeys([r.effective_hourly, *alternatives]))
+        result.summary["최저임금 충족"] = "⏸ 판정 보류"
+        result.summary["실질시급"] = " 또는 ".join(f"{v:,.0f}원" for v in values)
+        if getattr(r, "alternative_minimum", 0):
+            # 고시 금액을 먼저 둔다 — 감액값이 라벨 없이 '최저임금: 9,288원'처럼 읽히면 답변이 그대로 옮긴다
+            result.summary["최저임금 기준"] = (f"{r.legal_minimum:,.0f}원 또는 수습 감액 {r.alternative_minimum:,.0f}원"
+                                          "(요건을 모두 갖춘 경우)")
+        result.minimum_wage_ok = None
+        result.minimum_wage_state = MW_HELD
+        return 0
+    result.minimum_wage_state = MW_COMPLIANT if r.is_compliant else MW_VIOLATION
     result.summary["최저임금 충족"] = "✅ 충족" if r.is_compliant else "❌ 미달"
     result.summary["실질시급"] = f"{r.effective_hourly:,.0f}원"
     if not r.is_compliant:
@@ -42,11 +128,20 @@ def _pop_weekly_holiday(r, result):
 
 def _pop_annual_leave(r, result):
     """result.summary에 연차발생일수·연차수당·미사용일수·차감·비례·정산 추가. 반환: 0."""
-    result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
+    if r.accrual_basis == "company":
+        result.summary["회사 부여 연차일수"] = f"{r.accrued_days:g}일"
+    else:
+        result.summary["법정 연차 발생일수"] = f"{r.accrued_days}일"
     result.summary["연차수당"] = f"{r.annual_leave_pay:,.0f}원"
     result.summary["미사용 연차"] = f"{r.remaining_days:.1f}일"
+    if r.is_eligible:
+        result.summary["연차 시간"] = f"발생 {r.accrued_hours:g}시간 · 사용 {r.used_hours:g}시간 · 잔여 {r.remaining_hours:g}시간"
+        result.summary["연차수당 정산 상태"] = ("퇴직 시 현재 기간 잔여분 (당시 임금·기지급 확인 필요)" if r.pay_due
+                                                else "입력 임금 기준 평가액 · 사용기간 만료/퇴직 전 확정 지급액 아님")
+    if r.first_year_settlement_days is not None:
+        result.summary["별도 첫해 미사용분"] = f"{r.first_year_settlement_days:g}일 (당해 발생분·수당에 합산하지 않음)"
     if r.deducted_days > 0:
-        result.summary["2년차 차감"] = f"{r.deducted_days:.1f}일 (제60조③)"
+        result.summary["개정 전 사건의 첫해 공제"] = f"{r.deducted_days:.1f}일 (2017-05-30 전 입사)"
     if r.is_part_time_ratio:
         result.summary["단시간 비례"] = f"×{r.part_time_ratio:.2f}"
     if r.fiscal_year_gap > 0:
@@ -63,23 +158,43 @@ def _pop_dismissal(r, result):
 def _pop_comprehensive(r, result):
     """result.summary에 포괄임금 역산 시급·계수시간·최저임금 충족 추가. 반환: 0."""
     result.summary["포괄임금 역산 시급"] = f"{r.effective_hourly:,.0f}원"
-    result.summary["총계수시간(월)"] = f"{r.total_coefficient_hours:.1f}h"
+    result.summary["총계수시간(월)"] = f"{fmt_hours(r.total_coefficient_hours)}h"
     result.summary["최저임금 충족"] = "✅" if r.is_minimum_wage_ok else "❌"
+    result.minimum_wage_state = "compliant" if r.is_minimum_wage_ok else "violation"
     if not r.is_valid_comprehensive:
         result.summary["포괄임금 유효성"] = "⚠️ 문제 있음"
     result.minimum_wage_ok = r.is_minimum_wage_ok
     return 0
 
 
+def _pop_wage_claims(r, result):
+    result.summary["미지급 원금 합계" + (" (추정)" if r.is_estimate else "")] = f"{r.remaining_principal:,.0f}원"
+    result.summary["지급 의무액 합계"] = f"{r.total_obligation:,.0f}원"
+    result.summary["기지급 원금 합계"] = f"{r.total_paid:,.0f}원"
+    result.summary["지급기일 경과 체불 원금"] = f"{r.overdue_principal:,.0f}원"
+    result.summary["기한 미도래·당일 미지급액"] = f"{r.not_yet_due:,.0f}원"
+    result.summary["초과 지급액 (자동 상계 안 함)"] = f"{r.overpayment:,.0f}원"
+    result.summary["원금 잔액 기준일"] = r.calc_date
+    for row in r.items:
+        result.summary[f"{row['month']} {row['name']} [{row['id']}]"] = (
+            f"의무액 {row['obligation']:,.0f}원 − 기지급 원금 {row['paid_principal']:,.0f}원 = 미지급 {row['remaining']:,.0f}원; 지급기일 {row['due_date']}"
+            + (f"; 퇴직 후 적용 지급기한 {row['effective_due_date']}" if row['effective_due_date'] != row['due_date'] else "")
+            + (f"; 초과 지급 {row['overpayment']:,.0f}원 별도" if row['overpayment'] else ""))
+    return 0
+
+
 def _pop_prorated(r, result):
     """result.summary에 일할계산 임금·근무일수 추가. 반환: 0."""
     result.summary["일할계산 임금"] = f"{r.prorated_wage:,.0f}원"
-    result.summary["근무 일수(역일)"] = f"{r.worked_days}일 / {r.total_days}일"
+    result.summary["정산 대상월·방식"] = f"{r.settlement_month} · {r.method}"
+    result.summary["일할 비율"] = f"{r.worked_days}/{r.total_days}일"
+    result.summary["산정에 포함한 날짜"] = ", ".join(r.included_dates) or "없음"
+    result.summary["확정 무급 제외 날짜"] = ", ".join(r.excluded_dates) or "없음"
     return 0
 
 
 def _pop_public_holiday(r, result):
-    """result.summary에 유급공휴일 수당·적용여부 추가. 반환: holiday_pay/12 or 0."""
+    """result.summary에 유급공휴일 수당·적용여부 추가. 반환: holiday_pay/12 or 0(월 총액에는 더하지 않는다 — 월급에 이미 든 임금)."""
     result.summary["유급공휴일 수당"] = f"{r.total_holiday_pay:,.0f}원"
     result.summary["유급공휴일 적용"] = "✅" if r.eligible else "❌ 미적용"
     return (r.total_holiday_pay / 12) if r.eligible else 0
@@ -153,19 +268,34 @@ def _pop_compensatory_leave(r, result):
 
 
 def _pop_parental_leave(r, result):
-    """result.summary에 육아휴직 월수령액·총수령액·사후지급금 추가. 반환: 0."""
-    result.summary["육아휴직 월 수령액"] = f"{r.monthly_benefit_actual:,.0f}원"
+    """월차별 금액과 총액. 첫 월액을 전체 기간의 고정 월액으로 표시하지 않는다."""
+    result.summary["육아휴직 월차별 지급액"] = ", ".join(
+        f"{x['month_index']}개월차 {x['payment']:,.0f}원" for x in r.monthly_schedule)
     result.summary["육아휴직 총 수령액"] = f"{r.total_benefit:,.0f}원"
     result.summary["사후지급금 합계"] = f"{r.total_deferred:,.0f}원"
-    if r.has_bonus:
-        result.summary["아빠 보너스(첫 3개월)"] = f"{r.monthly_bonus_benefit:,.0f}원/월"
+    result.summary["육아휴직 급여 유형"] = r.breakdown["급여 유형"]
+    return 0
+
+
+def _pop_reduced_work_benefit(r, result):
+    result.summary["육아기 단축급여 월별 지급액"] = ", ".join(
+        f"{x['month_index']}개월차 {x['payment']:,.0f}원" for x in r.monthly_schedule)
+    result.summary["고용보험 단축급여 합계"] = f"{r.total_benefit:,.0f}원"
+    result.summary["단축 전후 주 소정근로시간"] = f"{r.weekly_hours_before:g} → {r.weekly_hours_after:g}시간"
     return 0
 
 
 def _pop_maternity_leave(r, result):
     """result.summary에 출산전후휴가 급여·보험지급액·배우자휴가 추가. 반환: 0."""
+    if getattr(r, "selected_type", ""):
+        result.summary.update(r.summary)
+        return 0
     result.summary["출산전후휴가 월 급여"] = f"{r.monthly_benefit:,.0f}원"
-    result.summary["고용보험 지급 총액"] = f"{r.total_insurance_benefit:,.0f}원"
+    result.summary["고용보험 지급 총액"] = ("미확정 — 지원 한도를 법문이 정하지 않음(경고 참고)"
+                                     if r.total_insurance_benefit is None else f"{r.total_insurance_benefit:,.0f}원")
+    if r.requested_maternity_only:
+        result.summary["출산전후휴가 사업주 잔여 부담"] = f"{r.total_employer_benefit:,.0f}원"
+        return 0
     # 유급액(사업주 의무)과 고용보험 지원분은 다른 금액이다 — 하나로 뭉치면 대규모기업
     # 근로자에게 받지도 못할 보험 급여를 유급액으로 보여 주게 된다.
     result.summary[f"배우자 출산휴가 유급액({r.spouse_leave_days}일)"] = f"{r.spouse_leave_pay:,.0f}원"
@@ -183,6 +313,7 @@ def _pop_maternity_leave(r, result):
             continue
         result.summary[f"{label} 유급액(유급 {days}일)"] = f"{pay:,.0f}원"
         result.summary[f"{label} 급여(고용보험)"] = (
+            "미확정 — 고시 상한이 정한 일수를 넘는 유급일 포함(경고 참고)" if benefit is None else
             f"{benefit:,.0f}원" if r.is_priority_support else "없음 (우선지원대상기업만 지원)")
     return 0
 
@@ -237,7 +368,7 @@ def _pop_ordinary_wage(r, result):
 
 def _pop_working_hours(r, result):
     """result.summary에 월 소정근로시간·시급·월급 환산 추가. 반환: 0."""
-    result.summary["월 소정근로시간"] = f"{r.monthly_hours}시간"
+    result.summary["월 소정근로시간"] = f"{fmt_hours(r.monthly_hours)}시간"
     if r.hourly_wage:
         result.summary["시급"] = f"{r.hourly_wage:,.0f}원"
     if r.monthly_wage:
@@ -247,7 +378,8 @@ def _pop_working_hours(r, result):
 
 def _pop_industrial_accident(r, result):
     """result.summary에 평균임금·휴업/장해/유족/장례비·산재합계 추가. 반환: 0."""
-    result.summary["적용 평균임금"] = f"{r.avg_daily_wage:,.0f}원/일"
+    # 퇴직금 요약과 같은 키를 쓰면 함께 물었을 때 퇴직금 옆에 산재 값이 찍힌다(Act-3 리뷰 L2)
+    result.summary["산재 적용 평균임금"] = f"{r.avg_daily_wage:,.0f}원/일"
     if r.sick_leave_total > 0:
         result.summary["휴업급여"] = f"{r.sick_leave_total:,.0f}원 ({r.sick_leave_days}일)"
     if r.illness_pension_annual > 0:

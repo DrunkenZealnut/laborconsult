@@ -385,7 +385,7 @@ def test_record_violation() -> None:
 
 def test_chat_rate_limit_bucket() -> None:
     """채팅 rate limit이 게시판·이메일 버킷과 분리되어 있는지."""
-    from api.index import _check_rate_limit, _chat_rate, _write_rate
+    from api.index import _check_rate_limit, _rate_limit_wait, _chat_rate, _write_rate
 
     _chat_rate.clear()
     _write_rate.clear()
@@ -395,6 +395,8 @@ def test_chat_rate_limit_bucket() -> None:
     assert not _check_rate_limit(ip, max_count=5, window=60, store=_chat_rate), "6회차가 통과됨"
     # 게시판 버킷은 영향 없음
     assert _check_rate_limit(ip, max_count=3, window=60, store=_write_rate)
+    # 한도 0이면 빈 버킷에서도 거절하고 창 전체를 기다리게 한다(가장 오래된 요청이 없어도 예외 없이)
+    assert _rate_limit_wait(ip, max_count=0, window=60, store={}) == 60
     _chat_rate.clear()
     _write_rate.clear()
     print("  ✅ 채팅 rate limit: 5회/60초 경계 + 버킷 분리")
@@ -438,6 +440,7 @@ def test_guard_chat_request() -> None:
             raise AssertionError("길이 위반이 통과됨")
         except GuardRejection as e:
             assert e.status == 400 and "2,000자" in e.detail
+            assert e.code == ag.REJECT_INVALID, e.code
         assert not spy.called, "길이 위반인데 쿼터 RPC를 호출했다"
 
         # rate limit 초과 → 429
@@ -451,7 +454,23 @@ def test_guard_chat_request() -> None:
             raise AssertionError("rate limit 초과가 통과됨")
         except GuardRejection as e:
             assert e.status == 429
+            assert e.code == ag.REJECT_RATE_LIMITED and 0 < e.retry_after <= ag.CHAT_RATE_WINDOW, (
+                e.code, e.retry_after)
         assert not spy.called, "rate limit 초과인데 쿼터 RPC를 호출했다"
+
+        # 창 끝 무렵의 거절은 창 전체가 아니라 남은 시간이다 — 창 전체를 주면 프런트가 그만큼 입력을
+        # 잠가, 서버가 이미 허용하는데도 최대 1분을 더 기다리게 된다(CodeRabbit #103).
+        _chat_rate.clear()
+        ip = "198.51.100.78"
+        with patch("api.index.time.time", return_value=1_000.0):
+            for _ in range(ag.CHAT_RATE_LIMIT):
+                _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
+        with patch("api.index.time.time", return_value=1_000.0 + ag.CHAT_RATE_WINDOW - 10):
+            try:
+                _guard_chat_request(FakeRequest(ip), "정상 질문입니다", None)
+                raise AssertionError("rate limit 초과가 통과됨")
+            except GuardRejection as e:
+                assert (e.code, e.retry_after) == (ag.REJECT_RATE_LIMITED, 10), (e.code, e.retry_after)
 
         # 쿼터 소진 → 429 + 쿼터 메시지
         _chat_rate.clear()
@@ -461,9 +480,90 @@ def test_guard_chat_request() -> None:
             raise AssertionError("쿼터 소진이 통과됨")
         except GuardRejection as e:
             assert e.status == 429 and e.detail == ag.MSG_QUOTA_EXCEEDED
+            # 프런트가 다음 KST 자정까지 입력을 잠그는 근거 — 0이면 잠기지 않아 '정상처럼 보이는' 상태가 된다
+            assert e.code == ag.REJECT_QUOTA and 0 < e.retry_after <= 86400, (e.code, e.retry_after)
+
+        # 자동 차단 → 429 + 남은 차단 시간
+        _chat_rate.clear()
+        spy.return_value = ag.GuardCheckResult(allowed=False, reason="blocked", retry_after=1800)
+        try:
+            _guard_chat_request(FakeRequest("198.51.100.10"), "정상 질문입니다", None)
+            raise AssertionError("차단이 통과됨")
+        except GuardRejection as e:
+            assert (e.status, e.code, e.retry_after) == (429, ag.REJECT_BLOCKED, 1800), (e.status, e.code, e.retry_after)
 
     _chat_rate.clear()
     print("  ✅ _guard_chat_request: 통과·400·429 변환 + 쿼터 RPC 호출 순서(라이브 호출 없음)")
+
+
+def test_stream_rejection_contract() -> None:
+    """스트림 두 경로의 거절은 error(code·retry_after) + done이고, 동기 경로는 429 + Retry-After다.
+
+    문구만 보내던 때는 프런트가 쿼터 거절을 일반 답변 말풍선으로 그리고 입력창을 다시 열어, 한도에
+    걸린 뒤에도 겉으로는 정상처럼 보였다(2026-10-06 실측: 같은 IP가 51~54번째 요청까지 계속 보냄).
+    """
+    import base64
+    import json as _json
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    import api.index as idx
+    from app.core import abuse_guard as ag
+
+    rejection = ag.GuardRejection(429, ag.MSG_QUOTA_EXCEEDED, 1234, code=ag.REJECT_QUOTA)
+
+    def events(text):
+        return [_json.loads(line[6:]) for line in text.splitlines() if line.startswith("data: ")]
+
+    with patch.object(idx, "_guard_chat_request", side_effect=rejection):
+        client = TestClient(idx.app)
+        got = events(client.get("/api/chat/stream", params={"message": "질문"}).text)
+        posted = events(client.post("/api/chat/stream", json={"message": "질문", "attachments": []}).text)
+        sync = client.post("/api/chat", json={"message": "질문"})
+    for evs in (got, posted):
+        assert [e["type"] for e in evs] == ["error", "done"], evs
+        err = evs[0]
+        assert (err["code"], err["retry_after"], err["text"]) == ("quota", 1234, ag.MSG_QUOTA_EXCEEDED), err
+    assert sync.status_code == 429 and sync.headers.get("retry-after") == "1234", (sync.status_code, sync.headers)
+
+    # 초기화 실패도 같은 형식(server_error) — 프런트가 다시 시도 버튼을 붙인다
+    with patch.object(idx, "_guard_chat_request", return_value=("질문", None, ag.GuardContext(subject_key="ip:x"))), \
+            patch.object(idx, "get_config", side_effect=RuntimeError("no keys")):
+        evs = events(TestClient(idx.app).get("/api/chat/stream", params={"message": "질문"}).text)
+    assert [e["type"] for e in evs] == ["error", "done"] and evs[0]["code"] == "server_error", evs
+
+    # 답변 중 예외(두 경로)와 첨부 검증 실패도 error(code·retry_after) + done이다. 첨부 검증 실패는 입력
+    # 거절(invalid)이다 — server_error면 프런트가 같은 첨부를 다시 보내는 '다시 시도'를 붙인다(CodeRabbit #103).
+    class FakeSession:
+        id = "sess-test"
+
+    def attach(content_type, data=b"x"):
+        return {"filename": "a.bin", "content_type": content_type, "data": base64.b64encode(data).decode()}
+
+    with patch.object(idx, "_guard_chat_request", return_value=("질문", None, ag.GuardContext(subject_key="ip:x"))), \
+            patch.object(idx, "get_config", return_value=object()), \
+            patch.object(idx, "get_or_create_session", return_value=(FakeSession(), False)), \
+            patch.object(idx, "process_question", side_effect=RuntimeError("boom")):
+        client = TestClient(idx.app)
+        answer_failed = [events(client.get("/api/chat/stream", params={"message": "질문"}).text),
+                         events(client.post("/api/chat/stream", json={"message": "질문", "attachments": []}).text)]
+        too_many = events(client.post("/api/chat/stream", json={
+            "message": "질문", "attachments": [attach("text/plain")] * (idx.MAX_ATTACHMENTS + 1)}).text)
+        bad_type = events(client.post("/api/chat/stream", json={
+            "message": "질문", "attachments": [attach("application/zip")]}).text)
+    for evs in answer_failed:
+        assert [e["type"] for e in evs] == ["session", "error", "done"], evs
+        assert (evs[1]["code"], evs[1]["retry_after"]) == ("server_error", 0), evs
+    for evs in (too_many, bad_type):
+        assert [e["type"] for e in evs] == ["session", "error", "done"], evs
+        assert (evs[1]["code"], evs[1]["retry_after"]) == (ag.REJECT_INVALID, 0), evs
+
+    from datetime import datetime, timezone, timedelta
+    kst = timezone(timedelta(hours=9))
+    assert ag.seconds_until_kst_midnight(datetime(2026, 10, 6, 23, 59, 30, tzinfo=kst)) == 30
+    assert ag.seconds_until_kst_midnight(datetime(2026, 10, 6, 0, 0, tzinfo=kst)) == 86400
+    # UTC로 들어와도 경계는 KST다(UTC 15:00 = KST 자정)
+    assert ag.seconds_until_kst_midnight(datetime(2026, 10, 6, 14, 59, 0, tzinfo=timezone.utc)) == 60
+    print("  ✅ 스트림 거절 = error(code·retry_after)+done, 동기 = 429+Retry-After, KST 자정 계산")
 
 
 def test_pipeline_guard_wiring() -> None:
@@ -738,6 +838,7 @@ def main() -> None:
         ("이벤트 기록 RPC", test_record_violation),
         ("채팅 rate limit", test_chat_rate_limit_bucket),
         ("엔드포인트 가드", test_guard_chat_request),
+        ("스트림 거절 계약", test_stream_rejection_contract),
         ("파이프라인 배선", test_pipeline_guard_wiring),
         ("차단 경로 동작", test_block_paths_skip_llm_and_storage),
         ("저장 게이팅 동작", test_guard_flag_storage_gating),

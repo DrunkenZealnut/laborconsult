@@ -141,7 +141,7 @@ TEST_CASES = [
     },
     {
         "id": 8,
-        "desc": "수습기간 — 최저임금 90% 특례",
+        "desc": "수습기간 — 최저임금 90% 특례(1년 이상 계약·3개월 이내·단순노무 아님)",
         "input": WageInput(
             wage_type=WageType.HOURLY,
             hourly_wage=9030,    # 최저임금 90% 수준
@@ -149,6 +149,8 @@ TEST_CASES = [
             reference_year=2025,
             is_probation=True,
             probation_months=3,
+            contract_open_ended=True,   # 감액 요건은 확인된 것만 충족으로 본다(calc-card-followups D5)
+            occupation_code="3",
         ),
         "targets": ["minimum_wage"],
     },
@@ -161,6 +163,9 @@ TEST_CASES = [
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
             join_date="2025-03-15",
+            settlement_month="2025-03",
+            proration_method="calendar",
+            proration_all_items_proportional=True,
         ),
         "targets": ["prorated", "minimum_wage"],
     },
@@ -286,11 +291,13 @@ TEST_CASES = [
     },
     {
         "id": 17,
-        "desc": "실업급여 — 3년 근속 35세, 월급 300만원 (하한액 적용)",
-        # 평균임금 일액: 3,000,000×3÷92 ≈ 97,826원  → 60% = 58,696원
-        # 하한액(2025): 10,030×0.8×8 = 64,192원  → 하한 적용
+        "desc": "실업급여 — 3년 근속 35세, 월급 300만원 (기초일액 = 통상임금 → 상한액 적용)",
+        # 평균임금 일액: 3,000,000×3÷92 ≈ 97,826원 < 1일 통상임금 3,000,000÷208.5714×8 ≈ 115,068원
+        #   → 기초일액은 통상임금(고용보험법 제45조 제2항) → 60% = 69,041원
+        # 상한액(2025): 66,000원 → 상한 적용 (하한 10,030×0.8×8 = 64,192원보다 높다)
         # 소정급여일수: 36개월 × 50세미만 → 180일
-        # 총 구직급여: 64,192 × 180 = 11,554,560원
+        # 총 구직급여: 66,000 × 180 = 11,880,000원
+        # (calc-card-followups F5 전에는 제45조 제2항을 보지 않아 하한 64,192원 × 180 = 11,554,560원이었다)
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=3_000_000,
@@ -375,16 +382,19 @@ TEST_CASES = [
     },
     {
         "id": 25,
-        "desc": "임금체불 지연이자 — 퇴직 후 2개월 미지급 (연 20%), 원금 200만원",
-        # 지연이자: 2,000,000 × 20% × (60/365) = 65,753원
-        # 총 청구액: 2,065,753원
+        "desc": "퇴직급여 지연이자 — 2025-01-01 퇴직 효력, 01-14 기한, 원금 200만원",
+        # 01-15~03-01: 2,000,000 × 20% × (46/365) = 50,411원
+        # 남은 원금과 이자 합계: 2,050,411원
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=2_000_000,
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
             arrear_amount=2_000_000,
-            arrear_due_date="2024-12-31",
+            arrear_due_date="2025-01-14",
+            arrear_claim_kind="retirement_lump_sum",
+            arrear_retirement_effective_date="2025-01-01",
+            arrear_deadline_holidays=[],
             is_post_retirement_arrear=True,
             arrear_calc_date="2025-03-01",
         ),
@@ -393,14 +403,16 @@ TEST_CASES = [
     {
         "id": 26,
         "desc": "육아휴직급여 — 월급 400만원, 6개월, 첫 번째 사용자",
-        # 통상임금 4,000,000원 → 80% = 3,200,000원 → 상한 1,500,000원 적용
-        # 매월: 1,500,000 × 75% = 1,125,000원 / 사후: 375,000원
-        # 6개월 총: 1,125,000 × 6 = 6,750,000원 / 사후: 2,250,000원
+        # 2025년 일반형: 250만원×3 + 200만원×3 = 1,350만원, 사후지급 0원
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=4_000_000,
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
+            reference_date="2025-07-01",
+            parental_leave_start="2025-01-01",
+            childcare_child_birth_date="2024-10-01",
+            childcare_insured_days=180,
             parental_leave_months=6,
             is_second_parent=False,
         ),
@@ -408,16 +420,23 @@ TEST_CASES = [
     },
     {
         "id": 27,
-        "desc": "육아휴직급여 — 아빠 보너스 (두 번째 사용자, 3개월)",
-        # 통상임금 3,000,000원 → 100% = 3,000,000원 → 상한 2,500,000원 적용
-        # 아빠 보너스 첫 3개월: 2,500,000 × 75% = 1,875,000원/월
+        "desc": "육아휴직급여 — 같은 자녀 부모 각 3개월, 6+6 특례",
+        # 2025년 6+6: 250만 + 250만 + 300만 = 800만원, 사후지급 0원
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=3_000_000,
             business_size=BusinessSize.OVER_5,
             reference_year=2025,
+            reference_date="2025-07-01",
+            parental_leave_start="2025-01-01",
+            childcare_child_birth_date="2024-10-01",
+            childcare_insured_days=180,
             parental_leave_months=3,
             is_second_parent=True,
+            parental_scheme="six_plus_six",
+            parental_same_child=True,
+            parental_other_parent_start="2024-12-01",
+            parental_other_parent_months=3,
         ),
         "targets": ["parental_leave"],
     },
@@ -1016,6 +1035,7 @@ TEST_CASES = [
             last_3m_wages=[3_000_000, 3_000_000, 3_000_000],
             last_3m_days=92,
             annual_bonus_total=2_400_000,
+            last_3m_bonus_included=0,  # 위 3개월 임금에는 연 상여 미포함
             unused_annual_leave_pay=600_000,
         ),
         "targets": ["average_wage"],
@@ -1317,10 +1337,10 @@ TEST_CASES = [
     # 연차수당 계산기 기능보완 테스트 (#79~#85)
     # ═══════════════════════════════════════════════════════════════════════
 
-    # ── G1: 2년차 연차 차감 (제60조③) ────────────────────────────────────
+    # ── G1: 현행 첫해 사용분과 다음 연도 발생분 분리 ────────────────────────────────────
     {
         "id": 79,
-        "desc": "연차 2년차 차감 — 1년 미만 5일 사용 → 15-5=10일 (제60조③)",
+        "desc": "현행 연차 — 첫해 5일 사용해도 다음 연도 발생 15일",
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=3_000_000,
@@ -1333,9 +1353,9 @@ TEST_CASES = [
         ),
         "targets": ["annual_leave"],
         # 재직: 517일 (1.4년), 2년차(extra_years=0)
-        # 기본 15일 - 차감 5일 = 10일 부여
+        # 기본 15일, 첫해 사용 5일은 별도 장부
         # 통상시급: 3,000,000/209 ≈ 14,354원
-        # 수당: 14,354 × 8 × 10 = 1,148,320원
+        # 미사용분 평가액: 시급 × 8 × 15 (확정 지급채권 여부 별도)
     },
     {
         "id": 80,
@@ -1368,8 +1388,8 @@ TEST_CASES = [
             schedule=WorkSchedule(daily_work_hours=4, weekly_work_days=5),
         ),
         "targets": ["annual_leave"],
-        # 통상 3년 → 15일
-        # 비례: 15 × (20/40) × (8/4) = 15 × 0.5 × 2.0 = 15.0일
+        # 만 3년 → 16일
+        # 비례: 16 × (20/40) × 8 = 64시간 = 근로자의 16일
     },
     {
         "id": 82,
@@ -1390,7 +1410,7 @@ TEST_CASES = [
     # ── G2: 회계기준일(1.1) 기준 ──────────────────────────────────────────
     {
         "id": 83,
-        "desc": "연차 회계기준일 — 7월 입사 첫해 비례 부여",
+        "desc": "연차 회계기준일 — 회사 부여 규정·실제 일수 없으면 보류",
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=3_000_000,
@@ -1401,12 +1421,11 @@ TEST_CASES = [
             use_fiscal_year=True,
         ),
         "targets": ["annual_leave"],
-        # 잔여 6개월 (12-7+1=6, 7~12월)
-        # → ceil(15 × 6/12) = ceil(7.5) = 8일
+        # 회사 규정·실제 부여일수가 없어 임의로 8일을 만들지 않음
     },
     {
         "id": 84,
-        "desc": "연차 회계기준일 — 3년 근속 15일",
+        "desc": "연차 회계기준일 — 회사 실제 부여 내역 확인 필요",
         "input": WageInput(
             wage_type=WageType.MONTHLY,
             monthly_wage=3_500_000,
@@ -1418,8 +1437,7 @@ TEST_CASES = [
             annual_leave_used=5,
         ),
         "targets": ["annual_leave"],
-        # years_since_hire = 2025-2022 = 3 → extra=(3-1)//2=1 → 15+1=16일
-        # 사용 5일 → 미사용 11일
+        # 실제 회사 부여 내역 없이는 법정 입사일 기준과 혼동하지 않고 보류
     },
 
     # ── G5: 퇴직 시 비교 정산 ─────────────────────────────────────────────

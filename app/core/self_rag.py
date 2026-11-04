@@ -3,7 +3,7 @@
 Cohere Rerank 후 추가 관련성 검증 단계로,
 COMPLEX 복잡도 질문에서만 활성화된다.
 
-- Claude Haiku 사용 (저비용, 빠른 응답)
+- 관리자 설정 1순위 모델 사용(llm_gateway). 실패한 문서는 관련으로 간주
 - 병렬 판정으로 지연 최소화 (ThreadPoolExecutor)
 - 실패 시 기존 rerank 결과 그대로 사용 (graceful fallback)
 """
@@ -11,18 +11,19 @@ COMPLEX 복잡도 질문에서만 활성화된다.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import anthropic
-
-from app.config import CRITICAL_MAX_RETRIES
+from app.core import llm_gateway
 
 logger = logging.getLogger(__name__)
 
-JUDGE_MODEL = "claude-haiku-4-5-20251001"
-JUDGE_TIMEOUT = 3.0      # 초
-MAX_CONCURRENT = 5        # 병렬 판정 최대 수
+# 3초는 Haiku 기준이었다. 실측(2026-10-11) gemini-3.8-flash 3.2초·gpt-6-sol 1.2초 — 3초면 Gemini
+# 1순위에서 판정이 전부 시간 초과(= 전부 관련)로 필터가 무력해진다.
+JUDGE_TIMEOUT = 8.0
+# COMPLEX rerank_top_n(7)·wider(10)를 한 번에 판정한다 — 판정 1건이 수 초라 두 차례로 나누면 지연이 배가 된다.
+MAX_CONCURRENT = 10
 
 JUDGE_PROMPT = """다음 검색 결과가 사용자 질문에 관련이 있는지 판단하세요.
 
@@ -37,32 +38,22 @@ JUDGE_PROMPT = """다음 검색 결과가 사용자 질문에 관련이 있는�
 def judge_relevance(
     query: str,
     document: str,
-    client: anthropic.Anthropic,
+    config,
 ) -> bool:
-    """단일 문서의 질문 관련성 판정.
+    """단일 문서의 질문 관련성 판정(설정 1순위 모델).
 
     Returns:
         True = relevant, False = irrelevant
     """
     try:
-        # timeout은 시도당 적용 — max_retries 미지정 시 SDK 기본 2회 재시도로
-        # 문서 수만큼 곱해져 검색 단계 예산을 크게 넘긴다 (design §3.4 L6).
-        resp = client.with_options(
-            timeout=JUDGE_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
-        ).messages.create(
-            model=JUDGE_MODEL,
-            max_tokens=10,
-            temperature=0,
-            messages=[{
-                "role": "user",
-                "content": JUDGE_PROMPT.format(
-                    query=query,
-                    document=document[:1000],  # 토큰 제한
-                ),
-            }],
+        answer, _provider = llm_gateway.text(
+            config, system=None, purpose="Self-RAG 판정", max_tokens=10,
+            timeout=JUDGE_TIMEOUT, attempts=1,
+            user=JUDGE_PROMPT.format(query=query, document=document[:1000]),  # 토큰 제한
         )
-        answer = resp.content[0].text.strip().lower().rstrip(".")
-        return answer == "relevant"
+        # 모델마다 따옴표·마침표·부연을 붙인다("Relevant." 등) — 첫 단어로 판정한다.
+        # "irrelevant"는 첫 단어가 달라 걸리지 않는다.
+        return re.match(r"[\W_]*relevant\b", answer.strip().lower()) is not None
 
     except Exception as e:
         logger.debug("Self-RAG judge failed: %s — treating as relevant", e)
@@ -72,7 +63,7 @@ def judge_relevance(
 def filter_by_relevance(
     query: str,
     hits: list[dict],
-    client: anthropic.Anthropic,
+    config,
     min_hits: int = 2,
 ) -> tuple[list[dict], bool]:
     """검색 결과를 LLM 관련성 판정으로 필터링.
@@ -80,7 +71,7 @@ def filter_by_relevance(
     Args:
         query: 사용자 질문
         hits: Rerank 후 검색 결과
-        client: Anthropic 클라이언트
+        config: AppConfig (판정 모델은 설정 1순위)
         min_hits: 최소 보장 건수
 
     Returns:
@@ -100,7 +91,7 @@ def filter_by_relevance(
                 judge_relevance,
                 query,
                 f"{hit.get('title', '')} {hit.get('content', '')}",
-                client,
+                config,
             ): hit
             for hit in hits
         }

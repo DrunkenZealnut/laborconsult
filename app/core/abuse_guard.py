@@ -73,14 +73,28 @@ MSG_LEAK_DETECTED = (
 
 # ── 예외·컨텍스트 ─────────────────────────────────────────────────────────────
 
-class GuardRejection(Exception):
-    """가드가 요청을 거절했을 때 발생 — 호출부가 HTTP 상태/SSE error로 변환한다."""
+# 거절 사유 코드 — SSE error 이벤트의 `code`로 나간다. 프런트(public/index.html)가 이 값으로
+# 답변 대신 안내를 띄우고, quota·blocked·rate_limited면 retry_after 동안 입력을 잠근다.
+# 코드가 없던 때는 거절 문구가 일반 답변 말풍선으로 그려지고 입력창이 다시 열려, 한도에 걸린 뒤에도
+# 겉으로는 정상처럼 보였다(2026-10-06 실측: 같은 IP가 51~54번째 요청까지 계속 보냄).
+REJECT_INVALID = "invalid"            # 길이·빈 입력 — 사용자가 고쳐서 다시 보낸다
+REJECT_RATE_LIMITED = "rate_limited"  # 인메모리 분당 한도
+REJECT_BLOCKED = "blocked"            # 자동 차단(block_list)
+REJECT_QUOTA = "quota"                # 일일 쿼터 — KST 자정까지
 
-    def __init__(self, status: int, detail: str, retry_after: int = 0):
+
+class GuardRejection(Exception):
+    """가드가 요청을 거절했을 때 발생 — 호출부가 HTTP 상태/SSE error로 변환한다.
+
+    code는 거절 사유(REJECT_*), retry_after는 다시 시도할 수 있을 때까지의 초다(모르면 0).
+    """
+
+    def __init__(self, status: int, detail: str, retry_after: int = 0, code: str = ""):
         super().__init__(detail)
         self.status = status
         self.detail = detail
         self.retry_after = retry_after
+        self.code = code
 
 
 @dataclass
@@ -332,6 +346,14 @@ def kst_today() -> str:
         return datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
     except Exception:
         return datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+
+
+def seconds_until_kst_midnight(now: datetime | None = None) -> int:
+    """다음 KST 자정까지 남은 초(최소 1) — 일일 쿼터가 풀리는 시각(kst_today와 같은 경계)."""
+    kst = timezone(timedelta(hours=9))
+    current = (now or datetime.now(timezone.utc)).astimezone(kst)
+    midnight = (current + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(1, int((midnight - current).total_seconds()))
 
 
 def check_guard(sb, subject_key: str, daily_limit: int | None = None) -> GuardCheckResult:

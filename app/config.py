@@ -2,7 +2,7 @@
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -10,7 +10,14 @@ from pinecone import Pinecone
 import anthropic
 from supabase import create_client, Client as SupabaseClient
 
+from app.core import llm_transport
+
 load_dotenv()
+# Vercel OIDC 토큰(로컬 개발) — `vercel env pull .env.vercel.local`이 쓴다(ai-gateway-oidc-migration).
+# override=False: .env의 모든 값이 우선하고 VERCEL_OIDC_TOKEN만 보강된다. 파일이 없으면 아무 일도 없다.
+# 프로덕션은 요청 헤더로 받는다(app/core/gateway_auth.py). .env를 덮어쓰지 않으려고 파일을 따로 둔다.
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env.vercel.local"),
+            override=False)
 
 EMBED_MODEL = "text-embedding-3-small"
 CLAUDE_MODEL = "claude-sonnet-5"
@@ -59,16 +66,14 @@ if ANSWER_EFFORT not in {"low", "medium", "high", "off"}:
 # 교정 결과가 0.7 길이 가드에 걸려 통째로 폐기되고 환각 판례가 그대로 남는다.
 ANSWER_MAX_TOKENS = 8192
 
-INTENT_TIMEOUT = 12.0           # analyze_intent (임계경로, DB-6에서 도입)
-INTENT_FALLBACK_TIMEOUT = 10.0  # OpenAI 교차벤더 폴백 (실측 2.7초)
-EXTRACT_TIMEOUT = 10.0          # _extract_params 레거시 경로
-CRITICAL_MAX_RETRIES = 0        # analyzer/extract/decomposer/self_rag 공통
+# 보조 LLM 단계(의도분석·추출·분해·Self-RAG·인용 교정)는 관리자 설정 모델을 쓴다(app/core/llm_gateway.py).
+# 재시도는 전부 0 — 같은 벤더 재시도 대신 다음 순위로 넘긴다.
+INTENT_TIMEOUT = 12.0           # analyze_intent 1순위 (임계경로, DB-6에서 도입)
+INTENT_FALLBACK_TIMEOUT = 10.0  # analyze_intent 2순위
+EXTRACT_TIMEOUT = 10.0          # _extract_params (순위별)
 
-# 의도분석 교차벤더 폴백 (FR-05). 비추론 모델을 기본값으로 둔다 — o3·gpt-5.x 계열은
-# reasoning 토큰이 max_completion_tokens를 잠식해 tool_call이 빈 채로 끊길 수 있다.
+# 의도분석 2순위 폴백 (FR-05). false면 1순위 실패 시 예외를 전파해 레거시 경로로 강등한다.
 INTENT_FALLBACK_ENABLED = os.getenv("INTENT_FALLBACK_ENABLED", "true").lower() != "false"
-INTENT_FALLBACK_MODEL = os.getenv("INTENT_FALLBACK_MODEL", "gpt-4.1")
-INTENT_FALLBACK_MAX_TOKENS = 4096
 
 # 인용 교정 단계 전체 예산 (FR-07). 벤더 3곳 × 동적 타임아웃이 누적되면
 # maxDuration을 위협하므로 단계 데드라인으로 자른다.
@@ -122,12 +127,17 @@ class AppConfig:
     openai_client: OpenAI
     pinecone_index: object | None
     claude_client: anthropic.Anthropic
-    gemini_api_key: str | None = None
+    # 비밀값은 repr에서 뺀다 — dataclass 기본 repr이 키·OIDC 토큰을 로그에 그대로 적는다(test_llm_transport T8)
+    gemini_api_key: str | None = field(default=None, repr=False)
     supabase: SupabaseClient | None = None
-    law_api_key: str | None = None
-    cohere_api_key: str | None = None
+    law_api_key: str | None = field(default=None, repr=False)
+    cohere_api_key: str | None = field(default=None, repr=False)
     analyzer_model: str = EXTRACT_MODEL
     embed_model: str = EMBED_MODEL
+    # LLM 전송(ai-gateway-oidc-migration): direct | gateway. gateway면 claude_client·openai_client는
+    # llm_transport.bind()가 요청별 OIDC 토큰을 묶은 프록시고, cohere_api_key는 그 토큰·cohere_base_url은 Gateway다.
+    transport: str = "direct"
+    cohere_base_url: str | None = None
 
     @property
     def anthropic_client(self) -> anthropic.Anthropic:
@@ -138,13 +148,21 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        missing = [k for k in cls._REQUIRED_KEYS if not os.environ.get(k)]
+        transport = llm_transport.transport_mode()
+        # gateway 모드는 제공자 키를 **읽지 않는다** — 있어도 쓰지 않는다(제약: 인증 실패 시 제공자 키 우회 금지,
+        # 회귀 test_llm_transport T2). 필수 키는 Pinecone만 남는다.
+        required = ["PINECONE_API_KEY"] if transport == "gateway" else cls._REQUIRED_KEYS
+        missing = [k for k in required if not os.environ.get(k)]
         if missing:
             raise EnvironmentError(
                 f"필수 환경변수가 설정되지 않았습니다: {', '.join(missing)}\n"
                 f".env 파일 또는 Vercel 환경변수를 확인하세요."
             )
-        openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        if transport == "gateway":
+            openai_client, claude_client = llm_transport.make_gateway_clients()
+        else:
+            openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+            claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
         # Pinecone 인덱스 초기화 — 실패해도 챗봇은 계속 동작(RAG만 비활성화).
         # rag.py가 pinecone_index=None 및 쿼리 실패를 graceful하게 처리하므로,
@@ -161,15 +179,16 @@ class AppConfig:
                 index_name, exc,
             )
 
-        claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         # 접속 생성은 storage.make_supabase_client 단일 경로 — 스키마 옵션이
         # 빠지면 public 으로 새고 그 실패가 조용하다(2026-08-13 board_posts 사고).
         from app.core.storage import make_supabase_client
         supabase = make_supabase_client()
         law_api_key = os.getenv("LAW_API_KEY")
-        cohere_api_key = os.getenv("COHERE_API_KEY")
-        return cls(
+        cohere_api_key = None if transport == "gateway" else os.getenv("COHERE_API_KEY")
+        if transport == "gateway":
+            logging.info("LLM transport=gateway (%s) — 제공자 키 미사용, 토큰은 요청별 바인딩", llm_transport.GATEWAY_URL)
+        config = cls(
             openai_client=openai_client,
             pinecone_index=pinecone_index,
             claude_client=claude_client,
@@ -177,4 +196,9 @@ class AppConfig:
             supabase=supabase,
             law_api_key=law_api_key,
             cohere_api_key=cohere_api_key,
+            transport=transport,
         )
+        # gateway면 환경의 토큰(로컬 VERCEL_OIDC_TOKEN·CI AI_GATEWAY_API_KEY)으로 한 번 바인딩한다 — 요청 밖에서
+        # 쓰는 CLI·평가 스크립트용이다. 요청 경로는 api/index.py::get_config()가 매 요청 헤더 토큰으로 **다시**
+        # 바인딩하므로(bind는 이중 바인딩을 풀어 쓴다) 여기 토큰이 만료돼도 프로덕션에는 영향이 없다.
+        return llm_transport.bind(config)

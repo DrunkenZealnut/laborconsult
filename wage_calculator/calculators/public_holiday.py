@@ -15,6 +15,7 @@ from datetime import date as date_cls
 
 from ..base import BaseCalculatorResult
 from ..models import WageInput, BusinessSize
+from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
 
 
@@ -82,12 +83,12 @@ def calc_public_holiday(
     total_pay = pay_per_day * n_days
 
     formulas.append(
-        f"공휴일 수당: {hourly:,.0f}원 × {daily_hours}h × {n_days}일 = {total_pay:,.0f}원"
+        f"공휴일 수당: {hourly:,.0f}원 × {fmt_hours(daily_hours)}h × {n_days}일 = {total_pay:,.0f}원"
     )
 
     breakdown = {
         "통상시급": f"{hourly:,.0f}원",
-        "1일 소정근로시간": f"{daily_hours}h",
+        "1일 소정근로시간": f"{fmt_hours(daily_hours)}h",
         "공휴일 1일 수당": f"{pay_per_day:,.0f}원",
         "비근무 공휴일 일수": f"{n_days}일",
         "총 공휴일 수당": f"{total_pay:,.0f}원",

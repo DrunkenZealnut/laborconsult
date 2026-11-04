@@ -3,7 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>계산과정</title>
+<title>출산휴가급여 계산과정 — 기초 노동상담</title>
+<meta name="description" content="출산휴가급여 계산이 어떤 순서로 이루어지는지 고용보험법 기준 흐름도로 보여드립니다. 입력값과 판단 분기, 적용 조문을 단계별로 확인하세요.">
+<link rel="canonical" href="https://laborconsult.vercel.app/calculator_flow/maternity_leave_benefit_flow.html">
+<meta name="robots" content="index,follow">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1B2A4A">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="기초 노동상담">
+<meta property="og:title" content="출산휴가급여 계산과정 — 기초 노동상담">
+<meta property="og:description" content="출산휴가급여 계산이 어떤 순서로 이루어지는지 고용보험법 기준 흐름도로 보여드립니다. 입력값과 판단 분기, 적용 조문을 단계별로 확인하세요.">
+<meta property="og:url" content="https://laborconsult.vercel.app/calculator_flow/maternity_leave_benefit_flow.html">
+<meta property="og:image" content="https://laborconsult.vercel.app/og-image.png">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="출산휴가급여 계산과정 — 기초 노동상담">
+<meta name="twitter:description" content="출산휴가급여 계산이 어떤 순서로 이루어지는지 고용보험법 기준 흐름도로 보여드립니다. 입력값과 판단 분기, 적용 조문을 단계별로 확인하세요.">
+<meta name="twitter:image" content="https://laborconsult.vercel.app/og-image.png">
 <style>
 :root{
   --color-background-primary:#fff;--color-background-secondary:#f5f5f0;
@@ -69,9 +88,59 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
   .ts{font-size:10px!important;}
   nav a{font-size:13px!important;}
 }
+
+/* ── Mobile SVG Scroll ── */
+@media(max-width:680px){
+  .svg-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -0.5rem;padding:0 0.5rem;position:relative;}
+  .svg-scroll-wrap svg{min-width:600px;}
+  .scroll-hint{text-align:center;font-size:12px;color:#999;padding:6px 0 2px;display:block;}
+  .scroll-hint::before{content:'\2194  ';}
+}
+@media(min-width:681px){.scroll-hint{display:none;}}
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://laborconsult.vercel.app/#website",
+      "url": "https://laborconsult.vercel.app/",
+      "name": "기초 노동상담",
+      "inLanguage": "ko-KR"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "홈",
+          "item": "https://laborconsult.vercel.app/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "계산기 흐름도",
+          "item": "https://laborconsult.vercel.app/calculators"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "출산휴가급여",
+          "item": "https://laborconsult.vercel.app/calculator_flow/maternity_leave_benefit_flow.html"
+        }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
+<!-- 검색 유입 등 단독 진입 시에만 노출. /calculators 의 iframe 안에서는 숨긴다. -->
+<a id="site-home-link" href="/" target="_top"
+   style="display:none;padding:10px 14px;background:#1B2A4A;color:#F7F5F2;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;text-decoration:none">← 기초 노동상담 — 무료 AI 노동상담·임금계산</a>
+<script>if(window.self===window.top){document.getElementById("site-home-link").style.display="block";}</script>
 
 <div style="padding:1rem 0">
 <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -85,7 +154,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div id="tab0">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
 <p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">출산전후휴가급여 — 전체 계산 흐름</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제74조, 고용보험법 제75조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">근로기준법 제74조, 고용보험법 제75조·제76조</p>
 </div>
 <svg width="100%" viewBox="0 0 680 740">
 <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
@@ -131,13 +200,13 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <text class="th" x="340" y="328" text-anchor="middle" dominant-baseline="central">Step 3. 상한·하한 적용 (2026년)</text>
 
 <rect x="110" y="346" width="230" height="68" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#791F1F;font-weight:500" x="225" y="362" text-anchor="middle" dominant-baseline="central">상한 (일반): 2,156,880원/월</text>
-<text style="font-size:11px;fill:#791F1F" x="225" y="380" text-anchor="middle" dominant-baseline="central">= 최저시급 10,320 × 209h</text>
+<text style="font-size:12px;fill:#791F1F;font-weight:500" x="225" y="362" text-anchor="middle" dominant-baseline="central">상한 (일반): 2,200,000원/월</text>
+<text style="font-size:11px;fill:#791F1F" x="225" y="380" text-anchor="middle" dominant-baseline="central">= 고용노동부고시 제2025-124호</text>
 <text style="font-size:11px;fill:#854F0B;font-weight:500" x="225" y="400" text-anchor="middle" dominant-baseline="central">노무제공자: 2,000,000원/월</text>
 
 <rect x="360" y="346" width="220" height="56" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
 <text style="font-size:12px;fill:#085041;font-weight:500" x="470" y="366" text-anchor="middle" dominant-baseline="central">하한: 최저시급 x 209h</text>
-<text style="font-size:11px;fill:#085041" x="470" y="386" text-anchor="middle" dominant-baseline="central">= 2,156,880원 (상한=하한)</text>
+<text style="font-size:11px;fill:#085041" x="470" y="386" text-anchor="middle" dominant-baseline="central">= 2,156,880원 (10,320 × 209h)</text>
 </g>
 
 <line x1="340" y1="414" x2="340" y2="448" class="arr" marker-end="url(#ar)"/>
@@ -245,11 +314,11 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 
 <rect x="400" y="386" width="240" height="130" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
 <rect x="420" y="400" width="200" height="44" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#633806;font-weight:500" x="520" y="416" text-anchor="middle" dominant-baseline="central">처음 60일</text>
+<text style="font-size:12px;fill:#633806;font-weight:500" x="520" y="416" text-anchor="middle" dominant-baseline="central">처음 75일</text>
 <text style="font-size:11px;fill:#633806" x="520" y="434" text-anchor="middle" dominant-baseline="central">사업주 부담</text>
 
 <rect x="420" y="454" width="200" height="44" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
-<text style="font-size:12px;fill:#0C447C;font-weight:500" x="520" y="470" text-anchor="middle" dominant-baseline="central">나머지 60일</text>
+<text style="font-size:12px;fill:#0C447C;font-weight:500" x="520" y="470" text-anchor="middle" dominant-baseline="central">나머지 45일</text>
 <text style="font-size:11px;fill:#0C447C" x="520" y="488" text-anchor="middle" dominant-baseline="central">고용보험 지급</text>
 
 <!-- 범례 -->
@@ -264,15 +333,15 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <!-- 핵심 차이 -->
 <rect x="40" y="618" width="600" height="66" rx="8" fill="var(--bg2)" stroke="var(--b)" stroke-width="0.5"/>
 <text class="th" x="340" y="640" text-anchor="middle">핵심 차이</text>
-<text class="ts" x="340" y="662" text-anchor="middle">중소기업: 전 기간 고용보험이 부담 → 상한 2,156,880원 적용</text>
-<text class="ts" x="340" y="678" text-anchor="middle">대규모: 처음 60일은 사업주가 통상임금 전액(상한 없음) 부담</text>
+<text class="ts" x="340" y="662" text-anchor="middle">중소기업: 전 기간 고용보험이 부담 → 상한 2,200,000원/월 적용</text>
+<text class="ts" x="340" y="678" text-anchor="middle">대규모: 처음 60일(다태아 75일)은 사업주가 통상임금 전액(상한 없음) 부담</text>
 </svg>
 </div>
 
 <!-- TAB 2: 배우자 -->
 <div id="tab2" style="display:none">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
-<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">배우자 출산휴가 (10일)</p>
+<p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">배우자 출산휴가 (20일)</p>
 <p style="font-size:13px;color:var(--color-text-secondary);margin:0">출산전후휴가와 별개로 배우자에게 주어지는 유급 휴가</p>
 </div>
 <svg width="100%" viewBox="0 0 680 420">
@@ -288,7 +357,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 
 <g class="c-teal">
 <rect x="160" y="110" width="360" height="56" rx="8" stroke-width="0.5"/>
-<text class="th" x="340" y="130" text-anchor="middle" dominant-baseline="central">유급 10일</text>
+<text class="th" x="340" y="130" text-anchor="middle" dominant-baseline="central">유급 20일</text>
 <text class="ts" x="340" y="148" text-anchor="middle" dominant-baseline="central">연속 또는 분할(1회) 사용 가능</text>
 </g>
 
@@ -297,8 +366,8 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <g class="c-coral">
 <rect x="120" y="200" width="440" height="76" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="224" text-anchor="middle" dominant-baseline="central">수당 계산</text>
-<text class="ts" x="340" y="244" text-anchor="middle" dominant-baseline="central">배우자 출산휴가 수당 = 1일 통상임금 x 10일</text>
-<text class="ts" x="340" y="262" text-anchor="middle" dominant-baseline="central">= 통상시급 x 1일 소정근로시간 x 10</text>
+<text class="ts" x="340" y="244" text-anchor="middle" dominant-baseline="central">유급액 = 1일 통상임금 x 20일 (사업주 부담) · 고용보험 지원 상한 1,684,210원</text>
+<text class="ts" x="340" y="262" text-anchor="middle" dominant-baseline="central">= 통상시급 x 1일 소정근로시간 x 20 (이 화면은 주 40시간·1일 8시간 가정)</text>
 </g>
 
 <line x1="340" y1="276" x2="340" y2="310" class="arr" marker-end="url(#a2)"/>
@@ -307,7 +376,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <rect x="100" y="310" width="480" height="86" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="332" text-anchor="middle" dominant-baseline="central">예시: 통상시급 15,000원, 8시간 근무</text>
 <text class="ts" x="340" y="354" text-anchor="middle" dominant-baseline="central">1일 통상임금 = 15,000 x 8 = 120,000원</text>
-<text class="ts" x="340" y="374" text-anchor="middle" dominant-baseline="central">배우자 수당 = 120,000 x 10 = 1,200,000원</text>
+<text class="ts" x="340" y="374" text-anchor="middle" dominant-baseline="central">유급액 = 120,000 x 20 = 2,400,000원 (보험 지원 1,684,210원)</text>
 </g>
 </svg>
 </div>
@@ -368,7 +437,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 
 <script>
 var babyType='single', bizSize='small';
-var CAP=2156880;
+var CAP=2200000;   // 고용노동부고시 제2025-124호 (2026년 월 상한)
 
 function setBtn(id,on){var b=document.getElementById(id);b.style.fontWeight=on?'500':'';b.style.background=on?'var(--color-background-info)':'';b.style.color=on?'var(--color-text-info)':'';b.style.borderColor=on?'var(--color-border-info)':'';}
 function setType(t){babyType=t;setBtn('btnSingle',t==='single');setBtn('btnMulti',t==='multi');}
@@ -381,7 +450,9 @@ function calc(){
   var ww=w*10000;
 
   var totalDays=babyType==='single'?90:120;
-  var empDays=60;
+  // 대규모: 최초 60일(다태아 75일) 사업주 유급(근로기준법 제74조 제4항), 초과분 30일(다태아 45일)만 고용보험
+  // (고용보험법 제76조 제1항 제1호 단서). 중소는 전 기간 고용보험이라 이 일수는 대규모에서만 쓴다.
+  var empDays=babyType==='single'?60:75;
   var insDays=totalDays-empDays;
   var months=totalDays/30;
 
@@ -402,11 +473,11 @@ function calc(){
     lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 부담</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
   } else {
     empMonthly=ww;
-    empTotal=empMonthly*2;
-    insTotal=insMonthlyFinal*(months-2);
+    empTotal=empMonthly*empDays/30;
+    insTotal=insMonthlyFinal*insDays/30;
     totalAll=empTotal+insTotal;
-    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>처음 60일 (사업주: 통상임금 전액)</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
-    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>나머지 '+(totalDays-60)+'일 (고용보험)</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>처음 '+empDays+'일 (사업주: 통상임금 전액)</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
+    lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>나머지 '+insDays+'일 (고용보험)</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
     lines.push('<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px"><span>사업주 부담</span><span style="font-weight:500">'+fmt(empTotal)+'원</span></div>');
     lines.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>고용보험 부담</span><span style="font-weight:500">'+fmt(insTotal)+'원</span></div>');
   }
@@ -420,9 +491,27 @@ function calc(){
   document.getElementById('totalPay').textContent=fmt(totalAll)+'원';
   document.getElementById('detail').innerHTML=lines.join('');
 
-  var dailyOrd=ww/30;
-  var spouseAmt=Math.round(dailyOrd*10);
-  document.getElementById('spouse').textContent='1일 통상임금 '+fmt(Math.round(dailyOrd))+'원 x 10일 = '+fmt(spouseAmt)+'원';
+  // 1일 통상임금 = 통상시급 x 1일 소정근로시간(근로기준법 시행령 제6조). 월급 ÷ 30 은
+  // 평균임금식 일할계산이라 통상임금이 아니다 — 이 화면의 산식·예시, 그리고 계산기
+  // (maternity_leave.py: hourly_ordinary_wage x daily_work_hours)와도 어긋났다.
+  // 월 소정근로시간은 (주 소정 40h + 주휴 8h) x 365/7/12 = 208.6h 다. 최저임금 월환산에
+  // 쓰는 209h 와는 다른 값이니 섞지 말 것 — ordinary_wage._get_base_hours 와 같은 수치다.
+  // 통상임금은 원 미만이 남는다. 정수로 반올림해 보여 주면 화면의 산식이 서로
+  // 곱해지지 않는다(11,985 x 8 = 95,880 ≠ 표시된 95,877). 그때만 소수 2자리.
+  var won=function(v){return (Math.round(v*100)/100).toLocaleString('ko-KR',{maximumFractionDigits:2});};
+  var BASE_HOURS=208.6;
+  // 계산기가 통상시급을 소수 2자리로 반올림한 뒤 곱하므로 순서까지 같게 맞춘다
+  // (안 맞추면 화면과 챗봇 답변이 1원씩 어긋난다).
+  var hourlyOrd=Math.round(ww/BASE_HOURS*100)/100;
+  var dailyOrd=hourlyOrd*8;
+  // 유급액(사업주 의무)과 고용보험 지원분(상한 적용)은 다른 금액이다.
+  var spouseGross=Math.round(dailyOrd*20);
+  var spouseCap=1684210;   // 고용노동부고시 제2025-124호, 20일분
+  var spouseAmt=Math.min(spouseGross, spouseCap);
+  document.getElementById('spouse').textContent =
+    '통상시급 '+won(hourlyOrd)+'원 x 8시간 = 1일 '+won(dailyOrd)+'원'
+    + ' → 20일 유급액 '+fmt(spouseGross)+'원'
+    + (spouseGross>spouseCap ? ' / 고용보험 지원 '+fmt(spouseAmt)+'원(상한)' : ' / 고용보험 지원 '+fmt(spouseAmt)+'원');
 
   // Timeline
   var tl=document.getElementById('timeline');
@@ -433,10 +522,10 @@ function calc(){
     tl.innerHTML='<div style="width:'+p1+'%;background:#85B7EB;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:#85B7EB;border-radius:0 4px 4px 0"></div>';
     lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-info);text-align:center">60일 고용보험</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+(totalDays-60)+'일 고용보험</div>';
   } else {
-    var p1=60/totalDays*100;
-    var p2=(totalDays-60)/totalDays*100;
+    var p1=empDays/totalDays*100;
+    var p2=insDays/totalDays*100;
     tl.innerHTML='<div style="width:'+p1+'%;background:#FAC775;border-radius:4px 0 0 4px"></div><div style="width:'+p2+'%;background:#85B7EB;border-radius:0 4px 4px 0"></div>';
-    lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-warning);text-align:center">60일 사업주</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+(totalDays-60)+'일 고용보험</div>';
+    lb.innerHTML='<div style="width:'+p1+'%;color:var(--color-text-warning);text-align:center">'+empDays+'일 사업주</div><div style="width:'+p2+'%;color:var(--color-text-info);text-align:center">'+insDays+'일 고용보험</div>';
   }
 }
 calc();
@@ -452,5 +541,27 @@ function showTab(n){
 
 
 <nav style="max-width:720px;margin:16px auto 0;padding:10px 0;border-top:1px solid #ddd;display:flex;justify-content:center;"><a href="wage_calculator_dependency_map.html" style="color:#185FA5;text-decoration:none;font-size:14px;font-weight:600;">← 전체 계산기 구조도로 돌아가기</a></nav>
+<script>
+// Mobile: wrap SVGs in scrollable containers
+(function(){
+  if(window.innerWidth>680)return;
+  var svgs=document.querySelectorAll('svg[viewBox]');
+  if(!svgs.length)return;
+  // Add hint once
+  var hint=document.createElement('span');
+  hint.className='scroll-hint';
+  hint.textContent='좌우로 스크롤하세요';
+  svgs[0].parentNode.insertBefore(hint,svgs[0]);
+  // Wrap each SVG
+  svgs.forEach(function(svg){
+    if(svg.closest('.svg-scroll-wrap'))return;
+    var w=document.createElement('div');
+    w.className='svg-scroll-wrap';
+    svg.parentNode.insertBefore(w,svg);
+    w.appendChild(svg);
+  });
+})();
+</script>
+<script type="module" src="/analytics.js"></script>
 </body>
 </html>

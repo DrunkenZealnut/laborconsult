@@ -1,23 +1,24 @@
-"""질문 처리 파이프라인 — RAG 검색 + 임금계산기 + Claude 답변 생성"""
+"""질문 처리 파이프라인 — RAG 검색 + 임금계산기 + LLM 답변 생성"""
 
 from __future__ import annotations
 
-import anthropic
-
 import logging
+import math
 import os
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import date as _date
+from typing import NamedTuple
 
 from app.config import (
-    AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL, EXTRACT_MODEL,
+    AppConfig, EMBED_MODEL, CLAUDE_MODEL, OPENAI_CHAT_MODEL, GEMINI_MODEL,
     ANSWER_MAX_RETRIES, ANSWER_MAX_TOKENS, ANSWER_READ_TIMEOUT, CONNECT_TIMEOUT,
-    CITATION_STAGE_BUDGET, CRITICAL_MAX_RETRIES, EXTRACT_TIMEOUT,
+    CITATION_STAGE_BUDGET, EXTRACT_TIMEOUT,
 )
 from app.core.file_parser import ParsedAttachment
 from app.core.analyzer import analyze_intent
+from app.core import llm_gateway
 from app.core.colloquial_map import map_colloquial_terms
 from app.models.schemas import AnalysisResult
 # compose_follow_up은 더 이상 파이프라인에서 사용하지 않음
@@ -25,9 +26,14 @@ from app.models.schemas import AnalysisResult
 from app.core.storage import save_conversation, save_session_data, upload_attachment, classify_category, infer_calc_types, ConversationRecord
 from app.models.session import Session
 from wage_calculator.facade import WageCalculator, CALC_TYPE_MAP
-from wage_calculator.facade.registry import resolve_calc_type_strict, CALC_TYPES
-from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize
-from wage_calculator.result import format_result
+from wage_calculator.facade.registry import resolve_calc_type_strict, unsupported_calc_reason, split_calc_labels, CALC_TYPES
+from wage_calculator.models import WageInput, WageType, WorkSchedule, BusinessSize, HourSplit
+from wage_calculator.result import format_result, format_skipped_calculations, SKIPPED_CALCULATION_MARK
+from wage_calculator.calculators.shared import (
+    LEGAL_DAILY_HOURS, LEGAL_WEEKLY_HOURS, AllowanceClassifier, adds_premium_pay, apply_hour_split,
+    has_premium_hours as _has_premium_hours, monthly_wage_total, premium_weekly, split_hours,
+)
+from wage_calculator.utils import WEEKS_PER_MONTH, fmt_hours, fmt_won
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
                                  held_assessment, ground, decide_mode, as_list,
                                  is_sexual_harassment)
@@ -258,6 +264,8 @@ def _build_sources_payload(
     nlrc_text: str | None = None,
     graph_context: str | None = None,
     max_items: int = 5,
+    *,
+    issue_hits: list[dict] | None = None,
 ) -> list[dict]:
     """검색 결과를 sources SSE 이벤트용으로 정규화 (DB-2).
 
@@ -268,7 +276,8 @@ def _build_sources_payload(
     """
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
-    for origin, hits in (("consultation", consultation_hits or []),
+    for origin, hits in (("official_evidence", issue_hits or []),
+                         ("consultation", consultation_hits or []),
                          ("rag", precedent_meta or [])):
         for h in hits:
             title = h.get("title") or h.get("case_name") or ""
@@ -287,6 +296,10 @@ def _build_sources_payload(
                 "score": score,
                 "origin": origin,
             })
+            if h.get("url") or h.get("official_url"):
+                out[-1]["url"] = h.get("url") or h["official_url"]
+            if h.get("content_kind"):
+                out[-1]["content_kind"] = h["content_kind"]
     # 텍스트 블록 소스(개별 hit 구조가 없음) — 라벨 하나로 노출
     for origin, source_type, label, text in (
         ("legal_api", "law_article", "법제처 법령 조문", legal_articles_text),
@@ -303,7 +316,10 @@ def _build_sources_payload(
             "title": label, "section": "", "source_type": source_type,
             "score": 0.0, "origin": origin,
         })
-    return out[:max_items]
+    # 쟁점 근거는 실제 전달한 전체 목록을 보여준다. 기존 검색 결과만 상한을 적용한다.
+    official = [h for h in out if h['origin'] == 'official_evidence']
+    other = [h for h in out if h['origin'] != 'official_evidence']
+    return official + other[:max_items]
 
 
 def _citation_source_hits(
@@ -408,22 +424,14 @@ class AnswerOutcome:
     truncated: bool = False                                    # 실질 청크 후 스트림 중단
     error: str | None = None
     model: str | None = None                                   # provider가 실제로 쓴 모델명
+    # 제공자별 실패 — 클래스명·HTTP 상태만(메시지 원문은 담지 않는다: 토큰·키·URL이 섞인다).
+    # 전 제공자 실패 시 실패 행의 metadata.llm.failures가 된다(llm-fallback-alert-blindspot §3.2).
+    # 절단(실질 청크 뒤 끊김)은 실패가 아니라 넣지 않는다 — truncated가 담당한다.
+    failures: list[dict] = field(default_factory=list)
 
 
-_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)")
-
-
-def _supports_effort(model: str) -> bool:
-    """output_config.effort를 받는 모델인가 — Opus·Sonnet·Fable·Mythos 4.6 이상.
-
-    Haiku와 Sonnet 4.5 이하는 400을 낸다. 판정할 수 없는 이름은 보내지 않는다(안전 쪽) —
-    보내지 않아도 답변은 되고, 보내서 400이 나면 답변 전체가 폴백된다.
-    """
-    m = _CLAUDE_VERSION_RE.match(model or "")
-    if not m:
-        return False
-    major, minor = int(m.group(2)), int(m.group(3) or 0)
-    return (major, minor) >= (4, 6)
+# 판정 단일 출처는 llm_gateway — 보조 단계(effort=low)와 답변 경로가 같은 규칙을 쓴다.
+_supports_effort = llm_gateway.supports_effort
 
 
 THINKING_HEARTBEAT_SECONDS = 5.0   # 추론 중 하트비트 간격 — 프론트 idle(60초)보다 충분히 짧게
@@ -512,8 +520,57 @@ def _stream_openai(messages: list, system: str, config: AppConfig, model: str | 
             yield chunk.choices[0].delta.content
 
 
+# Gemini SDK의 request_options timeout은 gRPC **스트림 전체 마감**이다 — 청크 사이 대기 한도가 아니다.
+# 실측(2026-10-11): 25초(읽기 20 + 연결 5)로 두어 25초를 넘는 답변이 전부 잘렸다(DeadlineExceeded,
+# 1,471자 지점). 외부 점검 50문항 중 9건(18%)이 '생성 중단'이었고 전부 Gemini 1순위 답변이었다.
+# 마감은 Vercel maxDuration(300초) 안에서 넉넉히 두고, 무응답 감지는 _iter_with_idle_timeout이 맡는다.
+GEMINI_STREAM_DEADLINE = 240.0
+
+
+def _iter_with_idle_timeout(make_iter, idle: float):
+    """make_iter()의 항목을 내보내되, 항목 사이(첫 항목 포함) idle초 동안 아무것도 오지 않으면 TimeoutError.
+
+    SDK 호출은 별도 스레드에서 돈다 — Gemini는 generate_content(stream=True) 호출 자체가 첫 청크까지
+    막히므로 호출까지 스레드 안에 있어야 한다. 소비자가 끝나면(시간 초과·폴백·close) stop을 세워
+    스레드가 다음 청크에서 순회를 멈추게 한다 — 그러지 않으면 버려진 스트림이 SDK 마감(240초)까지
+    큐에 계속 쌓인다. 청크 없이 막혀 있는 동안은 SDK 마감까지 남지만 daemon이라 요청 처리를 막지 않는다.
+    """
+    import queue
+    import threading
+
+    q: queue.Queue = queue.Queue()
+    stop = threading.Event()
+    done = object()
+
+    def run():
+        try:
+            for item in make_iter():
+                if stop.is_set():
+                    return
+                q.put(item)
+        except BaseException as e:  # noqa: BLE001 — 소비자 쪽에서 그대로 다시 올린다
+            q.put(e)
+            return
+        q.put(done)
+
+    threading.Thread(target=run, daemon=True).start()
+    try:
+        while True:
+            try:
+                item = q.get(timeout=idle)
+            except queue.Empty:
+                raise TimeoutError(f"스트림 무응답 {idle:.0f}초") from None
+            if item is done:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        stop.set()
+
+
 def _stream_gemini(messages: list, system: str, config: AppConfig, model: str | None = None):
-    """Google Gemini 스트리밍 — 3순위 폴백"""
+    """Google Gemini 스트리밍"""
     import google.generativeai as genai
     genai.configure(api_key=config.gemini_api_key)
     gm = genai.GenerativeModel(model or GEMINI_MODEL, system_instruction=system)
@@ -523,14 +580,17 @@ def _stream_gemini(messages: list, system: str, config: AppConfig, model: str | 
         role = "model" if m["role"] == "assistant" else "user"
         contents.append({"role": role, "parts": [_flatten_content(m["content"])]})
 
-    # request_options 없이는 무제한 대기 — 3순위가 함수 전체를 잡아먹는다 (FR-04).
-    response = gm.generate_content(
-        contents, stream=True,
-        request_options={"timeout": ANSWER_READ_TIMEOUT + CONNECT_TIMEOUT},
-    )
-    for chunk in response:
-        if chunk.text:
-            yield chunk.text
+    def chunks():
+        # request_options 없이는 무제한 대기 — 함수 전체를 잡아먹는다 (FR-04).
+        response = gm.generate_content(
+            contents, stream=True,
+            request_options={"timeout": GEMINI_STREAM_DEADLINE},
+        )
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+
+    yield from _iter_with_idle_timeout(chunks, ANSWER_READ_TIMEOUT + CONNECT_TIMEOUT)
 
 
 def _answer_providers(config: AppConfig) -> list[tuple[str, object]]:
@@ -544,21 +604,12 @@ def _answer_providers(config: AppConfig) -> list[tuple[str, object]]:
     stream_fn(messages, system, config) 계약 불변).
     """
     from functools import partial
-    from app.core import model_settings
 
-    resolved = model_settings.resolve()
-    model_of = {p: m for p, (m, _src) in resolved.models.items()}
-    providers = [
-        ("Claude", partial(_stream_claude, model=model_of["claude"])),
-        ("OpenAI", partial(_stream_openai, model=model_of["openai"])),
-    ]
-    if config.gemini_api_key:
-        providers.append(("Gemini", partial(_stream_gemini, model=model_of["gemini"])))
-
-    primary = resolved.primary[0]
-    if primary:
-        providers.sort(key=lambda p: p[0].lower() != primary)
-    return providers
+    # 순서는 llm_gateway.provider_chain 하나가 정한다 — 보조 단계(의도분석·Self-RAG 등)와
+    # 답변이 따로 정렬하면 1순위를 바꿔도 한쪽만 바뀐다.
+    stream_of = {"claude": _stream_claude, "openai": _stream_openai, "gemini": _stream_gemini}
+    return [(llm_gateway.PROVIDER_LABEL[p], partial(stream_of[p], model=model))
+            for p, model in llm_gateway.provider_chain(config)]
 
 
 def _stream_answer(
@@ -618,6 +669,7 @@ def _stream_answer(
                 return
             logger.warning("%s 답변 생성 실패, 다음 제공자로 전환: %s", name, e)
             last_error = e
+            outcome.failures.append(_failure_entry(name, e))
             continue
 
         if chars:
@@ -625,6 +677,7 @@ def _stream_answer(
 
         # FR-01: 예외 없이 실질 0자로 종료 → 실패로 승격하고 다음 제공자로
         outcome.empty_providers.append(name)
+        outcome.failures.append({"provider": name, "error_class": "EmptyResponse", "status": None})
         logger.warning("%s 빈 응답(실질 0자) — 다음 제공자로 전환", name)
         last_error = last_error or RuntimeError(f"{name} returned an empty response")
 
@@ -686,6 +739,7 @@ def _llm_meta(
     outcome: "AnswerOutcome",
     citation_fixed: bool | None = None,
     intent_provider: str | None = None,
+    transport: str | None = None,
 ) -> dict:
     """qa_conversations.metadata.llm 페이로드 (FR-10).
 
@@ -704,10 +758,134 @@ def _llm_meta(
         meta["truncated"] = True
     if citation_fixed is not None:
         meta["citation_fixed"] = citation_fixed
-    # 의도분석이 교차벤더로 넘어갔는지 — Anthropic 장애의 조기 신호다
-    if intent_provider and intent_provider != "Claude":
+    if transport:
+        meta["transport"] = transport   # direct | gateway — Gateway 전환 증거(ai-gateway-oidc-migration)
+    # 의도분석이 1순위가 아닌 제공자로 넘어갔는지 — 1순위 장애의 조기 신호다. 기준은 답변의
+    # 첫 시도 제공자(= 설정 1순위, 순서 단일 출처가 같다). 1순위를 OpenAI로 두면 OpenAI가 정상이다.
+    expected = outcome.attempts[0] if outcome.attempts else "Claude"
+    if intent_provider and intent_provider != expected:
         meta["intent_provider"] = intent_provider
     return meta
+
+
+# ── 실패 행 (llm-fallback-alert-blindspot) ───────────────────────────────────
+# 전 제공자 실패·답변 중 예외는 지금까지 오류 이벤트만 내고 저장하지 않았다. 폴백 감시
+# (check_llm_fallback.py)는 저장된 대화만 읽으므로 전면 장애 중에도 '✅ 정상'이었다(2026-10-14 실측 —
+# gpt-6-luna 지연 + Claude 한도 + Gemini 소진). 그래서 실패도 답변 없는 행으로 남긴다.
+# 지킬 것: ① 예외 **메시지**는 어디에도 쓰지 않는다 — 클래스명·HTTP 상태만(Gateway 401 본문은 URL을,
+# SDK 메시지는 헤더 값을 담을 수 있다) ② 기록은 fail-open — 사용자에게 가는 error·done을 막지 않는다
+# ③ 카테고리·synthetic 판정은 성공 경로와 **같은 함수**다(복제하면 관리자 분포가 조용히 어긋난다).
+
+# 실패 페이로드의 키 전부 — 테스트(T-F1)가 이 집합 밖의 키를 거절한다.
+FAILURE_META_KEYS = frozenset({
+    "failed", "stage", "provider", "attempts", "empty", "failures", "error_class", "status", "transport",
+})
+
+
+def _status_of(exc) -> int | None:
+    """예외의 HTTP 상태 — SDK별 모양(anthropic·openai·cohere `status_code`, httpx `response.status_code`,
+    google.api_core `code`)만 본다. 메시지는 읽지 않는다. 정수가 아니면(grpc enum·메서드) 버린다."""
+    # 폴백 전환 중(_stream_answer의 except 블록 안)에서 불린다 — 속성 접근이 예외를 던지면 전환이 끊기므로
+    # 어떤 예외든 None으로 흡수한다(getattr 기본값은 AttributeError만 막는다, Check L-1).
+    try:
+        candidates = (
+            getattr(exc, "status_code", None),
+            getattr(getattr(exc, "response", None), "status_code", None),
+            getattr(exc, "code", None),
+        )
+        for value in candidates:
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _failure_entry(provider: str | None, exc: BaseException) -> dict:
+    return {"provider": provider, "error_class": type(exc).__name__, "status": _status_of(exc)}
+
+
+def _failure_llm_meta(
+    outcome: "AnswerOutcome | None", exc: BaseException | None, stage: str, transport: str | None = None,
+) -> dict:
+    """실패 행의 metadata.llm (Design §3.4).
+
+    stage="answer": 원인은 outcome.failures(제공자별)다 — 최종 RuntimeError는 _stream_answer의 포장이라
+    그 클래스명은 쓰지 않는다. stage="pipeline": 답변 밖 예외 1건이 전부다.
+    """
+    attempts = list(outcome.attempts) if outcome else []
+    failures = [dict(f) for f in outcome.failures] if outcome else []
+    if stage != "answer" and exc is not None:
+        failures.append(_failure_entry(None, exc))
+    if not failures:
+        failures.append({"provider": None, "error_class": "NoProvider", "status": None})
+    meta: dict = {"failed": True, "stage": stage, "provider": None, "attempts": attempts, "failures": failures,
+                  "error_class": failures[-1]["error_class"]}
+    if outcome and outcome.empty_providers:
+        meta["empty"] = list(outcome.empty_providers)
+    if failures[-1].get("status") is not None:
+        meta["status"] = failures[-1]["status"]
+    if transport:
+        meta["transport"] = transport
+    return meta
+
+
+def _category_for(query: str, analysis, params, use_analysis_params: bool) -> tuple[list | None, str]:
+    """저장 행의 (calculation_types, category) — 성공 경로와 실패 행이 공유하는 단일 출처."""
+    calc_types = None
+    tool_type_for_category = "none"
+    if use_analysis_params and analysis:
+        calc_types = analysis.calculation_types
+    elif params:
+        ct = params.get("calculation_type", "")
+        if ct:
+            calc_types = list(CALC_TYPE_MAP.get(ct, []))
+        if params.get("is_harassment_question"):
+            tool_type_for_category = "harassment"
+    # LLM 추출 실패 시 키워드 기반 폴백
+    if not calc_types:
+        calc_types = infer_calc_types(query) or None
+    return calc_types, classify_category(calc_types, tool_type_for_category, query)
+
+
+def _synthetic_flag(guard_ctx) -> bool:
+    """비웹 호출(G-A)·비프로덕션 출처 요청(G-B) — board-duplicate-cleanup. 성공·실패 행 공통."""
+    return guard_ctx is None or bool(getattr(guard_ctx, "synthetic", False))
+
+
+def record_failed_conversation(
+    config: AppConfig, session: Session, query: str, guard_ctx, *, stage: str,
+    outcome: "AnswerOutcome | None" = None, exc: BaseException | None = None,
+    has_attachments: bool = False, analysis=None, params=None, use_analysis_params: bool = False,
+) -> str | None:
+    """답변 없는 실패 행을 저장한다(Design §4.1). 실패해도 예외를 내지 않는다(fail-open).
+
+    호출부: process_question의 전 제공자 실패 분기(stage="answer")와 api/index.py의 답변 중 예외
+    분기(stage="pipeline"). 한 요청에서 두 분기는 배타라 실패 행은 최대 1건이다.
+    """
+    sb = getattr(config, "supabase", None)
+    if sb is None:
+        return None
+    try:
+        calc_types, category = _category_for(query, analysis, params, use_analysis_params)
+        metadata: dict = {
+            "has_attachments": bool(has_attachments),
+            "failed": True,   # 게시판 제외 키(storage.PUBLIC_EXCLUDE_KEYS) — True일 때만 기록
+            "llm": _failure_llm_meta(outcome, exc, stage, getattr(config, "transport", None)),
+        }
+        if _synthetic_flag(guard_ctx):
+            metadata["synthetic"] = True
+        record = ConversationRecord(
+            session_id=session.id, category=category, question_text=query, answer_text="",
+            calculation_types=calc_types or [], metadata=metadata,
+        )
+        conv_id = save_conversation(sb, record)
+        logger.info("실패 행 저장 (stage=%s, conv_id=%s, error_class=%s)",
+                    stage, conv_id, metadata["llm"]["error_class"])
+        return conv_id
+    except Exception as e:  # noqa: BLE001 — 기록 실패가 오류 안내를 막지 않는다
+        logger.warning("실패 행 기록 실패 (stage=%s): %s", stage, type(e).__name__)
+        return None
 
 
 # ── 임금계산기 ────────────────────────────────────────────────────────────────
@@ -797,6 +975,18 @@ WAGE_CALC_TOOL = {
 }
 
 
+# 분석기 장애 시의 대체 추출도 동일한 정산 계약을 표현한다.
+from app.templates.prompts import ANALYZE_TOOL
+from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+from wage_calculator.calculators.wage_claims import CLAIM_INPUT_FIELDS, CLAIM_DEPENDENCY_FIELDS
+WAGE_CALC_TOOL["input_schema"]["properties"].update({
+    key: ANALYZE_TOOL["input_schema"]["properties"][key] for key in PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | {"fixed_allowances"}
+})
+WAGE_CALC_TOOL["input_schema"]["properties"]["calculation_type"]["description"] += "/일할계산급여/임금체불액"
+
+
 HARASSMENT_TOOL = {
     "name": "harassment_params",
     "description": (
@@ -867,21 +1057,17 @@ HARASSMENT_TOOL = {
 }
 
 
-def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict | None]:
-    """질문을 분류하고 파라미터를 추출 (2-tool 방식)"""
+def _extract_params(query: str, config: AppConfig) -> tuple[str, dict | None]:
+    """질문을 분류하고 파라미터를 추출 (2-tool 방식). 모델은 설정 1순위 → 다음 순위."""
     from datetime import date as _date
     from app.core.analyzer import _correct_date_year
     today = _date.today().isoformat()
     try:
-        # temperature 미지정 — Sonnet 5 이후 모델은 이 파라미터를 거부(400)한다.
         # 임계경로 타임아웃 (DB-6) — 지연 시 폴백 경로로 진행
-        resp = client.with_options(
-            timeout=EXTRACT_TIMEOUT, max_retries=CRITICAL_MAX_RETRIES,
-        ).messages.create(
-            model=EXTRACT_MODEL,
-            max_tokens=512,
-            tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL],
-            tool_choice={"type": "any"},
+        _provider, name, params = llm_gateway.tool(
+            config, system=None, purpose="파라미터 추출",
+            tools=[WAGE_CALC_TOOL, HARASSMENT_TOOL], max_tokens=llm_gateway.extraction_budget(query,default=512),
+            timeout=EXTRACT_TIMEOUT, attempts=2,
             messages=[{
                 "role": "user",
                 "content": (
@@ -896,16 +1082,14 @@ def _extract_params(query: str, client: anthropic.Anthropic) -> tuple[str, dict 
                 ),
             }],
         )
-        for block in resp.content:
-            if block.type == "tool_use":
-                if block.name == "harassment_params":
-                    return ("harassment", block.input)
-                # 날짜 보정
-                params = block.input
-                for dk in ("start_date", "end_date"):
-                    if dk in params:
-                        params[dk] = _correct_date_year(params[dk])
-                return ("wage", params)
+        if name == "harassment_params":
+            return ("harassment", params)
+        # 날짜 보정
+        for dk in ("start_date", "end_date"):
+            if dk in params:
+                # 추출 LLM이 본 텍스트는 query(질문+첨부)뿐이다 — 연도 단서도 거기서 찾는다
+                params[dk] = _correct_date_year(params[dk], query)
+        return ("wage", params)
     except Exception as e:
         # 조용한 삼킴 제거 — 계산기 미실행 원인 관측 가능하게 (CALC-7)
         logger.warning("파라미터 추출 실패 (상담 경로로 진행): %s", e)
@@ -1013,6 +1197,7 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
 
     from wage_calculator.constants import MINIMUM_HOURLY_WAGE, MONTHLY_STANDARD_HOURS
     from wage_calculator.legal_rules import kst_today
+    from wage_calculator.utils import WEEKS_PER_MONTH
 
     # 법률 기준일은 KST다(계산기·4대보험 사실 블록과 같은 규약). UTC 런타임은 00~09시에
     # 전날/전년을 가리켜 연도 창이 한 칸 밀린다.
@@ -1021,6 +1206,7 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
     if not years:
         return None
 
+    ex = cur if cur in MINIMUM_HOURLY_WAGE else years[0]   # 209시간 안내의 예시 연도
     lines = []
     for y in years:
         hw = MINIMUM_HOURLY_WAGE[y]
@@ -1034,6 +1220,13 @@ def _build_minwage_facts(query: str, analysis) -> str | None:
         + "\n".join(lines)
         # "표에 없음"을 "고시 안 됨"으로 바꿔 말하면 안 된다 — 표 갱신이 늦었을 뿐인데
         # 사용자에게 거짓 사실을 전한다(2027년 고시 누락 실장애 2026-09-22).
+        # 고시는 주 40시간 근무자의 월 환산액을 209시간 기준으로 적고 계산 카드는 시행령 산식(208.5714시간)을 반올림 없이
+        # 쓴다 — 그 사이 금액에서 카드 '충족'과 이 블록의 월 환산액이 한 답변 안에서 갈렸다(audit-50 Act-4 리뷰 M5)
+        + f"\n월급 환산액은 고시의 표기(주 40시간 근무, 월 {MONTHLY_STANDARD_HOURS:.0f}시간 기준)입니다. 계산 카드는 "
+          f"최저임금법 시행령 제5조 제1항 제3호의 산식(1주 48시간 × 1년 평균 주 수 ÷ 12 = 월 {48 * WEEKS_PER_MONTH:.4f}시간)을 "
+          f"반올림 없이 써서, {ex}년 기준 월 {math.ceil(MINIMUM_HOURLY_WAGE[ex] * 48 * WEEKS_PER_MONTH):,}원 이상 "
+          f"{MINIMUM_HOURLY_WAGE[ex] * MONTHLY_STANDARD_HOURS:,.0f}원 미만이면 카드는 '충족'이어도 고시 환산액보다 "
+          "적습니다 — 그 구간이면 두 기준을 함께 안내하세요."
         + "\n위 목록에 없는 연도의 금액은 이 시스템에 등록되지 않은 것입니다. 고시 여부를 단정하지 말고 "
           "금액을 추정하지도 말며, 고용노동부 고시·최저임금위원회에서 확인하도록 안내하세요."
         + "\n질문에 시급이 없어 예시 계산이 필요하면 반드시 위 목록에서 질문이 묻는 연도(정하지 않았으면 오늘 날짜가 속한 연도)의 시급을 쓰세요. "
@@ -1108,7 +1301,594 @@ _KNOWLEDGE_MODULES = [
 
 # 임금 정보 없이도 의미 있는 산출이 가능한 계산기 (schedule 기반 + 독립 계산)
 # wage_arrears: 체불 지연이자는 arrear_amount/arrear_due_date만 필요 (facade 독립 함수)
-_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears"}
+_WAGELESS_TARGETS = {"working_hours", "weekly_hours_check", "wage_arrears", "prorated", "arrears_principal"}
+
+# 월급 구성 진술(audit-50-legal-accuracy §5). 질문이 "월급에 연장·야간·휴일·연차수당이 포함"이라고 밝혔는데
+# 그 총액으로 최저임금을 판정하면 결정적 카드가 '✅ 충족'을 낸다 — 이 수당들은 최저임금 산입에서 빠진다
+# (최저임금법 제6조 제4항). 10-11 외부 점검 36번: 270만 원 ÷ 소정시간 = '통상시급 12,943원·충족'이었고
+# 본문은 기본급 기준 '월 60,610원 부족'이라 카드와 본문이 반대 판정을 냈다.
+# 구성은 도구 인자(wage_amount)가 아니라 **질문 본문**에서 읽는다 — 괴롭힘 판정기와 같은 이유(도구 인자는
+# 질문에 없는 값을 채운다).
+# '유급휴일수당'은 대개 주휴수당(산입 대상)이라 비산입 수당으로 읽지 않는다.
+_EXCLUDED_PAY_RE = re.compile(r"(?<!유급)(?<!유급\s)(?:연장|야간|휴일|초과)\s*(?:[·ㆍ,/]\s*(?:연장|야간|휴일)\s*)*"
+                              r"(?:근로|근무)?\s*수당|연차\s*(?:유급\s*휴가\s*)?수당")
+_PAY_INCLUDED_RE = re.compile(r"포함|들어\s*(?:가|있)|녹아")
+# 수당명과 '포함' 사이에 오면 그 '포함'은 이 수당의 진술이 아니다 — "연장수당은 별도", "연장수당은 따로 받고
+# 식대가 포함", "연장수당 없이 …"
+_PAY_SEPARATE_RE = re.compile(r"별도|따로|제외|빼고|미포함|불포함|없|(?<!\d),(?!\d)|;|(?:고|며|지만|는데|면서)\s")
+# '포함' 바로 뒤가 부정·의문·계산 지시면 진술이 아니다 — "포함되어 있지 않습니다", "포함되나요?",
+# "포함해서 계산해 주세요"(2026-10-12 Check 리뷰 실측: 전부 포함 진술로 읽혀 맞는 '미달'이 보류로 바뀌었다)
+_PAY_INCLUDED_DENIED_RE = re.compile(
+    r"^\s*(?:되어|돼|된|되|이|가|하)?\s*(?:있지\s*|지\s*)?(?:않|안\s*(?:되|돼|됨|된|해|했|함))"
+    r"|^\s*(?:X|×|아님|아니)"
+    r"|^\s*(?:되어|돼|된|되|이|가)?\s*(?:있|있는)?\s*(?:나요|는지|는가|냐|건가|걸까|인가|인지|일까|되나|됐나|돼요\s*\?|\?)"
+    r"|^\s*(?:해서|하여|시켜서?)\s*(?:계산|산정|알려|따져|비교)")
+# 만원 표기는 뒤의 잔액까지 읽는다("209만 6천원"·"209만6,270원" — 2번 그룹 만, 3번 잔액, 4번 '천'). 잔액을 버리면 사용자가
+# 천 원 단위까지 적은 기본급으로 없는 '미달'이 났다(Act-4 리뷰 H2)
+_BASE_PAY_RE = re.compile(r"기본급\s*(?:은|는|이|:|=)?\s*(?:월\s*)?(?:(\d{1,3}(?:,\d{3})+|\d{5,})\s*원"
+                          r"|(\d+(?:\.\d+)?)\s*만(?:\s*(\d{1,3}(?:,\d{3})+|\d{1,4})\s*(?:(천)\s*원?|원)|\s*원)?)")
+# 금액 뒤가 이러면 그 금액은 정확한 값이 아니다 — 어림("200만원대·정도·이상·넘게") — 쓰지 않는다. '초과근무수당'·'이상한'은
+# 어림이 아니다(재검토 M-B: "기본급 200만원 초과근무수당 30만원 포함"·"월급 250만원 5인 미만"을 버렸다)
+_AMOUNT_APPROX_RE = re.compile(
+    r"^(?:대(?:에|로|인|이|였|의|$|\s|[,.)])|\s*(?:정도|쯤|가량|남짓|안팎|내외|미만|이하|이상(?![한하해])|넘(?:게|는|어|은)"
+    r"|초과(?!\s*(?:근무|근로|수당|시간))))")
+# 금액이 '원'으로 끝나지 않았는데(만·천에서 멈춤) 숫자·천·백·대가 이어지면 못 읽은 잔액이다("209만 6백", "209만 9천9백원",
+# "200만 대에")
+_AMOUNT_REST_RE = re.compile(r"^\s*(?:\d|천|백|대)")
+
+
+def _inexact_amount(match, after: str) -> bool:
+    """금액이 정확한 값이 아닌가 — 어림 표현이거나, 만 단위에서 멈췄는데 잔액이 이어진다."""
+    if _AMOUNT_APPROX_RE.match(after):
+        return True
+    return not match.group(0).rstrip().endswith("원") and bool(_AMOUNT_REST_RE.match(after))
+# 기본급 '금액'이 아니라 변동분·과거 값인 언급 — "기본급이 50,000원 올랐다", "작년 기본급은 …"
+_BASE_CHANGE_AFTER_RE = re.compile(r"^\s*(?:이|가|을|를|씩|만큼|정도|가량|쯤)?\s*"
+                                   r"(?:인상|올랐|올라|오르|올려|상승|인하|내렸|내려|깎|삭감|감액|줄었|줄어|차이|늘었|늘어)")
+_BASE_PAST_BEFORE_RE = re.compile(r"(?:작년|전년|지난\s*해|재작년|이전|예전|과거|원래|종전|입사\s*(?:때|당시|시))"
+                                  r"[^.!?\n]{0,8}$")
+# 최저임금 비산입 항목(월급 총액의 '나머지') — 질문에서 수당 항목을 찾기 전에 이 범위를 지운다. 질문·의도분석에 흔한 이름까지
+# 넓힌다(시간외·잔업·특근·포괄·OT — Act-3 리뷰 H3b). '유급휴일수당'(대개 주휴)은 비산입이 아니다.
+_EXCLUDED_ITEM_RE = re.compile(
+    _EXCLUDED_PAY_RE.pattern
+    + r"|(?:시간외|잔업|특근|심야|주말\s*(?:근무|근로))\s*(?:근로|근무)?\s*수당|포괄\s*(?:임금\s*)?수당"
+    r"|고정\s*(?:OT|오티)(?:\s*수당)?|(?<![A-Za-z])(?:OT|오티)(?:\s*수당|(?=\s*\d))",
+    re.IGNORECASE)
+# 월급을 이루는 그 밖의 항목 — 이름 전체를 잡는다. 정해진 목록만 보면 목록 밖 이름(팀장·보육·현장·만근·유급휴일수당 …)을 버려
+# '총액 − 기본급'이 비산입 수당만이 아닌데 기본급으로 판정해 없는 '미달'이 나왔고(리뷰 H1), 뒷부분만 잡으면 '석식비'·'중식비'가
+# '식비' 하나로 합쳐졌다(리뷰 H2).
+_PAY_ITEM_RE = re.compile(
+    r"(?<![가-힣A-Za-z])([가-힣A-Za-z]{1,8}\s?(?:수당|보조금)|[가-힣]{0,2}(?:식대|식비)"
+    r"|(?:교통|통신|주거|숙박|차량\s*유지|보육|육아|학자)비|상여금?|보너스|성과(?:급|금)|인센티브|격려금)")
+# 금액이 있어도 판단을 미루는 항목 — 지급 주기·조건에 따라 통상임금·최저임금 산입이 갈린다
+_AMBIGUOUS_ITEM_RE = re.compile(
+    r"상여|보너스|성과|인센티브|격려|장려|가족|자녀|복리|고정|정액|기타|각종|특별|명절|당직|숙직|철야|조정|업무|약정")
+_ITEM_AMOUNT_RE = re.compile(
+    r"\s*(?:은|는|이|가|:|=)?\s*(?:월\s*)?\(?\s*(?:약\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)")
+# 금액 바로 뒤의 별도·변동 표현 — "20만원은 별도", "10만원에서 20만원으로"
+# 금액이 이름 앞에 오는 표기 — '의·짜리'로 이어질 때만 읽는다("기본급 2,000,000원 식대 포함"의 앞 금액은 식대 것이 아니다)
+_ITEM_AMOUNT_BEFORE_RE = re.compile(
+    r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)\s*(?:의|짜리)\s*$")
+# 그 금액 바로 앞이 기간·다른 임금이면 이 항목의 월액이 아니다 — "하루 8,000원짜리 식대", "연 120만원의 식대", "시급
+# 10,320원의 주휴수당", "기본급 2,000,000원의 식대"(Act-4 리뷰 H3). '월'·'매월'이거나 아무것도 없을 때만 읽는다
+_ITEM_AMOUNT_PREFIX_EXCLUDE_RE = re.compile(
+    r"(?:하루|일당|매일|일|주당|매주|주|연간|매년|연|년|시간당|시간|시급|일급|주급|연봉|기본급|월급|급여|총액|총|합계|각)\s*$")
+_ITEM_AFTER_RE = re.compile(r"^\s*(?:은|는|이|가)?\s*(?:별도|따로|제외|미포함|불포함|에서|부터|→|->)")
+# 금액 없는 수당 이름은 월급 구성을 말하는 문장에서만 판단 보류 사유다 — "주휴수당도 받을 수 있나요?" 같은 질문 문장은 아니다
+_COMPOSITION_SENTENCE_RE = re.compile(r"기본급|월급|급여|포함")
+# 질문에 숫자로 적힌 월급 총액("월급 2,700,000원", "세전 월급은 270만 원", "급여는 300만원"). 키워드 없이 '월 N원'만
+# 있으면 수당 금액("식대 월 20만원")일 수 있어 읽지 않고, '실업급여'·'육아휴직 급여' 같은 합성어도 뺀다.
+_TOTAL_PAY_RE = re.compile(
+    r"(?:(?<![가-힣])월급|월\s*급여|(?<![가-힣])급여|월\s*임금|월\s*보수|임금\s*총액)\s*(?:\(\s*세전\s*\)\s*)?(?:총액\s*)?"
+    r"(?:은|는|이|가|:|=)?\s*(?:세전\s*|총\s*)?(?:약\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)")
+# 같은 절에서 총액 키워드 앞에 오면 그 금액은 세전 월급 총액이 아니다(리뷰 M1 — '세후 월급은 240만 원'이 총액으로 읽혔다)
+_TOTAL_CONTEXT_EXCLUDE_RE = re.compile(
+    r"세후|실수령|실지급|통장|입금|최저|평균|전\s*직장|이전\s*직장|예전\s*직장|전\s*회사|이전\s*회사|육아|휴직|실업|구직|"
+    r"출산|상여|퇴직|연봉|연간|희망|목표|예상|(?<![가-힣])연\s*$")
+_TOTAL_AFTER_EXCLUDE_RE = re.compile(r"^\s*\(?\s*(?:세후|실수령|실지급|통장)")
+# 포괄임금제 언급 — 의도분석이 '포괄임금제'로 뽑아도 질문에 그 말이 있고 부정이 아닐 때만 R2 보류를 건다
+_COMPREHENSIVE_RE = re.compile(r"포괄\s*(?:임금|산정)")
+_COMPREHENSIVE_DENIED_RE = re.compile(
+    r"포괄\s*(?:임금|산정)\S*\s*(?:제)?\s*(?:가|이)?\s*(?:아니|아닌|아님|않)(?![가지까냐죠])(?![^.!?\n]{0,8}\?)")
+_MONEY_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:(만)\s*원?|원)")
+_SENTENCE_RE = re.compile(r"(?<=[.!?。])\s+|\n+")
+# 평균임금·보수총액을 쓰는 계산 — 기본급으로 바꾸면 연장수당 등이 빠져 과소 산정된다
+_TOTAL_PAY_TARGETS = frozenset({
+    "severance", "average_wage", "unemployment", "industrial_accident", "shutdown_allowance",
+    "retirement_tax", "retirement_pension", "insurance", "employer_insurance", "eitc",
+})
+# 보류 경로 카드의 이름표. 연장·야간·휴일·연차수당이 섞인 월급 총액을 소정근로시간으로 나눈 값은 통상시급이 아니고
+# 그 총액도 기본급·통상임금이 아니다 — 통상임금은 소정근로의 대가라 그 수당을 포함하지 않는다. 카드는 LLM 컨텍스트에
+# "이 수치를 사용하세요"로 주입되므로 이름이 틀리면 표시와 근거가 둘 다 틀린다(Plan P0-5, Design §13.4 C21).
+_HELD_HOURLY_LABEL = "월급 총액 기준 시급(포함 수당 때문에 통상시급 아님)"
+_HELD_MONTHLY_LABEL = "월급 총액(포함 수당 때문에 통상임금 아님)"
+_HELD_EFFECTIVE_LABEL = "총액 기준 시급(포함 수당 때문에 실제 산입 시급보다 높음)"
+_HELD_SUMMARY_LABELS = {"통상시급": _HELD_HOURLY_LABEL, "월 통상임금": _HELD_MONTHLY_LABEL, "실질시급": _HELD_EFFECTIVE_LABEL}
+# 총액으로도 미달이라 남긴 최저임금 줄(리뷰 H5)도 총액을 '기본급'·'실질시급'이라 부른다 — 머리말만 바꾼다(재검토 M-D)
+_HELD_MINWAGE_LINE_RE = re.compile(r"^(?:기본급 월액|실질시급):")
+_HELD_MINWAGE_WARN_RE = re.compile(r"^최저임금 미달: 실질시급")
+# 보류 경로(금액이 월급 총액)에서 금액을 보류하는 계산 — 금액이 통상임금(통상시급·1일·월 통상임금)에서 나온다. 그 '통상임금'은
+# 연장·야간·휴일·연차수당이 섞인 총액이라 이 금액들이 모두 부풀려진다(재현: 총액 270만 원 + 주 10시간 연장 → 연장수당 843,634원이
+# 총액 위에 더해져 월 총액 3,543,634원, 퇴직금 17.6% 과대 — Design §13.5 R1·R6). 계산은 하고 금액만 뺀다(facade `amount_hold`).
+# 평균임금 계열은 평균임금 자체는 총액으로 맞게 나오지만 '평균임금이 통상임금보다 적으면 통상임금'(근로기준법 제2조 제2항) 하한·
+# 휴업수당 상한이 부풀린 통상임금으로 걸린다. 퇴직연금은 파이프라인이 유형을 배선하지 않아 항상 DB형(퇴직금과 같은 산식)이다.
+# 계산기가 통상임금을 새로 읽으면 이 집합이나 테스트의 유지 목록에 넣어야 한다(test_audit50 T5가 계산기 소스와 대조한다).
+_ORDINARY_BASED_TARGETS = frozenset({
+    "overtime", "weekly_holiday", "annual_leave", "dismissal", "public_holiday", "compensatory_leave",
+    "flexible_work", "parental_leave", "reduced_work_benefit", "maternity_leave",
+    "average_wage", "severance", "shutdown_allowance", "industrial_accident", "retirement_pension",
+})
+# 그중 평균임금으로 계산하는 것(퇴직소득세는 퇴직금 결과를 쓴다) — 보류 안내가 이유를 따로 적는다
+_AVERAGE_WAGE_TARGETS = frozenset({
+    "average_wage", "severance", "shutdown_allowance", "industrial_accident", "retirement_pension", "retirement_tax",
+})
+# 금액 보류 안내의 표지. LLM 컨텍스트 머리말이 이 표지로 '보류 항목 추정 금지'를 덧붙인다.
+_AMOUNT_HOLD_MARK = "금액 보류:"
+# 미확인 모드 주휴 블록의 조건부 예시 줄 표지 — 머리말이 이 표지로 '조건을 함께 밝혀서만 쓰세요'를 덧붙인다(calc-card-consistency D7)
+_CONDITIONAL_EXAMPLE_MARK = "조건부 예시 —"
+# 보류 경고의 이름표 설명. 보류 안내와 포괄임금 '미달' 안내가 같은 문장을 쓴다.
+_HELD_TOTAL_NOTE = " 위 시급은 그 수당이 섞인 월급 총액을 소정근로시간으로 나눈 값이라 통상시급이 아닙니다."
+# 다른 계산기가 만든 줄 속 '통상시급'(소정근로시간 계산식 등)도 같은 총액 ÷ 시간이다. 이름을 부정하는 표기는 건드리지 않는다.
+_HELD_HOURLY_WORD_RE = re.compile(r"통상시급(?! 아님)(?!이 아니며)")
+_HELD_FORMULA_TAG_RE = re.compile(r"^\[통상임금\]")
+_HELD_FORMULA_BASE_RE = re.compile(r"^((?:\[시급 환산\] )?)월 기본급:")
+# 4대보험 계산기는 보수월액(= 통상임금 계산 결과)을 '(통상임금 기준)'이라 적는다 — 보류 카드에서 그 값은 월급 총액이다
+_HELD_INSURANCE_BASIS_RE = re.compile(r"^(세전 월 급여: [\d,]+원) \(통상임금 기준\)$")
+
+
+# '포함' 문장의 부정·별도 표지 — "식대는 포함되지 않아요"·"식대는 별도"는 총액 밖이다
+_NOT_INCLUDED_RE = re.compile(r"포함(?:되|하|돼|이|해)?\s*(?:있)?지\s*않|포함\s*(?:안|X)|미포함|불포함|제외|별도|따로")
+
+
+# 임금 구성이 아닌 '포함' — "세금 포함 실수령액"·"4대보험 포함해서 계산"은 그 앞의 수당이 월급 총액 안에 있다는 말이 아니다
+_NON_PAY_INCLUDE_RE = re.compile(r"(?:세금|세액|소득세|4\s*대\s*보험|보험료?|공제|실수령(?:액)?|세후|세전|부가세|VAT)\s*(?:까지\s*|도\s*|을\s*|를\s*)?$",
+                                 re.IGNORECASE)
+
+
+def _stated_included_items(text: str) -> set[str]:
+    """'포함'이라고 말한 문장에서 그 '포함' **앞에** 적힌 수당 이름(공백 제거) — "월급 270만 원에 식대 20만 원과 연장수당이 모두
+    포함"의 식대는 말한 총액 안에 있다. '포함' 뒤에 오는 이름("월급 270만 원(연장수당 포함), 식대 20만 원")은 총액 밖일 수 있어
+    고르지 않고, 부정·별도 표지가 있는 문장은 보지 않는다. 세금·4대보험·공제·실수령 바로 뒤의 '포함'은 임금 구성이 아니라 건너뛴다 —
+    마지막 '포함'만 보면 "직책수당 30만 원을 받는데 세금 포함 실수령액"에서 직책수당을 총액 안으로 보고 빼 세전이 30만 원 줄었다
+    (Check S1)."""
+    names: set[str] = set()
+    for sentence in _SENTENCE_RE.split(text or ""):
+        if _NOT_INCLUDED_RE.search(sentence):
+            continue
+        cuts = [m.start() for m in re.finditer("포함", sentence)
+                if not _NON_PAY_INCLUDE_RE.search(sentence[max(0, m.start() - 12):m.start()])]
+        if not cuts:
+            continue
+        cut = cuts[-1]
+        masked = _EXCLUDED_ITEM_RE.sub(lambda m: " " * len(m.group(0)), sentence[:cut])
+        names.update(re.sub(r"\s+", "", m.group(1)) for m in _PAY_ITEM_RE.finditer(masked))
+    return names
+
+
+def _drop_stated_included(inp, text: str) -> None:
+    """금액이 월급 총액인 경로에서 '총액에 포함'이라고 말한 수당을 고정수당에서 뺀다 — 기준 월액이 그 금액을 총액 위에 다시 더해
+    실업급여·근로장려금·4대보험이 부풀었다(독립 리뷰 M4: "월급 270만 원에 식대 20만 원과 연장수당이 모두 포함" → 290만 원)."""
+    included = _stated_included_items(text)
+    if not included:
+        return
+
+    def name(a):
+        return re.sub(r"\s+", "", a.get("name", "") if isinstance(a, dict) else getattr(a, "name", ""))
+    inp.fixed_allowances = [a for a in inp.fixed_allowances or [] if name(a) not in included]
+
+
+def _drop_not_ordinary_allowances(inp) -> None:
+    """금액이 월급 총액인 경로에서 의도분석이 뽑은 연장·연차수당 등(이름으로 통상임금이 아닌 고정수당)을 뺀다 — 이미 그 총액의
+    일부라 '월 총 예상 수령액'에 다시 더해졌다(재검토 M-A: 270만 원 + 고정연장수당 60만 원 → 3,300,000원)."""
+    def name(a):
+        return a.get("name", "") if isinstance(a, dict) else getattr(a, "name", "")
+    inp.fixed_allowances = [a for a in inp.fixed_allowances or [] if not AllowanceClassifier.is_not_ordinary_by_name(name(a))]
+
+
+# 규모를 모를 때의 가산 안내 — 파이프라인은 사업장 규모가 없으면 5인 이상으로 계산한다
+_SIZE_ASSUMED_NOTE = ("상시 5명 이상 사업장 기준으로 연장·야간·휴일 가산(50%)을 계산했습니다 — 상시 4명 이하면 가산 없이 "
+                      "1배입니다(근로기준법 제56조, 시행령 별표 1).")
+# 묻지 않은 연장수당을 파이프라인이 더한 카드에만 붙인다 — 섹션이 왜 생겼는지와 평균임금·보수 추정이 이미 쓰던 '매주 같은 시간'
+# 가정을 밝힌다. 특정 주인지는 판정하지 않는다(calc-card-consistency D5 — 기간 표지 정규식이 '이번 주에만'을 못 잡는다). '질문에
+# 적힌'이라 쓰지 않는다 — 앞 턴 캐시에서 채운 시간에도 붙는다(독립 리뷰 L4)
+_PREMIUM_ADDED_NOTE = ("대화에 나온 연장·야간·휴일 근로시간의 임금이 월 금액에 들어가므로 연장수당도 함께 계산했습니다 — 매주 같은 "
+                       "시간으로 보았고, 특정 주에만 한 근로라면 월 금액은 그보다 적습니다.")
+_WAGE_UNIT_LABEL = {WageType.DAILY: "일급", WageType.MONTHLY: "월급", WageType.ANNUAL: "연봉"}
+
+
+# 일급 보류에서 금액을 빼는 월 보수·소득 계산 — 보류 안내가 통상임금 계열과 다른 이유를 적는다(실업급여는 평균임금 계열)
+# 실업급여도 여기다 — 평균임금을 기준 월액 × 3으로 추정하므로(monthly-base-unification) 월 금액을 정할 수 없으면 계산할 수 없다
+_PAY_BASED_HELD = frozenset({"insurance", "employer_insurance", "eitc", "unemployment"})
+# 평균임금·보수월액·소득으로 금액을 내는 계산 — D4에서 '연장 등이 금액에 포함된 경우' 값을 함께 싣는다(리뷰 H2)
+_PAY_ESTIMATE_TARGETS = frozenset({
+    "average_wage", "severance", "retirement_tax", "retirement_pension", "shutdown_allowance", "industrial_accident",
+    "unemployment", "insurance", "employer_insurance", "eitc",
+})
+# 두 구성을 이미 따로 다루는 줄(최저임금 — 계산기 시나리오)과 A 기준으로 두기로 한 줄(통상임금·연장수당 — Design §3.5)
+_D4_SINGLE_READING_KEYS = frozenset({"최저임금 충족", "실질시급", "통상시급", "부족분(월)", "연장/야간/휴일수당(월)"})
+
+
+def _composition_alternative_input(inp):
+    """D4의 B(연장·야간·휴일 근로 임금이 금액에 포함) 구성을 정확 경로와 같은 입력으로 — 금액 × 소정 몫 비율(최저임금 계산기의 역산과
+    같은 비율)을 기본 몫으로, 금액 자체를 총액으로 둔다. 그래야 '평균임금이 통상임금보다 적으면 통상임금' 하한이 부풀린 통상임금이
+    아니라 B의 통상임금으로 판정된다. 비율을 구할 수 없으면 None."""
+    from copy import deepcopy
+    from wage_calculator.calculators.minimum_wage import _ot_included_ratio
+    from wage_calculator.calculators.ordinary_wage import calc_ordinary_wage
+    alt = deepcopy(inp)
+    ratio = _ot_included_ratio(alt, calc_ordinary_wage(alt).monthly_base_hours)
+    if not ratio:
+        return None
+    for field in ("monthly_wage", "annual_wage", "daily_wage"):
+        value = getattr(alt, field, None)
+        if value:
+            setattr(alt, field, value * ratio)
+    # B의 총액 = B 통상임금 월액 + B 시급으로 센 연장·야간·휴일 임금 월액. 월급·연봉이면 금액과 같고, 일급은 주휴를 연장분이 섞인
+    # 일급으로 세지 않는다(2차 리뷰 M1: 일급 12만 원·하루 10시간 B 세전 월 급여 3,128,571원 vs 2,986,364원)
+    ow_b = calc_ordinary_wage(alt)
+    # 기준 월액 함수 그대로다 — 통상임금에서 뺀 고정수당(연차수당 등)도 A처럼 넣어야 'A원 또는 B원'의 차이가 구성 차이만 남는다
+    # (독립 리뷰 M2: 월급 250만 + 연차수당 10만 + 주 연장 10시간에서 B에만 연차수당이 빠졌다). 구성 진술을 표시하기 전에 부른다
+    alt.monthly_total_pay = monthly_wage_total(alt, ow_b)
+    alt.wage_composition_known = True
+    return alt
+
+
+def _add_composition_alternative(result, calc, inp, targets) -> None:
+    """D4(구성 미상) 카드의 평균임금·보수 금액에 B 구성 값을 함께 싣는다(독립 리뷰 H2).
+
+    평균임금·보수월액·소득은 받은 임금 총액이라, 월 총액을 숨긴 이유(A의 총액을 받을 금액으로 단정하지 않음 — Design §3.5)가 그대로
+    적용된다. 계산기는 구성을 모르면 A(금액 + 연장 등)로 추정하므로 B로 한 번 더 계산해, 값이 다른 요약 줄만 'A원(연장수당 별도) 또는
+    B원(…에 포함)'으로 바꾸고 세후 실수령액 머리줄은 숨긴다. 통상임금으로 내는 금액은 설계대로 A만 둔다."""
+    pay_targets = [t for t in targets if t in _PAY_ESTIMATE_TARGETS]
+    if not pay_targets:
+        return
+    try:
+        alt_inp = _composition_alternative_input(inp)
+        if alt_inp is None:
+            return
+        alt = calc.calculate(alt_inp, pay_targets)
+    except Exception:  # noqa: BLE001 — 대안 계산이 실패해도 원래 카드는 그대로 낸다
+        logger.warning("D4 대안 구성 계산 실패", exc_info=True)
+        return
+    label = _WAGE_UNIT_LABEL.get(inp.wage_type, "임금")
+    changed = []
+    for key, value in list(result.summary.items()):
+        other = alt.summary.get(key)
+        if key in _D4_SINGLE_READING_KEYS or other is None or other == value:
+            continue
+        result.summary[key] = f"{value}(연장수당 별도) 또는 {other}({label}에 포함)"
+        changed.append(key)
+    if result.monthly_net and round(result.monthly_net) != round(alt.monthly_net or 0):
+        result.monthly_net = 0.0
+    if changed:
+        result.warnings.insert(1, (
+            f"{'·'.join(changed[:4])} 등 평균임금·보수로 계산한 금액은 {label}에 연장·야간·휴일 근로 임금이 포함되는지에 따라 "
+            f"달라 두 값을 적었습니다 — 따로 받으면 {label}과 그 임금의 합(위 계산식), 포함이면 {label} 그대로가 기준입니다."))
+
+
+def _composition_unknown_note(inp) -> str:
+    """일급·월급·연봉 + 연장 등 + 구성 미상(D4)의 안내."""
+    label = _WAGE_UNIT_LABEL.get(inp.wage_type, "임금")
+    return (f"{label}이 소정근로(1일 8시간·주 40시간)와 주휴의 대가라면 연장·야간·휴일 근로 임금은 따로 지급 대상이라 위 "
+            f"연장수당 등을 그 기준으로 계산했습니다. 그 임금이 {label}에 포함된다는 약정(포괄임금·고정연장수당)이 있으면 "
+            "통상시급과 최저임금 판정이 달라집니다 — 근로계약서의 임금 구성을 확인하세요. 월 총 예상 수령액은 구성을 몰라 "
+            "싣지 않았습니다.")
+
+
+def _states_excluded_pay_included(sentence: str) -> bool:
+    """수당명 뒤 30자 안, 같은 절에 '포함'류 서술이 부정·의문·계산 지시 없이 이어지는가.
+
+    수당명은 항목 탐지와 같은 넓은 이름(`_EXCLUDED_ITEM_RE` — 시간외·잔업·포괄·OT 등)이다. 좁은 이름만 보면 "시간외수당이
+    포함돼 있습니다"가 진술로 읽히지 않아 총액으로 '충족'을 냈다(Act-4 리뷰 M4).
+    """
+    for m in _EXCLUDED_ITEM_RE.finditer(sentence):
+        window = sentence[m.end():m.end() + 30]
+        inc = _PAY_INCLUDED_RE.search(window)
+        if not inc or _PAY_SEPARATE_RE.search(window[:inc.start()]):
+            continue
+        if not _PAY_INCLUDED_DENIED_RE.search(sentence[m.end() + inc.end():]):
+            return True
+    return False
+
+
+def _base_pay_amounts(text: str):
+    """질문에 적힌 기본급 후보 (원, 어림 단위 — '만 원'·'천 원'·None). 변동분·과거 값·정확하지 않은 금액(못 읽은 잔액·
+    어림 표현)은 뺀다 — 못 읽으면 보류가 틀린 금액보다 안전하다."""
+    text = text or ""
+    for m in _BASE_PAY_RE.finditer(text):
+        after = text[m.end():m.end() + 12]
+        if (_BASE_CHANGE_AFTER_RE.search(after) or _inexact_amount(m, after)
+                or _BASE_PAST_BEFORE_RE.search(text[max(0, m.start() - 14):m.start()])):
+            continue
+        if m.group(1):
+            yield int(m.group(1).replace(",", "")), None
+            continue
+        rest = int(m.group(3).replace(",", "")) * (1000 if m.group(4) else 1) if m.group(3) else 0
+        unit = "천 원" if m.group(4) else None if m.group(3) else "만 원"
+        yield round(float(m.group(2)) * 10000 + rest), unit
+
+
+def _stated_base_pay(text: str) -> int | None:
+    """질문에 적힌 기본급. 변동분·과거 값 언급은 빼고, 남은 금액이 하나로 정해질 때만 돌려준다."""
+    amounts = {value for value, _ in _base_pay_amounts(text)}
+    return amounts.pop() if len(amounts) == 1 else None
+
+
+def _base_rounding_unit(text: str) -> str | None:
+    """판정에 쓴 기본급이 만 원·천 원 단위로만 적혔으면 그 단위 — 근사값일 수 있어 안내에 밝힌다. 과거 값("작년 기본급 190만원")은
+    후보에서 빠지므로 안내를 붙이지 않고(Act-4 리뷰 L4), 같은 금액을 원 단위로도 적었으면("209만원(2,090,000원)") 근사가 아니다."""
+    units = [unit for _, unit in _base_pay_amounts(text)]
+    return units[0] if units and None not in units else None
+
+
+# 연장 등을 따로 받는다는 진술 뒤 같은 절에 오면 진술이 아니다 — "연장수당을 따로 받은 적은 없습니다"(calc-05 유형)
+# '별도·따로' 뒤 같은 절에 받는다는 서술이 있어야 진술이다. 부정·의문·가정이면 아니다 — 처음 규칙은 "연장수당은 따로 없고",
+# "별도로 지급하지 않고", "따로 받을 수 있나요?", "연차수당은 따로 받아요"까지 진술로 읽어 D4 보류를 끄고 A를 확정했다(2차 리뷰 H2)
+_SEPARATE_PAID_RE = re.compile(r"받|지급|나와|나옵|나오|들어와|챙겨|줘요|줍니다|주고\s*있")
+_SEPARATE_NEGATED_RE = re.compile(r"없|않|안\s*(?:받|줘|주|나|들어)|못\s*받|지\s*못|미지급|체불|아니|아닌")
+# 수당명 — 구성 판정과 같은 이름에 구어 '야근수당'을 더한다(진술 판정에서만 — 구성 판정의 동작은 그대로 둔다)
+_SEPARATE_ITEM_RE = re.compile(_EXCLUDED_ITEM_RE.pattern + r"|야근\s*(?:근로|근무)?\s*수당")
+_SEPARATE_QUESTION_RE = re.compile(r"\?|나요|까요|는지|[을를]지\b|수\s*있|해야|되나|인가|건가|할까")
+
+
+def _states_premium_paid_separately(query: str) -> bool:
+    """연장·야간·휴일 근로 임금을 따로 받는다고 질문이 밝혔는가(리뷰 M1). 같은 문장·같은 절에서 수당명 뒤 30자 안에 '별도·따로'와
+    받는다는 서술이 부정·의문 없이 와야 한다 — "월급 270만원이고 연장수당은 별도로 받아요", "(연장수당은 따로 받음)". 연차수당은
+    연장근로 임금이 아니라 뺀다."""
+    for sentence in _SENTENCE_RE.split(query or ""):
+        for m in _SEPARATE_ITEM_RE.finditer(sentence):
+            if "연차" in m.group(0):
+                continue
+            clause = _CLAUSE_END_RE.split(sentence[m.end():], maxsplit=1)[0][:30]
+            if (re.search(r"별도|따로", clause) and _SEPARATE_PAID_RE.search(clause)
+                    and not _SEPARATE_NEGATED_RE.search(clause) and not _SEPARATE_QUESTION_RE.search(clause)):
+                return True
+    return False
+
+
+# 일용근로자 진술 — 실업급여 기초일액의 통상임금 비교 제외(고용보험법 제45조 제2항 단서)에만 쓴다(리뷰 L2)
+_DAILY_WORKER_RE = re.compile(r"일용\s*(?:직|근로|노동|근무|잡부|공)")
+# 뒤따르면 일용근로자가 아니다 — "일용직이 아니라 정규직"에서 제45조② 비교를 건너뛰어 구직급여가 적게 나왔다(2차 리뷰 L2)
+_DAILY_WORKER_DENY_RE = re.compile(r"아니|아닌|아닙|였다가|이었다가|에서\s*(?:정규|상용)|전환|바뀌")
+
+
+def _states_daily_worker(query: str) -> bool:
+    """질문이 근로자를 일용근로자라고 밝혔는가 — 뒤 25자 안에 부정·전환 표현이 있으면 아니다."""
+    for sentence in _SENTENCE_RE.split(query or ""):
+        for m in _DAILY_WORKER_RE.finditer(sentence):
+            if not _DAILY_WORKER_DENY_RE.search(sentence[m.end():m.end() + 25]):
+                return True
+    return False
+
+
+def _stated_wage_composition(query: str) -> tuple[bool, int | None]:
+    """(월급에 최저임금 비산입 수당이 포함됐다고 질문이 밝혔는가, 질문에 적힌 기본급 원).
+
+    포함 진술은 **같은 문장** 안에서 수당 명칭 바로 뒤에 '포함'류 서술이 오거나, 기본급 금액과 함께 비산입 수당이 금액과
+    나열될 때다 — 연장수당을 따로 묻는 질문("주휴수당과 연장근로수당을 각각 계산")이나 다른 항목의 '포함'("식대 포함이고
+    연장수당은 따로")을 잡지 않기 위해서다. 만원 표기 기본급도 읽는다(Act-4 — 안내에 근사값일 수 있다고 밝힌다).
+    """
+    text = query or ""
+    included = any(_states_excluded_pay_included(s) or _lists_excluded_pay_with_base(s) or _states_part_of_total(s)
+                   for s in _SENTENCE_RE.split(text))
+    return included, _stated_base_pay(text)
+
+
+# "월급 270만원 중 60만원이 고정연장수당" — 총액 '중' 일부가 비산입 수당이라는 진술(재검토 M-A). '중'은 띄어 쓴 낱말만
+_PART_OF_TOTAL_RE = re.compile(r"(?:월급|급여|임금|총액)[^.!?\n]{0,20}?\s중(?:에서|에)?\s*"
+                               r"(?:[\d,.]+\s*(?:만\s*원?|원)\s*(?:이|가|은|는|정도가)?\s*)?")
+
+
+def _states_part_of_total(sentence: str) -> bool:
+    """월급 '중' 일부가 비산입 수당이라고 말하는가 — 뒤에 따로·못 받 등이 오면 아니다."""
+    for m in _PART_OF_TOTAL_RE.finditer(sentence):
+        item = _EXCLUDED_ITEM_RE.search(sentence, m.end(), m.end() + 14)   # '고정·정액' 같은 앞말을 건너뛴다
+        if (item and item.start() - m.end() <= 3
+                and not _PAY_NOT_INCLUDED_RE.search(_CLAUSE_END_RE.split(sentence[item.end():], maxsplit=1)[0])):
+            return True
+    return False
+
+
+# 나열된 수당 금액 뒤, 같은 절 안에 오면 월급에 든 것이 아니다 — "30만원은 따로 나와요", "30만원을 못 받았어요"
+_PAY_NOT_INCLUDED_RE = re.compile(r"별도|따로|제외|빼고|미포함|불포함|못\s*받|안\s*받|받지\s*(?:못|않)|미지급|체불")
+_CLAUSE_END_RE = re.compile(r"[,;)]|(?:고|며|지만|는데|면서)\s")
+
+
+def _lists_excluded_pay_with_base(sentence: str) -> bool:
+    """기본급 금액과 같은 문장에 비산입 수당이 금액과 함께 나열돼 있는가 — '포함' 동사가 없어도 구성 진술이다.
+
+    "월급 2,700,000원(기본급 2,096,270원, 고정연장수당 603,730원)"이 포함 진술로 읽히지 않아 총액으로 '✅ 충족'을 냈다
+    (Design §13.5 R2, Act-4). 별도·따로 지급이라고 하면 아니다.
+    """
+    if next(_base_pay_amounts(sentence), None) is None:
+        return False   # 기본급 금액이 없거나 과거·변동 값뿐이면 지금 월급의 구성이 아니다(Act-4 리뷰 M3)
+    for m in _EXCLUDED_ITEM_RE.finditer(sentence):
+        amount = _ITEM_AMOUNT_RE.match(sentence, m.end())
+        if amount and not _PAY_NOT_INCLUDED_RE.search(_CLAUSE_END_RE.split(sentence[amount.end():], maxsplit=1)[0]):
+            return True
+    return False
+
+
+def _parse_won(digits: str, man: str | None) -> int:
+    return round(float(digits.replace(",", "")) * (10000 if man else 1))
+
+
+def _stated_total_pay(text: str, base: int) -> int | None:
+    """질문에 숫자로 적힌 월급 총액. 기본급보다 큰 값이 하나로 정해질 때만 돌려준다.
+
+    기본급 경로의 평균임금·보수 기준(`monthly_total_pay`)이다. 의도분석이 기본급을 임금으로 뽑으면(C8) 총액을 여기서만 알 수
+    있다 — 점검 36번은 "세전 월급은 270만 원"이라 만원 표기를 읽어야 했다. 같은 절에 세후·실수령·최저·전 직장·육아휴직 등이
+    앞서거나, 변동("A에서 B로")·과거 값이면 뺀다(리뷰 M1).
+    """
+    text = text or ""
+    amounts = set()
+    for m in _TOTAL_PAY_RE.finditer(text):
+        before = re.split(r"[,.;!?\n(]", text[max(0, m.start() - 15):m.start()])[-1]
+        after = text[m.end():m.end() + 12]
+        if (_TOTAL_CONTEXT_EXCLUDE_RE.search(before) or _ITEM_AFTER_RE.search(after) or _inexact_amount(m, after)
+                or _TOTAL_AFTER_EXCLUDE_RE.search(after) or _BASE_CHANGE_AFTER_RE.search(after)
+                or _BASE_PAST_BEFORE_RE.search(text[max(0, m.start() - 14):m.start()])):
+            continue
+        value = _parse_won(m.group(1), m.group(2))
+        if value > base + 1000:
+            amounts.add(value)
+    return amounts.pop() if len(amounts) == 1 else None
+
+
+def _money_in_text(amount: float, text: str) -> bool:
+    """의도분석 금액이 질문에 숫자로 적혀 있는가(천 원 오차 허용). 아니면 의도분석이 기본급 + 식대처럼 합산한 값일 수 있다."""
+    return any(abs(_parse_won(m.group(1), m.group(2)) - amount) <= 1000 for m in _MONEY_RE.finditer(text or ""))
+
+
+def _stated_other_pay(text: str) -> tuple[dict[str, int], bool]:
+    """(월급 구성 문장에 금액과 함께 적힌 그 밖의 항목 {이름: 원}, 판단을 미뤄야 하는가).
+
+    비산입 항목(연장·야간·휴일·연차·시간외·포괄수당 등)을 지운 뒤 남은 '○○수당'·식대·교통비 등을 이름 전체로 찾는다. 금액이 붙은
+    항목은 모든 문장에서 읽는다("식대 20만원도 받아요"를 버리면 없는 '미달'이 난다). 금액 없는 이름은 구성 문장(기본급·월급·
+    급여·포함)에 있을 때만 판단을 미루는 사유다 — 그 밖의 문장에서는 질문이다. 하나라도 구성 문장에서 금액이 없거나, 성격이 갈리는 항목(상여·성과급·가족수당·고정/정액/기타 수당 등)이거나, 별도·따로 지급이거나, 변동("10만원에서
+    20만원으로")이거나, 같은 항목에 금액이 둘이면 판단을 미룬다 — 그때 '총액 − 기본급 − 항목'이 비산입 수당만이라는 보장이 없어
+    기본급으로 판정하면 없는 '미달'이 나온다(Check 리뷰 H1, Act-3 리뷰 H1·H2).
+    """
+    items: dict[str, int] = {}
+    for sentence in _SENTENCE_RE.split(text or ""):
+        composition = bool(_COMPOSITION_SENTENCE_RE.search(sentence))
+        masked = _EXCLUDED_ITEM_RE.sub(lambda m: " " * len(m.group(0)), sentence)
+        for m in _PAY_ITEM_RE.finditer(masked):
+            name = re.sub(r"\s+", "", m.group(1))
+            amount = _ITEM_AMOUNT_RE.match(masked, m.end())
+            before = None
+            after_from = amount.end() if amount else m.end()
+            if not amount:
+                before = _ITEM_AMOUNT_BEFORE_RE.search(masked[:m.start()])
+                if before and _ITEM_AMOUNT_PREFIX_EXCLUDE_RE.search(masked[:before.start()]):
+                    before = None   # "하루 8,000원짜리 식대"·"연 120만원의 식대" — 월액이 아니다
+                amount = before   # "200,000원의 식대"(Act-4)
+            if not amount and not composition:
+                continue   # 구성 문장이 아닌 곳의 금액 없는 이름은 질문이다("주휴수당도 받을 수 있나요?")
+            # 계산기 분류(`AllowanceClassifier`)가 비산입으로 보는 이름도 미룬다 — '유급휴일수당'은 통상임금에 넣고 최저임금에서는
+            # 빼 없는 '미달'이 났다(리뷰 재현). 주휴일이 아닌 유급휴일 임금은 비산입이라(최저임금법 시행규칙 제2조 제1항 제3호) 이름만으로
+            # 갈리지 않는다 — 이 대조가 그 경우를 맡는다
+            if (_AMBIGUOUS_ITEM_RE.search(name) or not amount
+                    or AllowanceClassifier.classify_min_wage_type(name) == "excluded"):
+                return {}, True
+            value = _parse_won(amount.group(1), amount.group(2))
+            after = masked[after_from:after_from + 12]
+            # 꼬리 검사는 이름 뒤 금액에만 — 이름 앞 금액('…원의 식대')의 뒤는 이름의 뒤다
+            if (_ITEM_AFTER_RE.search(after) or _BASE_CHANGE_AFTER_RE.search(after)
+                    or (amount is not before and _inexact_amount(amount, after))
+                    or items.get(name, value) != value):
+                return {}, True
+            items[name] = value
+    return items, False
+
+
+def _apply_stated_allowances(inp, items: dict[str, int]) -> None:
+    """정확 경로의 고정수당은 질문에 금액과 함께 적힌 항목뿐이다 — 의도분석이 뽑은 고정수당은 쓰지 않는다.
+
+    의도분석 고정수당을 그대로 두면 질문에 없는 수당을 산입하거나(리뷰 H3c), 다른 이름으로 같은 수당을 두 번 넣거나(H3a),
+    비산입 수당(시간외·잔업·포괄수당)을 조건 '없음' 고정수당으로 통상임금·산입에 넣어(H3b) 없는 '충족'이 나왔다.
+    """
+    inp.fixed_allowances = [{"name": name, "amount": value, "condition": "없음"} for name, value in items.items()]
+
+
+def _exact_composition_note(base: int, items: dict[str, int], total: int | None, label: str, targets) -> str:
+    """정확 경로(기본급·총액을 나눠 계산)의 안내. 무엇을 어느 기준으로 계산했는지 밝힌다."""
+    listed = "·".join(f"{name} {value:,}원" for name, value in items.items())
+    basis = f"기본급 {base:,.0f}원" + (f"과 {listed}" if listed else "")
+    excluded = "연장·야간·휴일·연차수당은 최저임금 산입에서 제외 — 최저임금법 제6조 제4항"
+    if total:
+        note = (f"월급 {total:,.0f}원에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셔서 {basis}으로 {label}을 "
+                f"계산했습니다({excluded}).")
+    else:
+        note = f"{basis} 기준으로 {label}을 계산했습니다(월급에 포함된 {excluded})."
+    if items:
+        note += " 함께 적힌 수당은 매월 고정 지급되는 것으로 보고 통상임금과 최저임금 산입에 넣었습니다."
+    if set(targets) & _TOTAL_PAY_TARGETS:
+        if total:
+            note += f" 퇴직금·4대보험 등 평균임금·보수로 계산하는 항목은 수당을 포함한 월급 {total:,.0f}원 기준입니다."
+        else:
+            note += " 퇴직금 등 평균임금으로 계산하는 항목은 그 수당이 빠진 기본급 기준이라 실제보다 적게 나왔을 수 있습니다."
+    if "comprehensive" in targets:
+        note += " 기본급이 주어져 포괄임금 역산은 하지 않았습니다."
+    return note
+
+
+def _held_targets_note(held: list[str]) -> str:
+    """금액을 보류한 계산의 안내. 무엇을 뺐는지 밝히지 않으면 '물어본 것 중 일부가 없다'는 사실이 조용히 사라지고,
+    LLM이 빈자리를 카드의 총액 기준 시급으로 채운다.
+
+    이유는 계열마다 다르다. 통상임금 계열(시급·일급·월액 — 육아휴직·출산전후휴가는 월 통상임금)은 계산 기준 자체가 틀렸고,
+    평균임금 계열은 평균임금은 총액이 맞지만 통상임금과의 비교(하한·휴업수당 상한)를 확인할 수 없다 — 한 문장으로 묶으면
+    LLM이 "퇴직금은 통상임금 기준"으로 옮긴다(Act-2 코드 리뷰 M3·재검토 N5).
+    """
+    if not held:
+        return ""
+    def names(keys):
+        return ", ".join(CALC_TYPES.get(key, key) for key in keys)
+
+    pay = [key for key in held if key in _PAY_BASED_HELD]
+    hourly = [key for key in held if key not in _AVERAGE_WAGE_TARGETS and key not in _PAY_BASED_HELD]
+    average = [key for key in held if key in _AVERAGE_WAGE_TARGETS]
+    parts = []
+    if hourly:
+        parts.append(f"통상임금(시급·일급·월액)으로 계산하는 항목({names(hourly)})은 수당이 섞인 총액으로는 정확히 계산할 수 "
+                     "없습니다.")
+    if average:
+        parts.append(f"평균임금으로 계산하는 항목({names(average)})은 평균임금 자체는 수당을 포함한 총액이 맞지만 통상임금과의 "
+                     "비교(평균임금이 통상임금보다 적으면 통상임금으로 하는 하한, 휴업수당의 통상임금 상한)를 확인할 수 없습니다.")
+    if pay:
+        parts.append(f"월 보수·소득으로 계산하는 항목({names(pay)})은 그 월 금액을 정할 수 없습니다.")
+    return (f" {_AMOUNT_HOLD_MARK} " + " ".join(parts)
+            + " 이 항목들의 금액은 계산하지 않았고(일수·시간 등 금액이 아닌 결과는 그대로 둠) 추정하지 마세요.")
+
+
+def _relabel_held_formula(line: str) -> str:
+    """통상임금 계산기가 월급제 입력에 만드는 줄('[통상임금] 월 기본급: 총액')과 그 독립 계산기판('월 기본급: 총액')의
+    머리말만 바꾼다. 줄 중간의 같은 글자는 다른 계산기의 설명일 수 있어 건드리지 않는다."""
+    line = _HELD_FORMULA_TAG_RE.sub("[시급 환산]", line)
+    return _HELD_FORMULA_BASE_RE.sub(r"\1월급 총액(수당 포함, 기본급·통상임금 아님):", line)
+
+
+def _rename_held_hourly(text: str) -> str:
+    """다른 계산기가 만든 계산식 속 '통상시급'(소정근로시간의 '월급 환산 = 통상시급 × 시간')을 총액 기준 시급으로 바꾼다(보류 카드 전용).
+    실업급여의 '통상시급 기준' 줄은 월급이 없을 때만 만들어져 보류 경로(월급 있음)에서는 도달하지 않는다."""
+    return _HELD_HOURLY_WORD_RE.sub("총액 기준 시급", text)
+
+
+def _held_total_note(unit: str = "월급") -> str:
+    """보류 카드의 시급이 통상시급이 아니라는 안내 — 일급이면 1일 소정근로시간으로 나눈 값이다(리뷰 H3)."""
+    if unit == "일급":
+        return " 위 시급은 그 수당이 섞인 일급을 1일 소정근로시간으로 나눈 값이라 통상시급이 아닙니다."
+    return _HELD_TOTAL_NOTE
+
+
+def _label_held_total(result, unit: str = "월급") -> None:
+    """보류 카드에서 월급 총액 기반 값에 붙은 '통상시급'·'월 통상임금'·'월 기본급' 이름을 바로잡는다.
+
+    첫 줄(`hourly_label`)만이 아니다. 통상임금 계산이 함께 요청되면 항목별 결과(summary)에 같은 값이 '통상시급'·
+    '월 통상임금'으로 실리고, 계산식의 '[통상임금] 월 기본급: 총액'은 요청과 무관하게 항상 실린다. 첫 줄만 바꾸면 한 카드
+    안에서 이름이 갈려 LLM이 총액을 기본급·통상임금으로 읽는다.
+
+    **바꾸는 것은 이름뿐이다.** 통상임금 계산기(기초 계산)가 만든 줄 + 다른 계산기 줄 속 '통상시급' 단어(소정근로시간 계산식 등
+    — 어디서나 이 총액 ÷ 시간이다) + 4대보험의 '세전 월 급여: … (통상임금 기준)'. 통상임금으로 금액을 내는 계산(퇴직금의 '통상임금
+    환산' 등)은 이름이 아니라 금액이 틀리므로 계산 전에 대상에서 뺀다(`_ORDINARY_BASED_TARGETS`, Act-2). 호출 조건은 계산 금액이
+    월급 '총액'일 때뿐이다(`held_is_total`): 기본급 경로·C8 경로·미진술 경로와, 금액이 질문의 기본급과 같은 보류에서는 그 값이
+    총액이 아니다.
+    """
+    # 일급 보류(리뷰 H3)는 같은 이름표를 일급 단위로 — '월 통상임금'은 일급의 월 환산이다
+    hourly_label = _HELD_HOURLY_LABEL if unit == "월급" else f"{unit} 기준 시급(포함 수당 때문에 통상시급 아님)"
+    monthly_name = "월급 총액" if unit == "월급" else f"{unit}의 월 환산"
+    labels = dict(_HELD_SUMMARY_LABELS, 통상시급=hourly_label)
+    if unit != "월급":
+        labels["월 통상임금"] = f"{monthly_name}(포함 수당 때문에 통상임금 아님)"
+    result.hourly_label = hourly_label
+    result.summary = {labels.get(key, key): value for key, value in result.summary.items()}
+    result.formulas = [_HELD_INSURANCE_BASIS_RE.sub(rf"\1 ({monthly_name} 기준)", _rename_held_hourly(_relabel_held_formula(line)))
+                       for line in result.formulas]
+    result.formulas = [_HELD_MINWAGE_LINE_RE.sub(
+        lambda m: f"{monthly_name}(수당 포함, 기본급 아님):" if m.group(0).startswith("기본급") else "총액 기준 시급:", line)
+        for line in result.formulas]
+    result.warnings = [_HELD_MINWAGE_WARN_RE.sub("최저임금 미달: 총액 기준 시급", w) for w in result.warnings]
 
 # 사업장 규모에 따라 결과가 달라지는 계산(상시 4명 이하면 근로기준법 시행령 별표 1에 없는 규정 — 가산임금
 # 제56조·연차 제60조·휴업수당 제46조·관공서 공휴일 제55조②·근로시간 제50~53조·보상휴가 제57조). 규모가 질문에
@@ -1135,18 +1915,537 @@ def _wageless_weekly_holiday(weekly_days, daily_hours) -> str | None:
         return None
     if not (0 < days <= 7 and 0 < daily <= 24):
         return None
+    lines = ["[주휴시간 산정 — 시급 미제공으로 금액은 산정하지 않음]"]
+    # 1일 8시간·1주 40시간을 넘는 시간은 소정근로가 아니다 — 계산기와 같은 분리(shared.split_hours, calc-card-followups D9)
+    split = split_hours(daily, days)
+    if split.mode == "applied":
+        lines.append(f"1주 근로시간: {days:g}일 × {daily:g}h = {days * daily:g}h → 1주 소정근로시간: {fmt_hours(split.daily)}h × "
+                     f"{fmt_hours(split.days)}일 = {fmt_hours(split.weekly)}h + 연장 {fmt_hours(split.excess)}h(1일 8시간·주 "
+                     "40시간 초과분은 소정근로가 아님 — 근로기준법 제50조, 대법원 2022다291153)")
+        days, daily = split.days, split.daily
+    else:
+        lines.append(f"1주 소정근로시간: {days:g}일 × {daily:g}h = {days * daily:g}h")
     weekly = days * daily
-    lines = ["[주휴시간 산정 — 시급 미제공으로 금액은 산정하지 않음]",
-             f"1주 소정근로시간: {days:g}일 × {daily:g}h = {weekly:g}h"]
     if weekly < WEEKLY_HOLIDAY_MIN_HOURS:
         lines.append(f"1주 소정근로시간 {weekly:g}h < {WEEKLY_HOLIDAY_MIN_HOURS:g}h → 주휴수당 미발생"
                      "(근로기준법 제18조 제3항)")
         return "\n".join(lines)
     hours, formula = weekly_holiday_hours(days, daily)
     lines += [f"주휴 유급시간: {formula}",
-              f"주휴수당 = 시간급 통상임금 × {hours:g}h (그 주 소정근로일 개근 + 주휴일에 근로관계 존속 시)",
+              f"주휴수당 = 시간급 통상임금 × {fmt_hours(hours)}h (그 주 소정근로일 개근 + 주휴일에 근로관계 존속 시)",
               "※ 위 시간은 계약상 소정근로일·시간 기준이다. 실제 근무시간이나 연장근로는 넣지 않는다."]
     return "\n".join(lines)
+
+
+# ── 소정근로시간 출처(외부 점검 40번 후속) ─────────────────────────────────────────
+# "9월 28일~30일 3일 동안 25시간 일했는데"의 25시간은 그 기간에 실제로 일한 시간의 합이지 근로계약상 1주 소정근로시간이
+# 아니다(근로기준법 제2조 제1항 제8호). 의도분석이 그 합계를 주 소정근로시간으로 옮겨(Act-6 18회 중 8회) 카드가
+# '4.1667h×6일 = 25h'로 주휴수당·월 환산액을 냈다. 의도분석 값이 기간 합계에서 나온 값(합계·÷ 일수·× 일수)이고 기간 밖의
+# 시간으로 뒷받침되지 않을 때만 버린다 — 기간 표지가 있다고 다른 시간까지 버리면 출퇴근 시각에서 구한 1일 8시간,
+# 첨부 계약서의 시간, '평일 4시간·주말 8시간'의 합계가 사라진다(독립 리뷰 H1·H2).
+_HOURS_MENTION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:시간|[hH](?![a-zA-Z]))(?:\s*(\d{1,2})\s*분|\s*(반))?")
+# 절 경계 — 문장부호(소수점 제외)와 연결어미 뒤. "하루 8시간 근무인데 이번 주 3일 동안 25시간"에서 8시간까지 기간 절로 묶지 않는다
+_CLAUSE_SPLIT_RE = re.compile(r"\.(?!\d)|[!?\n,;]|(?<=데)\s|(?<=지만)\s|(?<=고)\s|(?<=며)\s")
+_DAY_COUNT_WORDS = {"이틀": 2, "사흘": 3, "나흘": 4, "닷새": 5, "엿새": 6, "이레": 7}
+# 특정 기간 표지 — 이 절의 시간(1일 시간 '…씩' 포함)은 그 기간에 실제로 일한 시간이다(함정 ③ '하루 6시간씩 3일 근무했다')
+_SPECIFIC_SPAN_RE = re.compile(
+    r"(?<!주)(?<!주\s)(?<![\d.])(?P<n1>\d+)\s*일\s*(?:동안|간|에\s*걸쳐|사이)"  # 3일 동안 — '주 3일 동안'은 아님
+    r"|(?<!주)(?<!주\s)(?<![\d.])(?P<n2>\d+)\s*일\s*(?:을|를)?\s*(?:근무|일)\s*(?:했|한|하였)"  # 3일 근무했다
+    r"|(?P<w>이틀|사흘|나흘|닷새|엿새|이레)\s*(?:동안|간|에\s*걸쳐)"  # 사흘 동안
+    r"|(?:1\s*주일|일주일|한\s*주)\s*(?:동안|간)"  # 일주일 동안
+    r"|(?P<a1>\d{1,2})\s*일\s*(?:~|∼|〜|-|–|부터)\s*(?:\d{1,2}\s*월\s*)?(?P<b1>\d{1,2})\s*일"  # 28일~30일 · 28일부터 10월 1일
+    r"|\d{1,2}\s*월\s*(?P<a2>\d{1,2})\s*(?:~|∼|〜|-|–)\s*(?P<b2>\d{1,2})\s*일"  # 9월 28~30일
+    r"|(?<![\d.])\d{1,2}\s*/\s*(?P<a3>\d{1,2})\s*(?:~|∼|〜|-|–|부터)\s*(?:\d{1,2}\s*/\s*)?(?P<b3>\d{1,2})?"  # 9/28~30
+    r"|(?<![\d.])(?:1[0-2]|0?[1-9])\.\s*(?P<a4>[12]\d|3[01]|0?[1-9])\.?\s*(?:~|∼|〜|-|–|부터)\s*"
+    r"(?:(?:1[0-2]|0?[1-9])\.\s*)?(?P<b4>[12]\d|3[01]|0?[1-9])(?![\d.]|\s*시간)"  # 9.28~9.30 — '4.5~5시간'은 아님
+    r"|(?:이번|지난|저번|그|첫|마지막)\s*주(?:에는|에도|에|는|엔|도|동안|간)?(?![가-힣])"  # 이번 주에 — '그 주휴'는 아님
+    r"|어제|그날|당일")
+# 긴 기간 표지 — 합계('2주 동안 50시간')는 실근로지만 그 동안의 1일·1주 시간('3개월 동안 하루 4시간씩')은 근무 형태다
+_DURATION_SPAN_RE = re.compile(r"(?<![\d.])\d+\s*(?:주|개월|달|년)\s*(?:동안|간|에\s*걸쳐|사이)")
+# 시간 앞의 단위 — '주 15시간'은 기간 절 안에 있어도 1주 근무 형태다('1년 6개월 동안 주 15시간씩', '이번 주에 주 20시간으로
+# 계약'). '이번 주에 30시간'처럼 주 앞에 지시어가 있으면 단위가 아니라 기간이다
+_WEEKLY_UNIT_RE = re.compile(r"(?:(?<![가-힣])주|1\s*주|일주일|주당|매주)\s*(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+_WEEK_DETERMINER_RE = re.compile(r"(?:이번|지난|저번|그|첫|마지막|다음)\s*$")
+_DAILY_UNIT_RE = re.compile(r"(?:하루|1\s*일|일일|매일|평일|주말)\s*(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+# 계획된 시간 — 근무표·계약에 정한 시간은 기간 표지가 있어도 소정근로시간 근거다('15시간을 스케줄에', '근무표에 20시간
+# 배정'). 시간 바로 뒤나 바로 앞에 있을 때만 본다 — '스케줄이 바뀌어서 이번 주 3일 동안 25시간'은 실근로다(리뷰 M3)
+_PLANNED_RE = re.compile(r"스케줄|근무표|시프트|배정|편성|예정|계약|소정")
+_PLANNED_BEFORE_RE = re.compile(r"(?:스케줄|근무표|시프트|계약|소정근로시간?)\s*(?:상|대로|에는|엔|에|은|는|이|가)?\s*$")
+# 근무시간이 아닌 시간 표현 — 기준선('주 15시간 이상이어야')·휴게('휴게시간 1시간')·범위('6~7시간'). 조건부 예시만 뺀다
+# (calc-card-consistency D6). 출처 대조(_ground_schedule_hours)는 이 판정을 읽지 않는다 — 버리는 값·안내가 그대로다
+_HOURS_THRESHOLD_AFTER_RE = re.compile(r"^\s*(?:을|를|이|가|은|는|도)?\s*(?:이상|미만|이하|초과|넘|안\s*[되돼]|못\s*미치|채우|채워)")
+_HOURS_BREAK_BEFORE_RE = re.compile(r"(?:휴게|휴식|점심|식사|쉬는)\s*(?:시간)?\s*(?:은|는|이|가|:|으로|로)?\s*$")
+_HOURS_RANGE_BEFORE_RE = re.compile(r"\d\s*(?:~|∼|〜|-|–)\s*$")
+# 연장·야간·휴일 근로의 시간('연장 2시간'·'2시간씩 연장근무'·'야간 8시간') — 그 질문의 근무는 소정근로 하나로 정해지지 않는다
+_HOURS_PREMIUM_BEFORE_RE = re.compile(r"(?:연장|야간|휴일|초과|잔업|야근|특근)\s*(?:근무|근로)?\s*(?:을|를|은|는|이|가|로)?\s*"
+                                      r"(?:매일|하루|주|1일|매주)?\s*(?:평균|약|최대)?\s*$")
+_HOURS_PREMIUM_AFTER_RE = re.compile(r"^\s*(?:씩)?\s*(?:의|을|를|씩)?\s*(?:연장|야간|휴일|초과|잔업|야근|특근)")
+# 합계 표지('총 18시간') — 표지 없는 단독 값('월수금 6시간')은 1일 시간인지 합계인지 모른다(독립 리뷰 H1: 2시간 × 3일로 읽어 '미발생')
+_HOURS_TOTAL_BEFORE_RE = re.compile(r"(?:총|합계|모두|전부|도합|합쳐서?|통틀어)\s*$")
+# 1주가 아닌 기간의 합계('월 60시간'·'한 달에'·'2주 동안 총 24시간') — 1주 합계로 나누면 틀린 1일 시간이 된다
+_HOURS_PERIOD_BEFORE_RE = re.compile(r"(?:(?<![가-힣])월\s*$|한\s*달|매월|달에|개월)")
+_HOURS_MONTH_RE = re.compile(r"한\s*달|매월")
+# 1일 표지 보정 — 날짜('21일 3시간'·'10월 1일 6시간'·'지난 1일')의 '1일'은 1일 단위가 아니고, '일 8시간'·'일평균 7시간'은 1일
+# 단위다. 한 자리 날짜는 앞의 월·지시어로만 가린다 — 두 자리만 보던 때 '10월 1일에 6시간'이 '주 3일 × 6시간' 예시가 됐다(Check G-2)
+_DATE_DAY_RE = re.compile(r"(?:\d1|(?:\d\s*월|(?:이번|지난|저번|다음)\s*달|이달|지난|이번|저번|오는)\s*1)\s*일\s*"
+                          r"(?:에|당|마다)?\s*(?:총|평균|약|최대|최소)?\s*$")
+_DAILY_PLAIN_RE = re.compile(r"(?<![가-힣\d])일\s*(?:평균)?\s*$")
+# '총 N시간'을 1주 합계로 볼 단서(Check §4.1) — '오후 12시부터 밤 12시까지 총 12시간'·'총 24시간 근무'는 하루(한 번의 근무)의
+# 합계인데 1주 합계로 나눠 '주 4일 × 3시간 → 미발생' 예시가 됐다(상담 코퍼스 예시 95건 중 2건). 1주 단서는 같은 문장에서 본다
+# ('주 3일, 총 18시간'은 쉼표가 절을 나눈다). 그 절에 하루 단서(시각 범위·어제·익일 등)가 있으면 1주 단서가 있어도 하루 합계다
+_WEEK_CONTEXT_RE = re.compile(r"(?<![가-힣])주\s*(?:\d|당|마다|에)|1\s*주|일주일|한\s*주|매주"
+                              r"|(?:이번|지난|저번|다음|그|첫|마지막)\s*주(?:에는|에도|에|는|엔|도|동안|간)?(?![가-힣])")
+_DAY_CONTEXT_RE = re.compile(r"\d{1,2}\s*(?:시|:\d{2})\s*(?:\d{1,2}\s*분\s*)?(?:부터|~|∼|〜|-|–)"
+                             r"|어제|그날|당일|익일|다음\s*날|밤새|연속")
+_SENTENCE_SPLIT_RE = re.compile(r"\.(?!\d)|[!?\n]")
+
+
+class _HourMention(NamedTuple):
+    """질문의 'N시간' 표현 하나 — 해석은 이곳 한 군데서 한다."""
+    value: float
+    span: bool            # 기간 합계(실근로)인가 — 출처 대조(_ground_schedule_hours)가 쓴다
+    days: tuple           # 그 절의 기간 일수들
+    daily: bool = False   # '하루 N시간'·'N시간씩' — 1일 시간(조건부 예시만 쓴다)
+    total: bool = False   # '주 N시간'·'3일 동안 N시간'·1주 단서가 있는 '총 N시간' — 1주 합계로 볼 표지 있는 합계(조건부 예시만 쓴다)
+    aside: str = ""       # 1주 근무시간으로 쓰지 않는 표현: "threshold"(15시간 이상)·"break"(휴게 1시간)·"range"(6~7시간)·
+                          # "premium"(연장·야간·휴일 근로)·"period"(1주가 아닌 기간의 합계)
+
+
+_SPAN_RANGE_GROUPS = (("a1", "b1"), ("a2", "b2"), ("a3", "b3"), ("a4", "b4"))
+
+
+def _span_days(specific) -> list[int]:
+    """특정 기간 표지들 → 그 기간의 일수('3일 동안' 3·'28일~30일' 3·'사흘' 3). 일수가 없는 표지('이번 주')는 세지 않는다."""
+    days = []
+    for cue in specific:
+        g = cue.groupdict()
+        for key in ("n1", "n2"):
+            if g.get(key):
+                days.append(int(g[key]))
+        if g.get("w"):
+            days.append(_DAY_COUNT_WORDS[g["w"]])
+        for a, b in _SPAN_RANGE_GROUPS:
+            if g.get(a) and g.get(b) and int(g[b]) >= int(g[a]):
+                days.append(int(g[b]) - int(g[a]) + 1)
+    return days
+
+
+def _question_span_days(query: str) -> list[int] | None:
+    """질문 전체의 기간 일수 — 시간이 다른 절에 있어도 본다('이번 주는 3일 동안 일했고, 하루 6시간씩'). 일수를 정할 수 없는 범위가
+    있으면 None이다 — 그 기간이 1주 근무인지 확인할 수 없다. 끝 날짜 앞에 월이 따로 적힌 범위('28일부터 10월 1일'·'9/28~10/30')는
+    날짜 숫자만으로 일수를 셀 수 없고(_span_days는 앞엣것을 세지 않고 뒤엣것을 3일로 센다 — 예시가 '주 6일 × 5시간'·'주 3일 ×
+    6시간'을 냈다, CodeRabbit #118), 끝이 없는 범위('9/28~')도 같다. 같은 달을 다시 적은 범위('9월 28일부터 9월 30일')도
+    예시만 빠지는 쪽으로 둔다."""
+    days = []
+    for clause in _CLAUSE_SPLIT_RE.split(query or ""):
+        specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
+        for cue in specific:
+            g = cue.groupdict()
+            if any(g.get(a) and (not g.get(b) or int(g[b]) < int(g[a])
+                                 or re.search(r"\d", clause[cue.end(a):cue.start(b)]))   # 끝 날짜 앞의 월
+                   for a, b in _SPAN_RANGE_GROUPS):
+                return None
+        days += _span_days(specific)
+    return days
+
+
+def _hours_mentions(query: str) -> list[_HourMention]:
+    """질문의 'N시간' 표현 → 시간·기간 합계인지·그 절의 기간 일수들, 그리고 조건부 예시가 쓰는 1일·합계 표지와 제외 표현."""
+    found = []
+    # 문장 → 절 순서로 나눠도 절은 _CLAUSE_SPLIT_RE.split(query)와 같다(문장 경계는 절 경계이기도 하다) — 문장은 '총'의 1주 단서만 본다
+    clauses = [(clause, sentence) for sentence in _SENTENCE_SPLIT_RE.split(query or "")
+               for clause in _CLAUSE_SPLIT_RE.split(sentence)]
+    for clause, sentence in clauses:
+        specific = list(_SPECIFIC_SPAN_RE.finditer(clause))
+        duration = bool(_DURATION_SPAN_RE.search(clause))
+        days = _span_days(specific)
+        week_total = not _DAY_CONTEXT_RE.search(clause) and bool(days or _WEEK_CONTEXT_RE.search(sentence))
+        for m in _HOURS_MENTION_RE.finditer(clause):
+            value = float(m.group(1)) + (int(m.group(2)) / 60 if m.group(2) else 0) + (0.5 if m.group(3) else 0)
+            left, right = clause[:m.start()], clause[m.end():m.end() + 15]
+            weekly = _WEEKLY_UNIT_RE.search(left)
+            weekly_rate = bool(weekly) and not _WEEK_DETERMINER_RE.search(left[:weekly.start()])
+            daily_rate = bool(_DAILY_UNIT_RE.search(left)) or right.lstrip().startswith("씩")
+            planned = bool(_PLANNED_RE.search(right) or _PLANNED_BEFORE_RE.search(left))
+            if weekly_rate or planned:
+                span = False
+            elif specific:
+                span = True
+            else:
+                span = duration and not daily_rate
+            # 여기부터는 조건부 예시만 쓰는 해석이다 — 출처 대조(위 span)는 읽지 않는다. 1주 단위가 1일 표지보다 앞선다('주 15시간씩')
+            daily = not weekly_rate and ((bool(_DAILY_UNIT_RE.search(left)) and not _DATE_DAY_RE.search(left))
+                                         or bool(_DAILY_PLAIN_RE.search(left)) or right.lstrip().startswith("씩"))
+            total = not daily and bool(weekly_rate or (span and days)
+                                       or (_HOURS_TOTAL_BEFORE_RE.search(left) and week_total))
+            aside = ("range" if _HOURS_RANGE_BEFORE_RE.search(left) else
+                     "threshold" if _HOURS_THRESHOLD_AFTER_RE.search(right) else
+                     "break" if _HOURS_BREAK_BEFORE_RE.search(left) else
+                     "premium" if _HOURS_PREMIUM_BEFORE_RE.search(left[-24:]) or _HOURS_PREMIUM_AFTER_RE.search(right) else
+                     "period" if not (daily or weekly_rate) and (_HOURS_PERIOD_BEFORE_RE.search(left[-12:]) or duration
+                                                                 or _HOURS_MONTH_RE.search(clause)) else "")
+            found.append(_HourMention(value, span, tuple(days), daily, total, aside))
+    return found
+
+
+def _ground_schedule_hours(query: str, weekly_total, daily, weekly_days, trusted=()) -> tuple:
+    """의도분석 소정근로시간을 질문 본문과 대조한다 → (주 소정근로시간, 1일 소정근로시간, {버린 키: 값}).
+
+    값마다 기간 합계에서 나온 값(합계·÷ 기간 일수·× 기간 일수·÷ 또는 × 1주 근무일수)과 일치하고 기간 밖의 시간(그 × ÷ 근무일수
+    포함)으로 뒷받침되지 않으면 버린다(모르는 것으로 둔다). 주 합계는 1주 근무일수로 나눈 1일 값으로도 대조한다. 앞 턴 캐시에서
+    채운 값(trusted)은 그 턴의 질문으로 이미 대조했으므로 기간 밖 근거로 친다 — 이번 질문의 기간 표현 때문에 앞 턴의 정상
+    소정근로시간까지 버리게 된다."""
+    mentions = _hours_mentions(query)
+    spans = [(m.value, m.days) for m in mentions if m.span]
+    if not spans:
+        return weekly_total, daily, {}
+    plain = [m.value for m in mentions if not m.span]
+    # 캐시에서 온 값은 그 자체로, 그 값에서 나온 값(1일 × 근무일수)도 근거다
+    plain += [value for key, value in (("weekly_total_hours", weekly_total), ("daily_work_hours", daily))
+              if key in trusted and value is not None]
+
+    def spread(values):
+        pool = set(values)
+        if weekly_days:
+            pool |= {v * weekly_days for v in values} | {v / weekly_days for v in values}
+        return pool
+
+    plain_pool = spread(plain)
+    span_pool = spread([h for h, _ in spans])
+    for h, days in spans:
+        span_pool |= {h / d for d in days if d} | {h * d for d in days}
+    rejected: dict = {}
+
+    def check(key, value):
+        if value is None:
+            return None
+        # 주 합계는 1주 근무일수로 나눈 1일 값으로도 본다 — '3일 동안 25시간'·주 6일에서 의도분석이 기간 1일 평균(25 ÷ 3)을 늘린
+        # 50, 반올림한 8.3을 곱한 49.8, 그리고 _analysis_to_extract_params가 1일 × 근무일수로 채운 값이 1일과 같은 허용오차로
+        # 걸러진다. 주 합계끼리만 비교하면 오차가 근무일수배로 커져 49.8이 빠져나갔다(CodeRabbit PR #114)
+        forms = [float(value)] + ([float(value) / weekly_days] if key == "weekly_total_hours" and weekly_days else [])
+        near = lambda pool: any(abs(f - c) < 0.05 for f in forms for c in pool)  # noqa: E731 — 의도분석 반올림(8.33)까지
+        if near(span_pool) and not near(plain_pool):
+            rejected[key] = value
+            return None
+        return value
+
+    return check("weekly_total_hours", weekly_total), check("daily_work_hours", daily), rejected
+
+
+def _note_rejected_hours(analysis, params) -> None:
+    """버린 소정근로시간을 확인 안내에 더하고 계산 캐시에서 뺀다 — 캐시(extracted_info)에 남으면 다음 턴이 대조 없이 그 값을
+    다시 채운다. 코드 누락 판정(_compute_missing_info)은 버리기 전 값을 보고 시간이 있다고 봤다."""
+    rejected = params.get("schedule_hours_rejected") or {}
+    if not rejected:
+        return
+    for key in rejected:
+        analysis.extracted_info.pop(key, None)
+    if "1일 소정근로시간 또는 주 소정근로시간" not in analysis.missing_info:
+        analysis.missing_info.append("1일 소정근로시간 또는 주 소정근로시간")
+
+
+# 소정근로시간을 몰라도 계산되는 것 — 그 밖의 계산은 시간을 가정해야 금액이 나온다. 법률 힌트는 남기되 미확인 모드는 1일
+# 시간을 0으로 넘겨 주간 합계(52시간·뇌심혈관 기준)가 질문에 나온 연장·휴일시간만 보게 한다
+_SCHEDULE_FREE_TARGETS = frozenset({"wage_arrears", "business_size", "legal_hints", "prorated", "arrears_principal"})
+# 시급제(고정수당 없음)는 시급이 곧 통상시급이라 최저임금 판정과 연장·야간·휴일수당(시급 × 가산율 × 질문의 시간)이 남는다
+_HOURLY_SCHEDULE_FREE_TARGETS = frozenset({"minimum_wage", "overtime"})
+
+
+# 근로시간 제도 신호(calc-card-followups D3) — 1일 8시간·1주 40시간을 넘는 시간이 소정근로인지 연장근로인지가 제도에 따라
+# 갈린다(탄력적·선택적 근로시간제 제51조~제52조, 간주·재량 근로 제58조, 감시·단속 승인·농림축산수산 제63조, 연소자 제69조,
+# 유해작업 산업안전보건법 제139조). 신호가 있고 초과 시간이 있으면 나누지 않고 '소정근로시간 미확인' 경로로 보낸다 — 틀리면
+# 금액 대신 조건이 나오는 쪽이라 손해가 작다. 평가 질문 148개 중 신호어는 3개였고 모두 그 제도를 묻는 질문(초과 시간 없음)이었다.
+# 근로시간 특례 업종(제59조)은 연장 한도·휴게만 바꿔 신호가 아니다. 신호어는 같은 글자의 다른 뜻을 뺀다(독립 리뷰 L1 —
+# '사장이 잠수 탔다'·'청소년수련관'·'축산물 가공 공장'·'농업회사법인 식품공장'이 신호로 잡혔다). 경비는 직무 표현을 넓게 본다 —
+# '아파트 경비로 24시간 격일제'가 빠져 56시간을 연장으로 확정했다(리뷰 H4). '경비비'·'경비 절감' 같은 비용 뜻은 잡지 않는다.
+# 상담 코퍼스 질문 9,809개로 대조했다: 경비 +10(전부 경비 직무), 연소자 −6·잠수 −4(전부 오탐), 농림 −7(농업 관련 사무·영업 등).
+# '탄력근무(제)'는 그대로 신호다 — 코퍼스 30건 중 '3개월 이내 탄력근무제'처럼 탄력적 근로시간제를 그렇게 부르는 질문이 많고,
+# 빠뜨리면 연장을 확정하는 쪽이라(시차출퇴근을 뜻하는 경우의 보류보다) 손해가 크다
+_HOUR_REGIME_SIGNALS = (
+    ("탄력적·선택적·간주·재량 근로시간제",
+     re.compile(r"탄력\s*적?\s*(?:근로|근무)|선택\s*적\s*근로|간주\s*근로|재량\s*근로")),
+    ("감시·단속적 근로(적용 제외 승인)",
+     re.compile(r"감시\s*(?:적|·|ㆍ)?\s*(?:단속|근로|업무|직)|단속\s*적\s*(?:근로|업무)|감단|적용\s*제외\s*승인"
+                r"|경비\s*(?:원|직|업무|근무|업체|용역|대원|아저씨|직원|반장|일\s*(?:을|하|해|만|도|자리))"
+                r"|(?:아파트|건물|빌딩|학교|공장|주차장|상가|오피스텔|병원)\s*경비(?!비|\s*(?:절감|처리|정산))"
+                r"|경비(?:로|를)\s*(?:일|근무|하|서)")),
+    # 조문을 직접 말하면 어느 호인지 몰라도 신호다 — 코퍼스에서는 감시·단속(제3호) 승인 질문이 대부분이었다
+    ("근로시간 적용 제외(근로기준법 제63조)", re.compile(r"(?<!\d)63\s*조")),
+    ("농림·축산·수산 사업",
+     re.compile(r"농장|농사(?!\s*(?:는|를|은)?\s*(?:안\s*짓|짓지\s*않))|양식장|(?<![넘들늘벗접따])어선|목장|(?<!건)축사"
+                r"|과수원|비닐하우스"
+                r"|(?:작물|식물|채소|과수|버섯|화훼)\s*(?:을|를)?\s*(?:재배|식재|채취)"
+                r"|(?:농업|축산업?|수산업?|어업|임업)\s*(?:에\s*)?(?:종사|노동|근로|일)")),
+    # 근로자 본인일 때만 — 자녀·대상·기관·과거('고등학생 때')는 아니다(2차 리뷰 M3: '고등학생 딸이 있는 직장인'에 주휴 금액을 보류했다)
+    ("연소자(만 18세 미만)",
+     re.compile(r"(?:미성년(?:자)?|고등학생|청소년|만\s*1[5-7]\s*세|1[5-7]\s*살)"
+                r"(?!\s*(?:인\s*|이\s*)?(?:딸|아들|자녀|아이|애|자식|동생|조카|손자|손녀|대상|캠프|사업|기관|단체|프로그램"
+                r"|수련|센터|문화|상담|복지|시설|지도|활동|정책|보호|때|시절))")),
+    ("잠수 등 유해·위험작업", re.compile(r"잠수(?!\s*(?:를|을)?\s*(?:탔|타|탄|탈|탐))|잠함|고기압")),
+)
+# 연소자는 1일 7시간·1주 35시간이 한도다(근로기준법 제69조) — 성인 한도로 초과를 보면 고등학생 8시간 × 5일이 그냥 지나갔다(리뷰 L3)
+_MINOR_LABEL = "연소자(만 18세 미만)"
+_MINOR_CAPS = (7.0, 35.0)
+
+
+# 수습 감액 요건(최저임금법 제5조 제2항)의 질문 표현 — 계약 형태·수습 기간·경과 월(D5). '비정규직'은 기간제라 빼야 한다
+_OPEN_ENDED_RE = re.compile(r"정규직|무기\s*계약|기간의?\s*정함이?\s*없|정함\s*없는\s*(?:근로)?\s*계약")
+# 같은 문장에 오면 지금의 계약 형태가 아니다 — 전환 약속·부정·계약직·기간제(2차 리뷰 M4: "정규직 전환을 약속받고 계약직 수습",
+# "정규직이 아니라 계약직"을 기간의 정함이 없는 계약으로 읽어 감액 요건을 '모두 확인'했다)
+_OPEN_ENDED_DENY_RE = re.compile(r"비\s*정규직|계약직|기간제|전환|아니|아닌|약속|예정|희망|채용\s*전|되면|될\s*때")
+_PROBATION_LEN_RE = re.compile(r"수습\s*(?:기간)?\s*(?:은|이|을|도|이고|만)?\s*(\d{1,2})\s*개월")
+_PROBATION_ELAPSED_RE = re.compile(r"(\d{1,2})\s*개월\s*(?:째|차)"
+                                   r"|(?:입사|일|근무|수습(?:을)?\s*시작)(?:한\s*지|\s*후|하고\s*나서)\s*(\d{1,2})\s*개월")
+
+
+_PERIOD_RE = re.compile(r"^\s*(?:(\d{1,2})\s*년)?\s*(?:(\d{1,3})\s*개월)?\s*(?:째|차|정도|쯤|가량)?\s*$")
+
+
+def _period_months(text: str) -> int | None:
+    """'3개월'·'1년 2개월' 같은 기간 표현의 개월 수. 날짜('2024년 3월')나 다른 표현이면 None."""
+    m = _PERIOD_RE.match(text or "")
+    if not m or not (m.group(1) or m.group(2)):
+        return None
+    return int(m.group(1) or 0) * 12 + int(m.group(2) or 0)
+
+
+def _probation_terms(query: str) -> dict:
+    """질문의 수습 감액 요건 표현 — 기간의 정함이 없는 계약인가, 수습 기간(개월), 수습 시작 뒤 몇 개월째인가."""
+    q = query or ""
+    length = _PROBATION_LEN_RE.search(q)
+    elapsed = _PROBATION_ELAPSED_RE.search(q)
+    return {"open_ended": any(_OPEN_ENDED_RE.search(s) and not _OPEN_ENDED_DENY_RE.search(s) for s in _SENTENCE_RE.split(q)),
+            "length": int(length.group(1)) if length else None,
+            "elapsed": int(next(g for g in elapsed.groups() if g)) if elapsed else None}
+
+
+def _hour_regime_signal(query: str) -> str | None:
+    """질문에 소정·연장 구분이 달라지는 근로시간 제도 신호가 있으면 그 이름."""
+    for label, pattern in _HOUR_REGIME_SIGNALS:
+        if pattern.search(query or ""):
+            return label
+    return None
+
+
+def _schedule_unknown(wage_type, weekly_days, daily_hours, rejected=False, has_wage=True) -> bool:
+    """소정근로시간을 모르는데 기본값으로 계산하면 가정이 확정처럼 읽히는 경우.
+
+    - 의도분석 시간을 기간 합계라 버렸으면 임금 형태와 무관하게 모른다 — 월급제 기본값(주 40시간)으로 돌아가면 '지난주
+      60시간'에 '주 52시간 준수'가 나왔다(독립 리뷰 M1).
+    - 시급·일급은 금액이 근로시간에 비례한다. 주 6일 시급제에 기본값 1일 8시간을 넣어 48시간이 소정근로시간으로 계산됐다
+      (외부 점검 40번 Act-6 18회 중 10회: 주휴수당 월 417,143원, 월 총액 2,920,000원).
+    - 임금이 없는 경로(소정근로시간 산정 등)는 임금 형태를 모르니 근무일수만 있으면 시간을 가정하지 않는다(리뷰 H3).
+    - 월급·연봉은 주 40시간 관행(월 209시간 환산)으로 계산한다 — 주 5일을 넘으면 1일 = 40 ÷ 근무일수(`_default_daily_hours`).
+      주 5일 미만은 단시간이라 그 관행이 없다.
+    """
+    if daily_hours is not None:
+        return False
+    if rejected:
+        return True
+    if not has_wage:
+        return weekly_days is not None
+    if wage_type in (WageType.HOURLY, WageType.DAILY):
+        return True
+    return weekly_days is not None and float(weekly_days) < 5
+
+
+def _default_daily_hours(weekly_days) -> float:
+    """소정근로시간이 없을 때 쓰는 1일 시간 — 주 40시간을 근무일수로 나눈다(5일 이하 8시간). 주 6일에 8시간을 넣으면 소정근로시간이
+    법정 한도(주 40시간)를 넘는 48시간이 됐다."""
+    try:
+        days = float(weekly_days)
+    except (TypeError, ValueError):
+        return 8.0
+    return 40.0 / days if days > 5 else 8.0
+
+
+# 기본값으로 계산한 카드의 [기준시간] 표시 — 가정이 확정처럼 읽히지 않게 밝힌다
+_DEFAULT_SCHEDULE_NOTE = " — 소정근로시간을 질문에서 확인하지 못해 주 40시간으로 계산"
+_ASSUMED_DAYS_NOTE = " — 근무일수를 질문에서 확인하지 못해 주 5일로 계산"
+
+# 질문의 '주 N일'(1주 근무일수). 의도분석이 놓치면 기본 5일이 들어가 격일제 16시간이 80시간이 됐다(PR B 실측 calc-03 r2).
+# 일한다는 말이 뒤따르는 것만 근거로 쓰고, 질문 속 '주 N일' 값이 모두 같을 때만 쓴다 — "주 3일 일하다 주 5일로"·"주 6일 근무,
+# 주 1일 휴무"는 정하지 않는다. '이번 주·지난주'처럼 특정 주의 실근로도 쓰지 않는다
+_WEEKLY_DAYS_ANY_RE = re.compile(r"(?:매?주|일주일에?|한\s*주에?)\s*(\d(?:\.\d+)?)\s*일")
+_WEEKLY_DAYS_WORK_RE = re.compile(r"(?:매?주|일주일에?|한\s*주에?)\s*(\d(?:\.\d+)?)\s*일\s*(?:씩\s*)?"
+                                  r"(?=근무|근로|일하|일해|일합|일했|출근|제|만\s*(?:근무|일))")
+_SPECIFIC_WEEK_PREFIXES = ("이번", "지난", "다음", "저번", "마지막", "그")
+
+
+def _stated_weekly_days(query: str) -> float | None:
+    """질문에 1주 근무일수가 하나로 정해져 있으면 그 값(의도분석이 놓쳤을 때만 쓴다)."""
+    text = query or ""
+    values = {float(m.group(1)) for m in _WEEKLY_DAYS_ANY_RE.finditer(text)}
+    if len(values) != 1:
+        return None
+    for m in _WEEKLY_DAYS_WORK_RE.finditer(text):
+        if text[max(0, m.start() - 4):m.start()].replace(" ", "").endswith(_SPECIFIC_WEEK_PREFIXES):
+            continue
+        value = float(m.group(1))
+        return value if 0 < value <= 7 else None
+    return None
+
+
+def _unknown_schedule_block(hourly, weekly_days, holiday: bool, held: list[str], span_hours: list,
+                            regime: tuple[str, float] | None = None, example: str | None = None) -> str | None:
+    """소정근로시간 미확인 안내 — 주휴는 산식만, 근로시간에 따라 달라지는 계산은 금액 보류. 알릴 것이 없으면 None.
+
+    regime: (근로시간 제도 신호 이름, 1주 초과 시간) — 시간은 있지만 제도에 따라 소정·연장 구분이 갈리는 경우(D3).
+    example: 질문의 근무시간으로 계산한 주휴 조건부 예시 줄(_conditional_holiday_example). 있으면 산식 뒤에 싣고 보류 줄을
+    '확정하지 않았습니다 … 위 조건부 예시만 그 조건과 함께'로 바꾼다 — 없을 때의 '추정하지 마세요'가 조건을 밝힌 예시까지
+    막아 계산법 질문에 답이 빠졌다(calc-card-consistency D1·D7, kin-01)."""
+    if not (holiday or held or span_hours or regime):
+        return None
+    example = example if holiday else None
+    if regime and regime[0] == _MINOR_LABEL:
+        lines = ["[근로시간 제도 확인 필요 — 소정근로시간에 따라 달라지는 시간·금액은 계산하지 않음]",
+                 f"질문에 {regime[0]} 언급이 있습니다. 연소자의 근로시간은 1일 7시간·1주 35시간을 넘지 못해(근로기준법 제69조) "
+                 f"그 한도를 넘는 {fmt_hours(regime[1])}시간을 소정근로로 볼 수 없습니다 — 근로자의 나이와 소정근로시간을 확인해야 "
+                 "해 소정·연장을 나누지 않았습니다."]
+    elif regime:
+        lines = ["[근로시간 제도 확인 필요 — 소정근로시간에 따라 달라지는 시간·금액은 계산하지 않음]",
+                 f"질문에 {regime[0]} 언급이 있어 하루 8시간·주 40시간을 넘는 {fmt_hours(regime[1])}시간을 연장근로로 나누지 "
+                 "않았습니다. 그 제도를 적법하게 도입(승인)했는지에 따라 소정근로시간과 연장 가산이 달라집니다(근로기준법 "
+                 "제51조~제52조·제58조·제63조·제69조)."]
+    else:
+        lines = ["[소정근로시간 미확인 — 근로시간에 따라 달라지는 시간·금액은 계산하지 않음]"]
+    if span_hours:
+        lines.append("질문의 " + "·".join(f"{fmt_hours(float(v))}시간" for v in span_hours)
+                     + "은 그 기간에 실제로 일한 시간이라 소정근로시간으로 쓰지 않았습니다(소정근로시간은 근로계약서·근무표에 "
+                       "정한 시간, 근로기준법 제2조 제1항 제8호).")
+    if holiday:
+        wage = f"시급 {fmt_won(hourly)}원" if hourly else "시간급 통상임금"
+        if weekly_days and float(weekly_days) >= 5:
+            rule = (f"1주 소정근로시간 ÷ 1주 소정근로일 {fmt_hours(float(weekly_days))}일(1일 평균 소정근로시간, "
+                    "8시간 한도)")
+        elif weekly_days:
+            rule = (f"1주 소정근로시간 ÷ 5(1주 소정근로일 {fmt_hours(float(weekly_days))}일 — 5일 미만은 5일로 봄, "
+                    "8시간 한도)")
+        else:
+            rule = "1주 소정근로시간 ÷ 1주 소정근로일 수(5일 미만은 5일로 봄, 8시간 한도)"
+        lines += ["주휴수당 발생 요건: 4주 평균 1주 소정근로시간 15시간 이상(근로기준법 제18조 제3항) + 그 주 소정근로일 개근"
+                  "(근로기준법 시행령 제30조 제1항)",
+                  f"주휴수당 = {wage} × 주휴시간",
+                  f"주휴시간 = {rule} — 대법원 2025. 8. 14. 선고 2022다291153 판결"]
+        if weekly_days and float(weekly_days) > 5:
+            lines.append("같은 업무의 통상 근로자가 있는 단시간근로자는 1일 소정근로시간을 4주 동안의 소정근로시간 ÷ 그 기간 "
+                         "통상 근로자의 총 소정근로일 수로 정한다(근로기준법 시행령 별표 2 제2호나목).")
+        if example:
+            lines.append(example)
+    names = (["주휴시간·주휴수당"] if holiday else []) + [CALC_TYPES.get(key, key) for key in held]
+    if names:
+        cause = "근로시간 제도를 확인해야 해" if regime else "질문에 1일·1주 소정근로시간이 없어"
+        if example:
+            lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 확정하지 않았습니다 — {names[0]}. "
+                         "질문의 근무시간을 소정근로시간으로 단정하지 마세요 — 위 조건부 예시만 그 조건과 함께 쓰고, 다른 시간을 "
+                         "가정해 추정하지 마세요.")
+            # 예시는 주휴 산식에만 있다 — 다른 보류 항목까지 같은 줄에 묶으면 '확정 전 값'이 있거나 예시의 시간으로 추정해도 되는
+            # 것으로 읽힌다(Check G-7: '주휴시간·주휴수당, 4대보험·소득세 … 위 조건부 예시만 그 조건과 함께')
+            if names[1:]:
+                lines.append(f"{_AMOUNT_HOLD_MARK} 다음은 계산하지 않았습니다 — {', '.join(names[1:])}. 조건부 예시의 시간을 "
+                             "포함해 가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
+        else:
+            lines.append(f"{_AMOUNT_HOLD_MARK} {cause} 다음은 계산하지 않았습니다 — {', '.join(names)}. "
+                         "가정한 시간이나 실제로 일한 시간으로 추정하지 마세요.")
+    return "\n".join(lines)
+
+
+def _question_work_hours(query: str, weekly_days) -> float | None:
+    """질문 본문의 근무시간이 1주 근무 형태 하나로 정해지면 그 1일 시간, 아니면 None(조건부 예시를 만들지 않는다 — Design §4.3).
+
+    조건: 1주 근무일수가 있다 · 범위('6~7시간')·연장·야간·휴일 근로·1주가 아닌 기간의 합계가 없다 · 질문의 기간 일수('3일 동안')가
+    1주 근무일수와 같다 · 기준선·휴게를 뺀 1일 값('하루 6시간')과 표지 있는 합계('총 18시간'·'주 15시간')가 각각 하나 이하이고
+    하나는 있으며, 둘 다 있으면 1일 × 근무일수 = 합계 · 표지 없는 값은 그 1일 시간이나 합계와 같다 · 1일 8시간·1주 40시간
+    이하(그 범위 밖은 소정근로시간일 수 없다 — 근로기준법 제2조 제1항 제8호·제50조). 틀린 예시보다 예시 없음이 안전하다."""
+    try:
+        days = float(weekly_days)
+    except (TypeError, ValueError):
+        return None
+    if not 0 < days <= 7:
+        return None
+    mentions = _hours_mentions(query)
+    if any(m.aside in ("range", "premium", "period") for m in mentions):
+        return None
+    mentions = [m for m in mentions if not m.aside]      # 기준선('15시간 이상')·휴게 시간은 근무시간이 아니다
+    # 기간 일수가 1주 근무일수와 다르거나 정할 수 없으면 그 시간은 1주 근무가 아니다 — '3일 동안 25시간'·주 6일이 '주 6일 ×
+    # 4.1667시간' 예시가 됐다(시제품, a50-40 — PR #114가 막은 가정 그대로). 일수 표지가 다른 절에 있어도 본다(독립 리뷰 H1)
+    span_days = _question_span_days(query)
+    if span_days is None or any(abs(d - days) > 1e-9 for d in span_days):
+        return None
+    dailies = {m.value for m in mentions if m.daily}
+    totals = {m.value for m in mentions if m.total}
+    # 표지 없는 값만 있으면 1일 시간인지 합계인지 모른다 — '지난주 월수금 6시간'을 합계로 읽어 '주 3일 × 2시간 → 미발생'을 냈다
+    if len(dailies) > 1 or len(totals) > 1 or not (dailies or totals):
+        return None
+    daily, total = next(iter(dailies), None), next(iter(totals), None)
+    if daily is not None and total is not None and abs(daily * days - total) >= 0.05:
+        return None
+    if daily is None:
+        daily = total / days
+    if any(abs(m.value - daily) >= 0.05 and abs(m.value - daily * days) >= 0.05
+           for m in mentions if not (m.daily or m.total)):
+        return None
+    if not (0 < daily <= LEGAL_DAILY_HOURS + 1e-9 and daily * days <= LEGAL_WEEKLY_HOURS + 1e-9):
+        return None
+    return daily
+
+
+def _conditional_holiday_example(query: str, weekly_days, hourly) -> str | None:
+    """미확인 모드 주휴 블록의 '조건부 예시' 줄 — 근로계약상 1주 소정근로시간이 질문의 근무와 같다면의 주휴시간(calc-card-consistency
+    D1). 산식은 weekly_holiday_hours 단일 출처, 1주 15시간 미만은 미발생(근로기준법 제18조 제3항). 시급을 알면 금액까지 적는다.
+    질문에 근로시간 제도 신호가 있으면 만들지 않는다 — 제도 확인이 먼저다(연소자 1일 7시간 한도, 감시·단속 승인이면 주휴 제외).
+    계산한 제도 판정(regime)은 1일 시간이 있을 때만 생겨 미확인 모드에서는 늘 비어 있다(독립 리뷰 M1)."""
+    from wage_calculator.calculators.weekly_holiday import weekly_holiday_hours
+    from wage_calculator.constants import WEEKLY_HOLIDAY_MIN_HOURS
+    if _hour_regime_signal(query):
+        return None
+    daily = _question_work_hours(query, weekly_days)
+    if daily is None:
+        return None
+    days = float(weekly_days)
+    weekly = days * daily
+    head = (f"{_CONDITIONAL_EXAMPLE_MARK} 근로계약상 1주 소정근로시간이 질문의 근무(주 {fmt_hours(days)}일 × {fmt_hours(daily)}시간 = "
+            f"{fmt_hours(weekly)}시간)와 같다면: ")
+    if weekly < WEEKLY_HOLIDAY_MIN_HOURS:
+        return (head + f"1주 소정근로시간 {fmt_hours(weekly)}h < {WEEKLY_HOLIDAY_MIN_HOURS:g}h → 주휴수당 미발생"
+                       "(근로기준법 제18조 제3항)")
+    hours, formula = weekly_holiday_hours(days, daily)
+    tail = f" → 주휴수당 = 시급 {fmt_won(hourly)}원 × {fmt_hours(hours)}h = {fmt_won(hourly * hours)}원" if hourly else ""
+    return head + formula + tail
+
+
+def _rejected_span_hours(query: str, params: dict) -> list:
+    """버린 시간이 있으면 안내에 적을 질문의 기간 합계 시간 — 버린 값(의도분석이 나눈 8.33h 등)은 질문에 없는 숫자다."""
+    if not params.get("schedule_hours_rejected"):
+        return []
+    return list(dict.fromkeys(m.value for m in _hours_mentions(query) if m.span))
+
+
+# 최저임금 미달 경고의 월 부족액 — "(부족분 1,320원/h, 월 275,314원)"
+_MONTHLY_SHORTAGE_RE = re.compile(r",\s*월\s*[\d,]+원\)")
+
+
+def _drop_assumed_schedule(result, hourly_known: bool) -> None:
+    """미확인 모드 카드에서 시간을 가정해야 나오는 줄(기준시간·월액·월 부족액)을 뺀다.
+
+    남긴 계산(시급제 최저임금 판정·연장수당 등)은 시간과 무관하지만, 계산식에는 통상임금 기준시간(1일 0시간이라 법정
+    기준시간으로 대신한 값)과 그것으로 낸 월액·월 부족액이 실린다."""
+    basis = ("월 환산하지 않음(시급제 최저임금은 시급으로 비교)" if hourly_known
+             else "월 환산·통상시급은 계산하지 않음")
+    formulas = []
+    for line in result.formulas:
+        if line.startswith("[기준시간]"):
+            formulas.append(f"[기준시간] 소정근로시간 미확인 — {basis}")
+        elif line.startswith(("[통상임금]", "기본급 월액:")):
+            continue
+        elif line.startswith("실질시급:"):
+            formulas.append(f"실질시급: 시급 {fmt_won(result.ordinary_hourly)}원")
+        else:
+            formulas.append(line)
+    result.formulas = formulas
+    result.summary.pop("부족분(월)", None)
+    result.warnings = [_MONTHLY_SHORTAGE_RE.sub(")", w) for w in result.warnings]
+    result.monthly_total = 0.0
 
 
 def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[str] | None:
@@ -1163,17 +2462,14 @@ def _resolve_targets(calc_types: list[str], query: str, has_wage: bool) -> list[
                 merged.append(t)
     if merged:
         return merged
+    if any(unsupported_calc_reason(label) for label in calc_types):
+        return None
 
     inferred = [t for t in infer_calc_types(query) if t in CALC_TYPES]
     if inferred:
         logger.info("계산 유형 라벨 미매칭(%r) — 질문 키워드 추론 사용: %s",
                     calc_types, inferred)
         return inferred
-
-    if has_wage:
-        logger.info("계산 유형 미확정(labels=%r) — 임금 정보 존재, 최저임금 검증만 실행",
-                    calc_types)
-        return ["minimum_wage"]
 
     logger.info("계산 유형 미확정(labels=%r) — 계산기 미실행, 상담 경로로 진행", calc_types)
     return None
@@ -1208,7 +2504,96 @@ def _normalize_reference_date(value) -> str | None:
         return None
 
 
+def _affirmative_calculation_mention(query: str, pattern: str) -> bool:
+    """지원 범위 가드용 긍정 표현. 제도를 명시적으로 부정하는 문장은 제외한다."""
+    return any(not re.match(r"(?:제|이|가|는|은|를|을|에|대해서는){0,3}(?:아니|아닙|아닌|제외)",
+                            query[match.end():]) for match in re.finditer(pattern, query))
+
+
+def _independent_supported_request(query: str, pattern: str, unsupported: str) -> bool:
+    """다른 계산의 명칭과 연산 요청을 함께 확인한다. 미지원 연산을 요청한 동사를 빌려 쓰지 않는다."""
+    parts = re.split(unsupported + r"|[.!?\n]", query)
+    operation = r"(?:공제액|부담액|실수령액|얼마|계산|산정|알려)"
+    if any(re.search(pattern + r".{0,35}?" + operation, part) for part in parts):
+        return True
+    # 두 목적어 뒤에 동사가 한 번만 있는 공동 요청(4대보험과 연말정산을 계산).
+    return bool(re.search(pattern + r"(?:과|와|및)" + unsupported + r".{0,20}" + operation, query))
+
+
+def _complete_explicit_reduced_calendar_month(inp, query):
+    """명시된 달 전체 단축만 날짜로 정규화한다. 부분월·상대월은 추정하지 않는다."""
+    if inp.reduced_start or inp.reduced_end or inp.reduced_periods is not None:
+        return
+    sentence = re.split(r"[.!?\n]", query or "", maxsplit=1)[0]
+    match = re.match(r"^\s*(20\d{2})년\s*(\d{1,2})월\s*(?:한\s*달|전체)(?:\s|,)", sentence)
+    if (not match or len(re.findall(r"\d+\s*월", sentence)) != 1
+            or "육아휴직" in sentence or re.search(r"않|아니|미정", sentence)
+            or not re.search(r"단축(?:근무)?(?:을|근무를)?\s*(?:합니다|해요|했습니다|중|할)", sentence)):
+        return
+    import calendar
+    year, month = map(int, match.groups())
+    if not 1 <= month <= 12:
+        return
+    inp.reduced_start = f"{year:04d}-{month:02d}-01"
+    inp.reduced_end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+
+
 def _run_calculator(params: dict, query: str = "") -> str | None:
+    """지원하지 않는 정산의 안내를 보존한 뒤 실행 가능한 요청을 계산한다."""
+    if not params or not params.get("needs_calculation"):
+        return None
+    labels = params.get("calculation_types_kr") or (
+        [params["calculation_type"]] if params.get("calculation_type") else [])
+    notes = {}
+    supported = []
+    # 구분자로 묶인 복수 요청도 각각 보존한다(미지원 항목 때문에 전체가 사라지지 않음).
+    for label in [part for label in labels for part in split_calc_labels(label)]:
+        reason = unsupported_calc_reason(label)
+        if not reason and resolve_calc_type_strict(label) is None:
+            reason = "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목과 필요한 입력을 확인해주세요."
+        if reason:
+            notes[label] = reason
+        else:
+            supported.append(label)
+
+    # 분석기의 제한된 유형 목록이 연말정산을 insurance, 선택근로 정산을 working_hours로
+    # 바꿔도 다른 계산의 숫자를 내보내지 않는다. 별도로 요청한 일반 계산은 보존한다.
+    compact = "".join(query.split())
+    if _affirmative_calculation_mention(compact, r"연말정산"):
+        notes["연말정산"] = unsupported_calc_reason("연말정산")
+        if not _independent_supported_request(compact,
+                r"(?:4대보험|사대보험|국민연금|건강보험|고용보험|원천징수|(?:매?월|한달)실수령액?)", r"연말정산"):
+            supported = [label for label in supported
+                         if resolve_calc_type_strict(label) != ["insurance"]]
+        supported = [label for label in supported if label not in ("임금계산", "임금 계산", "임금", "해당없음")]
+    if _affirmative_calculation_mention(compact, r"선택적?근로(?:시간제)?"):
+        notes["선택적 근로시간제"] = unsupported_calc_reason("선택적 근로시간제")
+        separate_hours = bool(re.search(r"(?:별도|일반|다른).{0,60}(?:소정근로시간|월근로시간|연장수당).{0,20}(?:계산|산정|알려)", compact))
+        blocked = {"flexible_work"} if separate_hours else {"working_hours", "flexible_work", "overtime"}
+        supported = [label for label in supported if not set(resolve_calc_type_strict(label) or [])
+                     .intersection(blocked)]
+    routed = dict(params, calculation_types_kr=supported)
+    def run_supported():
+        try:
+            return _run_supported_calculator(routed, query)
+        finally:
+            # 기존 호출 계약: 시간 입력 검증/가정 플래그는 호출자가 캐시·추가 질문에 사용한다.
+            # 요청 라벨만 별도 라우팅하고, 검증으로 삭제·보정된 입력은 원 params에도 반영한다.
+            for key in set(params) - set(routed):
+                del params[key]
+            params.update({key: value for key, value in routed.items()
+                           if key not in {"calculation_type", "calculation_types_kr"}})
+    if not notes:
+        return run_supported()
+    notice = format_skipped_calculations([
+        {"section": label, "reason": reason} for label, reason in notes.items()])
+    if not supported:
+        return notice
+    text = run_supported()
+    return f"{notice}\n\n{text}" if text else notice
+
+
+def _run_supported_calculator(params: dict, query: str = "") -> str | None:
     if not params or not params.get("needs_calculation"):
         return None
     from app.core.legal_rule_store import rules_enabled
@@ -1252,7 +2637,14 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     has_wage = bool(amount)
 
     weekly_days = params.get("weekly_work_days")
-    weekly_total = params.get("weekly_total_hours")
+    if weekly_days is None and (stated_days := _stated_weekly_days(query)) is not None:
+        weekly_days = params["weekly_work_days"] = stated_days
+    # 의도분석 소정근로시간이 질문의 기간 합계('3일 동안 25시간')에서 왔으면 버린다 — 호출부가 확인 안내에 반영
+    weekly_total, stated_daily, rejected_hours = _ground_schedule_hours(
+        query, params.get("weekly_total_hours"), params.get("daily_work_hours"), weekly_days,
+        trusted=params.get("schedule_hours_trusted") or ())
+    if rejected_hours:
+        params["schedule_hours_rejected"] = rejected_hours
     if weekly_total and weekly_days:
         daily_hours = weekly_total / weekly_days
     elif weekly_total:
@@ -1262,13 +2654,34 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         daily_hours = weekly_total / weekly_days
         params["assumed_weekly_days"] = True
     else:
-        daily_hours = params.get("daily_work_hours")
+        daily_hours = stated_daily
 
-    # None → WorkSchedule 모델 기본값 (8.0h, 5일) 사용
-    # 핵심: LLM이 아닌 모델 레벨에서 기본값 관리
+    # None → 주 40시간 관행(1일 8시간, 주 5일 초과면 40 ÷ 근무일수)과 주 5일. 핵심: LLM이 아닌 코드에서 기본값 관리.
+    # 기본값이 가정으로 읽히는 경우(_schedule_unknown — 시급·일급, 버린 시간, 주 5일 미만 월급 등)는 아래에서 시간에 따라
+    # 달라지는 계산을 빼고 주휴는 산식만 낸다. 그 밖에 기본값을 쓴 카드는 [기준시간]에 그 사실을 밝힌다
+    # 근로시간 제도 신호(탄력·감시단속 등) + 1일 8시간·1주 40시간 초과 → 소정·연장을 나누지 않고 제도 확인을 안내한다(D3)
+    regime = None
+    if daily_hours is not None:
+        regime_label = _hour_regime_signal(query)
+        if regime_label:
+            caps = _MINOR_CAPS if regime_label == _MINOR_LABEL else (8.0, 40.0)
+            probe = split_hours(daily_hours, weekly_days if weekly_days is not None else 5.0,
+                                daily_cap=caps[0], weekly_cap=caps[1])
+            if probe.mode == "applied":
+                regime = (regime_label, probe.excess)
+    schedule_unknown = _schedule_unknown(wt, params.get("weekly_work_days"), daily_hours,
+                                         bool(params.get("schedule_hours_rejected")), has_wage) or regime is not None
+    # 1일 시간만 있고 근무일수를 모르면 기본 5일로 계산한다 — 주 합계만 있을 때(아래 가정 표시)와 같이 밝힌다(C27)
+    days_assumed = weekly_days is None and daily_hours is not None
+    if days_assumed:
+        params["assumed_weekly_days"] = True
     schedule = WorkSchedule(
-        daily_work_hours=daily_hours if daily_hours is not None else 8.0,
+        daily_work_hours=daily_hours if daily_hours is not None else _default_daily_hours(weekly_days),
         weekly_work_days=weekly_days if weekly_days is not None else 5.0,
+        # 1일 시간을 '주 N시간'에서 나눠 구했으면 실업급여 하한의 1일 소정근로시간을 주 단위 산식으로 구한다(시행규칙 제91조의2).
+        # 1일 시간이 따로 있으면 일 단위다 — _analysis_to_extract_params가 주 합계를 1일 × 근무일수로 늘 채워, 그 값만 보면 주 3일 ×
+        # 8시간이 4.8시간이 됐다(독립 리뷰 H1: 하한 39,629원 vs 66,048원)
+        weekly_defined=bool(weekly_total) and not stated_daily,
         weekly_overtime_hours=params.get("weekly_overtime_hours") or 0,
         weekly_night_hours=params.get("weekly_night_hours") or 0,
         weekly_holiday_hours=params.get("weekly_holiday_work_hours") or 0,
@@ -1305,20 +2718,43 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         if any(c in start for c in "년개월"):
             from wage_calculator.facade import _guess_start_date
             inp.start_date = _guess_start_date(start)
+            # '3개월'처럼 기간으로 말했으면 개월 수 그대로가 계속근로기간이다 — 날짜로 바꾸면 1개월을 30일로 세어 '입사 3개월'이
+            # '3개월 미만'(해고예고 면제)이 됐다(2차 리뷰 H1)
+            if (months := _period_months(start)) is not None:
+                inp.tenure_months = months
         else:
             inp.start_date = start
     if params.get("end_date"):
         inp.end_date = params["end_date"]
+    # 연차 입력을 숫자 변환으로 덮거나 누락시키지 않는다. 범위·날짜 검증은 계산기에서 보류 사유와 함께 수행한다.
+    from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+    from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
+    from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+    from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+    from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+    from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+    for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS:
+        if params.get(key) is not None:
+            setattr(inp, key, params[key])
+    _complete_explicit_reduced_calendar_month(inp, query)
 
     # 특수고용직(노무제공자) 판별
     if params.get("is_platform_worker"):
         inp.is_platform_worker = True
         from wage_calculator.models import WorkType
         inp.work_type = WorkType.PLATFORM_WORKER
+    if not inp.is_platform_worker and _states_daily_worker(query):
+        inp.is_daily_worker = True
 
     # 수습·계약기간·직종 — 최저임금 수습 감액 판정에 소비 (CALC-1)
     if params.get("is_probation"):
         inp.is_probation = True
+        # 수습 감액 요건은 질문 본문에서 읽는다(calc-card-followups D5) — 의도분석은 '정규직'이면 contract_months를 비워 두라는
+        # 지시를 받아 '기간 정함 없음'과 '미기재'가 구분되지 않는다. 모르는 요건은 모름(None)으로 둔다
+        terms = _probation_terms(query)
+        inp.contract_open_ended = True if terms["open_ended"] else None
+        inp.probation_months = terms["length"]
+        inp.probation_elapsed_months = terms["elapsed"]
     # 출산 유형은 휴가 일수를 바꾼다(90 / 미숙아 100 / 다태아 120). 배선이 없으면 상담이
     # 다태아·미숙아 질문에도 90일로 답한다 — 계산기와 흐름도만 지원하던 공백이었다.
     if params.get("is_multiple_birth"):
@@ -1333,12 +2769,6 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
     # 해고예고·육아휴직·임금체불 — 배선 누락으로 계산이 조용히 skip되던 필드 (CALC-1)
     if params.get("notice_days_given") is not None:
         inp.notice_days_given = int(params["notice_days_given"])
-    if params.get("parental_leave_months"):
-        inp.parental_leave_months = int(params["parental_leave_months"])
-    if params.get("arrear_amount"):
-        inp.arrear_amount = float(params["arrear_amount"])
-    if params.get("arrear_due_date"):
-        inp.arrear_due_date = str(params["arrear_due_date"])
 
     # 고정수당 — facade가 dict 항목을 그대로 지원 (CALC-1)
     if params.get("fixed_allowances"):
@@ -1357,7 +2787,36 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         [params["calculation_type"]] if params.get("calculation_type") else [])
     targets = _resolve_targets(calc_types, query, has_wage)
     if not targets:
-        return None
+        return format_skipped_calculations([{"section": "계산 유형",
+            "reason": "요청한 계산 유형을 확인할 수 없습니다. 계산하려는 항목을 확인해주세요."}])
+
+    if "maternity_leave" in targets:
+        # Analyzer aliases and legacy labels both select the requested subtype.
+        if inp.maternity_leave_type is None:
+            compact = "".join(" ".join(calc_types).split())
+            if "난임" in compact:
+                inp.maternity_leave_type = "infertility"
+            elif "배우자" in compact and ("유산" in compact or "사산" in compact):
+                inp.maternity_leave_type = "spouse_miscarriage"
+            elif "배우자" in compact:
+                inp.maternity_leave_type = "spouse_birth"
+            else:
+                inp.maternity_leave_type = "maternity"
+        specific_types = set()
+        for label in [part for value in calc_types for part in split_calc_labels(value)]:
+            compact_label = "".join(label.split())
+            if "난임" in compact_label:
+                specific_types.add("infertility")
+            elif "배우자" in compact_label and ("유산" in compact_label or "사산" in compact_label):
+                specific_types.add("spouse_miscarriage")
+            elif "배우자" in compact_label and "출산" in compact_label:
+                specific_types.add("spouse_birth")
+            elif "출산" in compact_label:
+                specific_types.add("maternity")
+        if len(specific_types) > 1:
+            inp.maternity_leave_type = "multiple"
+        if "is_priority_support_company" not in params:
+            inp.is_priority_support_company = None
 
     # 임금 정보 없음 → 임금이 필요 없는 계산기만 부분 실행 (0원 오검증 방지)
     holiday_hours_block = None
@@ -1372,6 +2831,14 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
             holiday_hours_block = _wageless_weekly_holiday(
                 params.get("weekly_work_days"), daily_hours)
         wageless = [t for t in targets if t in _WAGELESS_TARGETS]
+        if schedule_unknown:
+            # 근무일수만 있고 시간이 없으면 소정근로시간 산정·52시간 체크는 기본 8시간을 넣은 값이다(주 6일 → 243시간, 리뷰 H3)
+            held = [t for t in wageless if t not in {"wage_arrears", "prorated", "arrears_principal"}]
+            wageless = [t for t in wageless if t in {"wage_arrears", "prorated", "arrears_principal"}]
+            holiday = "weekly_holiday" in targets and not inp.is_platform_worker
+            holiday_hours_block = _unknown_schedule_block(
+                None, params.get("weekly_work_days"), holiday, held, _rejected_span_hours(query, params), regime,
+                _conditional_holiday_example(query, params.get("weekly_work_days"), None) if holiday else None)
         if not wageless:
             if holiday_hours_block:
                 logger.info("임금 정보 없음 — 주휴 시간만 산정(금액 미산정), 나머지 %s 제외", targets)
@@ -1382,32 +2849,331 @@ def _run_calculator(params: dict, query: str = "") -> str | None:
         targets = wageless
 
     # 특수고용직: 근로기준법 미적용 계산기 제외 + insurance/legal_hints 자동 추가
+    platform_skipped = []
+    platform_auxiliary = []
     if inp.is_platform_worker:
         _pw_exclude = {
             "overtime", "weekly_holiday", "annual_leave", "dismissal",
             "severance", "comprehensive", "prorated", "public_holiday",
             "shutdown_allowance", "weekly_hours_check",
-            "retirement_tax", "retirement_pension",
+            "retirement_tax", "retirement_pension", "wage_arrears", "arrears_principal",
         }
+        platform_skipped = [{"target": t, "section": CALC_TYPES[t],
+            "reason": "노무제공자 입력에서는 이 계산을 실행하지 않습니다. 근로자성 및 적용 범위 확인이 필요합니다."}
+            for t in targets if t in _pw_exclude]
         targets = [t for t in targets if t not in _pw_exclude]
+        if not [t for t in targets if t != "legal_hints"]:
+            return format_skipped_calculations(platform_skipped)
         if "insurance" not in targets:
             targets.append("insurance")
+            platform_auxiliary.append("insurance")
         if "legal_hints" not in targets:
             targets.append("legal_hints")
 
+    # 소정근로시간 미확인 — 시간을 가정해야 나오는 계산은 빼고(금액 보류 안내), 주휴는 산식만 낸다. 시급제는 시급이 곧
+    # 통상시급이라 최저임금 판정과 연장·야간·휴일수당은 남긴다(고정수당이 있으면 시간당 수당액이 근로시간에 달려 함께 뺀다).
+    unknown_schedule_block = None
+    hourly_known = False
+    unknown_mode = has_wage and schedule_unknown
+    if unknown_mode:
+        hourly_known = inp.wage_type == WageType.HOURLY and not inp.fixed_allowances
+        free = _SCHEDULE_FREE_TARGETS | (_HOURLY_SCHEDULE_FREE_TARGETS if hourly_known else frozenset())
+        kept = [t for t in targets if t in free]
+        held = [t for t in targets if t not in kept and t not in ("weekly_holiday", "legal_hints")]
+        # 관리 모드의 '최저시급' 질문은 시급 자리가 표지값(1)이다 — 승인 금액은 계산기가 정하므로 금액을 적지 않는다
+        hourly = inp.hourly_wage if hourly_known and not inp.use_minimum_wage else None
+        holiday = "weekly_holiday" in targets
+        unknown_schedule_block = _unknown_schedule_block(
+            hourly, params.get("weekly_work_days"), holiday, held, _rejected_span_hours(query, params), regime,
+            _conditional_holiday_example(query, params.get("weekly_work_days"), hourly) if holiday else None)
+        logger.info("소정근로시간 미확인 — 계산 %s, 보류 %s", kept, held)
+        if not [t for t in kept if t != "legal_hints"] and not inp.is_platform_worker:
+            return unknown_schedule_block or None
+        targets = kept
+        # 남는 계산의 주간 합계(52시간 경고·뇌심혈관 힌트)는 질문에 나온 연장·휴일시간만 본다 — 기본 1일 8시간을 더하지 않는다.
+        # 통상임금 기준시간은 0시간이면 법정 기준시간으로 대신하고, 그 줄은 _drop_assumed_schedule이 바꾼다
+        inp.schedule.daily_work_hours = 0.0
+
+    # 1일 8시간·1주 40시간을 넘는 시간은 연장근로로 나눈다(calc-card-followups D9). 아래 구성 판정(_has_premium_hours)이
+    # 파생 연장시간을 봐야 포괄임금 역산이 맞게 돈다. 미확인 모드(1일 0시간)·특고·제도 신호는 나누지 않는다. 나눈 연장시간이
+    # 있으면 연장수당을 함께 계산한다 — 빠지면 카드의 '월 총 예상 수령액'에서 연장분이 사라진다
+    if regime:
+        inp.hour_split = HourSplit(daily_hours, schedule.weekly_work_days, daily_hours, schedule.weekly_work_days,
+                                   excess=regime[1], mode="held", reason=regime[0])
+    settlement_only = bool(set(targets) & {"prorated", "arrears_principal"}) and set(targets) - {"legal_hints"} <= {"prorated", "arrears_principal", "wage_arrears"}
+    from wage_calculator.calculators.wage_claims import claims_are_independent
+    preserve_settlement_contract = settlement_only and ("arrears_principal" not in targets or claims_are_independent(inp)
+        or all(isinstance(x,dict) and x.get("source")=="prorated" for x in (inp.wage_claim_items or [])))
+    split = apply_hour_split(inp)
+    # 묻지 않았지만 카드 금액을 맞추려고 더한 계산 — facade의 '시도한 계산이 전부 보류면 요청 보류' 판정에서 세지 않는다(리뷰 M2)
+    auxiliary = list(platform_auxiliary)
+    if split.mode == "applied" and has_wage and not settlement_only and "overtime" not in targets:
+        targets.append("overtime")
+        auxiliary.append("overtime")
+
+    composition_note = None
+    composition_skipped = []
+    composition_hold = False
+    held_is_total = False      # 보류 경로에서 계산 금액이 월급 '총액'일 때만 True — 총액 이름표·경고·함께 보류의 조건
+    amount_hold = ()           # 총액 보류에서 금액만 뺄 계산(facade가 계산은 하고 금액만 뺀다)
+    hold_compliant = ()        # 총액 보류에서 '충족'만 싣지 않을 판정(총액으로도 미달이면 미달 그대로 — Act-4 리뷰 H5)
+    comprehensive_unknown_hours = comprehensive_statement = False
+    comprehensive_total = False  # 포괄임금 총액(기본급 구분 없음) + 연장시간 — 보류 경로가 아니어도 총액 이름표·금액 보류
+    composition_total = None   # 기본급 경로: 카드 총액 줄에 보일 사용자 총액(0이면 줄을 숨긴다)
+    stated_premium_part = None  # 정확 경로: 말한 총액 중 기본급·산입 수당 외 몫(연장 등) — 계산한 연장수당과 비교한다
+    held_unit = "월급"         # 보류 카드의 금액 단위 — 일급 보류는 이름표·안내를 일급으로(리뷰 H3)
+    annual_note = ""
+    if (has_wage and not preserve_settlement_contract and inp.wage_type == WageType.ANNUAL and inp.annual_wage and not unknown_mode
+            and _stated_wage_composition(query)[0]):
+        # 연봉도 '연장수당 포함' 진술이면 월급과 같은 구성 판정을 받는다 — 진술을 무시하고 연장분을 더해 퇴직금을 냈다(독립 리뷰
+        # H3: 연봉 3,600만 원 + '연장수당 포함' → 11,555,707원). 12로 나눈 월급으로 아래 구성 경로를 그대로 탄다
+        annual_note = f"연봉 {inp.annual_wage:,.0f}원을 12로 나눈 월 {inp.annual_wage / 12:,.0f}원으로 계산했습니다. "
+        inp.monthly_wage = inp.annual_wage / 12
+        inp.annual_wage = 0.0
+        inp.wage_type = WageType.MONTHLY
+    if (has_wage and not preserve_settlement_contract and inp.monthly_wage and inp.wage_type in (WageType.MONTHLY, WageType.COMPREHENSIVE)
+            and not unknown_mode):
+        includes_excluded, base = _stated_wage_composition(query)
+        # 포괄임금제는 연장·야간수당 등이 포함된 총액이다 — 약정 연장시간을 모르면 역산이 연장 0시간으로 나눠 시급을 부풀리고
+        # '충족'을 냈다(Design §13.5 R2, Act-4). 연장시간이 있으면 역산(대법원 2020다300299 방식)을 그대로 쓴다.
+        # 포괄임금제 언급은 그 자체로 '연장수당 등이 포함된 총액'이라는 구성 진술이다 — 기본급이 있으면 정확 경로, 없으면 연장
+        # 시간이 있을 때 역산(아래 `comprehensive_by_hours`), 없을 때 보류다
+        comprehensive_statement = bool(
+            not includes_excluded and inp.wage_type == WageType.COMPREHENSIVE
+            and _COMPREHENSIVE_RE.search(query or "") and not _COMPREHENSIVE_DENIED_RE.search(query or ""))
+        comprehensive_unknown_hours = comprehensive_statement and not _has_premium_hours(inp)
+        includes_excluded = includes_excluded or comprehensive_statement
+        if includes_excluded:
+            # 임금 구성이 질문으로 정해졌다 — 최저임금 계산기의 '연장 포함 역산' 대안(D4)은 이 경로에서 쓰지 않는다
+            inp.wage_composition_known = True
+            amount = inp.monthly_wage
+            items, ambiguous = _stated_other_pay(query)
+            # 총액: 질문에 숫자로 적힌 월급 총액, 없으면 의도분석 금액(기본급보다 크고 질문에 그 숫자가 있을 때 — 없으면 기본급 +
+            # 식대처럼 합산한 값일 수 있다, 리뷰 M2). 둘이 어긋나면 모르는 것으로 둔다.
+            total = None
+            if base is not None:
+                text_total = _stated_total_pay(query, base)
+                llm_total = round(amount) if amount - base > 1000 and _money_in_text(amount, query) else None
+                total = (None if text_total and llm_total and abs(text_total - llm_total) > 1000
+                         else text_total or llm_total)
+            # 기본급으로 판정해도 되는 경우(정확 경로): 기본급이 하나로 정해지고, 함께 적힌 산입 대상 수당이 모두 금액과 함께
+            # 있으며, 총액을 알면 기본급이 그 절반 이상이고 기본급 + 수당이 총액을 넘지 않을 때(총액을 모르면 기본급이 계산
+            # 금액보다 크지 않을 때 — 크면 의도분석이 뽑은 총액과 질문의 기본급이 어긋난다). 아니면 '총액 − 기본급'이 비산입
+            # 수당만이라는 보장이 없어 기본급으로 계산하면 없는 '미달'이 나온다(Check 리뷰). 총액·기본급을 질문에서 읽으면
+            # 의도분석 금액(반올림 포함)은 판정에 쓰지 않는다.
+            exact = (base is not None and not ambiguous
+                     and (base >= total * 0.5 and base + sum(items.values()) <= total + 1000 if total
+                          else base <= amount + 1000))
+            # 포괄임금제 총액에 연장시간이 있고 기본급이 없으면 '포함' 진술은 이미 아는 사실이다 — 역산이 연장시간을 반영하므로
+            # 보류하지 않고 아래 역산 경로로 보낸다(재검토: 같은 320만 원이 진술 유무로 '충족'과 '보류'로 갈렸다)
+            comprehensive_by_hours = (base is None and inp.wage_type == WageType.COMPREHENSIVE and _has_premium_hours(inp))
+            label = "통상시급·최저임금" if "minimum_wage" in targets else "통상시급"
+            if comprehensive_by_hours:
+                pass
+            elif exact:
+                # 통상임금·최저임금은 기본급(+ 고정수당), 평균임금·4대보험 보수·근로장려금은 총액으로 나눠 계산한다
+                # (`monthly_total_pay`, Act-3 R7·R8). 의도분석이 총액·기본급·천 원 반올림값 중 무엇을 뽑았든 같은 카드다 —
+                # 예전에는 기본급을 뽑으면(C8) 퇴직금이 기본급 기준(과소)이었고, 총액을 뽑고 4대보험을 물으면 보류였다.
+                inp.monthly_wage = float(base)
+                inp.wage_type = WageType.MONTHLY
+                _apply_stated_allowances(inp, items)
+                if total:
+                    inp.monthly_total_pay = float(total)
+                # 총액을 모르면 '월 총 예상 수령액' 줄을 숨긴다 — 기본급이 총액처럼 보인다
+                composition_total = total or 0
+                if total:
+                    stated_premium_part = total - base - sum(items.values())
+                composition_note = _exact_composition_note(base, items, total, label, targets)
+                unit = _base_rounding_unit(query)
+                if unit:
+                    composition_note += (f" 기본급은 질문의 {unit} 단위 금액으로 계산했습니다 — 원 단위 금액이 다르면 판정이 "
+                                         "달라질 수 있습니다.")
+            else:
+                composition_hold = True
+                # 문구는 이유별로 — 연장시간을 몰라서(R2-b), 포괄임금제 총액이라서(기본급은 있으나 산입 여부가 갈리는 항목이
+                # 남음), 사용자가 포함이라고 말해서. 포괄임금제라고만 했는데 "포함돼 있다고 하셔서"라고 쓰면 진술을 지어낸다
+                composition_note = (
+                    "포괄임금제는 연장·야간·휴일수당 등이 포함된 총액이라 약정 연장시간을 모르면 최저임금 충족 여부를 판정할 수 "
+                    "없어 판정하지 않았습니다. 약정 연장시간이나 기본급을 알면 계산할 수 있습니다."
+                    if comprehensive_unknown_hours else
+                    "포괄임금제 총액에는 연장·야간·휴일수당 등이 포함돼 있어 최저임금 충족 여부는 판정하지 않았습니다. "
+                    "최저임금은 기본급 등 산입 대상 임금으로 확인해야 합니다."
+                    if comprehensive_statement else
+                    "월급에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셔서 최저임금 충족 여부는 판정하지 "
+                    "않았습니다. 최저임금은 기본급 등 산입 대상 임금으로 확인해야 합니다.")
+                # 금액이 질문의 기본급과 같거나 작으면(의도분석이 기본급을 임금으로 뽑음, 만 원 단위 반올림 포함) 그 값은 총액이
+                # 아니다 — 총액 이름표와 경고가 사용자 진술(기본급)을 뒤집는다(Act-1 코드 리뷰 재현: 금액 2,090,000 + 질문
+                # 기본급 2,096,270). 허용폭은 C8과 같다.
+                if comprehensive_unknown_hours:
+                    if "comprehensive" in targets:
+                        composition_skipped.append("comprehensive")
+                    targets = [t for t in targets if t != "comprehensive"]
+                held_is_total = not base or amount - base > 1000
+                if held_is_total:
+                    # 총액 기준 시급으로 낸 금액은 보류한다(Act-2). 계산은 하고 금액만 뺀다 — 연차 발생일수·'퇴직금 미발생'
+                    # 같은 판정은 시급과 무관하다(코드 리뷰 M2). 퇴직소득세는 퇴직금 결과로 계산하므로 퇴직금과 함께 넘긴다.
+                    amount_hold = tuple(t for t in targets if t in _ORDINARY_BASED_TARGETS
+                                        or (t == "retirement_tax" and "severance" in targets))
+                    # 최저임금은 계산하되 '충족'만 싣지 않는다 — 비산입 수당이 섞인 총액은 시급을 부풀리기만 하므로 총액으로도
+                    # 미달이면 실제로도 미달이다. 예전에는 판정을 통째로 빼 "포괄임금제로 월 200만원"에도 '보류'였다(리뷰 H5)
+                    hold_compliant = ("minimum_wage",)
+                    _drop_not_ordinary_allowances(inp)
+                    _drop_stated_included(inp, query)
+                    composition_note += _HELD_TOTAL_NOTE
+                else:
+                    # 금액이 기본급이면(산입 여부가 갈리는 수당이 남음) 기본급만으로 낸 판정은 어느 쪽도 확정이 아니다
+                    if "minimum_wage" in targets:
+                        composition_skipped.append("minimum_wage")
+                    targets = [t for t in targets if t != "minimum_wage"]
+
+    if (has_wage and not preserve_settlement_contract and inp.wage_type == WageType.DAILY and not unknown_mode and not inp.wage_composition_known
+            and _stated_wage_composition(query)[0]):
+        # 일급도 '연장수당 포함' 진술이면 월급(기본급 없음)과 같은 보류다 — "일당 12만원에 연장근무 수당까지 다 포함"에 연장분을 더해
+        # 퇴직금 12,050,950원을 냈다(리뷰 H3). 통상임금으로 내는 금액은 빼고, 최저임금은 그 일급으로도 미달일 때만 판정한다
+        inp.wage_composition_known = True
+        composition_hold = held_is_total = True
+        held_unit = "일급"
+        # 월 총액은 일당에 주휴분까지 들었는지에 따라 달라 싣지 않는다 — 월급 보류는 말한 월급이 곧 총액이라 다르다. 같은 이유로 월 보수·
+        # 소득으로 내는 금액(4대보험·실업급여·근로장려금)도 보류한다(2차 리뷰 M2: 세후 실수령액 머리줄을 확정했다)
+        composition_total = 0
+        amount_hold = tuple(t for t in targets if t in _ORDINARY_BASED_TARGETS or t in _PAY_ESTIMATE_TARGETS
+                            or (t == "retirement_tax" and "severance" in targets))
+        hold_compliant = ("minimum_wage",)
+        _drop_not_ordinary_allowances(inp)
+        composition_note = ("일급에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셔서 최저임금 충족 여부는 판정하지 않았습니다. "
+                            "최저임금은 산입 대상 임금으로 확인해야 합니다." + _held_total_note(held_unit))
+    if annual_note and composition_note:
+        composition_note = annual_note + composition_note
+    # 연장 등을 따로 받는다고 했으면 구성이 'A(연장 별도)'로 정해졌다 — D4의 두 구성을 보지 않는다(리뷰 M1)
+    if (has_wage and not preserve_settlement_contract and not inp.wage_composition_known and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
+            and _states_premium_paid_separately(query)):
+        inp.premium_paid_separately = True
+
+    # 포괄임금제 + 연장·야간·휴일 시간 → 최저임금은 역산(대법원 2020다300299 방식)으로만 판정한다. 최저임금 계산기는 총액을
+    # 소정근로시간으로 나눠 '충족'을 냈다(Act-4 리뷰 H4 — 270만 원 + 주 10시간 연장: 12,945원 '충족' vs 역산 9,863원 '미달').
+    # 의도분석 라벨 '포괄임금제'가 매핑에 없어 다른 라벨이 있으면 역산이 빠졌다. 정확 경로는 월급제로 바꿔 여기 오지 않는다
+    if (inp.wage_type == WageType.COMPREHENSIVE and not composition_hold and not inp.comprehensive_breakdown
+            and has_wage and not preserve_settlement_contract and _has_premium_hours(inp) and not unknown_mode):
+        # 이 경로의 '통상임금'도 연장·야간·휴일수당이 섞인 총액이다 — 그 시급에 '통상시급' 이름을 붙이지 않고(Plan P0-5)
+        # 그 시급으로 낸 금액은 보류한다(Act-2와 같은 원칙). 역산 판정은 연장시간을 반영하므로 '충족'도 믿는다
+        comprehensive_total = held_is_total = True
+        inp.wage_composition_known = True
+        amount_hold = tuple(t for t in targets if t in _ORDINARY_BASED_TARGETS
+                            or (t == "retirement_tax" and "severance" in targets))
+        _drop_not_ordinary_allowances(inp)
+        verdict = (" 최저임금은 연장 가산을 반영한 역산(대법원 2020다300299 방식)으로 판정했습니다."
+                   if {"minimum_wage", "comprehensive"} & set(targets) else "")
+        composition_note = "포괄임금 총액에는 연장·야간·휴일수당 등이 포함돼 있습니다." + verdict + _HELD_TOTAL_NOTE
+    if inp.wage_type == WageType.COMPREHENSIVE and "minimum_wage" in targets and _has_premium_hours(inp):
+        targets = [t for t in targets if t != "minimum_wage"]
+        if "comprehensive" not in targets:
+            targets.append("comprehensive")
+
+    # 일급·월급·연봉에 연장·야간·휴일 근로가 있고 임금 구성을 모른다(D4) — 최저임금은 계산기가 '연장 별도'와 '연장 포함 역산'을
+    # 함께 보고, 카드 총액은 싣지 않는다(총액이 월급 + 연장수당인지 월급 하나인지 모른다)
+    composition_unknown = (has_wage and not settlement_only and not unknown_mode and not inp.wage_composition_known
+                           and not inp.premium_paid_separately and not inp.is_platform_worker
+                           and inp.wage_type in (WageType.DAILY, WageType.MONTHLY, WageType.ANNUAL)
+                           and not inp.comprehensive_breakdown and _has_premium_hours(inp))
+
+    # 질문에 적힌 연장·야간·휴일 근로시간을 평균임금·보수 추정이 더하는 입력이면 연장수당도 계산한다(calc-card-consistency G2).
+    # 빠지면 '월 총 예상 수령액'에 그 몫이 없어 같은 카드의 세전 월 급여·평균임금과 갈렸다(4대보험만: 월 총 2,502,857원 vs 세전
+    # 3,285,000원, 세후 2,885,875원). 위의 파생 연장 규칙과 같은 뜻이다. 구성 판정 뒤라야 한다 — 그 임금이 이미 든 금액(포괄·
+    # 구성 진술)은 추정이 더하지 않아 대상이 아니고, 보류 경로의 amount_hold는 이 규칙보다 먼저 정해진다
+    premium_added = has_wage and not settlement_only and not unknown_mode and "overtime" not in targets and adds_premium_pay(inp)
+    if premium_added:
+        targets.append("overtime")
+        auxiliary.append("overtime")
+
     try:
         calc = WageCalculator()
-        result = calc.calculate(inp, targets)
+        result = calc.calculate(inp, targets, amount_hold=amount_hold, hold_compliant=hold_compliant,
+                                auxiliary=tuple(auxiliary))
+        if platform_skipped:
+            result.calculation_skipped.extend(platform_skipped)
+            if result.calculation_status == "complete":
+                result.calculation_status = "partial"
+        if composition_unknown:
+            result.monthly_total = 0.0
+            result.warnings = [_composition_unknown_note(inp), *result.warnings]
+            _add_composition_alternative(result, calc, inp, targets)
+        if premium_added:
+            result.warnings.append(_PREMIUM_ADDED_NOTE)
+        if ("overtime" in targets and not params.get("business_size") and _has_premium_hours(inp)
+                and inp.business_size != BusinessSize.UNDER_5 and not inp.is_platform_worker):
+            # 규모를 모르면 기본값 5인 이상으로 가산했다 — 가정이 확정처럼 읽히지 않게 밝힌다(calc-card-followups §3.4)
+            result.warnings.append(_SIZE_ASSUMED_NOTE)
+        if composition_total == 0:
+            result.monthly_total = 0.0
+        elif composition_total:
+            # 기본급으로 계산해도 카드의 '월 총 예상 수령액'은 사용자가 말한 총액이다 — 평균임금·안내문도 그 값을 쓴다. 파생 연장수당이
+            # 총액 속 연장 등 몫보다 크면 계산 총액이 말한 총액을 넘었다(독립 리뷰 M4: 2,751,354원 vs 2,700,000원). 차이는 따로 밝힌다
+            result.monthly_total = float(composition_total)
+            if stated_premium_part and stated_premium_part > 0 and "overtime" in targets:
+                derived = premium_weekly(inp, result.ordinary_hourly).total * WEEKS_PER_MONTH
+                if derived > stated_premium_part + 0.5:
+                    result.warnings.append(
+                        f"월급 중 기본급·산입 수당 외 몫(연장수당 등) {stated_premium_part:,.0f}원이 위에서 계산한 연장·야간·휴일 근로 임금 "
+                        f"월 {derived:,.0f}원(매주 같은 시간으로 봄)보다 월 {derived - stated_premium_part:,.0f}원 적습니다.")
+        requested_amounts = set(targets) - set(auxiliary) - {"legal_hints"}
+        if requested_amounts and requested_amounts <= {"parental_leave", "reduced_work_benefit", "wage_arrears", "maternity_leave", "prorated", "arrears_principal"}:
+            # 구성 보정이 기초 월급을 급여·이자 요청의 지급액으로 되살리지 않도록 한다.
+            result.monthly_total = result.monthly_net = 0.0
+        if (composition_hold or comprehensive_total) and held_is_total:
+            _label_held_total(result, held_unit)
+        if composition_hold and not result.minimum_wage_state:
+            # 최저임금을 아예 계산하지 않은 구성 보류(금액이 기본급)도 '판정 보류'다 — 안내문이 그렇게 말한다. 예전에는
+            # minimum_wage_ok의 기본값 None이 이 표시를 대신했는데, 미실행 카드는 헤더를 내지 않게 바뀌었다(F4b)
+            result.minimum_wage_state = "held"
+        if composition_hold and result.minimum_wage_ok is not None:
+            # 보류해도 포괄임금 역산(comprehensive)이 같은 총액으로 판정을 다시 채운다. 비산입 수당은 시급을 부풀리기만
+            # 하므로 '충족'은 믿을 수 없어 보류로 내리고, '미달'은 총액으로도 미달이라 그대로 두되 안내를 바꾼다.
+            if result.minimum_wage_ok:
+                result.minimum_wage_ok = None
+                result.minimum_wage_state = "held"
+                for section in (result.summary, *result.breakdown.values()):
+                    if isinstance(section, dict) and "최저임금 충족" in section:
+                        section["최저임금 충족"] = "⏸ 판정 보류"
+            else:
+                composition_note = (
+                    ("포괄임금제 총액에는 연장·야간·휴일수당 등이 포함돼 있는데, 그 총액으로 계산해도 최저임금에 미달합니다. "
+                     if comprehensive_statement else
+                     f"{held_unit}에 연장·야간·휴일·연차수당 등이 포함돼 있다고 하셨는데, 그 수당이 섞인 총액으로 계산해도 "
+                     "최저임금에 미달합니다. ")
+                    + "기본급 등 산입 대상 임금만으로 보면 부족분은 이보다 클 수 있습니다."
+                    + (_held_total_note(held_unit) if held_is_total else ""))
+                if annual_note:
+                    composition_note = annual_note + composition_note
+        if composition_note:
+            if composition_skipped:
+                result.calculation_skipped = [item for item in result.calculation_skipped if item["target"]]
+                result.calculation_skipped.extend({"target": target, "section": CALC_TYPES[target],
+                    "reason": composition_note} for target in composition_skipped)
+                if result.calculation_status == "complete":
+                    result.calculation_status = "partial"
+            # 보류 목록은 실제로 금액을 뺀 계산만 적는다 — 자격 판정으로 0인 결과(퇴직금 미발생 등)는 그대로 실렸다
+            result.warnings = [composition_note + _held_targets_note(result.amount_held), *result.warnings]
         if not has_wage:
             # 임금 미제공 부분 실행 — 0원 통상임금 계산식 노이즈 제거
             result.formulas = [f for f in result.formulas
                                if not f.startswith("[통상임금]")]
+        if unknown_mode:
+            _drop_assumed_schedule(result, hourly_known)
+            if not hourly_known:
+                result.ordinary_hourly = 0.0   # 시간을 모르면 월급·일급의 통상시급도 모른다 — 첫 줄(통상시급·판정)을 숨긴다
+        elif daily_hours is None:
+            result.formulas = [line + _DEFAULT_SCHEDULE_NOTE if line.startswith("[기준시간] 주 소정근로:") else line
+                               for line in result.formulas]
+        elif days_assumed:
+            result.formulas = [line + _ASSUMED_DAYS_NOTE if line.startswith("[기준시간]") else line
+                               for line in result.formulas]
         formatted = format_result(result)
         if not params.get("business_size") and _SIZE_DEPENDENT_TARGETS.intersection(targets):
             formatted = f"{formatted}\n\n{_SIZE_ASSUMED_NOTE}"
         # 시급 없는 계산기와 주휴 시간을 함께 물으면 둘 다 넘긴다 — 하나라도 실행되면
-        # 주휴 블록이 버려지던 경로(CodeRabbit PR #91).
-        return f"{holiday_hours_block}\n\n{formatted}" if holiday_hours_block else formatted
+        # 주휴 블록이 버려지던 경로(CodeRabbit PR #91). 소정근로시간 미확인 안내도 같다.
+        lead = holiday_hours_block or unknown_schedule_block
+        return f"{lead}\n\n{formatted}" if lead else formatted
     except Exception:
         # 오류 문자열이 '정확한 계산' 헤더로 LLM에 주입되던 경로 차단 (CALC-3)
         logger.exception("계산기 실행 실패 — 계산 없이 상담 경로로 진행 (targets=%s)", targets)
@@ -1455,16 +3221,22 @@ _REQUIRED_FIELDS: dict[str, list[tuple[set[str], str]]] = {
     "insurance": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
     ],
+    "reduced_work_benefit": [
+        (_WAGE_FIELDS_NO_HOURLY, "단축 개시일 월 통상임금"),
+        ({"reduced_weekly_hours_before"}, "단축 전 주 소정근로시간"),
+        ({"reduced_weekly_hours_after"}, "단축 후 주 소정근로시간"),
+        ({"reduced_months", "reduced_periods", "reduced_end"}, "단축 사용 기간"),
+    ],
     "parental_leave": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
-        ({"parental_leave_months"}, "육아휴직 예정 개월수"),
+        ({"parental_leave_months", "parental_leave_periods", "parental_leave_end"}, "육아휴직 사용 기간"),
     ],
     "maternity_leave": [
         (_WAGE_FIELDS_NO_HOURLY, "임금 (월급 또는 연봉)"),
     ],
     "wage_arrears": [
-        ({"arrear_amount"}, "체불 임금액"),
-        ({"arrear_due_date"}, "체불 발생일 (원래 급여일)"),
+        ({"arrear_amount", "arrear_claims"}, "확정 체불 원금 또는 채권별 명세"),
+        ({"arrear_due_date", "arrear_claims", "arrear_retirement_effective_date", "arrear_last_employed_date"}, "원래 지급기일 또는 퇴직급여 지급사유 날짜"),
     ],
     "compensatory_leave": [
         (_WAGE_FIELDS, "임금 (시급/월급)"),
@@ -1520,8 +3292,10 @@ _CALC_TYPE_LABELS: dict[str, str] = {
     "unemployment": "실업급여",
     "insurance": "4대보험·소득세",
     "parental_leave": "육아휴직급여",
+    "reduced_work_benefit": "육아기 단축급여",
     "maternity_leave": "출산전후휴가급여",
     "wage_arrears": "임금체불 지연이자",
+    "arrears_principal": "체불 원금·차액 정산",
     "compensatory_leave": "보상휴가",
     "flexible_work": "탄력근무 수당",
     "comprehensive": "포괄임금제 검증",
@@ -1536,6 +3310,17 @@ def _code_based_summary(calc_types: list[str]) -> str:
     return "·".join(labels) + " 계산"
 
 
+def _states_hours_over_limit(info: dict) -> bool:
+    """추출된 근무시간이 1일 8시간 또는 1주 40시간을 넘는가 — 넘는 시간은 계산기가 연장근로로 나눈다."""
+    try:
+        daily = float(info.get("daily_work_hours") or 0)
+        days = float(info.get("weekly_work_days") or 0)
+        weekly = float(info.get("weekly_total_hours") or 0) or daily * days
+    except (TypeError, ValueError):
+        return False
+    return daily > 8 or weekly > 40
+
+
 def _compute_missing_info(calc_types: list[str], extracted_info: dict) -> list[str]:
     """계산 유형별 필수 필드를 코드 레벨에서 판정하여 누락 항목 목록 반환.
 
@@ -1543,11 +3328,15 @@ def _compute_missing_info(calc_types: list[str], extracted_info: dict) -> list[s
     """
     missing = []
     seen_descriptions = set()
+    # 1일 8시간·1주 40시간을 넘는 근무시간이 있으면 연장시간은 계산기가 나눠 구한다(calc-card-followups D9) — 묻지 않는다
+    derived_overtime = _states_hours_over_limit(extracted_info)
 
     for calc_type in calc_types:
         requirements = _REQUIRED_FIELDS.get(calc_type, [])
         for field_group, description in requirements:
             if description in seen_descriptions:
+                continue
+            if derived_overtime and field_group == {"weekly_overtime_hours"}:
                 continue
             # 필드 그룹 중 하나라도 있으면 충족
             if not any(extracted_info.get(f) for f in field_group):
@@ -1574,6 +3363,10 @@ def _analysis_to_extract_params(analysis) -> dict:
         "annual_leave": "연차수당", "dismissal": "해고예고수당",
         "unemployment": "실업급여", "insurance": "4대보험",
         "parental_leave": "육아휴직", "maternity_leave": "출산휴가",
+        "reduced_work_benefit": "육아기 근로시간 단축급여",
+        "prorated": "일할계산급여",
+        "year_end_settlement": "연말정산", "selective_work_settlement": "선택적 근로시간제",
+        "arrears_principal": "임금체불액",
         "wage_arrears": "임금체불", "compensatory_leave": "보상휴가",
         "flexible_work": "탄력근무", "comprehensive": "포괄임금제",
         "eitc": "근로장려금",
@@ -1586,9 +3379,8 @@ def _analysis_to_extract_params(analysis) -> dict:
         "retirement_tax": "퇴직소득세", "retirement_pension": "퇴직연금",
     }
     # 전체 계산 유형을 라벨로 변환 — 첫 유형만 계산되던 결함 수정 (CALC-2)
-    labels = [REVERSE_CALC_MAP[ct] for ct in (analysis.calculation_types or [])
-              if ct in REVERSE_CALC_MAP]
-    calc_type = labels[0] if labels else "임금계산"
+    labels = [REVERSE_CALC_MAP.get(ct, ct) for ct in (analysis.calculation_types or [])]
+    calc_type = labels[0] if labels else "계산 유형 미확인"
 
     params = {
         "needs_calculation": analysis.requires_calculation,
@@ -1623,6 +3415,13 @@ def _analysis_to_extract_params(analysis) -> dict:
         "shutdown_days": info.get("shutdown_days"),
         "public_holiday_days": info.get("public_holiday_days"),
     }
+    from wage_calculator.calculators.annual_leave import ANNUAL_INPUT_FIELDS
+    from wage_calculator.calculators.childcare_shared import CHILDCARE_INPUT_FIELDS
+    from wage_calculator.calculators.wage_arrears import ARREARS_INPUT_FIELDS
+    from wage_calculator.calculators.pay_inputs import PAY_INPUT_FIELDS
+    from wage_calculator.calculators.family_leave import FAMILY_INPUT_FIELDS
+    from wage_calculator.calculators.prorated import PRORATION_INPUT_FIELDS
+    params.update({key: info[key] for key in set(ANNUAL_INPUT_FIELDS) | CHILDCARE_INPUT_FIELDS | ARREARS_INPUT_FIELDS | PAY_INPUT_FIELDS | FAMILY_INPUT_FIELDS | PRORATION_INPUT_FIELDS | CLAIM_INPUT_FIELDS | CLAIM_DEPENDENCY_FIELDS if key in info})
     return {k: v for k, v in params.items() if v is not None}
 
 
@@ -1639,7 +3438,10 @@ def _consultation_allowed(analysis, calc_result, assessment_result, assessor_inf
     조문까지 잃었다. 대신 2-1·2-2 양쪽에서 근로기준법 제76조의2·3만 뺀다(SEXUAL_HARASSMENT_DROP_REFS).
     `reason == "sexual"`은 metadata.assessor 기록용으로 남는다.
     """
-    if not analysis or calc_result:
+    # 입력 부족·미지원 안내만 있으면 계산 결과가 법률상담을 대신한 것이 아니다.
+    only_skipped = bool(calc_result and calc_result.startswith(SKIPPED_CALCULATION_MARK)
+                        and "📊 임금 계산 결과" not in calc_result)
+    if not analysis or (calc_result and not only_skipped):
         return False
     info = assessor_info or {}
     mode = info.get("mode")
@@ -1826,10 +3628,23 @@ SYSTEM_PROMPT_TEMPLATE = """당신은 한국 노동법 전문 상담사입니다
 """
 
 
+# 계산기 요청 단위 보류(format_result) — 소정근로시간 미확인·시급 없는 주휴 안내가 앞에 붙어도 찾는다
+_BLOCKED_RESULT_RE = re.compile(r"(?m)^계산 보류(?: \(|:)")
+
+
 def _calculation_context_heading(calc_result: str) -> str:
     """보류 결과에는 수치 사용 지시 대신 추정 금지 지시를 붙인다."""
-    if calc_result.startswith("계산 보류"):
+    if SKIPPED_CALCULATION_MARK in calc_result:
+        return "계산 상태 안내 — 완료된 항목만 사용하고, 보류 항목은 추정하지 말고 입력·지원 여부를 확인하세요"
+    if _BLOCKED_RESULT_RE.search(calc_result):
         return "계산 보류 안내 — 금액 추정 금지, 기준일/승인 정보 확인 필요"
+    if _AMOUNT_HOLD_MARK in calc_result:
+        # 금액을 보류한 항목은 카드에 없다 — '이 수치를 사용하세요'만 붙이면 빈자리를 카드의 총액 기준 시급으로 채운다
+        heading = "임금계산기 결과 — 이 수치를 사용하세요. 금액을 보류한 항목은 추정하지 마세요"
+        if _CONDITIONAL_EXAMPLE_MARK in calc_result:
+            # 조건부 예시는 조건과 함께여야 맞는 값이다 — 조건을 떼면 실제로 일한 시간이 소정근로시간으로 단정된다(D7)
+            heading += ". '조건부 예시'는 그 조건을 함께 밝혀서만 쓰세요"
+        return heading
     return "임금계산기 결과 — 이 수치를 사용하세요"
 
 
@@ -1964,7 +3779,11 @@ def process_question(query: str, session: Session, config: AppConfig,
             if _normalize_wage_units(params):
                 analysis.missing_info.append("임금액 단위(만원으로 해석함) 확인")
             yield {"type": "status", "text": "임금계산기 실행 중..."}
+            # 앞 턴 캐시에서 채운 소정근로시간은 그 턴에서 대조를 거쳤다 — 이번 질문으로 다시 대조하지 않는다
+            params["schedule_hours_trusted"] = [k for k in prefilled_keys
+                                                if k in ("weekly_total_hours", "daily_work_hours")]
             calc_result = _run_calculator(params, query)
+            _note_rejected_hours(analysis, params)
             if calc_result:
                 if params.get("assumed_weekly_days"):
                     analysis.missing_info.append("주 근무일수 (5일로 가정하고 계산함)")
@@ -1973,13 +3792,13 @@ def process_question(query: str, session: Session, config: AppConfig,
                     session.cache_calculation(ct, analysis.extracted_info)
                 yield {"type": "meta", "calc_result": calc_result}
     else:
-        # 계산/괴롭힘 가능성이 있을 때만 _extract_params(Sonnet) 호출 — 순수 상담 트래픽의
+        # 계산/괴롭힘 가능성이 있을 때만 _extract_params(설정 모델) 호출 — 순수 상담 트래픽의
         # 불필요한 2차 LLM 호출을 회피해 지연·비용 절감(R-2a).
         analysis_calc = bool(analysis and getattr(analysis, "requires_calculation", False))
         topic = getattr(analysis, "consultation_topic", "") if analysis else ""
         harass_likely = (topic == "직장내괴롭힘") or any(kw in query for kw in _HARASS_KEYWORDS)
         if analysis is None or analysis_calc or harass_likely:
-            tool_type, params = _extract_params(combined_query, config.claude_client)
+            tool_type, params = _extract_params(combined_query, config)
 
             if tool_type == "wage" and params and params.get("needs_calculation"):
                 _ensure_minimum_wage_flag(params, query)
@@ -2089,7 +3908,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             else:
                 decomposed = decompose_query(
                     query,
-                    config.claude_client,
+                    config,
                     consultation_topic=getattr(analysis, "consultation_topic", None),
                     question_summary=getattr(analysis, "question_summary", None),
                     force=adaptive_params.get("force_decompose", False),
@@ -2117,6 +3936,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                 pinecone_hits = rerank_results(
                     query, pinecone_hits, config.cohere_api_key,
                     top_n=adaptive_params["rerank_top_n"],
+                    cohere_base_url=config.cohere_base_url,
                 )
 
             # ③ Self-RAG 관련성 필터 (COMPLEX만)
@@ -2126,10 +3946,10 @@ def process_question(query: str, session: Session, config: AppConfig,
                     from app.core.rag import _is_public_source
                     _before_self_rag = list(pinecone_hits)
                     pinecone_hits, needs_wider = filter_by_relevance(
-                        query, pinecone_hits, config.claude_client,
+                        query, pinecone_hits, config,
                     )
                     # Self-RAG는 T1 2단 **뒤**에 돌고, 쿼터 승격분은 rerank 하위라
-                    # 목록 말미에 있다. Haiku가 그것을 irrelevant로 판정하면 공공
+                    # 목록 말미에 있다. 판정 모델이 그것을 irrelevant로 판정하면 공공
                     # 근거가 통째로 사라지는데 재적용 지점이 없었다(외부 리뷰 A-6).
                     # 전멸했을 때만 최상위 1건을 되살린다 — 필터의 판단은 존중하되
                     # "법률 근거 0건"이라는 결과만 막는 최소 보장이다.
@@ -2151,6 +3971,7 @@ def process_question(query: str, session: Session, config: AppConfig,
                             wider_hits = rerank_results(
                                 query, wider_hits, config.cohere_api_key,
                                 top_n=adaptive_params["rerank_top_n"] + 3,
+                                cohere_base_url=config.cohere_base_url,
                             )
                         if wider_hits:
                             pinecone_hits = wider_hits
@@ -2248,11 +4069,27 @@ def process_question(query: str, session: Session, config: AppConfig,
         except Exception as e:
             logger.warning("GraphRAG 검색 실패 (fallback): %s", e)
 
+    # 확보했지만 검색 순위/일반 조문 상한 때문에 누락되던 세부 쟁점의 공식 근거.
+    # 질문 본문으로만 선택하고, 렌더된 자료만 출처/인용 검증에 함께 전달한다.
+    from app.core.consultation_evidence import (
+        EvidenceSelection, select_evidence, question_fact_notes)
+    try:
+        issue_evidence = select_evidence(query)
+    except Exception as e:  # 카탈로그 결함이 상담 전체를 멈추지 않게 한다(폴백 원칙)
+        logger.warning("상담 근거 선택 실패 (fallback): %s", e, exc_info=True)
+        issue_evidence = EvidenceSelection()
+    try:
+        fact_notes = question_fact_notes(query)
+    except Exception as e:
+        logger.warning("질문 사실 확인 실패 (fallback): %s", e, exc_info=True)
+        fact_notes = ""
+
     # sources는 GraphRAG까지 전부 모인 뒤 발신 — 인용 화이트리스트와 동일 소스 집합 노출
     yield {"type": "sources",
            "hits": _build_sources_payload(
                precedent_meta, consultation_hits,
                legal_articles_text, nlrc_text, graph_context,
+               issue_hits=issue_evidence.hits,
            )}
 
     has_attachments = bool(attachments)  # None/[] → False (metadata에 bool로 저장)
@@ -2283,7 +4120,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     used_rule_facts = [name for name, _ in rule_fact_blocks]
 
     # 인용 가능 목록·사후 검증이 같은 원천을 쓰도록 화이트리스트 hits를 한 번 구성 (DB-4)
-    extra_citation_hits: list[dict] = []
+    extra_citation_hits: list[dict] = list(issue_evidence.hits)
     try:
         from app.core.graph import rendered_precedents
         for d in rendered_precedents(graph_context, graph_results):
@@ -2350,6 +4187,10 @@ def process_question(query: str, session: Session, config: AppConfig,
     # (kin-answer-accuracy D1). 계산은 화이트리스트 구성 전에 했다(effective-law D10).
     for _rf_name, _rf_block in rule_fact_blocks:
         parts.append(_rf_block)
+    if issue_evidence.text:
+        parts.append(issue_evidence.text)
+    if fact_notes:
+        parts.append(fact_notes)
     if assessment_result:
         # 옛 라벨은 판정을 그대로 쓰라고 지시해 답변 규칙("요건이 불분명하면 단정하지 말라")을 이겼다(3차 9번, D10)
         if (assessor_info or {}).get("mode") == "held":
@@ -2575,6 +4416,16 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "chunk", "text": text}
     except RuntimeError:
         yield {"type": "error", "text": "모든 AI 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."}
+        # 실패 행 기록(llm-fallback-alert-blindspot) — 안내가 먼저 나가고, ping이 프런트 idle(60초) 타이머를
+        # 리셋해 저장에 60초 여유를 준다. 그 이상 걸리는 저장은 정상 경로의 save_conversation(역시 done 앞)과
+        # 같은 노출이라 따로 막지 않는다(CodeRabbit #150 — '덮는다'는 과장이었다).
+        # 저장하지 않으면 폴백 감시가 전면 장애를 보지 못한다(2026-10-14 실측).
+        yield {"type": "ping"}
+        record_failed_conversation(
+            config, session, query, guard_ctx, stage="answer", outcome=outcome,
+            has_attachments=has_attachments, analysis=analysis, params=params,
+            use_analysis_params=use_analysis_params,
+        )
         yield {"type": "done"}
         return
 
@@ -2622,9 +4473,7 @@ def process_question(query: str, session: Session, config: AppConfig,
         corrected = correct_hallucinated_citations(
             response_text=full_text,
             hallucinated=citation_check["hallucinated"],
-            anthropic_client=config.claude_client,
-            gemini_api_key=config.gemini_api_key,
-            openai_client=config.openai_client,
+            config=config,
             deadline=stage_deadline,
         )
         citation_fixed = bool(corrected)
@@ -2633,7 +4482,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             polished = micro_polish(
                 corrected_text=corrected,
                 hallucinated_count=len(citation_check["hallucinated"]),
-                anthropic_client=config.claude_client,
+                config=config,
                 deadline=stage_deadline,
             )
             # 교정 LLM이 말미 고지를 떨어뜨릴 수 있다 — replace로 내보내기 전에 복원
@@ -2655,9 +4504,7 @@ def process_question(query: str, session: Session, config: AppConfig,
             yield {"type": "ping"}
             _fixed = correct_hallucinated_citations(
                 response_text=full_text, hallucinated=_keys,
-                anthropic_client=config.claude_client,
-                gemini_api_key=config.gemini_api_key,
-                openai_client=config.openai_client,
+                config=config,
                 deadline=_rel_deadline,
                 reason=_reason,
             )
@@ -2702,23 +4549,8 @@ def process_question(query: str, session: Session, config: AppConfig,
         yield {"type": "done"}
         return
 
-    # 카테고리 결정
-    calc_types = None
-    tool_type_for_category = "none"
-    if use_analysis_params and analysis:
-        calc_types = analysis.calculation_types
-    elif params:
-        ct = params.get("calculation_type", "")
-        if ct:
-            calc_types = list(CALC_TYPE_MAP.get(ct, []))
-        if params.get("is_harassment_question"):
-            tool_type_for_category = "harassment"
-
-    # LLM 추출 실패 시 키워드 기반 폴백
-    if not calc_types:
-        calc_types = infer_calc_types(query) or None
-
-    category = classify_category(calc_types, tool_type_for_category, query)
+    # 카테고리 결정 — 실패 행(record_failed_conversation)과 같은 함수다. 복제하면 분포가 어긋난다.
+    calc_types, category = _category_for(query, analysis, params, use_analysis_params)
 
     # monitor 모드 의심 대화는 저장하되 공개 게시판 노출에서 제외한다 (FR-09).
     # block 모드 차단·유출 적발 대화는 이 지점에 도달하지 않는다(저장 자체 생략).
@@ -2760,11 +4592,16 @@ def process_question(query: str, session: Session, config: AppConfig,
     # None이면 비웹 호출이다 — ABUSE_GUARD_MODE=off에서도 _guard_chat_request()는
     # 모드 값만 "off"인 GuardContext를 만들어 반환하므로 웹 경로에서 None이 되지 않는다.
     # guard_ctx.synthetic은 비프로덕션 출처 HTTP 요청 표식(G-B)이다.
-    if guard_ctx is None or guard_ctx.synthetic:
+    if _synthetic_flag(guard_ctx):
         conv_metadata["synthetic"] = True
     # 정확성 관측(kin-answer-accuracy) — 값이 있을 때만 기록. 게시판 제외 사유가 아니다.
     if used_rule_facts:
         conv_metadata["rule_facts"] = used_rule_facts
+    if issue_evidence.groups or issue_evidence.omitted:
+        conv_metadata["official_evidence"] = {
+            "groups": issue_evidence.groups, "omitted": issue_evidence.omitted,
+            "source_ids": [hit["id"] for hit in issue_evidence.hits],
+        }
     if stale_filtered:
         conv_metadata["stale_filtered"] = sorted(set(stale_filtered))
     if citation_relevance:
@@ -2778,12 +4615,13 @@ def process_question(query: str, session: Session, config: AppConfig,
     if assessor_info:
         conv_metadata["assessor"] = assessor_info
     intent_provider = getattr(analysis, "intent_provider", None) if analysis else None
-    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider)
+    conv_metadata["llm"] = _llm_meta(outcome, citation_fixed, intent_provider,
+                                     transport=getattr(config, "transport", None))
     logger.info(
         "llm_outcome provider=%s model=%s attempts=%s empty=%s truncated=%s "
-        "citation_fixed=%s intent=%s",
+        "citation_fixed=%s intent=%s transport=%s",
         outcome.provider, outcome.model, outcome.attempts, outcome.empty_providers,
-        outcome.truncated, citation_fixed, intent_provider,
+        outcome.truncated, citation_fixed, intent_provider, getattr(config, "transport", None),
     )
 
     record = ConversationRecord(

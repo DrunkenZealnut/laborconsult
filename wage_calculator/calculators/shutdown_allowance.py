@@ -11,12 +11,14 @@
   (law-article-coverage D15).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..base import BaseCalculatorResult
 from ..constants import SHUTDOWN_RATE
 from ..models import BusinessSize, WageInput
+from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
+from .average_wage import calc_average_wage
 
 
 @dataclass
@@ -80,28 +82,38 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
             legal_basis=legal,
         )
 
-    # 평균임금 산정 (간이)
-    avg_daily_wage = _calc_avg_daily_wage(inp, hourly, daily_hours)
+    # 평균임금 — 평균임금 계산기 하나로 구한다(monthly-base-unification). 산정 기준일은 휴업 시작일이다(shutdown_start_date).
+    # 기준 월액(주휴분·통상임금에서 뺀 고정수당·연장 등 포함)·상여 3/12·제외기간과 근로기준법 제2조 제2항(평균임금이 통상임금보다
+    # 적으면 통상임금)이 그 안에 있다. 예전에는 여기서 '시급 × 1일 시간 × 근무일수 × 52/12'(주휴분 없음)를 92일로 나눠 하한 없이
+    # 썼다 — 시급 12,000원·휴업 10일이 474,783원(맞는 값 672,000원)이었다
+    avg = calc_average_wage(replace(inp, end_date=inp.shutdown_start_date or inp.end_date), ow)
+    if avg.held_reason:
+        return ShutdownAllowanceResult(held_reason=avg.held_reason, warnings=avg.warnings)
+    avg_daily_wage = avg.avg_daily_wage
 
     avg_70 = avg_daily_wage * SHUTDOWN_RATE
-    formulas.append(
-        f"1일 평균임금: {avg_daily_wage:,.0f}원"
-    )
+    if avg.used_basis == "통상임금":
+        formulas.append(f"1일 평균임금: {avg_daily_wage:,.0f}원 (3개월 평균임금 {avg.avg_daily_3m:,.0f}원 < 1일 통상임금 "
+                        f"{avg.avg_daily_ordinary:,.0f}원 → 통상임금, 근로기준법 제2조 제2항)")
+        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
+    else:
+        formulas.append(f"1일 평균임금: {avg_daily_wage:,.0f}원")
     formulas.append(
         f"평균임금 70%: {avg_daily_wage:,.0f}원 × {SHUTDOWN_RATE} = {avg_70:,.0f}원"
     )
     formulas.append(
-        f"1일 통상임금: {hourly:,.0f}원 × {daily_hours}h = {ordinary_daily:,.0f}원"
+        f"1일 통상임금: {hourly:,.0f}원 × {fmt_hours(daily_hours)}h = {ordinary_daily:,.0f}원"
     )
 
-    # 근기법 제46조 제2항: 70%가 통상임금 초과 시 통상임금 적용
+    # 근로기준법 제46조 제1항 단서: 평균임금 70%가 통상임금을 넘으면 통상임금을 휴업수당으로 지급할 수 있다
+    # (제2항은 노동위원회 승인 시 기준 미달 지급 — 공식 원문 대조 2026-10-12)
     if avg_70 > ordinary_daily:
         daily_allowance = ordinary_daily
         is_ordinary_applied = True
         formulas.append(
             f"평균임금 70%({avg_70:,.0f}원) > 통상임금({ordinary_daily:,.0f}원) → 통상임금 적용"
         )
-        legal.append("근로기준법 제46조 제2항 (통상임금 적용 기준)")
+        legal.append("근로기준법 제46조 제1항 단서 (평균임금 70%가 통상임금 초과 시 통상임금)")
     else:
         daily_allowance = avg_70
         is_ordinary_applied = False
@@ -118,12 +130,12 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
             is_partial = True
             daily_allowance = daily_allowance * partial_ratio
             formulas.append(
-                f"부분 휴업: {inp.shutdown_hours_per_day}h / {daily_hours}h = {partial_ratio:.1%} "
+                f"부분 휴업: {fmt_hours(inp.shutdown_hours_per_day)}h / {fmt_hours(daily_hours)}h = {partial_ratio:.1%} "
                 f"→ 1일 휴업수당 {daily_allowance:,.0f}원"
             )
             warnings.append(
-                f"부분 휴업: 1일 {inp.shutdown_hours_per_day}h 미근로 / "
-                f"{daily_hours}h 소정근로 ({partial_ratio:.0%})"
+                f"부분 휴업: 1일 {fmt_hours(inp.shutdown_hours_per_day)}h 미근로 / "
+                f"{fmt_hours(daily_hours)}h 소정근로 ({partial_ratio:.0%})"
             )
 
     # 총액
@@ -143,7 +155,7 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
     }
     if is_partial:
         breakdown["부분 휴업"] = (
-            f"1일 {inp.shutdown_hours_per_day}h / {daily_hours}h = {partial_ratio:.0%}"
+            f"1일 {fmt_hours(inp.shutdown_hours_per_day)}h / {fmt_hours(daily_hours)}h = {partial_ratio:.0%}"
         )
 
     return ShutdownAllowanceResult(
@@ -160,19 +172,3 @@ def calc_shutdown_allowance(inp: WageInput, ow: OrdinaryWageResult) -> ShutdownA
         warnings=warnings,
         legal_basis=legal,
     )
-
-
-def _calc_avg_daily_wage(inp: WageInput, hourly: float, daily_hours: float) -> float:
-    """평균임금 간이 산정 (3개월 기준)"""
-    if inp.last_3m_wages:
-        total_3m = sum(inp.last_3m_wages)
-        days_3m = inp.last_3m_days or 92
-        return total_3m / days_3m
-
-    # monthly_wage 기반 추정
-    if inp.monthly_wage:
-        return (inp.monthly_wage * 3) / 92
-
-    # hourly 기반 추정
-    monthly_est = hourly * daily_hours * inp.schedule.weekly_work_days * (52 / 12)
-    return (monthly_est * 3) / 92

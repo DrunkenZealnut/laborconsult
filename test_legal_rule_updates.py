@@ -453,8 +453,8 @@ class LegalUpdatesTest(unittest.TestCase):
         from wage_calculator.result import WageResult, format_result
         result = WageResult(ordinary_hourly=15000)
         self.assertIsNone(result.minimum_wage_ok)
-        self.assertIn("최저임금 충족: ⏸ 판정 보류", format_result(result))
-        self.assertNotIn("최저임금 충족: ✅", format_result(result))
+        # 계산하지 않았으면 줄이 없다 — 보류도 아니다(calc-card-followups F4b). 보류 표기는 실제로 보류한 결과에만 붙는다
+        self.assertNotIn("최저임금 충족", format_result(result))
 
     def test_maternity_conflicting_approved_floor_and_cap_blocks_section(self):
         """승인 하한이 승인 상한보다 높으면 어느 금액도 법정값으로 선택하지 않는다."""

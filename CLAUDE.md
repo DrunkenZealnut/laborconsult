@@ -69,6 +69,8 @@ python3 archive_precedents.py gate             # 크롤 재분류 시에만 (승
 python3 pinecone_upload_textbook.py --all --dry-run   # 청킹 검증 (서적 간 chunk_id 충돌 검사 포함)
 python3 pinecone_upload_textbook.py --book juhae3     # 1권 업로드 (--all은 전권)
 python3 extract_textbook_cases.py                     # 해설서 인용 판례 → 수집 대상 CSV
+# 스캔본(jpg 폴더) 서적은 먼저 .md로 변환한다 — marker 가상환경의 python으로(Pillow·marker가 그쪽에만 있다)
+~/DEV/marker/.venv/bin/python convert_textbook_scans.py "output_노동법교재/<책>" --out "output_노동법교재/<책>/<책>.md"
 
 # Chatbot
 python3 chatbot.py                # Interactive RAG chatbot
@@ -90,18 +92,31 @@ python3 test_wage_golden.py       # 계산 엔진 골든 테스트
 python3 test_pipeline_wiring.py   # analyzer→계산기 배선 테스트 (CALC-1/2/3)
 python3 test_offline_units.py     # 검색·인용·세션 모듈 단위 테스트
 python3 test_abuse_guard.py       # 남용 가드(인젝션·스코프·쿼터·게시판 필터) 테스트
+node --test test_chat_lock.js     # 채팅 이용 제한 잠금·전송 관문(진행 중 잠금)·거절 안내(답변 말풍선 아님)
 python3 test_llm_fallback.py      # LLM 폴백(빈응답·절단·전환 하트비트·교차벤더) 테스트
 python3 test_kin_accuracy.py      # 지식iN 정확도(폐기 기준 필터·현행 규칙 블록·인용 관련성·평가 매처)
 python3 test_effective_law.py     # 기준일 판본(eflaw)·그래프 판례 원문 게이트·인용 화이트리스트
 python3 test_claim_assessor_facts.py  # 확인청구 기관 문장·답변 규칙 앵커·괴롭힘 판정기 근거 검증(반례 fixture)
 python3 test_law_api_recovery.py      # 법제처 조회 복구(예열 키·인증 오류 판정·키워드 조문·감시 ①②③)
+python3 test_calc_card_followups.py  # 계산 카드 시간 축·적용 요건(소정·연장 분리, D4 두 구성, 수습·특고·해고예고)
+python3 test_calc_card_consistency.py  # 계산 카드 금액 일관성(월 총·세전·평균임금 불변식 격자 2,160카드, 미확인 모드 조건부 예시)
+python3 test_monthly_base_unification.py  # 기준 월액·평균임금 일액 단일 출처(고정수당 격자 288·등가·총액 경로·휴업 하한)
+python3 test_wage_update_2026.py  # 2026-10 계산기 갱신 공통(미실행 카드·입력 연결)
+python3 test_parental_benefits_update.py  # 육아휴직·단축급여 시행일별·6+6 자동 판정
+python3 test_arrears_interest_update.py   # 체불 지연이자 적용일·채권별 잔액
+python3 test_pay_input_update.py          # 지급 주기·평균임금 실제 자료(월정 수당 주기 생략은 매월)
+python3 test_proration_update.py          # 정산월·약정별 일할계산(node 필요)
+python3 test_wage_claims_update.py        # 월별 체불 원금·차액(월급제 주휴 별도 채권 보류)
+python3 test_audit50.py               # 외부 점검 50문항(쟁점 근거 패턴 양성·음성·지침 앵커·감지 규칙·월급 구성 가드·월 환산 시간)
 python3 test_law_article_coverage.py  # 근거 조문 공급(키워드 2단·구어 근접·별표 파서·삭제 조문 차단·5인 조건·휴업수당)
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
+LLM_TRANSPORT=gateway uvicorn api.index:app --reload --port 5555  # 로컬 Gateway 시험(인라인 env) — 먼저 `vercel env pull .env.vercel.local --environment development`(OIDC 토큰 12시간). .env에는 LLM_TRANSPORT를 넣지 않는다
 
 # 상담 답변 품질 평가 (오프라인 기본, 외부 호출·DB 쓰기 없음)
 ./.venv/bin/python eval_consultation.py --offline
+./.venv/bin/python eval_consultation.py --offline --fixture data/eval_wage_update_queries.json  # 계산기 갱신 fixture(expected_values의 null = 보류해야 할 값)
 
 # 운영자 평가: 먼저 게시 없이 로컬 JSON을 만들고 확인한다
 ./.venv/bin/python eval_consultation.py --live --case wage-01 --limit 1 \
@@ -137,7 +152,7 @@ python3 build_graph.py --skip-api                 # 그래프 재빌드(판례 �
 # 검색은 후보만 만들고 자동 승인하지 않는다. 승인은 /admin → 법률 기준에서 사람이 한다.
 # 공식 원문 수집·적재 — **승인의 선행조건**. 법제처(law.go.kr)에서 official_url 과 함께 받아
 # laborlaw-v2 에 올린다. 이것 없이는 승인 화면에서 무엇을 눌러도 거절된다(아래 참조).
-python3 fetch_official_rules.py                    # 조문 23 + 고시 5 → output_공식법령/ (eflaw 현행판)
+python3 fetch_official_rules.py                    # 조문 28 + 고시 5 → output_공식법령/ (eflaw 현행판)
 python3 fetch_official_rules.py --dry-run          # 조회만, 저장 없음
 python3 pinecone_upload_official_rules.py --dry-run   # 청킹·메타데이터 검증
 python3 pinecone_upload_official_rules.py             # laborlaw-v2 적재 + 고아 정리
@@ -147,7 +162,7 @@ python3 sync_legal_rules.py --topic minimum_wage   # 읽기 전용 점검(저장
 python3 sync_legal_rules.py --persist              # 검토 대기 후보 저장(운영 준비 후)
 python3 -m unittest test_legal_rule_updates test_legal_rule_api  # 도메인·배선·HTTP
 node --test test_admin_legal_rules.js              # 관리 화면 렌더/요청 계약
-LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_settings_sql  # 실 PostgreSQL 17 (docker 필요)
+LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_settings_sql test_abuse_guard_sql  # 실 PostgreSQL 17 (docker 필요)
 
 # BM25 corpus build (Hybrid Search용, Pinecone API 필요)
 # 코퍼스 업로드(pinecone_upload*) 후 재실행 → data/bm25_corpus.jsonl.gz 커밋 필수
@@ -155,6 +170,10 @@ LEGAL_RULE_SQL_TEST=true python3 -m unittest test_legal_rule_sql test_model_sett
 # 저장 전 가드 3종: NS 조회 예외 / NS 0건 / 직전 대비 20% 초과 감소 → 저장 건너뛰고 기존 파일 보존.
 # gz라 커밋 diff로 내용을 볼 수 없어(크기 변화만 보임) 이 자동 검사가 유일한 방어다.
 python3 build_bm25_corpus.py      # Pinecone → data/bm25_corpus.jsonl.gz
+
+# 커밋된 배치 원장(data/vector_ledgers/) — 저장소 밖 스크립트로 올린 배치의 검증·롤백 수단
+python3 source_pack_ledger.py verify   data/vector_ledgers/qpack_20261009.json  # 조회 전용
+python3 source_pack_ledger.py rollback data/vector_ledgers/qpack_20261009.json  # dry-run(--apply·--document)
 
 # 보유기간 경과 첨부파일 파기 (개인정보처리방침 제5항 — 주기 실행 필요)
 # Supabase가 storage.objects 직접 DELETE를 차단하므로 2단계 구조다:
@@ -190,6 +209,9 @@ Defined in `.env` (see `.env.example`):
 - `ADMIN_PASSWORD` — admin dashboard login (also default for `ADMIN_JWT_SECRET` + CAPTCHA HMAC signing)
 - `ADMIN_JWT_SECRET` — JWT signing (defaults to ADMIN_PASSWORD)
 - `PINECONE_INDEX_NAME` — defaults to `laborconsult`(전용 인덱스, 2026-09-27 이전). 구 공유 인덱스 `semiconductor-lithography`로 되돌리지 말 것 — 아래 Pinecone 절 참조
+- `LLM_TRANSPORT` — `direct`(기본) | `gateway`. **gateway면 요청 경로(`api/`·`app/`)의 Claude·OpenAI·임베딩·Cohere 재정렬이 Vercel AI Gateway로 가고, 인증은 요청마다 Vercel이 넣는 OIDC 토큰(`x-vercel-oidc-token`), 결제는 Gateway 크레딧이다**(ai-gateway-oidc-migration, 2026-10-28). 그 모드에서 `AppConfig.from_env()`는 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`·`COHERE_API_KEY`를 **읽지 않고** 필수 키는 `PINECONE_API_KEY`만이다. **Vercel env에만 둘 것**(Preview → Production) — 로컬 `.env`에 넣으면 오프라인 수집·평가 스크립트까지 Gateway 토큰을 요구한다. Vercel env 변경은 **다음 배포부터** 적용되므로 설정 뒤 재배포한다. Gemini는 Gateway로 가지 않는다(`gemini-pro-latest` 별칭에 대응하는 슬러그가 없다 — 직접 호출 잔존, `GEMINI_API_KEY` 그대로). 설계: `docs/archive/2026-10/ai-gateway-oidc-migration/ai-gateway-oidc-migration.design.md`
+- `VERCEL_OIDC_TOKEN` — 로컬 개발 전용. 손으로 쓰지 말고 `vercel link` 후 `vercel env pull .env.vercel.local --environment development`로 받는다(12시간, 만료 시 재pull). `app/config.py`가 그 파일을 `override=False`로 추가 로드한다(`.env`를 덮지 않는다). 프로덕션은 헤더로 받으므로 env에 없다
+- `AI_GATEWAY_API_KEY` — CI 등 Vercel 밖에서만(선택). **프로덕션 Vercel env에는 두지 않는다** — 장기 키를 없애는 것이 전환의 목적이다
 
 **Email delivery** (`POST /api/send-email`, **not in `.env.example`**):
 - `MAIL_SMTP_USERNAME` / `MAIL_SMTP_PASSWORD` — SMTP auth (required for sending; 500 if absent)
@@ -293,9 +315,12 @@ service_role GRANT 누락과 겹쳐 게시·조회가 모두 42501이었다(메�
 첨부 파싱보다 **먼저** 호출(session_id 검증이 세션 생성 전이어야 하고, 차단 대상이 파싱 비용을
 지불하지 않도록):
 1. `validate_message()` — 길이(기본 2,000자) · 제어문자 제거 · NFC · `session_id` 형식(`^[A-Za-z0-9-]{8,64}$`, 불일치 시 무시하고 신규 발급)
-2. `_check_rate_limit(store=_chat_rate)` — IP당 5회/60초. **인메모리라 Vercel 인스턴스별 베스트에포트**(총량 방어는 3의 쿼터가 담당)
+2. `_rate_limit_wait(store=_chat_rate)` — IP당 5회/60초. **인메모리라 Vercel 인스턴스별 베스트에포트**(총량 방어는 3의 쿼터가 담당). 거절의 retry_after는 버킷에서 가장 오래된 요청이 창을 벗어날 때까지 남은 초다 — 창 전체(60초)를 주면 프런트가 그만큼 입력을 잠가, 서버가 이미 허용한 뒤에도 최대 1분을 더 기다리게 했다(CodeRabbit #103)
 3. `check_guard()` — `chat_guard_check` RPC 1왕복(차단 조회 + 일일 쿼터 원자 증가, 기본 50/일)
 - 거절 시 `GuardRejection` → `/api/chat`은 HTTP 400/429, 스트림 2경로는 `_sse_error()`
+- **거절 계약** — `GuardRejection(status, detail, retry_after, code)`. code는 `invalid`·`rate_limited`·`blocked`·`quota`(`abuse_guard.REJECT_*`), quota의 retry_after는 다음 KST 자정까지(`seconds_until_kst_midnight`). 스트림은 `{"type":"error","text","code","retry_after"}` + `{"type":"done"}`(HTTP 200), 동기는 429 + `Retry-After`. 초기화 실패·답변 중 예외는 `code="server_error"`, 첨부 검증 실패(개수 초과·`FileValidationError`)는 `invalid`다 — server_error로 보내면 프런트가 같은 첨부를 다시 보내는 '다시 시도'를 붙인다. 모든 경로가 `_sse_error_events` 하나로 error + done을 낸다(경로마다 손으로 쓰던 때는 답변 중 예외에서 done·retry_after가 빠졌다). 프런트(`public/index.html`)는 error를 **답변이 아니라 안내 요소**(`addNotice` → `.msg.notice`, `role=alert`)로 그리고 quota·blocked·rate_limited면 retry_after 동안 입력·전송·첨부를 잠근다(`setChatLock`, localStorage `chatLock`로 새로고침에도 유지, 풀리면 자동 해제). 지킬 것 셋 — 전부 '정상처럼 보이는' 실패다(2026-10-06 실측: 쿼터 거절 문구가 일반 답변 말풍선으로 그려지고 답변 액션 바·복사 버튼이 붙었으며, 전송 버튼이 다시 열려 자동 점검 도구가 51~54번째 요청까지 같은 거절을 '답변'으로 수집했다): ① 안내 요소에 `.msg.assistant` 클래스를 주지 말 것 — 복사·지식iN 변환·답변 수집(`data-md`)과 액션 바가 그 선택자를 쓴다 ② 전송이 끝날 때(`endSubmission`) 버튼을 무조건 열지 말 것(`applyChatLock()`) ③ 잠금 판정(`guardLockFromEvent`)은 retry_after가 없으면 잠그지 않는다(영구 잠금 방지, 최대 24시간). 회귀는 `test_abuse_guard.py`(계약)·`test_chat_lock.js`(L1~L6).
+- **전송 관문(진행 중 잠금)** — 전송을 시작하는 경로(전송 버튼·Enter·FAQ·게시판 '질문하기'·`?q=`·다시 시도)는 모두 `beginSubmission()`을 지나고 finally의 `endSubmission()`이 푼다. 판정은 '진행 중 OR 이용 제한 잠금'이고, 버튼 상태는 `applyChatLock()` 하나가 계산한다(`btn.disabled = locked || submitting` — 진행 중에는 전송 버튼만 잠그고 입력·첨부는 연다). `send()`는 관문 통과 직후 입력을 스냅숏해 비우고, 첨부 인코딩이 실패하면 빈칸일 때만 되돌린다. 진행 중에 누른 FAQ·게시판·`?q=`는 입력창만 채운다 — `askQuestion`은 누른 순간의 `submitting`으로 판정한다(300ms 예약 사이에 답변이 끝나도 관문은 이미 열려 있어 그대로 보내졌다, CodeRabbit #121). '대화 초기화'(`resetChat`)는 진행 중 요청을 끊는다(`chatEpoch`·`activeSend`) — 끊지 않으면 관문이 보이지 않는 옛 답변이 끝날 때까지 새 질문을 막는다. `let submitting`은 `restoreChatLock` IIFE보다 앞에 둔다(로드 시점 `applyChatLock` 호출 — TDZ). 2026-10-22 재현(실제 브라우저): 답변 중 FAQ·다시 시도, 첨부 인코딩 중 버튼·Enter 연타가 요청을 하나 더 보냈다(연타 3번에 요청 3건). 회귀는 `test_chat_lock.js` L6~L16.
+- **쿼터 카운터는 한도에 닿은 뒤 더 오르지 않는다**(`chat_guard_check`, `supabase_abuse_guard.sql`). 거절된 재시도까지 세면 카운터가 의미 없이 커지고 그날 `DAILY_CHAT_QUOTA`를 올려도 풀리지 않았다. **동시 요청도 같다** — 사전 검사(현재값 ≥ 한도면 거절)만으로는 한도 직전에 같은 값을 읽은 요청들이 함께 통과해, 넘은 요청은 거절돼도 그 증가분이 저장됐다. 그래서 증가 자체를 `ON CONFLICT … DO UPDATE … WHERE count < 한도`로 걸고, 갱신이 없으면(`NOT FOUND`) 거절한다(회귀는 두 연결로 경합을 재현하는 `test_abuse_guard_sql.py` 동시 요청 사례). 쿼터는 **IP 단위(기본 50회/일)이고 같은 공인 IP의 요청이 전부 합산된다** — 프로덕션 화면으로 품질 점검을 돌리면 그날 한도가 바로 마르고(2026-10-06: 외부 점검 30 + 지식iN 점검 20), 그 대화는 실사용으로 저장돼 게시판·감시 표본까지 오염된다. 점검은 로컬 `run_eval.py --law-mode cache`로 한다. 동작 검증은 `test_abuse_guard_sql.py`(실 PostgreSQL).
 
 **2단 (파이프라인, `process_question(guard_ctx=...)`)** — `guard_ctx=None`이면 가드 전체 비활성
 (CLI·`benchmark_pipeline.py`·E2E 테스트 호출부 무변경):
@@ -346,6 +371,11 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **`body_start`를 빈 문자열로 두지 말 것.** `str.find("")`는 `-1`이 아니라 `0`을 반환해 `marker_pos == -1` 가드를 그냥 통과하고, 표지·목차가 절단 없이 본문에 들어간다. 그 잡음은 헤딩이 아니라 표 텍스트라 폐기율에도 안 걸린다. `BookPart.__post_init__`이 생성 시점에 막는다.
   - **`parse_sections`의 "첫 헤딩 앞 텍스트는 버린다"는 첫 조각에만 적용된다.** 2번째 이후 조각의 헤딩 앞 텍스트는 '두 헤딩 사이'가 되어 직전 조각의 마지막 섹션에 흡수된다. 회귀는 `test_precedent_ingest.py` T21.
 - **새 서적의 `body_start`는 "표지·목차가 끝나는 곳"이 아니라 "`h1~h3` 헤딩이 곧바로 나오는 곳"으로 잡을 것.** 섹션 경계(`_HEADING_RE`)는 `#{1,3}`만 보는데 marker가 매기는 헤딩 레벨은 책마다 다르다 — 소제목 대부분을 `####`로 내보내는 편집이 있고(실측 `yeoncha`: h4 457개 > h1~h3 473개), 그러면 본문 시작 직후의 `h4` 소제목들은 경계가 되지 못한다. 그 상태에서 "본문 첫 쪽"에 마커를 두면 `parse_sections`가 **다음 `h1~h3`까지의 본문을 '첫 헤딩 앞 텍스트'로 통째로 버린다**(실측: page 21로 자르면 첫 `h1~h3`가 page 40이라 제1장 19쪽·41청크가 사라지고 924청크, page 19로 자르면 965청크). **어떤 게이트도 이것을 잡지 못한다** — 헤딩 폐기율은 사라진 구간의 헤딩을 세지 않아 오히려 좋아지고, 청크 제외율도 무관하다. 등록 시 `--dry-run` 청크 수를 **마커 후보 2~3개로 비교**하는 것이 유일한 탐지법이다. 파손된 첫 헤딩(속표지 OCR)은 `ocr_fixes`로 복원해 경계를 살린다 — 폐기하면 그 뒤 본문이 직전 섹션 이름으로 라벨링된다.
+- **marker가 쪽머리글을 h1~h3로 내보낸 책은 `Book.non_boundary_re`(서적별 옵트인)로 경계에서 뺀다.** 짝수쪽 머리글 "206 제 1 편 안전보건관리"가 헤딩이 되면 그 뒤 본문의 섹션 라벨(출처 표시)이 쪽머리글이 된다(sanan2 실측 21건, 10-28 재변환본은 33건). 전역 `NON_BOUNDARY_RE`를 넓히면 같은 패턴을 가진 기존 서적의 경계가 바뀌어 `section_idx`가 밀리고 고아 벡터가 생기므로 **전역으로 승격하지 말 것**(`heading_extractors`와 같은 이유). 비경계는 폐기로 세지 않는다. 회귀는 `test_precedent_ingest.py` T33.
+- **권말 사항색인은 `Book.body_end`(선택 마커)로 잘라낸다.** "가설기자재 / 202 …" 같은 항목·쪽번호 목록은 저신호 게이트를 통과해 청크가 되고(sanan2 실측 6청크) 키워드 질의에 해설서 슬롯(G4)을 차지한다. `body_start`와 대칭이며 **지정한 마커가 없으면 중단**한다 — 오타 하나로 색인이 통째로 들어가고 알아챌 방법이 없다. 회귀는 T33-h~k.
+- **재스캔 중복이 PDF에 같이 묶인 책은 `Book.dedupe_pages`로 인접 동일 쪽을 버린다.** "… - 355(1).jpg" 같은 재스캔 파일은 원본과 바이트 동일한데 변환 PDF에 함께 들어가면 같은 쪽이 두 번 .md에 실린다(sanan1 실측 53쌍). 그대로 올리면 같은 본문이 두 chunk_id로 임베딩돼 해설서 슬롯을 중복 점유한다. **인접쌍만** 본다 — 멀리 떨어진 동일 쪽은 서식 반복일 수 있다. 새 옵션(`body_end`·`dedupe_pages`·`non_boundary_re`)은 전부 서적별 옵트인이고 기존 5권은 전부 꺼져 있어야 한다(T33-g'). 켜면 chunk_id가 바뀌어 재업로드 + prune이 필요하다.
+- **스캔 이미지 폴더(jpg)는 `convert_textbook_scans.py`로 .md를 만든다.** 번호순 정렬·"(1)" 재스캔 중복 제외·결번 보고 → PIL로 한 PDF 조립 → `marker_single --paginate_output` → `{N}----` 구분자를 `<!-- page: N -->`로 치환. **낱장 이미지를 marker에 하나씩 넣지 말 것** — OCR 배치가 안 돼 쪽당 30초다(PDF 묶음 17초, 2026-10-27 MPS 실측). 711쪽이면 약 3.5시간이고 중간 저장이 없다. `_convert/`에 PDF·marker 원본 출력이 남아 재시도 시 PDF 조립은 건너뛴다 — 재사용 판정은 경로가 아니라 이미지 목록(이름·크기·mtime) 매니페스트라 스캔을 교체하면 자동으로 다시 조립한다(`--rebuild-pdf`로 강제). PDF는 한 쪽씩 `append=True`로 잇는다(711쪽을 RGB로 한꺼번에 들면 약 7GB). **산출 .md의 쪽 마커는 그 변환본에 묶인다** — 같은 책을 다시 변환하면(중복 제외·결번으로) 번호가 달라지므로 레지스트리의 `body_start`·`body_end`를 새 .md에서 다시 잡아야 하고, chunk_id가 바뀌어 재업로드 + prune이 필요하다. sanan1의 마커(p0·p767)는 사용자 변환본(774쪽, 중복 포함) 기준이다.
+- **같은 책의 재변환본으로 교체할 때는 손실 대조 → `--book X --allow-large-prune` 순서다**(sanan2, 2026-10-28). 헤딩 수가 달라지면 `section_idx`가 밀려 chunk_id 대부분이 바뀌므로 구 ID가 대량 고아가 된다(실측 2,340건 중 1,539건) — 대량 삭제 가드가 정확히 이 경우에 걸리고, 의도한 교체면 한 권 단독 실행에서만 해제한다. 구 원본 .md는 보통 사라져 있으니(폴더 교체) 손실 여부는 **Pinecone 구 벡터의 `text` 메타데이터**와 새 청크를 양방향으로 대조한다 — 공백·기호를 뗀 24자 프로브 5개(시작·1/4·중앙·3/4·끝)를 상대 본문에서 찾고, 한 개도 못 찾은 청크 중 한글 60자 이상인 것이 실본문 손실 후보다(실측 0건, 미발견 6건 306자는 전부 잡음). 총 글자 수 비교만으로는 안 된다 — 잡음 제거와 분할 경계 차이로 3~4%는 정상적으로 줄어든다(885,230 → 853,924자). 교체 뒤 BM25 재빌드가 필수인 이유도 같다 — 구 ID 문서가 BM25에 남으면 텍스트가 자체 포함돼 검색에 계속 잡히고 새 ID와 RRF에서 중복 집계된다.
 - **청크 본문 신호 게이트(`is_low_signal`)는 단일 비율 임계값으로 만들지 말 것.** 잡음과 정보가 같은 의미비율 구간에 공존한다 — 실측: 표 구분선 0.000·OCR 반복 0.266이 잡음인 반면 영문 병기 목록 0.250·판례 표 0.309는 유용하다. 비율은 판별식이 될 수 없어 잡음의 **구조**를 본다. 주의점 넷은 전부 Do 단계의 **전량 육안 확인**이 잡아낸 것이고, 규칙만 봐서는 드러나지 않았다:
   - **축약을 먼저 한다**(`collapse_dup_runs`). OCR이 한 구절을 반복 출력하면 고유토큰비가 무너지는데, 반복을 걷어내면 유효 본문이 남아 있는 경우가 있다(실측: `textbook_win_0612_1`은 원본 646자 중 축약 후 79자가 판례 인용을 포함한 정상 문장). 축약 없이 자르면 그 본문까지 버린다 — **반복은 잡음이지만 반복된 내용은 아니다.** 축약은 원문 변형이지만 정보를 더하지 않으므로 "오복원" 위험과 방향이 반대다.
   - **표에는 고유토큰비를 적용하지 않는다**(`_looks_like_table`). 표는 값 반복이 정상이라 교대제 근무표(`근 | 휴 | 2근 | 2근 …`)가 잡힌다. 표 안의 OCR 잡음은 의미비율이 백스톱으로 잡는다.
@@ -368,7 +398,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
     - ⚠️ **그 표는 rerank 직후 기준이고, `format_pinecone_hits`가 실제로 받는 입력은 Self-RAG 필터를 한 번 더 통과한 뒤다**(`pipeline.py` ③ `filter_by_relevance` → ④ `format_pinecone_hits`). COMPLEX는 `self_rag=True`라 입력이 `rerank_top_n`보다 작아진다 — 실측 7→6·7→5(2026-08-18 프리뷰). 그래서 **3권 체제 COMPLEX 자연 질의에서 G4-T는 발동하지 않는다**(해설서 편중어로 유도한 4회 시도 전부 미도달, 최대가 G4의 `gaebyeol` 4→3). 발동이 남는 경로는 Self-RAG를 **재적용하지 않는** wider(`pipeline.py:1642`, `rerank_top_n+3` → 3권이면 9→6)와 Cohere 미설정 폴백뿐이다. 상한의 실동작 자체는 실코퍼스 벡터로 확인됐다(3권×4건=12 → G4가 9 → G4-T가 6). **발동이 드문 것을 "상한이 넉넉하다"로 읽지 말 것** — 앞단이 좁아서일 뿐이고, 서적이 늘거나 `rerank_top_n`이 오르면 그 여유는 사라진다.
     - ⚠️ 두 상한 모두 "비해설서 출처가 최소 1건 실린다"를 **보장하지 않는다** — 최종 top-N 이후의 순수 차감이라 SIMPLE(`rerank_top_n=3`)에서는 서적이 1권일 때도 100% 해설서 컨텍스트가 가능했다. 역방향(해설서 최소 1건)은 다양성 승격(아래)이 담당하며, 그쪽은 상한이 아니라 교체라 이 상한과 충돌하지 않는다.
   - **다양성 승격**(`rag.py::_ensure_textbook_presence`, textbook-retrieval-balance) — rerank 결과에 해설서가 0건인데 **입력 pool에는 있으면**, 전체 랭킹 `2×top_n` 이내의 최상위 해설서 1건을 최하위 중복-출처 1건과 **교체**한다(실측: 도달률 56%→75%, 코퍼스에 있는 근거가 rerank 절단으로 사장되던 문제). 지킬 것 넷: ① **교체이지 추가가 아니다** — 총 건수 불변이라 저작권 노출 상한(G4 3·G4-T 6)을 건드리지 않는 것이 성립 전제다. ② **승격 → 가드 순서 불변** — 승격은 `rerank_results` 내부(절단 지점 3곳 공통), 가드는 그 뒤 `format_pinecone_hits`라 우회 경로가 구조적으로 없다. ③ 단일 출처(판례 1건 등)는 victim이 되지 않는다 — 다양성을 늘리려고 다른 소수 출처를 지우면 자기모순. ④ 승격 판정 기준은 점수가 아니라 **랭크 창**이다 — hits의 `score`는 cosine(0.5~)과 BM25(10~30)가 혼재해 절대 임계값이 성립하지 않는다(실측). 운영 킬스위치는 `TEXTBOOK_PROMOTE=off`(`ANSWER_PROVIDER`와 같은 재배포-반영 의미론). Cohere 호출은 이 기능 때문에 **전체 랭킹**을 요청한다(search 단위 과금이라 비용 불변) — top_n 요청으로 되돌리면 후보 순위를 몰라 승격이 조용히 죽는다. 파이프라인의 Cohere 무키 경로는 rerank 자체를 호출하지 않아 절단이 없으므로 승격 대상이 아니다. 회귀는 `test_precedent_ingest.py` T23, 효과 측정은 `python3 eval_retrieval.py`(고정 평가셋 `data/eval_retrieval_queries.json` — **`--freeze` 재실행은 기준선을 무효화하므로 갱신 시 기준선 재측정 필수**).
-    - ⚠️ **두 상한은 외부 전송을 막지 못한다.** `format_pinecone_hits`는 Cohere rerank와 Self-RAG 판정 **뒤**에 있어, Cohere는 최대 20~80건(폴백 경로), Self-RAG의 Haiku는 rerank 후 전량을 개별로 받는다. 상한 6은 *답변 컨텍스트*의 천장이지 *제3자 전송*의 천장이 아니다. 회귀는 T22-a~c.
+    - ⚠️ **두 상한은 외부 전송을 막지 못한다.** `format_pinecone_hits`는 Cohere rerank와 Self-RAG 판정 **뒤**에 있어, Cohere는 최대 20~80건(폴백 경로), Self-RAG 판정 모델(설정 1순위)은 rerank 후 전량을 개별로 받는다. 상한 6은 *답변 컨텍스트*의 천장이지 *제3자 전송*의 천장이 아니다. 회귀는 T22-a~c.
   - **부분 수록 서적은 `title`에 권·범위를 명시할 것.** G3가 *"참고 자료에 있는 서명만 사용"* 으로 지시하므로 **`title`이 LLM 인용 서명의 유일한 출처**다. 「개별 노동법실무」는 범위를 적지 않으면 미수록 주제 질문에 그 서명이 인용되는 문제로 이 규칙이 생겼고, 2026-08-20 Part6·Part7 적재로 실무테마 1~85 전량이 들어와 현재 title은 `1~85`다(범위 표기는 서지 정보로 유지). **조각을 추가하면 `title`의 범위도 함께 갱신할 것** — 조각만 붙이면 서명은 옛 범위를 계속 주장하고, 그 불일치를 잡는 테스트는 없다(조각별 범위: part1~3=1~35, part4=36~46, Part5=47~60, Part6=61~81, Part7=82~85). `title`은 `build_bm25_corpus.py`가 BM25 코퍼스에도 담으므로 **변경 시 재빌드가 필요**하다.
   - **G4는 BM25 경로에서 새기 쉽다** — BM25 코퍼스는 `{id,text,title,section,source_type}`만 담아 `book_id`가 없었다. `build_bm25_corpus.py`가 `book_id`를 보존하고 `rag.py::_book_id_of()`가 벡터 ID(`textbook_{book_id}_...`)에서 되뽑는 폴백을 갖는 2중 구조다. 둘 중 하나만 두면 구 코퍼스나 신규 소스에서 가드가 무력화된다.
   - **G5** — `rag.py` 라벨 맵과 `public/index.html::renderSources`의 `labels` 양쪽. 한쪽만 고치면 raw `textbook`이 노출된다.
@@ -376,7 +406,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - 롤백은 `output_노동법교재/_uploaded_ids.json`의 ID 목록으로만 가능하다(Pinecone Serverless는 메타데이터 필터 삭제 미지원). 이 파일을 지우면 되돌릴 방법이 사실상 없다. 기록은 **upsert보다 먼저** 쓰고 기존 기록과 합집합을 취한다 — 중간에 죽으면 적재분이 추적에서 빠지고, 존재하지 않는 ID의 delete는 무해하므로 상위집합이 안전한 방향이다. **원장 구현은 `vector_ledger.py`가 단일 출처**이고 판례 코퍼스도 같은 것을 쓴다(아래).
 - **고아 벡터 정리(원장)는 `laborlaw-v2`에 쓰는 모든 스크립트에 필요하다** — 판례 쪽에는 없었다(외부감사 2026-08-23 H3). `upsert`는 덮어쓸 뿐 지우지 않으므로, 한 문서의 청크 수가 **줄면**(재수집·`enrich_court_precedents.py` 재태깅·`EMBED_SECTIONS` 조정) 이전 벡터가 프로덕션 검색 대상 NS에 남아 결과에 계속 섞인다 — 어떤 게이트에도 안 걸리는 조용한 오염이다. 구현 시 주의 셋:
   - **그룹 키는 "한 번의 실행이 항상 통째로 다루는 단위"여야 한다.** prune은 차집합을 지우므로 그룹을 넓게 잡으면 **부분 실행이 나머지를 고아로 오판한다** — court는 `--limit`이 있어 코퍼스 전체를 한 그룹으로 두면 `--limit 20`이 나머지 수천 건을 삭제 대상으로 계산한다. textbook은 `book_id`, court는 **사건번호**가 그 단위다. 회귀는 T25-c.
-  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json` / `output_법원 노동판례/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 셋 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다.
+  - **원장 파일은 코퍼스마다 분리한다**(`output_판례_보강/_uploaded_ids.json` / `output_노동법교재/_uploaded_ids.json` / `output_법원 노동판례/_uploaded_ids.json`). 한 파일을 공유하면 한쪽의 손상 격리(.bak 이동)가 다른 쪽 롤백 기록까지 묶어 중단시킨다. 셋 다 `.gitignore`의 `output_*/` 대상이라 **로컬 전용**이다 — 디스크를 잃으면 복구 수단도 함께 사라진다. 예외는 **배치 원장**(`data/vector_ledgers/*.json`, 커밋 대상)이다 — 2026-10-09 공식 자료팩 7,111벡터는 업로드 스크립트·원장이 저장소 밖(`laborconsult_eval/`)에만 있었고, 그 ID 목록을 문서 단위로 옮겨 `source_pack_ledger.py`가 검증·롤백한다(형식 회귀 `test_offline_units.py::test_committed_vector_ledgers`, 실행본 기록 `docs/archive/2026-10/source-pack-20261009/`). **새 배치를 저장소 밖에서 올리면 같은 형식의 원장을 여기에 커밋할 것.**
   - **대량 삭제 가드는 합계로 판정한다.** 그룹별로 걸면 청크 1개짜리 판례에서 1건만 줄어도 50%를 넘어 상시 발동하고, 경고가 일상이 되면 아무도 읽지 않는다.
   - ⚠️ **`pinecone_upload_contextual.py`에는 아직 원장이 없다**(알려진 갭). 소스별로 ID 생성 경로가 갈려(`process_source`는 `extract_post_id` 기반, `process_counsel_source`는 `ctx_counsel_{fk_hash}_{seq}` 기반) 그룹 키를 하나로 정의할 수 없기 때문이다. **청킹 규칙이나 `extract_post_id`를 바꾼 뒤 `qa`·`counsel`에 재업로드할 때는 구 ID를 사전에 명시 삭제할 것** — `--reset`은 NS 전체(49,842벡터)를 지우므로 부분 정리 수단이 아니다. 절차는 그 파일 상단 주석에 있다.
 - **해설서 `chunk_id`에는 반드시 `book_id`가 들어가야 한다** — `textbook_{book_id}_{section_idx:04d}_{chunk_idx}`. 서적 식별자가 없던 구 체계로 2권을 올리면 **177건이 조용히 덮어써진다**(실측). NFD post_id 충돌(474벡터 유실)과 같은 실패 모드다. `section_idx`는 **위생 처리 후 유지된 섹션의 순번**이라 폐기 헤딩이 번호를 소비하지 않는다 — 소비하면 `ocr_fixes` 한 줄만 바뀌어도 뒤쪽 ID가 전부 밀려 고아 벡터가 생긴다. 회귀는 `test_precedent_ingest.py` T17.
@@ -395,6 +425,8 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **`pc.delete_index()`를 쓰지 말 것.** 네임스페이스가 아니라 **인덱스 전체**가 대상이라 남의 프로덕션까지 지우고, Pinecone Serverless에는 복구 수단이 없다. `pinecone_upload.py`/`_2025`/`_imgum`의 `--reset`이 정확히 그 구현이었고 CLAUDE.md가 그것을 일상 명령으로 안내하고 있었다. 삭제는 `index.delete(delete_all=True, namespace=<자기 NS>)`로 범위를 좁힌다. 회귀는 `test_offline_units.py::test_upload_namespace_contract`.
   - **upsert에 네임스페이스를 반드시 명시할 것.** 무지정은 기본 네임스페이스 = 남의 영역이다. 봉인 전 `pinecone_upload.py`가 그랬다.
   - **프로덕션 검색이 읽는 곳은 `laborlaw-v2`/`counsel`/`qa` 뿐이다**(`rag.py::NS_GROUPS`). 다른 NS 적재는 **조용한 실패** — 임베딩 비용을 쓰고 성공 메시지·벡터 수가 정상 출력되지만 답변에 영원히 쓰이지 않는다. 사장 NS 5개(`laborlaw-v2-gemini` 9,079·`laborlaw`(v1) 6,598·`precedent` 6,540·`precedent-gemini` 6,534·`counsel-gemini` 1,244 = **29,995벡터**)는 2026-09-25에 삭제했다 — 삭제 전 ID+메타데이터(본문 포함, 임베딩 제외) 백업이 `../laborconsult_pinecone_backup_2026-09-25/`에 있다(저장소 밖·상담 원문 평문이라 취급 주의). `interpretation`/`regulation`/`legal_cases`는 인덱스에 아예 없다(훈령·예규·고시는 `laborlaw-v2` 안에 `source_type="regulation"`으로 있다). 의도적으로 사장 NS에 쓰는 스크립트는 `NS-CONTRACT: unsearched` 마커를 달아야 테스트를 통과한다.
+  - **`laborlaw-v2`는 38,209벡터다**(2026-10-09). 아래 31,098의 구성에 공식 자료팩 **`qpack_20261009_` 7,111**(law.go.kr 법령·행정규칙 `regulation` 7,006 + 판례·재결 `precedent` 105, 54문서, 전부 `official: True`)이 더해졌다 — 원장 `data/vector_ledgers/qpack_20261009.json`. 같은 조문이 `official_`(승인 근거용 큐레이션)과 `qpack_` 판본으로 **중복 수록**된 경우가 있다. 이 절의 다른 수치(공유 인덱스 시절 116,745 등)는 이전 전 기록이다.
+  - **2026-10-27 해설서 3권 추가**(`sanan1` 2,344 · `sanan2` 2,340 · `jungdae` 1,975 = +6,659) → `laborlaw-v2` 44,868벡터, 해설서 8권(textbook_ 약 19,000). 상한 구조(G4 3/G4-T 6)는 불변 — 실효 천장은 `rerank_top_n`이다. **2026-10-28 `sanan2`를 marker 재변환본(`20261027_192401_산안법2/`)으로 교체** → 2,340 → 2,148청크(구 ID 1,539건 prune), `laborlaw-v2` **44,676벡터**.
   - **`laborlaw-v2` 31,098벡터의 구성**(ID 접두사 전량 집계, 실측 2026-09-25): `textbook_` 12,336 · `ctx_interpretation_` 6,828 · `precedent_` 6,440(법제처 보강, 사건번호 ID) · `crawlprec_` 2,403(크롤 전문) · `regulation_` 1,763(훈령·예규·고시) · `ctx_precedent_` 1,310 · `official_` 18. **`ctx_precedent_` 1,310건을 "구버전이니 정리 대상"으로 보지 말 것** — `sync_overlap_precedents.py --delete-ctx`가 지우는 것은 *법제처 재수집 성공분*뿐이고 그 정리는 이미 끝났다(2026-09-25 dry-run: 후보 128건 중 라이브 벡터 0개). 남은 것은 **재수집 실패분이라 ctx 벡터가 유일한 검색 경로인 판례들**이고, 지우면 그 판례가 검색에서 통째로 사라진다.
 - **BEST Q&A 274건은 프로덕션 코퍼스에 없다**(실측 2026-08-23: `qa` NS 조회 0/274, 일반 Q&A 9,809건과 교집합 0건 — 중복 수록이 아니라 진짜 공백). 로컬 원본 `output/`도 비어 있어 재적재하려면 `crawl_bestqna.py` 재크롤이 선행돼야 하고, 업로더는 `qa` NS에 `ctx_qa_{post_id}_c{i}` 규약으로 쓰는 것을 새로 작성해야 한다(구 `pinecone_upload.py`는 봉인).
 
@@ -413,6 +445,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **어절 캐시는 로드 스코프다**(`_load_streaming`이 소유, `BM25Okapi` 구축 **전** `del`). 전역으로 두면 질의마다 누적돼 무한히 자라고, 질의는 어절 10개라 이득도 없다. 캐시 없이는 1.9x로 느려진다.
   - **`PROTECTED_TERMS`는 커레이션이고 자동 발견되지 않는다.** 최초 27종은 "구 구현이 남긴 분열쌍"에서 뽑았는데 그건 **편향된 표본**이었다 — 구 구현에서 문맥에 따라 원형이 살아남은 것만 보였기 때문이다. 독립 리뷰가 그 사각에서 13종을 더 찾았고 둘은 **다른 실단어와 병합** 중이었다(`근로시간제도`→`근로시간제` 569회, `전문가`→`전문` 398회, 판례 全文과 병합). 나머지 11종은 원형 카운트가 **0**이었다 — 코퍼스에 있는데 색인에 없었다. 새 용어 추가는 `eval_tokenizer.py --discover`로 후보를 뽑아 **사람이 판단**해 `PROTECTED_TERMS` 한 곳에만 넣는다 — M2 검사 대상도 그 목록이라 자동으로 함께 커버된다(별도 `TOPIC_TERMS`가 있었으나 손동기화가 어긋나 사각을 만들어 제거했다).
   - **회귀 지표는 "고치기 전의 증상"이 아니라 "불변식"으로 세울 것.** M1을 처음에 *분열률*로 정의했는데, 보호를 제거하는 정확히 그 회귀에서 값이 **거꾸로 내려가 통과**했다(실측 20,000문서: 보호 ON 3.75% PASS / 보호 **OFF 0.00% PASS**). 분열률은 원형·절단형이 **둘 다** 어휘에 있을 때만 후보로 삼는데, 새 `_strip_josa`는 문맥 독립적으로 일관 절단하므로 보호가 없으면 원형이 통째로 사라져 후보에서 탈락한다. 즉 구 구현의 실패 지문(분열)을 없앤 것이 이번 변경인데 그 지문으로 지표를 만든 것이다. 현재 M1은 **"보호어 전종이 어휘에 존재한다"** 는 존재 단언이고, 전체 제거(40종)·부분 제거(3종)를 모두 잡는다.
+  - **M6(어휘 규모)은 절대 개수가 아니라 고유토큰/총토큰 비율(%)이다**(상한 5.40%). 절대 상한 300,000은 코퍼스가 76,983 → 95,954문서로 자라자 정상 토크나이저도 걸렸다(2026-10-27, 317,756개·4.66%). 파편화 회귀는 비율로 드러난다 — 구 구현 5.94%, 양형 색인 6.56% vs 정상 4.6~4.9%. 코퍼스를 늘릴 때 M6 절대치를 보고 토크나이저를 의심하지 말 것.
   - 측정은 `python3 eval_tokenizer.py`(오프라인, **API 키 불요**, CI 편입). **CI는 `--check --full`로 돌린다** — M4(핵심어 포함률)가 유일한 *검색 품질* 지표이고 나머지는 전부 구조·성능 검사라, `--check`만 돌리면 토큰화가 랭킹을 어떻게 바꿨는지 아무도 보지 않는다. **M5 시간 배수는 인터프리터에 민감하다**(3.11 ≈1.92x, 3.14 ≈1.46x) — 콜드 스타트 판단은 `test_bm25_memory.py`가 출력하는 실제 로드 시간으로 할 것. 회귀는 `test_offline_units.py::test_tokenizer_contract`(T-a~T-h).
 - **Adaptive Retrieval**: `classify_complexity()` in `query_decomposer.py` scores query complexity → SIMPLE (top_k=8, no decomposition) / MODERATE (top_k=15) / COMPLEX (top_k=20, force decomposition, Self-RAG enabled). `COMPLEXITY_PARAMS` dict drives all dynamic parameters.
 - **Multi-query**: `query_decomposer.py` decomposes user query via LLM, merged with rule-based queries, deduped. `force` param bypasses `_should_decompose()` for COMPLEX queries.
@@ -425,7 +458,7 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
 - **상담 Q&A에도 인용 가드가 있다**(Q1~Q4·Q6). 상담 코퍼스(qa 49,842 + counsel 1,244)는 nodong.kr 게시물 — **제3자 저작물**인데 해설서(12,273건, 2026-09-05 5권 기준)에만 가드 6종이 있고 4배 많은 상담글에는 없던 비대칭을 해소한 것이다. `COUNSEL_CITATION_RULES`(풀어쓰기·단독 근거 금지·게시물 지목 금지)는 해설서 가드와 **같은 이유로 시스템 프롬프트 본문에 넣지 말 것** — 답변 경로가 두 갈래라 한쪽에만 넣으면 임금계산·괴롭힘 판정 경로에서 무가드로 나간다. `_cap_counsel_total`(상한 `max(2, top_n-1)`)은 상담이 컨텍스트를 **전부** 채우는 것만 막는다(해설서 G4-T처럼 낮은 고정값으로 자르면 SIMPLE에서 검색 결과가 비어버린다). **가드 부착과 게시판 제외는 일부러 다른 판정이다** — 부착은 `uses_counsel`(상담 1건 기준), 제외(Q6)는 `counsel_dominant`(상담이 컨텍스트의 **2/3 초과**). 1건 기준으로 제외하면 **게시판이 통째로 멈춘다** — 상담은 코퍼스의 72%라 거의 모든 답변에 실린다(실측: 12주제 전부 → 신규 대화 ~100% 제외). 해설서 G6를 그대로 베낀 것이 원인이었고, 해설서는 상한 3/6이 걸린 소수 소스라 빈도가 근본적으로 다르다. 임계 2/3은 실측 분포(20% 1건·40% 1건·**60% 8건**·80% 2건)에서 60% 무리와 80%를 가르는 지점이다 — `>1/2`는 10/12 제외(게시판 여전히 정지), `=100%`는 0/12(Q6 무효). 현재 2/12(17%) 제외. **지배 ⊆ 1건 기준**이어야 한다(제외되는데 가드가 안 붙으면 최악) — 회귀 T26-h4~h9가 경계·포함관계를 고정한다.
 - **다양성 승격 2종** — rerank 절단(세 exit 공통) 직후, `rag.py::_ensure_source_presence` 공용 몸체: ① 해설서(`TEXTBOOK_PROMOTE`, 저작권 절의 "다양성 승격" 참조) ② **법률근거**(`LEGAL_PROMOTE`) — top_n에 판례·행정해석·훈령예규가 0건인데 랭크 창(2×top_n)에 있으면 최하위 중복-출처와 교체(colloquial-legal-mapping, 정상 경로 법률 코퍼스 도달 50→83%). **승격 대상에 textbook을 넣지 말 것** — 해설서 노출 증가는 저작권 재검토 대상이다. victim 금지 규칙 3중: promoted 항목(I-7), 비승격 원본 <2면 미발동(I-8), **다양성 클래스(해설서·법률근거)의 마지막 1건(I-9)**. I-9가 없으면 해설서 승격이 유일한 판례를 victim 삼아 legal 승격이 랭크 창의 하위 판례로 되메우는 강등 순환이 생기고, **총량이 불변이라 어떤 메트릭에도 안 잡힌다**(분석 P1-3 실측). 회귀는 T23·T24.
 - **구어→법률용어 매핑은 다층이다**(colloquial-legal-mapping): 1차 의도분석 LLM(prompts.py 변환 지시 — "잘렸다"→부당해고, "퉁치자"→임금 상계 금지, 실측 18/18), 2차 의도분석 실패 폴백의 정적 사전(`app/core/colloquial_map.py`) — 합성 `AnalysisResult(intent_provider="synthetic")` 주입으로 **RAG 자체를 살린다**(주입 전에는 폴백에서 검색 근거 0으로 답변 생성). 사전 주의 셋: ① 오변환(무관 판례가 근거로 실림)이 미변환(Q&A 강등)보다 비싸므로 고신뢰 패턴만 — 같은 어간이 다른 쟁점과 어휘를 공유하면 **억제자**를 단다("기계에 손이 잘렸다"는 산재지 해고가 아니고, "출장 나가라"는 이동 지시다). ② 합성 경로는 SIMPLE 강제 — 죽은 벤더(decompose·Self-RAG) 재호출 방지. ③ 원문 병기는 `_merge_search_queries(always_fallback=True)`가 담당 — 기본 merge는 rule 쿼리가 차면 원문을 버리므로(fallback은 빈 목록 전용) 이 플래그 없이는 검색이 일반명사 나열만으로 돈다. 평가는 `python3 eval_colloquial.py`(고정 fixture 18건, `--dict-only`는 API 키 불요), 회귀는 `test_offline_units.py`(사전·배선)와 T24.
-- **Self-RAG**: `self_rag.py` — Claude Haiku judges relevance per document (COMPLEX only). `filter_by_relevance()` returns `(hits, needs_wider)` — if all docs irrelevant, triggers wider search (top_k*2). Min 2 hits guaranteed.
+- **Self-RAG**: `self_rag.py` — 설정 1순위 모델(`llm_gateway`)이 문서별 관련성 판정 (COMPLEX only, 실패 문서는 관련으로 간주). `filter_by_relevance()` returns `(hits, needs_wider)` — if all docs irrelevant, triggers wider search (top_k*2). Min 2 hits guaranteed.
 - **Min score threshold**: 0.35
 - **GraphRAG**: `graph.py` uses NetworkX DiGraph for multi-hop BFS over law-concept relationships. Graph built by `build_graph.py`, cached globally for Vercel warm starts. Graceful fallback if `networkx` unavailable.
 
@@ -455,15 +488,56 @@ wage_calculator/
 - `WageCalculator.calculate(inp, targets)` — pass `WageInput` + list of target calculator names. If `targets=None`, auto-detected from input fields. 생성자는 `WageCalculator(rule_store=None)` — `rule_store`를 넘기거나 `LEGAL_RULES_ENABLED=true`면 승인 저장소 경로(아래 Legal Rule Registry)로, 아니면 `constants.py` 내장표로 계산한다. **기본값은 내장표**라 기존 호출부는 무변경이다.
 - 웹 파이프라인의 유일한 변환 경로는 `pipeline.py::_run_calculator()` — 한국어 라벨은 `resolve_calc_type_strict()`(exact match → slash/comma split → keyword fallback, 미매칭 시 None)로 targets 변환. 구 `from_analysis()`/`_provided_info_to_input()`은 호출처가 없어 제거됨(calc-db-integration-review D1).
 - `calc_ordinary_wage()` runs first as the foundation — all other calculators depend on its result.
+- **`WageInput.monthly_total_pay`(월 임금총액)** — 통상임금(`monthly_wage` + 고정수당)과 평균임금·보수(총액)의 기준이 갈릴 때
+  쓴다. 값이 있으면 평균임금 3개월 총액·퇴직금 1년 평균·휴업수당·산재 평균임금 추정·실업급여·4대보험 보수월액(근로자·사업주)·
+  근로장려금 소득·DC형 연간임금·일할계산이 총액을 쓴다. None이면 기존 추정(`monthly_wage`·통상임금) 그대로다. **총액 기준
+  계산에서 월 금액을 직접 만들지 말 것** — `shared.monthly_wage_total(inp, ow)`를 부른다(그 함수가 `monthly_total_pay`를 먼저
+  본다). '월급 = 기본급'인 입력에서 평균임금이 과소가 되지 않게 `test_audit50.py`가 9개 계산기를 '월급 = 총액' 입력과 대조한다.
+- **월 기준시간·포괄임금 계수시간은 반올림하지 않는다**(근로기준법 시행령 제6조②4호·최저임금법 시행령 제5조①3호 — 1주 기준시간
+  × 1년 평균 주 수 ÷ 12, 반올림 규정 없음). 표시는 `utils.fmt_hours`(소수 넷째 자리까지), 주→월 계수는
+  `utils.WEEKS_PER_MONTH_LABEL`('365÷7÷12')로 적는다. 소수 첫째 자리로 반올림해 계산하던 때 점검 #45가 83.4h × 10,320원 =
+  860,688원(맞는 값 83.4286h → 860,983원)을 지적했고, '× 4.345'로 적으면 표시값으로 다시 계산한 금액이 카드와 어긋났다.
+  통상시급(소수 둘째 자리)·1일 통상임금(원) 저장값의 반올림은 남아 있어 금액이 최대 1원 다를 수 있다. **비교는 부동소수 오차를
+  걷어낸 뒤에 한다** — 시급제 실질시급 (시급 × h) ÷ h가 10,319.999…가 되어 시급 = 최저임금인데 '미달, 부족분 0원'이
+  났다(리뷰 H1, `minimum_wage`는 소수 6자리 정리). 계산식의 중간 금액은 `utils.fmt_won`(소수 둘째 자리까지)으로 적는다 —
+  원 단위로 줄이면 표시값으로 다시 계산한 다음 금액이 어긋난다. **고시의 월 환산액은 209시간 기준이다**(고시 본문 '월 환산
+  기준시간 수 209시간') — 그 사이 금액(2026년 2,152,457~2,156,879원)은 카드 '충족'에 경고를 달고 사실 블록이 같은 사정을
+  밝힌다(리뷰 M5). 209를 계산에 쓰지는 않는다(시행령 산식이 기준).
+- **수당 이름 분류(`AllowanceClassifier`)는 최저임금과 통상임금이 다르다.** 최저임금 비산입은 `EXCLUDED_KEYWORDS`(연장·야간·
+  휴일·특근·시간외·잔업·포괄 — 최저임금법 시행규칙 제2조①1호)와 `NON_INCLUDED_KEYWORDS`(연차 — ②호 연차 미사용수당)로 나누고
+  `is_overtime_related`는 앞쪽만 본다. **통상임금 계산기도 이름을 본다**(`is_not_ordinary_by_name`: 연장·시간외·잔업·특근·
+  야간·포괄·연차·'휴일+근로/근무/출근/특근') — 조건 '없음' 고정수당이 자동으로 통상임금이 되어 의도분석이 뽑은 '고정연장수당'·
+  '연차수당'이 통상시급을 부풀렸다(audit-50 Act-4). 가산임금('통상임금의 100분의 50', 제56조)·연차휴가 임금(제60조⑤)은
+  통상임금으로 계산하는 수당이라 넣으면 자기 자신으로 커진다. 조건과 무관하게 빼고 명시적 `is_ordinary=True`만 존중하며,
+  계산식에 '(통상임금 제외: …)'로 밝히고 '월 총 예상 수령액'에는 남긴다(`not_ordinary_fixed_total` — 매월 받는 돈이다).
+  **'휴일' 단독·'유급휴일수당'은 빼지 말 것** — 기본급과 함께 월 통상임금을 이루는 주휴분일 수 있다. 이름 대조는 공백을
+  없애고 대문자로 한 뒤(`_keyword_name` — '고정 ot 수당'·'주말 근무수당'), 같은 글자가 다른 뜻인 '계약연장'·'근속연차'·
+  '연차별'·'정년연장'·'기간연장'·영문 낱말 속 'OT'('IoT'·'PILOT')를 지운다. 초과(근무·근로·수당·시간)·OT·오티·심야·주말근무·
+  주말출근수당도 대상이다(리뷰 M2·재검토) — '초과'만으로 잡으면 '목표초과달성수당'이 빠진다. 교대제 고정수당('야간교대·야간조수당')은 통상임금
+  이름 제외에서만 뺀다 — 소정근로의 대가로 다퉈진다(최저임금은 비산입 유지).
 - `_STANDARD_CALCS` in `registry.py` is the dispatcher: list of `(key, func, section_name, populate_fn, precondition)` tuples.
 - `AllowanceCondition` enum reflects Supreme Court ruling 2023다302838: NONE/ATTENDANCE/EMPLOYMENT are included in ordinary wage; PERFORMANCE is excluded.
 - `FixedAllowance` dataclass in `models.py` has `from_dict()` factory and `monthly_amount` property.
 - `calc_wage_arrears()` is a standalone function (no WageInput dependency).
 - `constants.py` holds yearly minimum wages, insurance rates, tax brackets — update these when laws change.
+- **출산·가족휴가 급여의 지급 기간 근거는 `maternity_leave.EI_LEAVE_BASIS` 단일 출처다**(고용보험법 제76조①1~4호). 제75조는
+  수급 요건이고 **항이 없으며**, 제75조의2는 수급권 대위다 — 지급 기간을 '제75조제1항·제2항·제75조의2'로 적던 문구가 그대로
+  답변 근거로 나갔다(wage-update-followups P3). 대규모 기업은 사업주 유급 60일(다태아 75일, 근로기준법 제74조④) 초과분 중
+  30일(미숙아 40일·다태아 45일)만 보험이고, 사업주 유급액은 **통상임금 기준**이다(보험 상한 일액으로 계산하면 '유급액 ≠ 보험급여'
+  원칙 위반 — P3b). 미숙아이면서 다태아인 대규모의 보험 한도는 법문이 정하지 않아 보험 총액을 `None`(미확정)으로 둔다.
+- **1일 단위 휴가 급여 상한은 효력 기간과 '최초 N일분'을 함께 가진다**(`maternity_leave.DAILY_LEAVE_CAPS`·`daily_leave_cap`).
+  고시 제2026-67호는 난임 최초 2일분·배우자 유산·사산 최초 3일분만 정하고 2026-12-31까지 효력이다. 2026-11-27부터 난임 유급·
+  보험 대상은 최초 4일인데 3·4일째 상한은 고시에 없다 — **1일분을 외삽하지 말 것.** 고시가 정한 일수까지만 확정하고 나머지는
+  보험 급여 `None`(미확정)이다(사업주 유급액은 확정). 기사용분도 그 일수에 센다(부칙 <제21700호> 제2조). 새 고시가 나오면
+  표에 행을 더한다 — 유효기간 없는 상한표로 되돌리면 효력이 끝난 고시가 조용히 계속 적용된다.
+- **계산기 근거 문구의 원문 앵커는 `wage_calculator/legal_anchors.py::CALC_BASIS_ANCHORS`다** — (doc_id, 구절), 형식은
+  `RuleFact.anchors`와 같다. 등록(`fetch_official_rules.ARTICLES`/`ADMRULS`)은 CI가, 원문(`output_공식법령/`)은 로컬이,
+  다음 판본은 `check_law_freshness --anchors`가 본다(`test_wage_update_2026.py::CalcBasisAnchorTests`). 근거 문구를 바꾸면
+  자기 앵커를 더할 것. 현행판과 다음 시행 판본 **양쪽에서 참인** 구절을 고른다.
 - `shared.py` extracts common patterns: `DateRange` (tenure calc, 8 modules), `AllowanceClassifier` (minimum wage inclusion, 3 modules), `MultiplierContext` (sub-5-employee rates, 5 modules).
 
-### Calculator Targets (28 types)
-`ordinary_wage`, `working_hours`, `overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `parental_leave`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
+### Calculator Targets (30 types)
+`ordinary_wage`, `working_hours`, `overtime`, `minimum_wage`, `weekly_holiday`, `annual_leave`, `dismissal`, `comprehensive`, `prorated`, `public_holiday`, `insurance`, `employer_insurance`, `severance`, `unemployment`, `compensatory_leave`, `wage_arrears`, `arrears_principal`, `parental_leave`, `reduced_work_benefit`, `maternity_leave`, `flexible_work`, `weekly_hours_check`, `legal_hints`, `business_size`, `eitc`, `retirement_tax`, `retirement_pension`, `average_wage`, `shutdown_allowance`, `industrial_accident`
 (단일 출처는 `wage_calculator/facade/registry.py::CALC_TYPES` — 세어서 확인할 것)
 
 ### Legal Rule Registry (`wage_calculator/legal_rules.py` + `app/core/legal_updates.py`)
@@ -510,12 +584,14 @@ wage_calculator/
   그 섹션만 빼고 `legal_rule_blocked`에 `{target, section, reason}`으로 기록한다.
   지킬 것 넷 — 전부 빠뜨리면 조용히 틀린 답이 나간다:
   - **시도한 섹션이 전부 보류면 요청 단위 `blocked`로 승격한다**(`legal_rule_attempted`와 비교).
-    통상임금만 남은 껍데기를 정상 결과로 내보내면 프런트·프롬프트가 의존하는 "계산 보류" 신호가 사라진다.
+    통상임금만 남은 껍데기를 정상 결과로 내보내면 프런트·프롬프트가 의존하는 "계산 보류" 신호가 사라진다. 파이프라인이 카드 금액을 맞추려고 더한 섹션(묻지 않은 연장수당 — 파생 연장·calc-card-consistency G2)은 `calculate(auxiliary=…)`로 넘겨 이 셈에서 뺀다 — 세면 그 섹션이 성공해 승격이 사라지고, 물은 4대보험이 통째로 빠졌는데 세전 총액과 '이 수치를 사용하세요'가 나갔다(독립 리뷰 M2).
   - **보류된 섹션이 읽은 기준은 provenance에서 되돌린다**(`legal_rules.used_scope()`). `get()`은 읽는 즉시
     `used`에 기록하므로, 보험 8개 중 7개를 읽고 8번째에서 실패하면 **버려진 결과의 기준 7건이
     '적용된 버전'으로 보고된다**(실측).
-  - **`minimum_wage`가 보류되면 `minimum_wage_ok=None`으로 내린다.** 기본값이 `True`라 그대로 두면
-    "최저임금 충족 ✅"라는 **없는 판정**이 나간다. 표시도 `None`을 falsy로 취급하면 이번엔 "❌ 미달"이라는
+  - **`minimum_wage`가 보류되면 `minimum_wage_ok=None`으로 둔다.** `WageResult` 기본값이 `None`(미실행·보류)이고
+    판정한 계산기만 `True`/`False`를 채운다 — 이 값을 `True`로 초기화하면 "최저임금 충족 ✅"라는 **없는 판정**이 나간다.
+    `minimum_wage` 말고도 포괄임금 역산(`comprehensive`)이 같은 값을 채운다는 점에 주의할 것(보류 경로에서 따로 내려야
+    한다 — 월급 구성 가드). 표시도 `None`을 falsy로 취급하면 이번엔 "❌ 미달"이라는
     반대 방향 허위가 되므로 `format_result()`는 3분기(`⏸ 판정 보류`)다.
     `generate_legal_hints`에는 `True`로 넘긴다 — 그 함수는 위반일 때만 힌트를 만들므로,
     보류를 falsy로 넘기면 없는 위반을 단정하게 된다.
@@ -550,6 +626,10 @@ wage_calculator/
     (`$exists` 미지원) `official_url` 유무로는 거를 수 없다. `PineconeEvidence.search()` 가 이
     불리언으로 **공식 전용 2차 조회**를 돌려 앞에 붙인다. 없애면 신규 공식 문서 17벡터가 기존
     수만 벡터에 묻혀 top_k 8 에 못 들고, 자동 검색이 승인 가능한 후보를 한 건도 못 만든다(실측).
+    ⚠️ **2026-10-09부터 이 2차 조회의 후보가 18건 → 7,129건이다** — 공식 자료팩 `qpack_` 7,111벡터도
+    전부 `official: True`라, 상위 4슬롯(`legal_rule_store.py` `PineconeEvidence.search`)을 고시 금액
+    문서(`official_`)와 나눠 갖는다. 금액 고시가 밀려나면 자동 검색 후보가 줄거나 같은 조문의 중복
+    후보가 생긴다. 주간 검색 결과를 보고, 필요하면 큐레이션 문서에 별도 불리언 표식을 달아 2차 조회 범위를 좁힐 것(필드 부재 검사가 없으므로 표식 추가 방식이어야 한다).
   - **고시는 소관부처 게시판을 먼저 본다**(`fetch_moel_instruction`). law.go.kr 은 행정규칙 페이지를
     **시행일에야** 열어, 발령만 된 고시를 통째로 놓친다 — 2027년 최저임금 고시(제2026–60호)가
     2026-08-05 발령인데 2026-09 기준 여전히 오류페이지였고, 그 탓에 "시행 전이라 수집 불가"로
@@ -633,15 +713,173 @@ wage_calculator/
   캐시를 얹으면 절감은 없고 관리자 쓰기 직전 읽기가 낡을 위험만 생긴다.
   반면 **Supabase 클라이언트는 `configured_store()`가 캐시한다**(자격증명이 바뀌면 통째로 교체).
 
+### 쟁점 근거 카탈로그 (`app/core/consultation_evidence.py` + `data/consultation_evidence/*.json`)
+
+질문이 그룹 패턴(`patterns` 중 하나 ∧ `all_patterns` 전부 ∧ `exclude_patterns` 없음)에 맞으면 작성 지침(`guidance`)과
+공식 원문(`sources`, sha256 출처)을 검색 순위와 무관하게 사용자 메시지에 싣는다. 결과는 `metadata.official_evidence`에
+남는다. 설계: `docs/archive/2026-10/audit-50-legal-accuracy/audit-50-legal-accuracy.design.md`. 지킬 것 — 전부 조용히 실패한다:
+- **정답 지침이 있어도 질문 어휘가 패턴에 없으면 아무 일도 일어나지 않는다.** 2026-10-11 외부 점검 오답 4건이 이 경로였다
+  ("자르셨어요", "우울증·공황장애", 실업급여 '신청 예정 + 알바 예정', '링크 수수료'). 패턴을 바꾸면 질문 130개(점검 50·
+  지식iN 20·상담 평가 60)를 재생해 신규 발동을 전수 확인하고 양성·음성 예시를 `test_audit50.py` T3에 남긴다. 과대 매칭은
+  무관한 질문에 반대 요건을 주입한다(PR #107) — 1차 시안에서도 "알바하면서 모아둔 돈"(과거 생활비)과 계약서 위조 질문 속
+  "연장근로수당"이 잡혔다. 동사 활용형은 해고 뜻이 분명한 꼴만 쓴다('자르는·자르고'는 "고기를 자르는"에 걸린다).
+  130개 재생은 **그 밖의 표현**을 보지 못한다 — Check 독립 리뷰(10-12)가 손으로 만든 문장에서 10건을 더 찾았다: 물건·신체를
+  자르는 문맥("재료를 자를 수"·"원단을 잘라서"·"손가락이 잘렸어요"), 휴업 지시("오늘은 나오지 말래요"), 다른 법률의
+  조문 번호("남녀고용평등법 제19조"·"제19조의2"), 일반 어휘("근로조건이 다 좋은데"·"처음에 말씀드린 것처럼 다른"),
+  날짜 속 숫자("3월 14일에 퇴사"), 이미 시작한 근로("알바를 하게 됐는데").
+  억제는 그룹 `exclude_patterns`가 아니라 **그 대안 안에서** 건다 — 제외 패턴은 같은 질문의 다른 해고 표현까지 지운다.
+  해고 그룹의 물건 억제는 **도구**(칼로·가위·기계에 — 사이 어디에 있어도)와 **목적어**(낱말 첫머리의 사물·신체 명사 + 조사
+  하나 + 방법 낱말 하나(…게·…로, '이유로·핑계로' 제외 — "빵을 반으로 잘라서") + 자르다, 돈·시간(조사 생략 가능) + 자르다)로
+  나뉜다. 첫머리 조건이 없으면 '일손을 잘랐어요'(인력 감축)가 지워지고, 합성어 사물은 따로 둔다(통닭·생닭). **명사만으로 막지 말 것** — Act-4 첫 판이 명사 34개를 '사이 어디든'으로 더해
+  '사실을'(실을)·'대상자'(상자)·'나무라더니'·'피자집'·'재단법인' 해고 질문을 지웠다(리뷰 M1). Check 때의 음식·신체 명사도
+  같은 결함이 있었다('빵집에서 잘렸어요'·'일손이 남는다고'·'손을 다쳐서 잘렸어요'). 명사와 자르다 사이에 다른 낱말을 허용하지
+  않는다 — "손을 다쳐서 잘렸어요"는 해고다. **'을/를' 직전 일반 규칙도 쓰지 말 것** — "저를 잘랐어요"가 같은 구조다. 목록
+  밖 사물은 여전히 발동하므로 실사용 표본(Design §11)에서 빈도를 본 뒤 더하고, 130개 재생(그룹 변화 0)과 T3 양성으로
+  확인한다. `check_fix_catalog.py`(저장소 밖)와 같은 값을 유지한다.
+- 지침은 틀리기 쉬운 지점을 **명시적으로 부정**한다("~라고 단정하지 않는다"). 원문만 실어서는 상담글 어휘를 이기지 못했다 —
+  민법 제390조("고의나 과실")가 실렸는데 "중대한 과실이 있어야 청구 가능"이 나왔다(점검 30·37번).
+- 지침의 법률 사실은 같은 그룹 source에 `anchors: [{"source", "quote"}]`로 고정한다(공백 무시 부분문자열, T2가 CI에서
+  실검증 — `output_공식법령/`에 기대는 `rule_facts` 앵커와 달리 skip되지 않는다). 다른 그룹 source를 앵커로 쓰지 말 것 —
+  그 그룹이 예산으로 생략되면 근거 없는 지침이 나간다. 부재 주장("4명 이하에는 제56조 미적용")은 **목록 원문**을 앵커로
+  둔다(별표1 제4장 행 "제54조, 제55조제1항, 제63조"). 단시간근로자 초과근로 가산(기간제법 제6조③)은 4명 이하에 적용되지
+  않는다 — 같은 법 시행령 별표1의 단시간근로자 규정은 제7조뿐이다(2026-10-11 법제처 원문 확인).
+- 합계 16,000자를 넘으면 그룹이 **통째로** 생략된다. 파일명 정렬 순으로 채우므로 새 그룹은 뒤 순서 파일에 둔다
+  (`wage_terms.json`). T4가 **그룹 3개의 모든 조합**(560개, 최대 약 14,500자)이 생략 없이 들어가는지 전수 검사한다 — 실측
+  질문의 최대 조합만 고정했을 때는 지침을 키운 그룹이 다른 조합에서 기존 그룹을 밀어내도 몰랐다(12,000자 시절 34개 조합,
+  예: 손해배상+재직자 대지급금+해고 → 해고 지침 생략). 이 검사가 깨지면 상한부터 올리지 말고 발췌를 줄일 것. 별표 원문
+  사본의 정렬 공백(2,053자 중 873자)은 전달할 때 접는다(`_compact`) — 보관본(`content`)은 손대지 않는다.
+- `rule_facts`와의 분담: 수치·현행 기준은 `rule_facts`, 쟁점별 적용 한계와 판례 법리는 이 카탈로그. 항상 붙는 전역 규칙
+  (`WAGE_CALC_RULES`)은 지켜지지 않은 실측이 있어(점검 40번 — 실근로 25시간으로 소정 15시간 판단) 같은 사실을 쟁점
+  블록에도 둔다.
+- 회귀 fixture `data/eval_audit50_queries.json`의 `required_if`(조건 문구가 있으면 범위 문구도 있어야 함)는 조건·범위 문구를
+  둘 다 **원문 인용 블록을 뺀 본문**에서 본다 — 조문 원문 인용이 "명시된 근로조건"을 공짜로 채워 제19조 오용이 통과했고(점검
+  3번), 인용 속 조문 번호가 조건을 세우면 "해당하지 않는다"고 쓴 답이 위반이 된다. **콜아웃(`> ⚠️ **주의사항**`)은 본문이다** —
+  두 답변 프롬프트가 적용 예외를 바로 거기에 쓰라고 지시한다(블록 첫 줄이 이모지·굵은 라벨이면 콜아웃).
+  감지 규칙의 간격은 `[^.!?\n|]{0,N}`로 문장·표 칸 안에 묶는다 — `.{0,N}`이면 앞 문장에서 시작한 왼쪽 일치가 그 문장의
+  부정어에 지워져 검출이 0이 되거나, 두 문장을 이어 정답을 감점한다. 소수점이 낄 수 있으면 `(?:[^.!?\n|]|\.(?=\d))`.
+  평가기의 부정 예외는 **일치 범위 밖**만 보므로, 간격 안에 부정어가 올 수 있는 규칙은 간격에 `(?!아니|않)`을 직접 둔다.
+- **월급 구성 가드**(`pipeline._stated_wage_composition`): 질문이 "월급에 연장·야간·휴일·연차수당 포함"이라고 밝히면 총액으로
+  최저임금을 판정하지 않는다(최저임금법 제6조 제4항 비산입). 구성은 도구 인자가 아니라 질문 본문에서 읽는다(괴롭힘 판정기와
+  같은 이유). **원칙은 '틀린 판정보다 보류'** 다 — Check 독립 리뷰(10-12)가 기본급 경로에서 없는 '미달'을 세 갈래로 찾았다:
+  - **기본급으로 판정하는 정확 경로**(Act-3): 기본급이 **하나로 정해지고**(인상액 "기본급이 5만 원 올랐다"·작년 값·서로 다른 두
+    금액이면 무효), 월급을 이루는 그 밖의 항목이 **모두 금액과 함께** 있으며, 총액을 알면 기본급이 그 절반 이상이고 기본급 +
+    항목이 총액을 넘지 않을 때다. 항목 탐지(`_stated_other_pay`)는 **목록이 아니라 일반 규칙**이다 — 비산입 항목(연장·야간·
+    휴일·연차·시간외·잔업·특근·포괄수당·OT)을 지운 뒤 남은 '○○수당'·식대·교통비 등을 **이름 전체로** 찾는다. 정해진 이름만 보면
+    목록 밖 '팀장·보육·현장·만근수당'을 버려 없는 '미달'이 났고, 이름 뒷부분만 잡으면 '중식비'·'석식비'가 합쳐졌다(Act-3 리뷰
+    H1·H2). 금액 없는 이름은 구성 문장(기본급·월급·급여·포함)에서만 보류 사유고, 성격이 갈리는 항목(상여·성과급·가족수당·
+    고정/정액/기타 수당 등)·계산기 분류와 어긋나는 이름('유급휴일수당' — 주휴일이 아닌 유급휴일 임금은 비산입)·별도 지급·변동·
+    금액 둘이면 보류다. 나머지는 '⏸ 판정 보류'.
+  - **정확 경로는 통상임금과 평균임금을 다른 금액으로 계산한다** — 통상임금·최저임금은 기본급(+ 금액이 적힌 수당을 고정수당으로,
+    `_apply_stated_allowances`), 평균임금·4대보험 보수·근로장려금·DC형은 총액(`WageInput.monthly_total_pay`). 총액은 질문에서
+    먼저 읽는다(`_stated_total_pay` — '월급/급여/월 임금 … N원·N만 원', 변동분·과거 값 제외, 기본급보다 큰 값 하나. '실업급여'
+    같은 합성어와 키워드 없는 '월 N원'은 읽지 않는다 — 수당 금액일 수 있다). **의도분석 금액으로 갈라지지 않게 할 것** — 총액·
+    기본급·천 원/만 원 반올림 중 무엇을 뽑았든 같은 카드여야 한다(테스트가 네 금액을 비교한다). 예전에는 기본급을 뽑으면 총액을
+    몰라 퇴직금이 기본급 기준(과소)이었고, 총액을 뽑고 4대보험을 물으면 보류였다. 총액에서 세후·실수령·최저·평균·전 직장·
+    육아휴직·'연 급여'·금액 뒤 '(세후)'·"A에서 B로"는 뺀다(Act-3 리뷰 M1). 의도분석 금액은 **질문에 그 숫자가 있을 때만**
+    총액으로 쓰고(`_money_in_text` — 아니면 기본급 + 식대 같은 합산값일 수 있다), 질문 총액과 어긋나면 모르는 것으로 둔다(M2).
+    **정확 경로는 의도분석 고정수당을 쓰지 않는다**(`_apply_stated_allowances`가 질문 항목으로 교체) — 질문에 없는 식대, 다른
+    이름의 같은 수당, '시간외근로수당'·'포괄수당'(조건 '없음'이면 통상임금으로 자동 판정)이 검증 없이 산입돼 없는 '충족'이
+    났다(H3).
+  - 포함 진술은 수당명 바로 뒤(같은 절 30자 안)의 서술형 '포함'만이다. 부정("포함되어 있지 않습니다")·의문("포함되나요?")·
+    계산 지시("포함해서 계산해")·다른 항목의 '포함'("식대 포함이고 연장수당은 따로")을 진술로 읽으면 맞는 '미달'이 보류로
+    바뀌고, 사용자 진술을 뒤집은 안내가 붙는다. '유급휴일수당'(대개 주휴)은 비산입 수당이 아니다.
+  - **'포함' 동사 없는 나열도 구성 진술이다**(`_lists_excluded_pay_with_base`, Act-4 R2-a) — 같은 문장에 **기본급 금액**과 비산입
+    수당 금액이 함께 있으면("월급 2,700,000원(기본급 2,096,270원, 고정연장수당 603,730원)") 총액으로 '✅ 충족'을 냈다. 기본급
+    금액이 없는 문장("이번 달 연장수당 30만원을 받았는데")과 별도·따로 지급은 아니다.
+  - **포괄임금제 언급은 그 자체로 구성 진술이다**(`comprehensive_statement`, R2-b — 질문에 '포괄임금·포괄산정'이 있고 부정
+    "포괄임금제가 아니·아닌"이 아닐 때. '아닌가요?'는 의문이라 부정이 아니다). 기본급이 적혀 있으면 정확 경로(연장시간과
+    무관 — 역산은 총액이 기본급 + 법정 가산과 같다고 가정한다), 없으면 연장시간이 있을 때 역산 경로(`comprehensive_by_hours`
+    — '포함' 진술이 있어도 보류하지 않는다, 진술 유무로 '충족'과 '보류'가 갈렸다), 없을 때 보류(`comprehensive_unknown_hours`
+    — 역산이 연장 0시간으로 나눠 '통상시급 = 총액 ÷ 시간'과 '충족'을 냈다. 이 보류에는 역산 계산기도 돌리지 않는다).
+    보류·미달 안내는 이유별로 쓴다(연장시간 미상 / 포괄임금제 총액 / 사용자의 '포함' 진술) — 포괄임금제라고만 했는데
+    '포함돼 있다고 하셔서'라고 쓰면 사용자 진술을 지어낸다.
+  - **포괄임금제 + 연장시간이면 최저임금은 역산(comprehensive)으로만 판정한다** — 최저임금 검증은 총액 ÷ 소정시간이라 '충족'을
+    낸다(270만 원 + 주 10시간: 12,945원 '충족' vs 역산 9,863원 '미달', 리뷰 H4). 의도분석 라벨 '포괄임금제'가 매핑에 없어
+    다른 라벨이 함께 오면 역산이 빠졌었다(`CALC_TYPE_MAP["포괄임금제"]`). 기본급 구분이 없는 그 카드도 총액 이름표를 달고
+    통상임금 기반 금액을 보류한다(`comprehensive_total`) — 역산의 '충족'은 연장시간을 반영하므로 믿는다.
+  - **보류는 '충족'만 싣지 않는다**(facade `hold_compliant`, 리뷰 H5) — 금액이 총액이면 비산입 수당은 시급을 부풀리기만 하므로
+    총액으로도 미달이면 실제로도 미달이다("포괄임금제로 월 200만원" → '❌ 미달'). 판정을 통째로 빼면 확정 미달이 '보류'가 됐다.
+    금액이 기본급인 보류(산입 여부가 갈리는 수당이 남음)는 어느 쪽도 확정이 아니라 판정을 뺀다. 남긴 '미달' 카드도 총액을
+    '기본급 월액'·'실질시급'이라 부르지 않는다('월급 총액(수당 포함, 기본급 아님)'·'총액 기준 시급' — 재검토 M-D).
+  - **금액이 총액인 경로(총액 보류·포괄 총액)에서는 의도분석이 뽑은 연장·연차수당 등 고정수당을 뺀다**
+    (`_drop_not_ordinary_allowances`) — 그 총액의 일부라 '월 총 예상 수령액'에 다시 더해졌다(270만 원 → 3,300,000원, 재검토
+    M-A). "월급 270만원 **중** 60만원이 고정연장수당"('중' 표현)도 구성 진술이다(`_states_part_of_total`).
+  - 표기: 기본급 **만원 표기는 잔액까지** 읽는다('209만 6천원' → 2,096,000원, '209만6,270원' → 2,096,270원 — 잔액을 버리면
+    천 원 단위까지 적은 기본급으로 없는 '미달'이 났다, 리뷰 H2). 만·천 원 단위로만 적었으면 안내에 근사값일 수 있다고 밝힌다
+    (`_base_rounding_unit` — 과거 값은 빼고, 같은 금액을 원 단위로도 적었으면 안내하지 않는다). **어림·못 읽은 잔액**은
+    기본급·총액·항목 어디서든 쓰지 않는다(`_inexact_amount`) — 단 너무 넓히면 정상 금액을 버린다(재검토 M-B: "기본급
+    2,096,270원 2026년 기준"·"200만원 초과근무수당"·"월급 250만원 5인 미만"이 보류됐다). 숫자·천·백·대 잔액은 금액이 '원'으로
+    끝나지 않았을 때만('209만 6백', '209만 9천9백원'), 어림은 '대(+조사)·정도·쯤·가량·남짓·안팎·내외·미만·이하·이상(이상한
+    제외)·넘게·초과(초과근무 제외)'만이다. **금액이 이름 앞에 오는 표기는 '의·짜리'로 이어지고 그 앞이 기간·다른 임금이
+    아닐 때만** 읽는다("200,000원의 식대" ○, "하루 8,000원짜리 식대"·"연 120만원의 식대"·"시급 10,320원의 주휴수당" ×). 그 밖의
+    못 읽는 표기는 보류로 간다(틀린 금액보다 안전).
+  - '포함' 동사 없는 나열(R2-a)은 **과거·변동이 아닌 기본급**이 있을 때만이고, 수당 금액 뒤 같은 절에 '따로·별도·못 받' 등이
+    오면 아니다(리뷰 M3 — '없'은 넣지 않는다, "…30만원이라 식대가 없어요"는 다른 항목 이야기다). '포함' 진술의 수당 이름은 항목
+    탐지와 같은 넓은 이름이다(시간외·잔업·OT·포괄·심야수당 — 리뷰 M4). 단독 'OT·오티'는 '고정' 앞말·'수당'·금액이 붙을 때만
+    이다 — "오티 포함 3일 교육"은 오리엔테이션이다.
+  - 보류해도 **포괄임금 역산**(`comprehensive`)이 같은 총액으로 판정을 다시 채운다. '충족'은 결과에서 내리고 '미달'은 둔다 —
+    비산입 수당은 시급을 부풀리기만 하므로 총액으로도 미달이면 실제로도 미달이다.
+  - **보류 카드는 총액 기반 값에 '통상시급'·'월 통상임금'·'월 기본급' 이름을 붙이지 않는다**(`pipeline._label_held_total`,
+    `WageResult.hourly_label` 기본값 '통상시급'). 연장·야간·휴일·연차수당이 섞인 총액 ÷ 소정근로시간은 통상시급이 아니다 —
+    통상임금은 소정근로의 대가라 그 수당을 포함하지 않는다. 카드는 "이 수치를 사용하세요"로 LLM에 주입되므로 이름이 틀리면
+    표시와 근거가 둘 다 틀린다(점검 36번 질문으로 만든 보류 카드의 첫 줄이 `통상시급: 12,943원`이었다). **첫 줄만 바꾸면 안
+    된다** — 계산식의 '[통상임금] 월 기본급: 총액'은 요청과 무관하게 항상 실리고, 통상임금 계산이 함께 오면 항목별 결과에도
+    '통상시급'·'월 통상임금'으로, 소정근로시간 계산이 함께 오면 '월급 환산 = 통상시급 × 시간' 식으로 실린다. **이름표는 계산
+    금액이 월급 '총액'일 때만 붙인다**(`held_is_total` — 금액이 질문의 기본급과 같거나 천 원 안이면 그 값은 총액이 아니라
+    기본급이다. 이름표가 사용자 진술을 뒤집은 회귀를 Act-1 코드 리뷰가 찾았다). 기본급 경로·C8 경로·미진술 경로의 이름은
+    그대로다.
+  - **보류 카드(금액이 총액)에서는 통상임금으로 낸 금액을 보류한다 — 계산은 하고 금액만 뺀다**(`_ORDINARY_BASED_TARGETS` 14종 +
+    퇴직금과 함께 물은 퇴직소득세 → `WageCalculator.calculate(..., amount_hold=)`, facade `helpers._merge_amount_held`, Act-2).
+    이름표만 바꾸면 금액은 그대로 틀린다 — 총액 270만 원 + 주 10시간 연장이면 연장수당 843,634원이 총액 위에 더해져 월 총액
+    3,543,634원이었고, 퇴직금·평균임금·산재는 '평균임금이 통상임금보다 적으면 통상임금'(근로기준법 제2조 제2항) 하한이 부풀린
+    통상임금으로 걸려 17.6% 과대였다. 지킬 것:
+    - **대상을 통째로 빼지 말 것.** 첫 구현이 그렇게 해서 연차 발생일수·'퇴직금 미발생' 같은 시급과 무관한 판정까지 지웠고,
+      7개월 근속에 '(보류: 퇴직금)'을 붙여 없는 퇴직금이 있는 것처럼 읽혔다(델타 리뷰 M2). 남기는 것은 수량(일·시간·개월)과
+      금액(0원 포함)·'통상' 비교가 없는 줄뿐이다 — 비교 결과('적용 기준: 통상임금')도, 결론만 0원인 줄의 중간값('과세표준:
+      2,865,414 - 2,865,414 = 0원')도 부풀린 값에서 나왔다.
+    - **0원을 그대로 싣는 것은 자격 판정일 때뿐이다**(`helpers._ineligible`: 결과의 `is_eligible`·`eligible` 거짓 또는
+      `is_exempt` 참, 퇴직소득세·퇴직연금은 퇴직금 결과). 입력이 없어 0인 결과(연장시간·입사일 미기재)까지 통과시키면 사용자가
+      '포함돼 있다'고 한 수당에 '0원'과 '이 수치를 사용하세요'가 붙는다(재검토 N1). 관리 모드에서는 보류한 섹션이 읽은 승인
+      기준을 provenance에서 되돌린다(`legal_rules.forget_used_since` — 안 그러면 금액 없는 카드 머리에 기준 버전이 붙는다).
+      DB형 퇴직연금은 퇴직금 미발생이면 0원이다(계산기의 'DB형 = 퇴직금과 동일' 전제 — 통상시급으로 따로 추정하던 결함).
+    - **보류 안내는 계열별로 이유를 따로 적는다**(`_held_targets_note`) — 평균임금 계열은 평균임금 자체는 총액이 맞고 통상임금
+      하한을 확인할 수 없을 뿐이다. '통상임금으로 계산하는 항목'으로 묶으면 LLM이 "퇴직금은 통상임금 기준"으로 옮긴다. 목록은
+      계산 뒤 실제로 금액을 뺀 것(`result.amount_held`)만 적고, '금액 보류:' 표지가 있으면 LLM 머리말이 추정 금지를 덧붙인다.
+    - **총액이 맞는 기준인 계산은 보류하지 말 것** — 4대보험 보수월액·실업급여 평균임금 추정·근로장려금·포괄임금 역산은 수당을
+      포함한 총액이 정답이다(4대보험 계산식의 '(통상임금 기준)'만 '(월급 총액 기준)'으로 바꾼다). 계산기가 통상임금
+      (`ow.hourly/daily/monthly_ordinary_wage`)을 새로 읽으면 보류 집합이나 `test_audit50.py`의 `KEPT_ORDINARY_READERS` 중
+      한쪽에 넣어야 분류 검사가 통과하고, 유지 계산기는 통상시급·1일 통상임금이 바뀌어도 같은 요약을 내야 동작 검사가 통과한다.
+    - 금액이 질문의 기본급인 보류(`held_is_total` 거짓 — 수당 금액이 빠진 경우)는 계속 계산한다(경계).
+  - 정확 경로의 계산은 **안내문이 말하는 기본급**으로 한다 — 의도분석이 천 원 단위로 반올림했으면 안내(2,096,270원)와 계산
+    (2,096,000원)이 어긋났다. 총액을 모르면 카드의 '월 총 예상 수령액' 줄을 숨기고(기본급이 총액처럼 보인다) 평균임금 계열에
+    과소 안내를 붙인다.
+
 ### Answer Model Settings (`app/core/model_settings.py` + `api/model_settings.py`)
 
 관리자 화면에서 답변 모델(Claude·OpenAI·Gemini)과 1순위를 고르면 재배포 없이 **최대 60초** 안에
 모든 인스턴스에 반영된다. 설계: `docs/archive/2026-10/admin-model-settings/admin-model-settings.design.md`.
 해석은 벤더별 독립으로 **저장값 > 환경변수(`OPENAI_CHAT_MODEL`·`GEMINI_MODEL`·`ANSWER_PROVIDER`) > 코드 기본값**
-이고, Claude만 환경변수를 보지 않는다(셸의 낡은 `CLAUDE_MODEL` 404 이력). 지킬 것 다섯 — 전부 조용히 실패한다:
+이고, Claude만 환경변수를 보지 않는다(셸의 낡은 `CLAUDE_MODEL` 404 이력). 지킬 것 여섯 — 전부 조용히 실패한다:
+- **설정은 답변만이 아니라 모든 LLM 단계에 적용된다**(unified-model-provider, 2026-10-11) — 의도분석·파라미터 추출·
+  쿼리 분해·Self-RAG·인용 교정·마이크로 퇴고가 `app/core/llm_gateway.py`를 거쳐 같은 순서·같은 모델을 쓴다.
+  이전에는 이 단계들이 Sonnet·Haiku에 고정돼 1순위를 Gemini로 바꿔도 Anthropic 한도 400에 그대로 묶였다(판정기
+  미실행·Self-RAG·분해 생략). **순서는 `llm_gateway.provider_chain()` 하나가 정하고 `_answer_providers`도 그것을
+  쓴다** — 따로 정렬하면 다시 갈라진다. 단계별 시도 수: 의도분석·추출 2순위까지, 분해·Self-RAG·퇴고 1순위만
+  (실패 시 생략), 인용 교정은 전부(단계 예산 안). 임베딩(OpenAI)·Cohere rerank는 대상이 아니다(인덱스가 그 임베딩).
+  벤더 함정(실측): ① 작은 토큰 한도는 빈 응답 — gpt-6-sol·gemini-3.8-flash는 추론 토큰이 한도를 함께 쓴다
+  (`_MIN_TOKENS` 하한) ② gpt-6-sol은 function tool과 추론을 함께 받지 않는다(400 → `reasoning_effort="none"`
+  재시도 후 모델별 기억, o3는 반대로 'none' 거부) ③ Gemini 함수 호출은 정수를 실수로 준다(`_coerce`)
+  ④ temperature는 어느 벤더에도 보내지 않는다(Claude 5 거부). 단계 타임아웃은 Haiku 기준(3초)에서 올렸다 —
+  Gemini 판정 3.2초·분해 4.4초·교정 1,596자 11.1초. **Claude 보조 단계(`output_config.effort=low`)는 한도 중이라
+  실측하지 못했다**(2026-10-11) — 한도 복구 후 1순위 Claude로 단계 실측이 필요하다.
 - **설정 읽기는 답변 경로 위에 있다 — 전용 클라이언트의 `postgrest_timeout=2`를 지우지 말 것.** supabase-py 기본은
   120초라, 빼면 DB 장애 시 모든 답변이 2분씩 멈춘다. 읽기 실패·키 없음은 기본값으로 흡수(fail-open)하고
-  **실패도 60초 캐시한다** — 안 그러면 장애 중 매 요청이 2초씩 기다린다.
+  **실패도 60초 캐시한다** — 안 그러면 장애 중 매 요청이 2초씩 기다린다. 끊긴 연결(httpx `TransportError`)은 **1회
+  재시도**한다(`_is_retryable`, audit-50 Act-4) — 쉬었던 HTTP/2 연결 재사용이 'Server disconnected'로 즉시 실패하면 그 실패가
+  60초 캐시돼 그동안 모든 답변이 코드 기본값(Claude)으로 갔다(Anthropic 한도 중 o3 폴백 실측). **타임아웃은 재시도하지
+  않는다** — 같은 장애를 2초 더 기다릴 뿐이다(법제처 L2 조회 `_l2_cache_get`과 같은 규칙). **postgrest 자체 재시도는 끈다**
+  (`retry(False)`) — postgrest 2.x는 GET이 503·520이면 1·2·4초를 쉬며 3번 더 보내 답변 경로가 7초 넘게 멈춘다(리뷰 L9).
+  법제처 L2 조회 클라이언트에도 같은 기본 동작이 있다(미조치, 기록).
 - **fail-open이라 DDL 미적용·GRANT 누락이 답변에 드러나지 않는다.** 관리자 저장만 실패한다. `check_schema.py`의
   `check_model_settings`가 배포 전 유일한 탐지 수단이다.
 - **테스트 호출은 답변 경로의 `_stream_*` 함수 그대로다.** 테스트 전용 호출 코드를 만들지 말 것 — 실제 호출과
@@ -682,6 +920,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 
 ## Deployment
 
+- **LLM 전송 스위치는 Vercel env `LLM_TRANSPORT`다**(ai-gateway-oidc-migration). 켜고 끄는 절차는 같다 — env 변경 → **재배포**(`vercel redeploy` 또는 빈 커밋) → `vercel inspect --wait` READY → 질문 1건으로 `metadata.llm.transport` 확인. 복귀 수단 둘: ① env를 `direct`로 → 재배포(3~5분, 제공자 키가 Vercel env에 남아 있어야 한다 — **복귀 창 7일 동안 지우지 않는다**) ② 이전 배포 승격(즉시, 구 코드는 이 변수를 모른다). 제공자 측 키는 다른 프로젝트·로컬·Actions가 쓰므로 폐기하지 않는다. 증거는 Gateway 대시보드 요청 로그·`GET https://ai-gateway.vercel.sh/v1/credits` 전후 차액·Supabase `metadata.llm.transport`·`check_llm_fallback.py` ✅·배포 ID(`vercel inspect`)다.
 - **Vercel**: `api/index.py` (FastAPI, `@vercel/python`) + `public/**` (static). Auto-deploy on push to main. Config in `vercel.json`.
 - **GitHub Pages 미러는 폐기됨**(2026-08-01). `.github/workflows/pages.yml` 삭제. 서브패스 서빙이라 `/manifest.webmanifest`·`/sw.js`·`/pwa.js`·`/icons/*` 등 루트 절대경로 자산이 전부 404였다. **배포처는 Vercel 단일.** `public/*.html`의 `location.hostname.includes('github.io')` 분기는 무해한 폴백으로 남아 있다(비-Vercel 호스트에서 열 때 API를 프로덕션으로 향하게 함).
 - All `app/core/*.py` files imported by `pipeline.py` **must** be committed to git — untracked files cause Vercel import errors (500).
@@ -694,6 +933,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
 - 계산기 입력 params는 영문 키(`wage_type`, `wage_amount` 등, `pipeline.py::_run_calculator()` 규약) — 한국어는 계산 유형 라벨(`CALC_TYPE_MAP` 키, 예: "연장수당")에만 사용
 - Legal references follow format: "근로기준법 제N조" or "대법원 YYYY다NNNN"
 - Test cases in `wage_calculator_cli.py` numbered #1–#32; batch tests in `calculator_batch_test.py` with 102 cases
+- **LLM 전송은 `app/core/llm_transport.py::bind()`가 요청별로 묶는다**(ai-gateway-oidc-migration). `api/index.py::get_config()`가 그 결과를 돌려주므로 **전역 `_config`를 직접 쓰지 말 것** — Gateway 모드에서는 토큰 없는 클라이언트다. 지킬 것 일곱(전부 조용히 실패한다): ① 토큰은 contextvar가 아니라 **바인딩된 `config` 객체**로 스레드에 따라간다 — `ThreadPoolExecutor`(Self-RAG·검색)·`threading.Thread`(Gemini idle)는 contextvar를 상속하지 않으므로, 스레드 안에서 `get_config()`나 `gateway_auth.current_token()`을 새로 부르지 말고 받은 `config`를 쓸 것. ② 슬러그 변환(`claude-opus-5-5` → `anthropic/claude-opus-5.5`)은 SDK 경계 프록시(`_Bound`) 한 곳이고 **상류는 벤더 표기를 유지한다** — `supports_effort`의 하이픈 정규식·`_CLAUDE_TOOL_NO_FORCE`·관리자 저장값·`metadata.llm.model`이 그 표기를 읽는다. 상류에서 바꾸면 effort가 빠져 읽기 타임아웃 폴백이 재발한다. ③ 미해결 모델은 `UnsupportedModelError` — 하이픈→점 추측 변환도, 다른 모델 대체도 없다(정적 표 → 카탈로그 순, 회귀 `test_llm_transport.py` T5). ④ 토큰 없음은 **호출 시점** `GatewayAuthError`다(`/api/health`·관리자 로그인은 토큰 없이 떠야 한다). 제공자 키로 가는 분기는 존재하지 않는다(T2·T4). ⑤ 재정렬은 Gateway의 Cohere 호환 표면(`/v2/rerank`)만 지원하고 `rerank_results(..., cohere_base_url=)`가 그 분기다. 호출부(`_stream_*`·`llm_gateway`·임베딩 5곳)는 전부 `.with_options(...)`를 먼저 거치므로 프록시가 그 지점에서 토큰을 넣는다 — `with_options`를 거치지 않는 새 호출을 만들면 프록시가 한 번 끼워 넣지만, 그 표면(`messages`·`chat.completions`·`embeddings`) 밖의 SDK 기능은 `AttributeError`다. **Gateway 경유 실측(2026-10-28)**: 임베딩 코사인 0.999999·재정렬 순서 동일·`thinking`/`output_config.effort` 통과. 단 5.5 세대의 강제 `tool_choice`는 400이 아니라 **200 + 도구 미호출(추론·텍스트, stop max_tokens)** 로 온다 — `_claude_tool`이 그것도 400과 같은 신호로 보고 auto+지시로 전환해 기억한다(회귀 `test_llm_fallback.py::test_claude_forced_tool_choice_accepted_without_tool_use_falls_back_to_auto`). 실측된 모델(opus-5-5·sonnet-5-5·fable-5-1)은 `_CLAUDE_TOOL_NO_FORCE_KNOWN`으로 **선등록**돼 첫 호출부터 auto다 — 자가치유는 '한 번 보내 봐야' 배우므로 콜드 인스턴스마다 의도분석 1회(Gateway에서는 max_tokens까지 생성)를 버렸고, 프로덕션 콜드 TTFT 43초에 그 왕복이 들어 있었다(Check G-M1, 회귀 `test_claude_known_no_force_models_skip_forced_attempt`). ⑥ `config.cohere_api_key`를 넘기는 `rerank_results` 호출부는 **반드시 `cohere_base_url=config.cohere_base_url`도** 넘긴다 — gateway 모드에서 그 키는 OIDC 토큰이라 base_url 없이 부르면 토큰이 Cohere 자체 호스트로 송신된다(401 뒤 코사인 폴백, 조용). `from_env()`가 환경 토큰으로 바인딩하므로 평가 스크립트도 해당된다(`eval_retrieval`·`eval_colloquial`이 그랬다, 회귀 `test_llm_transport.py` T13 AST 검사). ⑦ Gateway 모드의 관리자 모델 목록 `created`는 `/v1/models`의 `released`(출시일)다 — 같은 응답의 `created`는 전 모델 동일 상수라, 그걸 쓰거나 None으로 두면 ID 역순이 되어 Claude 목록이 sonnet만 남는다(G-M3, T11). 토큰은 `llm_transport.bound_token(config)`로 바인딩 객체에서 꺼낸다(BS5, T14). 카탈로그 조회는 잠금 밖에서 돈다(BS6, T15).
 - LLM provider fallback **기본 순서**: Claude → OpenAI → Gemini (`_stream_answer`). `ANSWER_PROVIDER`(claude|openai|gemini)를 설정하면 **그 제공자가 1순위로 재정렬**되고 나머지는 기본 순서를 유지한다 — 장애 시 무배포 롤백 수단이다. Gemini는 `GEMINI_API_KEY`가 있을 때만 목록에 들어간다. **폴백 규약**(llm-fallback-hardening):
   - **빈 응답은 실패다** — 예외 없이 실질 0자로 끝난 제공자는 성공이 아니라 다음 제공자로 전환한다. reasoning 모델이 추론으로 토큰 한도를 소진해 본문 0자를 반환하는 사례가 실측됐다.
   - **절단은 고지한다** — 첫 청크 이후 실패 시 부분 응답을 유지하되(재시도 없음) 사용자에게 절단 고지를 붙이고, `metadata.truncated`로 저장해 공개 게시판에서 제외한다(`api/index.py::_PUBLIC_EXCLUDE_KEYS`). 고지 없이 두면 잘린 답변에 면책 고지가 붙어 완결된 답변으로 오인된다.
@@ -702,9 +942,11 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - **Claude 답변에는 `output_config.effort`와 `thinking={adaptive, display: summarized}`를 함께 보낸다(기본 effort `medium`, `ANSWER_EFFORT`).** `display`를 지우지 말 것 — 기본값 `omitted`는 추론 중 바이트를 거의 보내지 않아 이벤트 공백이 최대 25.9초(읽기 한도 20초 초과 → 폴백)였고, `summarized`는 6.6초다(실측 2026-10-03, opus-5-5 medium). 추론 요약은 사용자에게 내보내지 않고 `_stream_claude`가 5초마다 빈 문자열(하트비트)로 바꾼다 → `_stream_answer`가 본문으로 세지 않고 흘림 → 호출부 ping. 하트비트만 내고 끝나면 여전히 빈 응답(실패)이다. medium은 low 대비 평균 +17초(7건 비교 37.6→54.1초, 실제 질문 첫 글자 32→48초).
   - (이전 이력) effort 기본 `low`로 처음 도입했을 때의 근거: Claude 5 계열은 지정하지 않으면 답하기 전에 스스로 추론하고, 추론 중에는 스트림이 조용해 `ANSWER_READ_TIMEOUT`(20초)에 걸려 **전 답변이 o3로 폴백된다**(실측 2026-10-02, 실제 단시간 주휴 질문: 첫 텍스트까지 sonnet-5 55.6초·sonnet-5-5 29.6초·opus-5-5 24.7초 → effort low 0.8·0.8·11.2초). 모델마다 추론 끄는 방법이 달라(`disabled`는 sonnet-5만, sonnet-5-5는 `between_tools`, opus-5-5는 불가) effort 하나로 통일했다. Haiku 4.5는 effort를 받지 않아(400) 제외한다. effort를 올리려면 프론트 idle 60초를 함께 따질 것 — 추론 중에는 하트비트도 나가지 않는다. 관리자 테스트 호출은 실제 크기 프롬프트로 첫 응답 시간을 재고 한도 50%를 넘으면 경고하지만, **그래도 실제 질문보다 짧게 잰다**(opus-5-5 테스트 1.4초 vs 실제 11.2초).
   - **모델명은 별칭으로** — 고정 버전은 모델 폐기 시 조용히 404가 된다(실제로 `gemini-2.5-pro`가 그렇게 죽어 있었고, 폴백 계측이 없어 아무도 몰랐다).
-- 의도분석(`analyze_intent`)은 Claude 실패 시 OpenAI function calling으로 폴백한다. 후처리는 `_build_analysis_result` 단일 출처를 두 벤더가 공유해야 추출 결과가 갈라지지 않는다. 어댑터는 `app/core/llm_fallback.py` — `analyzer.py`가 `pipeline.py`를 import하면 순환이 되므로 하위 모듈에 둔 것이다.
-- 폴백 결과는 `qa_conversations.metadata.llm`(provider·model·attempts·fallback·empty·truncated·citation_fixed)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.**
-  - **계측만으로는 부족했다 — 아무도 보지 않았다.** 8-21~9-28 38일간 프로덕션 실사용 답변 17/17이 폴백이었고(anthropic SDK 1.x 자동 설치), 같은 기간 로컬·벤치마크는 SDK 0.120이라 전부 Claude 성공이었다. 기록은 다 있었다. 그래서 `check_llm_fallback.py` + `.github/workflows/llm-fallback-alert.yml`이 6시간마다 **최근 실사용 3건이 연속 저하**(fallback·empty·intent_provider)면 실패해 GitHub 실패 메일로 알린다. 지킬 것 셋: ① 판정을 "Claude가 아님"으로 바꾸지 말 것 — 관리자 화면에서 1순위를 OpenAI로 두면 `attempts=['OpenAI']`가 정상이다 ② 감시는 **fail-closed**(조회 실패 exit 2) — 파이프라인 규약(fail-open)을 따르면 감시가 죽은 것도 조용해진다 ③ 비율 임계로 바꾸지 말 것 — 실사용이 하루 0~5건이라 1건으로 100%가 된다. Secret `SUPABASE_URL`·`SUPABASE_KEY`(anon — service-role에는 `qa_conversations` 권한이 없다) 필요.
+  - **Gemini SDK의 `request_options={"timeout"}`은 스트림 전체 마감이다 — 청크 사이 대기 한도가 아니다.** 읽기 한도(25초)를 그대로 넣어 25초를 넘는 답변이 전부 잘렸다(실측 2026-10-11: 외부 점검 50문항 중 9건 '생성 중단', 전부 Gemini 1순위. 재현 시 1,471자 지점 `DeadlineExceeded`). 마감은 `GEMINI_STREAM_DEADLINE`(240초, Vercel maxDuration 300초 안)으로 두고 무응답 판정은 `_iter_with_idle_timeout`(청크 사이 25초, 첫 청크 포함)이 한다. 실측: 9,438자 61초, 첫 청크 15.1초(추론), 이후 최대 간격 0.5초. **SDK 호출까지 스레드 안에 둘 것** — `generate_content(stream=True)`는 첫 청크가 올 때까지 호출 자체가 막힌다.
+- 의도분석(`analyze_intent`)은 설정 1순위 실패 시 2순위로 폴백한다(`llm_gateway.tool`, 벤더별 도구 호출 — Claude tool_use·OpenAI function calling·Gemini function_declarations). 후처리는 `_build_analysis_result` 단일 출처를 벤더가 공유해야 추출 결과가 갈라지지 않는다. 도구 스펙은 Anthropic 규약 하나만 두고 변환한다(`llm_fallback.anthropic_tool_to_openai`). `metadata.llm.intent_provider`는 **답변 1순위와 다른 제공자**가 의도분석을 했을 때만 기록된다(감시의 `intent_fallback` 신호). 게이트웨이·어댑터는 `pipeline.py`를 import하지 않는다 — `analyzer.py`가 순환 import 없이 쓰기 위해서다.
+  - **Claude 5.5 세대(opus·sonnet, fable 5.1)는 강제 `tool_choice`(`any`·`tool`)를 400으로 거절한다 — haiku-5-5만 받는다.** `llm_gateway._claude_tool`은 그 400을 감지하면 `auto` + 도구 호출 지시(+effort low)로 한 번 더 보내고 모델별로 기억한다(`_CLAUDE_TOOL_NO_FORCE`). Gateway 경유에서는 같은 거절이 **200 + 도구 미호출**로 오고 그것도 같은 신호다. 실측된 모델은 `_CLAUDE_TOOL_NO_FORCE_KNOWN`에 선등록돼 첫 호출부터 auto다(2026-10-28, Check G-M1). 2026-10-27 실측: rev 13으로 Claude를 1순위에 올린 순간부터 의도분석·파라미터 추출이 **매 질문** 400 → OpenAI 폴백이었고(폴백 감시 🚨), 답변 본문만 Claude라 겉으로는 정상이었다 — PR #108이 설정 모델을 보조 단계에 쓰게 하면서 '한도 중이라 Claude 1순위 미실측'으로 남긴 사각이다. **강제 tool_choice 단일 경로로 되돌리지 말 것**, 그리고 다른 400(잔액·한도)은 auto 재시도로 삼키지 말 것(다음 제공자로 넘겨야 한다). 회귀는 `test_llm_fallback.py::test_claude_forced_tool_choice_rejected_falls_back_to_auto`.
+- 폴백 결과는 `qa_conversations.metadata.llm`(provider·model·attempts·fallback·empty·truncated·citation_fixed·intent_provider·transport)에 기록한다. **계측이 없으면 폴백 경로가 통째로 죽어도 아무도 모른다.** **전 제공자 실패·답변 중 예외도 저장한다**(llm-fallback-alert-blindspot, 2026-10-30) — `pipeline.record_failed_conversation()`이 `answer_text=""`·`metadata.failed=True`·`metadata.llm={failed, stage(answer|pipeline), provider(None), attempts, empty, failures[{provider, error_class, status}], error_class, status, transport}`(`FAILURE_META_KEYS` 9종) 행을 남긴다. 호출부는 셋(파이프라인 `except RuntimeError`, `api/index.py` SSE GET·POST의 "답변 생성 실패", 동기 `/api/chat`)이고 서로 배타라 한 요청에 최대 1건이다. 저장 전 실패라서 2026-10-14 전면 장애(gpt-6-luna 지연 + Claude 한도 + Gemini 소진)가 감시에 ✅로 보였다. 지킬 것 셋: ① 예외 **메시지**는 어디에도 넣지 않는다 — 클래스명·HTTP 상태만(`_status_of`: `status_code` → `response.status_code` → 정수 `code`). Gateway 401 본문은 URL을, SDK 메시지는 헤더 값을 담을 수 있다. `FAILURE_META_KEYS` 밖의 키는 테스트가 거절한다 ② 기록은 fail-open이고 순서는 `error → ping → 기록 → done` — 안내가 먼저, ping은 idle 타이머를 리셋해 저장에 60초 여유를 줄 뿐이다(그 이상은 정상 경로 저장과 같은 노출). **롤백은 기록 호출부만 되돌리고 `PUBLIC_EXCLUDE_KEYS`의 `failed`는 남길 것** — 전체 revert하면 쌓인 실패 행(질문 + 빈 답변)이 공개 게시판에 노출된다(CodeRabbit #150) ③ 카테고리·synthetic 판정은 성공 경로와 **같은 함수**(`_category_for`·`_synthetic_flag`)다 — 복제하면 관리자 분포가 조용히 어긋난다. 로컬 재현은 만료 OIDC 토큰으로 `LLM_TRANSPORT=gateway` 서버에 질문 1건(비용 $0, 2026-10-30 실측: Claude 401·OpenAI 401·Gemini 429 → 실패 행 1건·synthetic).
+  - **계측만으로는 부족했다 — 아무도 보지 않았다.** 8-21~9-28 38일간 프로덕션 실사용 답변 17/17이 폴백이었고(anthropic SDK 1.x 자동 설치), 같은 기간 로컬·벤치마크는 SDK 0.120이라 전부 Claude 성공이었다. 기록은 다 있었다. 그래서 `check_llm_fallback.py` + `.github/workflows/llm-fallback-alert.yml`이 6시간마다 **R1 최근 실사용 3건이 연속 저하**(fallback·empty·intent_provider·failed) 또는 **R2 최근 12시간 안에 실사용 실패 행(`llm.failed`) 1건 이상**(표본 수 무관 — 10-14 사례는 실사용 1건 + 실패였다)이면 실패해 GitHub 실패 메일로 알린다. 지킬 것 다섯: ① 판정을 "Claude가 아님"으로 바꾸지 말 것 — 관리자 화면에서 1순위를 OpenAI로 두면 `attempts=['OpenAI']`가 정상이다 ② 감시는 **fail-closed**(조회 실패 exit 2) — 파이프라인 규약(fail-open)을 따르면 감시가 죽은 것도 조용해진다 ③ 비율 임계로 바꾸지 말 것 — 실사용이 하루 0~5건이라 1건으로 100%가 된다 ④ R2 창(`--fail-window`, 기본 12h = cron 2주기)을 6h로 줄이지 말 것 — 실행 하나가 지연·취소되면 그 실패를 영영 못 본다. 조회(`fetch_recent`)는 실사용 3건을 모은 뒤에도 R2 창을 덮을 때까지 페이지를 더 읽는다(최근 성공 3건 **뒤**의 실패가 페이지 밖에 남는 사각) ⑤ 요약의 "마지막 성공 답변 경과"(실패 행 제외)는 알림 사유가 아니다 — 10-11~10-27 트래픽 0 실측(경과 시간 단독은 오탐). 실패 행은 합성(`synthetic`)이면 R2에서도 뺀다. Secret `SUPABASE_URL`·`SUPABASE_KEY`(anon — service-role에는 `qa_conversations` 권한이 없다) 필요.
 - All `app/core/*.py` modules use `from __future__ import annotations` for forward reference support.
 - Legal API (`legal_api.py`) has circuit breaker pattern: 3 consecutive failures → 30s cooldown. L1 in-memory → L2 Supabase → L3 API call.
 - **법령 조문 조회에 MST(일련번호) 사전매핑을 두지 말 것**(law-version-drift). MST를 명시하면 **그 판본이 고정 반환**돼, "전부개정 시에만 바뀐다"던 전제와 달리 일부개정마다 번호가 바뀌어 17개 중 11개가 낡은 조문을 답하고 있었다(실측: 고용보험법 §70 육아휴직 '30일 또는 7일' 확대 누락). 조회는 `LM`(법령명) + **`target=eflaw`** — 단일 출처 `legal_api.fetch_law_root()`이고 답변·공식 원문 수집·그래프 빌드·현행성 점검 4곳이 모두 쓴다(조회·게이트를 복제하지 말 것 — `build_graph.py`에 MST 매핑과 `replace(" ", "")` 비교가 복제돼 원본만 고쳐진 사각이 두 번 있었다). 주의(전부 실측):
@@ -728,13 +970,28 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - ⚠️ **launchd 예열은 저장소 작업 트리의 코드로 돈다.** 예열 목록을 바꾸는 작업은 **별도 git worktree**에서 하고(`.env`·`output_*` 링크), 머지 직전 `warm_law_cache.py --law …`(상태 행 미기록)로 새 법령만 미리 채운 뒤, 머지 직후 launchd 작업 트리를 main으로 갱신해 전체 예열을 1회 돌린다. 새 목록으로 상태 행을 쓴 뒤 옛 코드가 돌면 행 수가 약 39% 줄어 감시 ①이 오탐한다.
   - 감시는 `check_llm_fallback.py`가 같은 실행에서 본다: ① 예열 상태 행 `meta:law_warm_status`(36시간 초과·`laws_failed`·행 20% 초과 감소·행 없음) ② 조문을 요청한 최근 실사용 10건의 `Σok / Σ(requested − skipped_unwarmed − deleted)` < 0.8(분모 20 미만 보류 — `deleted`는 삭제된 조문 요청) ③ `live=on` 대화의 인증 오류. 상태 행 키는 `storage.LAW_WARM_STATUS_KEY`에 둔다 — 감시는 Actions에서 supabase만 설치하므로 legal_api(requests)를 import하면 죽는다.
   - ⚠️ **로컬(등록 IP)에서 실호출로 돌린 상담·평가는 그 결과를 프로덕션 L2에 쓴다.** 프로덕션 조건을 재현하는 평가는 `run_eval.py --law-mode prod`(DRF 요청이 `<Response>`를 받도록 바꿔 끼움)로 하고, 개선 확인을 위해 **프로덕션에서 평가를 다시 돌리지 말 것** — 그 대화는 실사용으로 저장돼 공개 게시판에 노출되고(지난 점검 3/30건) 감시 표본도 오염된다.
-- **시급 없는 임금 질문의 세 가지 함정**(2026-10-02 실측): ① 주휴 '시간'은 시급과 무관하다 — `_run_calculator`가 시급 없을 때 주휴 계산기를 통째로 빼면 LLM이 단시간근로자에게 1일 소정근로시간을 그대로 쓴다(주3일×6h → 6h, 맞는 값 3.6h). 근무일수·1일 시간이 **명시**되면 `_wageless_weekly_holiday`가 시간만 확정한다(산식 단일 출처 `weekly_holiday.weekly_holiday_hours`, 근무일수를 가정한 경우는 만들지 않는다). ② 최저시급 사실 블록 판정은 **의도분석의 영문 키**(`minimum_wage`·`weekly_holiday` 등, `_MINWAGE_TOPICS`)로 한다 — 구 판정은 한글 "최저임금"을 찾아 주제 경로가 한 번도 참이 아니었고, 주휴 질문에서 o3가 예시 시급 10,000원을 지어냈다. ③ "하루 6시간씩 3일 근무했다"는 **실제 근무**라 의도분석이 소정근로로 추출하지 않는 것이 맞다(분석 프롬프트 5번) — 이 경로는 `WAGE_CALC_RULES`(두 답변 분기 공통 접미)가 조건부 산식으로 막는다.
+- **날짜 연도 보정(`analyzer._correct_date_year`)은 질문·대화에 연도 단서가 없을 때만 돈다**(`_YEAR_CONTEXT_RE` — 명시 연도·`23.3.2`·기간 `N년/개월/달`·작년/재작년). 조건 없이 돌던 시절 "2023년 3월 2일 입사, 2025년 3월 1일 퇴사"가 2026-03-02·2026-03-01로 바뀌어 퇴직금 0원이 나왔다(실측 2026-10-11, 정답 5,752,620원). 단서는 **LLM이 본 텍스트 전부**에서 찾는다 — 의도분석은 요약·이전 턴·질문, 파라미터 추출은 질문+첨부. 회귀는 `test_pipeline_wiring.py` W14·W14b.
+- **시급 없는 임금 질문의 세 가지 함정**(2026-10-02 실측): ① 주휴 '시간'은 시급과 무관하다 — `_run_calculator`가 시급 없을 때 주휴 계산기를 통째로 빼면 LLM이 단시간근로자에게 1일 소정근로시간을 그대로 쓴다(주3일×6h → 6h, 맞는 값 3.6h). 근무일수·1일 시간이 **명시**되면 `_wageless_weekly_holiday`가 시간만 확정한다(산식 단일 출처 `calculators/shared.py::weekly_holiday_hours`, 근무일수를 가정한 경우는 만들지 않는다). ② 최저시급 사실 블록 판정은 **의도분석의 영문 키**(`minimum_wage`·`weekly_holiday` 등, `_MINWAGE_TOPICS`)로 한다 — 구 판정은 한글 "최저임금"을 찾아 주제 경로가 한 번도 참이 아니었고, 주휴 질문에서 o3가 예시 시급 10,000원을 지어냈다. ③ "하루 6시간씩 3일 근무했다"는 **실제 근무**라 의도분석이 소정근로로 추출하지 않는 것이 맞다(분석 프롬프트 5번) — 이 경로는 `WAGE_CALC_RULES`(두 답변 분기 공통 접미)가 조건부 산식으로 막고, 의도분석이 그래도 뽑으면 아래 출처 대조가 버린다(알려진 결함: 괄호 속 쉼표('마지막 주(월·화·수, 하루 6시간씩…)')가 기간 표지를 다른 절로 떼어 놓으면 버리지 못해, 그 실근로 시간이 소정근로시간으로 확정 카드에 새어 나간다 — 아래 조건부 예시 규칙과 어긋나는 상태이고 후속 과제다, calc-card-consistency §11-4). 근무일수만 뽑혀 미확인 모드 카드가 붙으면 그 카드가 질문의 시간으로 '조건부 예시'를 직접 계산해 싣는다(calc-card-consistency D1 — 조건은 아래 '계산 카드는 질문에 없는 소정근로시간을 가정하지 않는다'). 예전에는 그 카드의 '추정하지 마세요'가 조건부 산식까지 막아 답변에서 3.6시간이 빠졌다(지식iN kin-01).
+- **주휴 유급시간은 `wage_calculator/calculators/shared.py::weekly_holiday_hours` 하나로 구한다**(외부 점검 40번 후속, 2026-10-14). 통상임금 기준시간·주휴수당·소정근로시간·포괄임금 역산·시급 없는 상담 경로가 같은 함수를 쓴다 — 넷이 따로 있던 때 주 6일 × 4.1667h 한 카드에 기준시간 주휴 5h(÷5)와 주휴수당 4.1667h가 함께 실렸고, 포괄임금 역산은 주 5일 미만에도 1일 시간을 썼다. 산식은 대법원 2022다291153(원문 `data/graph_precedents.json`): 1일 평균 소정근로시간(1주 소정근로시간 ÷ 1주 소정근로일 수)이 원칙, 소정근로시간만 정했고 5일 미만이면 5일로 보아 나눈다. 8시간 한도. 주 5일을 넘게 일하는 단시간근로자(주 15~40시간)는 같은 업무의 통상 근로자가 있으면 시행령 별표 2 제2호나목(4주 소정근로시간 ÷ 통상 근로자의 총 소정근로일 수)으로 값이 달라진다 — 주휴수당 계산기는 그 값을 경고로 함께 내고, 최저임금은 두 기준의 판정이 갈리면 보류한다(`minimum_wage._annex_alternative_hours`, '⏸ 판정 보류' + 두 실질시급 — 월 190만 원·주 6일 × 6시간이 182.5h 충족 / 187.71h 미달). 산식을 다시 복제하지 말 것 — `test_audit50.py` T10이 네 계산기의 값을 격자로 대조하고 포괄임금 흐름도(공개·패키지 사본 둘)의 JS 산식도 고정한다. 1일 8시간을 넘는 입력(격일제 16시간 등)은 계산 전에 소정·연장으로 나눈다(아래 '소정근로시간은 1일 8시간·1주 40시간까지다' — calc-card-followups).
+- **계산 카드는 질문에 없는 소정근로시간을 가정하지 않는다**(`pipeline._schedule_unknown`). 시급·일급, 의도분석 시간을 버린 경우, 주 5일 미만 월급제, 임금 없이 근무일수만 있는 경우는 '미확인 모드'다 — 주휴는 산식만 싣고(`_unknown_schedule_block`), 시간에 따라 달라지는 계산은 '금액 보류:'로 이름만 남기며(LLM 머리말이 추정 금지를 붙인다), 시간과 무관한 것만 계산한다(시급제 최저임금 판정·연장·야간·휴일수당, 임금체불, 사업장 규모, 법률 힌트). 남는 계산에는 1일 0시간을 넘겨 주간 합계(52시간 경고·뇌심혈관 힌트)가 질문의 연장·휴일시간만 보게 하고, `_drop_assumed_schedule`이 가정한 기준시간·월액·월 부족액 줄과 월급·일급의 통상시급 첫 줄을 뺀다. 월급·연봉은 주 40시간 관행(주 5일 초과면 1일 = 40 ÷ 근무일수 — 예전 기본값 8시간 × 6일 = 48시간은 소정근로시간 한도를 넘었다)으로 계산하고 [기준시간]에 '소정근로시간을 질문에서 확인하지 못해 주 40시간으로 계산'을 붙인다. 의도분석 소정근로시간이 질문의 기간 합계에서 나왔으면 버린다(`_ground_schedule_hours`) — 버리는 것은 기간 합계에서 나온 값(합계·÷ 기간 일수·× 기간 일수·÷ 또는 × 근무일수)이면서 기간 밖의 시간으로 뒷받침되지 않는 값뿐이다. 기간 표지는 특정 기간('3일 동안'·'28일~30일'·'9/28~30'·'이번 주'·'어제'·'3일 근무했다' — 이 절의 '하루 6시간씩'도 실근로, 함정 ③)과 긴 기간('3개월 동안' — 1일·1주 비율 표현은 근무 형태)으로 나누고, '주 15시간'은 기간 절 안에서도 근무 형태다(앞에 이번·지난이 붙으면 기간). 근무표·계약 같은 계획어가 시간 바로 앞뒤에 있으면 계획 시간이다. 버린 값은 계산 캐시(extracted_info)에서 빼고(`_note_rejected_hours`), 앞 턴 캐시 값은 다시 대조하지 않는다. 첫 판의 '기간 표지와 같은 절이면 버림'은 독립 리뷰가 오탐(출퇴근 시각에서 구한 1일 8시간, '1년 6개월 동안 주 15시간씩', 첨부 계약서 시간)과 월급 기본값 복귀('지난주 60시간'에 '주 52시간 준수')를 잡았다 — 대조 규칙을 바꾸면 T10 반례 전부를 다시 돌리고, 바꾼 분기를 일부러 망가뜨려 테스트가 잡는지 볼 것(이 사이클 변이 64/64). 실측(Act-6, 외부 점검 40번): 18회 중 10회 '8h×6일 = 48h'(주휴수당 월 417,143원·월 총액 2,920,000원), 8회 '4.1667h×6일 = 25h'였고 답변 18건 모두 그 금액을 옮겼다. 질문에 근무시간이 하나로 적혀 있으면 주휴 블록에 '조건부 예시'(근로계약상 소정근로가 질문의 근무와 같다면의 주휴시간, 시급을 알면 금액까지)를 계산해 싣는다(`_conditional_holiday_example`, calc-card-consistency D1). 조건은 근무일수가 있고, 1일 값('하루 6시간'·'일 6시간'·'6시간씩' — 날짜의 '1일'('21일'·'10월 1일'·'지난 1일')은 1일 단위가 아니다)과 **표지 있는** 합계('주 15시간'·'3일 동안 18시간'·'총 18시간')가 하나로 정해져 서로 맞고, 질문의 기간 일수가 1주 근무일수와 같고(절이 달라도 본다 — '3일 동안 25시간'·주 6일이 '주 6일 × 4.1667시간'이 되지 않게, 시제품이 실제로 그 예시를 냈다. 끝 날짜 앞에 월이 따로 적힌 범위('28일부터 10월 1일'·'9/28~10/30')처럼 날짜 숫자로 일수를 정할 수 없으면 만들지 않는다), 1일 8시간·1주 40시간 이하일 때다. **표지 없는 단독 값('월수금 6시간')만 있으면 만들지 않는다** — 첫 판은 그것을 합계로 나눠 '주 3일 × 2시간 → 주휴수당 미발생'을 냈고, 코퍼스(주 N일이 정해지는 683건)에서 예시의 58%가 그런 값이었으며 표본 40건 중 32건이 오답이었다(독립 리뷰 H1). 표지 없는 값이 그 1일 시간·합계와 다를 때('하루 6시간씩 주 3일 … 주휴수당 3시간분')도 만들지 않는다. **'총 N시간'은 1주 합계라는 단서가 있을 때만 합계다** — 같은 문장에 1주 단서(주 3일·주당·매주·이번 주·지난주 등)나 그 절에 기간 일수('3일 동안')가 있고, 그 절에 하루 단서(시각 범위 '12시부터'·어제·그날·익일·다음 날·밤새·연속)가 없어야 한다. 아니면 표지 없는 값이다 — '오후 12시부터 밤 12시까지 총 12시간'·'총 24시간 근무'를 1주 합계로 나눠 '주 4일 × 3시간 → 미발생'·'주 5일 × 4.8시간'을 냈다(Check, 상담 코퍼스 '주 N일' 801건의 예시 95건 중 2건 → 고친 뒤 92건). 1주 단서를 절이 아니라 문장에서 보는 것은 '주 3일, 총 18시간'처럼 쉼표가 절을 나누기 때문이다. 범위·연장·야간·휴일 근로·1주가 아닌 기간의 합계('월 60시간'·'2주 동안')가 있으면 만들지 않고, 기준선('15시간을 넘어야')·휴게 표현은 값에서 뺀다(`_hours_mentions`의 `daily`·`total`·`aside` — 출처 대조는 이 필드들을 읽지 않는다). 질문에 근로시간 제도 신호가 있으면 만들지 않는다 — 계산한 제도 판정(`regime`)은 1일 시간이 있을 때만 생겨 미확인 모드에서는 늘 비어 있으므로 질문의 신호(`_hour_regime_signal`)로 본다(연소자 1일 8시간은 한도 밖, 감시·단속 승인이면 주휴 제외). 예시가 있을 때만 보류 줄이 '확정하지 않았습니다 … 위 조건부 예시만 그 조건과 함께'로 바뀌고 머리말에 조건 문장이 붙는다 — 예시 없는 카드의 '추정하지 마세요'와 구성 보류 문구는 그대로다. 그 줄은 주휴시간·주휴수당만 담고, 함께 보류한 다른 항목(4대보험 등)은 '계산하지 않았습니다 — … 조건부 예시의 시간을 포함해 가정한 시간이나 실제로 일한 시간으로 추정하지 마세요' 줄을 따로 싣는다 — 한 줄로 묶으면 그 항목에도 확정 전 값이 있거나 예시의 시간으로 추정해도 되는 것으로 읽혔다(Check G-7).
+- **소정근로시간은 1일 8시간·1주 40시간까지다**(calc-card-followups, 2026-10-15). 넘는 시간은 연장근로다(근로기준법 제2조 제1항 제8호·제50조, 대법원 2022다291153 — 격일제 포함). 상시 4명 이하도 같고 가산만 없다(근로기준정책과-2668·-5106). 지킬 것:
+  - **나누는 곳은 `shared.split_hours` 하나다.** 파이프라인과 facade가 계산 전에 일정을 정규화한다(`inp.hour_split`, 두 번 적용해도 같다). 계산기 안에서 1일 시간 × 근무일수를 다시 '소정'이라 부르지 말 것 — 예전 카드는 '주 소정근로: 10h×5일 = 50h'로 연장 가산을 빠뜨리고 주 5일 미만 주휴를 부풀렸다. 주 40시간 초과분은 근무일 순서로 쌓는다(주 6일 × 8h → 소정 8h × 5일 + 연장 8h, 주휴 8h).
+  - **제도 신호가 있고 초과 시간이 있으면 나누지 않고 미확인 모드로 보낸다**(`_HOUR_REGIME_SIGNALS` — 탄력·선택·간주·재량, 감시·단속·경비, 제63조, 농림·축산·수산, 연소자, 잠수). 연소자는 1일 7시간·1주 35시간으로 초과를 본다(제69조). 신호어를 바꾸면 상담 코퍼스(`output_qna/` 질문 섹션 9,809개)로 신·구 차이를 **전량** 대조할 것 — 1차 정규식은 '아파트 경비로 24시간 격일제'를 놓쳐 56시간을 연장으로 확정했고, '사장이 잠수 탔다'·'청소년수련관'·'건축사(축사)'를 잡았다. '탄력근무'는 일부러 신호다(탄력적 근로시간제를 그렇게 부르는 질문이 많고, 놓치면 연장을 확정한다).
+  - **일급·월급·연봉에 연장이 있고 임금 구성을 모르면(D4)** 최저임금은 '연장 별도'(A)와 '연장 포함 역산'(B)이 갈릴 때 보류하고, 월 총액은 숨기며, 평균임금·보수로 내는 금액은 'A원(연장수당 별도) 또는 B원(…에 포함)' 두 값이다(`pipeline._add_composition_alternative`). B는 금액 × 소정 몫 비율을 기본으로, 총액(`monthly_total_pay`)은 B 통상임금 월액 + B 시급으로 센 연장 등으로 둔 입력으로 계산한다 — 그냥 다시 계산하면 통상임금 하한이 부풀린 통상임금으로 걸리고(실측 B 퇴직금 9,320,580원 vs 7,923,913원), 일급은 주휴를 연장분이 섞인 일급으로 세게 된다. '연장수당은 별도' 진술이면 A로 확정한다(`premium_paid_separately` — `wage_composition_known`은 '금액에 포함'이라 반대 뜻이다). 진술은 같은 절에 **받는다는 서술이 부정·의문 없이** 있을 때만이다 — 첫 규칙은 "연장수당은 따로 없고", "따로 받을 수 있나요?", "연차수당은 따로 받아요"까지 진술로 읽어 보류를 끄고 A를 확정했다(2차 리뷰). '포함' 진술이면 월급·연봉(12로 나눠 월급 경로)·일급(일급 단위 보류) 모두 구성 경로다.
+  - **월 임금(기준 월액)은 `shared.monthly_wage_total` 하나, 평균임금 일액은 `average_wage.calc_average_wage` 하나다**(monthly-base-unification). 기준 월액은 통상임금 월액 + 통상임금에서 뺀 고정수당(연장·야간·휴일·연차수당)이 기본이고, 주어진 총액(`monthly_total_pay`)이 있으면 그 값만, 연장 등이 든 총액(포괄임금·구성 진술)이면 포괄임금 명세의 기본급 밖 몫을 더하고 연장 등은 더하지 않으며, 그 밖에는 계산한 연장 등 중 고정연장수당을 넘는 금액을 더한다(고정연장수당은 기본에 이미 있다 — 계산한 금액이 0이어도 매월 받는 임금이다). 카드의 월 총액, 보험 세전(근로자·사업주), 평균임금 3개월 총액, 퇴직금 1년 평균, DC형 연간임금, 근로장려금 소득이 모두 이 값을 쓴다(연 단위인 DC형·근로장려금은 `shared.annual_wage_total` — × 12에 연봉제의 월액 반올림을 되돌린다. 안 되돌리면 연봉 2,200만 원이 21,999,996원이 되어 근로장려금 상한 경계에서 1원이 나왔다). 보류(총액) 경로에서 '포함' 앞에 적힌 수당은 총액 안이라 고정수당에서 뺀다(`pipeline._stated_included_items`) — 세금·4대보험·공제·실수령 바로 뒤의 '포함'은 임금 구성이 아니다("세금 포함 실수령액"에 걸려 직책수당을 빼 세전이 30만 원 줄었다, Check S1). 평균임금 일액은 퇴직금·실업급여·휴업수당·산재가 같은 함수로 구한다 — 분모는 3개월 총일수(근로기준법 제2조 제1항 제6호), 상여·연차수당 3/12, 제2조 제2항 하한(평균임금 < 통상임금이면 통상임금)이 그 안에 있다. 실업급여는 하한 전 6호 금액(`avg_daily_3m`)을 받아 고용보험법 제45조 제2항(일용근로자 예외)을 스스로 적용하고, 휴업수당은 휴업 시작일, 산재는 재해일(근로기준법 시행령 제52조)을 산정 기준일로 넘긴다. **소비처에서 월 금액·평균임금을 직접 만들지 말 것** — 계산기마다 만들던 때 고정연장수당 20만 원·연장시간 없음이 월 총 2,702,857원 vs 세전 2,502,857원으로 갈렸고, 직책수당을 따로 적으면 퇴직금이 391,304원 적었으며, 휴업수당은 주휴분·상여·하한이 빠져 시급 12,000원·10일분이 474,783원(맞는 값 672,000원)이었다. facade 월 총액은 연장수당 섹션을 계산했을 때만 연장분을 넣는다(`premium=`) — 매번 넣으면 연장 대가를 휴가로 받는 보상휴가 질문에도 들어간다. 탄력적 근로시간제 연장 임금은 더하고 공휴일 수당 ÷ 12는 더하지 않는다(월급에 이미 들어 있다). 파이프라인은 연장분을 더하는 입력이면(`shared.adds_premium_pay` — `monthly_wage_total`도 같은 함수를 부른다) 연장수당을 계산 대상에 넣는다(구성 판정 뒤 — 앞에 두면 '기본급 + 총액' 진술에 묻지 않은 연장수당이 생긴다). 의도분석이 연장수당을 고르지 않은 질문(4대보험·퇴직금만)에서 월 총액이 연장분을 빼 세전과 갈렸기 때문이다(calc-card-consistency G2). 불변식은 두 테스트가 고정한다 — `test_calc_card_consistency.py` 격자(2,160카드, 평균임금 계열 값은 계산기의 `monthly_wage_total` 호출을 잡아 읽는다 — 같은 식으로 다시 계산해 비교하면 다른 기준 월액을 넘기는 계산기를 못 본다)와 `test_monthly_base_unification.py`(고정수당 축 격자 288, 등가 '월급 X + 수당 Y ≡ 월급 X+Y', 총액 경로, 휴업수당 하한 경계, 소비처 호출 구조).
+  - **근무일수를 가정하지 말고 밝힐 것.** 의도분석이 놓친 '주 N일'은 질문 속 값이 하나로 정해질 때만 보강하고(`_stated_weekly_days` — '이번 주·지난주' 실근로·'주 3일 하다 주 5일로'는 쓰지 않는다), 그래도 모르면 기본 5일 가정을 [기준시간]과 누락 정보에 적는다. 실측: '평균 주 3.5일'을 놓친 실행에서 격일제 16시간이 '16h × 5일 = 80h'로 확정되고 답변이 그 주휴수당을 옮겼다.
+  - **실업급여 하한의 1일 소정근로시간은 질문에 1일 시간이 있으면 일 단위다.** `_analysis_to_extract_params`가 주 합계를 1일 × 근무일수로 **늘** 채우므로, 주 합계가 있다는 것만으로 '주 단위 정의'로 보면 주 3일 × 8시간이 4.8시간이 된다(하한 39,629원 vs 66,048원). 테스트는 손으로 만든 params만이 아니라 변환기를 거친 params로도 볼 것(T17 H1).
+  - **최저임금 상태는 `minimum_wage_state`(""·compliant·violation·held·not_applicable)다.** 미실행이면 헤더를 내지 않는다. `minimum_wage_ok`의 기본값 None이 '⏸ 판정 보류'를 대신 찍던 우연에 기대지 말 것 — 구성 보류로 최저임금을 빼는 경로가 그 우연으로만 보류를 표시하고 있었다. 노무제공자는 '➖ 해당 없음'(최저임금법 제2조)이고 위반·신고·벌칙 문구를 내지 않는다.
+  - **수습 감액 요건(1년 이상 계약·시작일부터 3개월·단순노무 고시 직종 아님)은 질문에서 확인된 것만 충족이다**(최저임금법 제5조 제2항·시행령 제3조). 계약기간 숫자가 '정규직' 표현보다 먼저다. 감액값을 '최저임금'이라 부르지 말 것 — 공식 줄은 고시 금액이고, 감액은 '수습 감액 최저임금' 줄과 '최저임금 기준: 10,320원 또는 수습 감액 9,288원(요건을 모두 갖춘 경우)'이다(라벨 없는 '최저임금: 9,288원'은 평가 매처의 금지 문구다).
+  - **해고예고 면제는 현행 제26조 단서 1~3호뿐이다** — 수습·일용·계절적 사업을 따로 면제하는 규정은 없다. 계속근로기간은 입사일 ~ 종료일 전날(퇴직금과 같은 셈)의 달력 개월이고, 그달에 같은 날이 없으면 다음 달 1일이 경계다(민법 제160조 제3항). '3개월' 같은 기간 표현은 개월 수 그대로(`tenure_months`) — `_guess_start_date`는 1개월을 30일로 세어 '입사 3개월'을 면제로 만들었다. `legal_rules.kst_today()`는 **문자열**이다(date와 비교하면 TypeError로 카드 전체가 사라졌다). 입사일이 없으면 판정하지 않고 조건으로 안내한다.
+  - **연소자 신호는 근로자 본인일 때만이다** — '고등학생 딸이 있는', '미성년 자녀', '청소년 캠프 기관', '고등학생 때'는 아니다. 연소자 한도(7h·35h)로 초과를 보면서 이 문맥을 거르지 않으면 표준 8시간 × 5일 질문이 보류된다.
+  - **테스트 파일에 클래스를 덧붙일 때 `if __name__ == "__main__"`보다 뒤에 두지 말 것.** CI는 `python3 test_*.py`로 돌려 그 뒤 클래스가 조용히 빠진다(`-m unittest`로는 통과해 보인다). 변이 검사가 0/15로 나와서 드러났다. **테스트는 오늘 날짜에 묶지 말 것** — `test_calc_card_followups.card()`가 `reference_year=2026`을 넣는다. 빠져 있을 때 오늘을 2027-01-04로 바꾸면 12건이 실패했다(기준연도·최저임금이 바뀜).
 - **지식iN 정확도 3층**(kin-answer-accuracy, 2026-10-03). 외부 검증(10-02, 20문항 78.4점)의 오답은 LLM이 아니라 **코퍼스·검증 계층**이 원인이었다 — 일용직 현행 기준('3분의 1')은 코퍼스에 0건이고 구기준('10일 미만')만 있었다. 지킬 것:
   - **폐기 기준 필터**(`app/core/stale_rules.py`)는 `format_pinecone_hits` 진입부, **G4 캡보다 앞**이다. qa·counsel은 제외, 판례·행정해석·해설서는 `[구 기준 주의]` 주석(판례의 삭제 조문 인용은 당시 유효한 법리다). **패턴은 공기어 창 필수**이고, 상담글이라도 현행 기준을 함께 언급하면(`current` 패턴) 제외하지 않는다 — 실측: 행정해석 변경을 올바르게 설명한 상담글이 구 문구를 인용한다는 이유로 지워지고 있었다. 제외 후 0건이면 주석으로 되돌린다. 패턴을 바꾸면 `--scan`으로 **제외 대상 전량을 눈으로** 볼 것(휴일대체 상담 오탐 1건이 그렇게 발견됐다). 킬스위치 `STALE_FILTER=off`.
   - **현행 규칙 블록**(`app/core/rule_facts.py`)은 `_KNOWLEDGE_MODULES`와 **별도 목록**이고 관리 모드에서도 돈다 — 그 목록은 `LEGAL_RULES_ENABLED=true`에서 통째로 꺼지는데 승인 저장소는 수치 11키만 대체한다. 문구는 손으로 쓴 것이라 **`anchors`가 공식 원문(`output_공식법령/`)에 있는지** `test_kin_accuracy.py` K6이 대조한다(파일 없으면 skip → 로컬 관문). 실측: 첫 초안의 조기재취업수당 요건("대기기간이 지난 뒤")과 제43조③ 단서 요약이 원문과 달랐고 대조에서 드러났다 — **원문을 받기 전에 사실문을 확정하지 말 것.**
   - **인용 관련성**(`app/core/citation_relevance.py`)은 기본 `CITATION_RELEVANCE_MODE=monitor`(기록만, `metadata.citation_relevance`). 그 hit 자체가 판례면 질문↔본문 유사도(`low_relevance`), 다른 글 본문에만 번호가 있으면 `secondhand`. **enforce로 바꾸지 말 것** — 실측(2026-10-03, 지식iN 20건): 쟁점이 다른 2018두63235가 유사도 0.56·0.36, 관련 판례가 0.553·0.448로 임베딩 유사도가 둘을 가르지 못했고, `secondhand`는 2023다302838·임금근로시간과-1736 같은 정당한 인용까지 잡는다. 남은 오인용(2019다293449 등)의 출처는 상담글이 아니라 **손으로 쓴 그래프 판례표**였다(그래프 컨텍스트가 화이트리스트에 들어가 `secondhand`로 분류됐다) — 원문 게이트로 재구축했다(아래 그래프 판례 항목, effective-law-and-graph-precedents).
   - **`_citation_source_hits()`는 `case_no`를 넘겨야 한다.** 빠져 있어서 T31(메타 사건번호 화이트리스트, 2026-09-14) 수정이 파이프라인에서 한 번도 동작하지 않았다 — T31은 `rag.py` 문자열만 검사해 통과했다. 회귀는 K10.
-  - **평가 매처 `forbidden_claims`**(`eval_consultation.claim_found`): 리터럴·`re:`는 일치 **바깥**, **같은 문장·표 칸 안**의 앞뒤 120자에 부정어(폐지·삭제·구 기준·과거·종전·아님 등 — '변경되었' 단독은 제외: 바뀐 요건이 지금 적용된다는 문장에도 나온다)가 있으면 세지 않는다(정답이 오답 문구를 부정하며 언급하므로). 문장 경계를 넘으면 다른 문장의 부정어가 단정을 지운다(CodeRabbit PR #96). 바깥만 보는 이유는 금지 문구 자체에 부정어가 든 경우("…근로자가 아닙니다")가 있어서다. 사건번호 리터럴과 `re!:`는 부정 예외가 없다 — 인용 문장에 "아니라"가 흔해 오인용이 통과했다(실측 kin-01). 새 금지 문구는 **10-02 원답변에 대고 검출되는지** 확인할 것(12/12 검출).
+  - **평가 매처 `forbidden_claims`**(`eval_consultation.claim_found`): 리터럴·`re:`는 일치 **바깥**, **같은 문장·표 칸 안**의 앞뒤 120자에 부정어(폐지·삭제·구 기준·과거·종전·아님 등 — '변경되었' 단독은 제외: 바뀐 요건이 지금 적용된다는 문장에도 나온다)가 있으면 세지 않는다(정답이 오답 문구를 부정하며 언급하므로). 문장 경계를 넘으면 다른 문장의 부정어가 단정을 지운다(CodeRabbit PR #96). 바깥만 보는 이유는 금지 문구 자체에 부정어가 든 경우("…근로자가 아닙니다")가 있어서다. 사건번호 리터럴과 `re!:`는 부정 예외가 없다 — 인용 문장에 "아니라"가 흔해 오인용이 통과했다(실측 kin-01). 새 금지 문구는 **10-02 원답변에 대고 검출되는지** 확인할 것(12/12 검출). **수치 금지 패턴은 산식 항을 제외할 것** — `…2,502,857` 패턴(calc-12·13·15)이 정답 산식 "세전 월 급여: 2,502,857원 + 200,000원 = 2,702,857원"의 첫 항을 잡아 wage-update-followups Live 기준선·수정후 5건이 오탐이었다(2026-10-27). 금액 뒤 `(?!\s*원?\s*[+＋×x])` lookahead로 교정했고, 같은 형태의 산식 문장을 `detector_examples.negative`에 넣어 T15가 고정한다. 답변은 금액을 산식으로 풀어 쓰는 일이 흔하므로 금액 패턴을 새로 만들 때는 **실답변 본문에 대고** 오탐을 먼저 확인한다.
 - **그래프 판례(`build_graph.GRAPH_PRECEDENT_SPECS` + `data/graph_precedents.json`)의 사실 내용을 손으로 쓰지 말 것**(effective-law-and-graph-precedents). 손으로 쓴 구 `MAJOR_PRECEDENTS` 8건은 2건만 맞았다 — 2019다293449(실제 동산인도)를 "주휴수당 산정 기준"으로, 2013다25194(근로계약 취소)를 "평균임금 기준"으로, 2018다200709(유리한 근로계약 우선)를 "연차 사용촉진"으로 적었고 3건은 법제처 정확일치가 없었다. 그래프 컨텍스트는 인용 화이트리스트에 들어가므로 **그 번호들은 항상 검증을 통과했다**(2차 외부 재평가 오인용 4문항의 출처). 지킬 것:
   - 사실(요약·선고일·판결유형·변경 관계)은 원문 기록에서만 온다. 명세는 **무엇을 어느 개념에 연결할지**만 정하고, 키는 리터럴로 둔다(아카이브 코드 인용 스캔·T27 H4 교차검증이 읽는다). 갱신은 `python3 build_graph.py --refresh-precedents`(정확일치 + 상세 사건번호 재확인), 점검은 `--refresh-precedents --verify`, 재빌드는 `--skip-api`.
   - 빌드 게이트 G1~G5(`precedent_nodes`): 기록 존재·사건번호 일치(병합 허용) / 요약 = **판시사항 항목 그대로**(`[n]`·` / ` 두 형식) / 연결 개념 키워드가 판시사항·판결요지에 있음 / 변경 관계 = 변경한 판례의 **참조판례 "(변경)" 표지가 그 번호 항목 안에**(실측 `2012다89399 전원합의체 판결(공2014상, 236)(변경)`) / 출처 https law.go.kr. 위반 시 빌드가 멈춘다. `graph_data.json`이 기록·명세의 재빌드 결과와 같은지는 CI E16이 본다(재빌드 누락 탐지 — 구 그래프는 MST 시절 `mst` 속성이 남은 채 한 번도 재빌드되지 않았었다).
@@ -779,7 +1036,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - DDL이 필요한 사이클은 완료 조건을 "실행했다"가 아니라 **"실측했다"** 로 둘 것. 선행 사이클(`board-write-security`)은 배포 체크리스트를 미체크로 남긴 채 Report까지 작성됐고 아무도 몰랐다.
 - **`board_posts`의 anon UPDATE는 soft delete 단방향으로만 열려 있다** — RLS `USING (status='active') WITH CHECK (status='deleted')` + `GRANT UPDATE (status)` 컬럼 권한. RLS는 행 단위라 "status만 수정"을 표현할 수 없어 GRANT가 함께 필요하다. `USING (true)`로 열면 누구든 `question_text`를 고치거나 삭제된 글을 되살릴 수 있다(bcrypt 검사는 앱 단이라 RLS로 막지 못한다). ⚠️ Supabase 기본 설정의 `GRANT ALL ON ALL TABLES IN SCHEMA public TO anon`을 재실행하면 이 제한이 **조용히 원복된다** — `supabase_board_posts.sql` 말미의 검증 SQL ③이 감지 수단이고, 파일 재실행이 복구 수단이다.
 - **공개 게시판 제외 계약의 단일 출처는 `app/core/storage.py`다** — `PUBLIC_EXCLUDE_KEYS` + `is_public_excluded()`. 이 모듈이 FastAPI·pipeline·API 키 어디에도 의존하지 않아 게시판(`api/index.py`)·운영 스크립트(`dedupe_board.py`)·저장부가 **모두 import할 수 있는 유일한 지점**이기 때문이다. **어디서도 재선언하지 말 것** — 재선언하면 키가 늘 때 한쪽만 갱신돼 갈라진다. 회귀는 `test_offline_units.py::test_public_exclude_keys`가 `dedupe_board.PUBLIC_EXCLUDE_KEYS is storage.PUBLIC_EXCLUDE_KEYS` 동일성으로 고정한다(대조가 아니라 구조적 보장).
-  - **집행은 `_PUBLIC_EXCLUDE_KEYS`(`api/index.py`가 storage에서 import) 한 곳이 하고, 판정은 여러 곳이 한다.** 현재 4종 — `guard_flag`(가드 의심)·`truncated`(절단 답변)·`textbook`(해설서 근거)·`synthetic`(벤치마크·CLI·테스트 산출물). 새 제외 사유를 추가할 때 판정부만 만들고 이 튜플에 키를 안 넣으면 아무 일도 일어나지 않는다(조용한 실패).
+  - **집행은 `_PUBLIC_EXCLUDE_KEYS`(`api/index.py`가 storage에서 import) 한 곳이 하고, 판정은 여러 곳이 한다.** 현재 6종 — `guard_flag`(가드 의심)·`truncated`(절단 답변)·`textbook`(해설서 근거)·`counsel`(상담 지배)·`synthetic`(벤치마크·CLI·테스트 산출물)·`failed`(답변 없는 실패 행, llm-fallback-alert-blindspot). 새 제외 사유를 추가할 때 판정부만 만들고 이 튜플에 키를 안 넣으면 아무 일도 일어나지 않는다(조용한 실패).
   - **이 키들은 `True`일 때만 기록한다.** PostgREST 필터는 키 부재(`IS NULL`)로, Python 후처리(`_drop_flagged`)는 truthiness로 판정하므로 `{"truncated": False}`처럼 명시적 False를 쓰면 두 경로가 갈라진다.
   - `dedupe_board.py`가 생성하는 검증 SQL의 `IS NULL` 조건도 이 상수에서 만든다 — 손으로 나열하면 키가 늘 때 SQL이 조용히 틀린 검증문을 담고, 그걸 잡는 테스트가 없다.
 - **`metadata.synthetic` 판정은 3중이고 각자 다른 실패 클래스를 담당한다**(board-duplicate-cleanup). 하나만 두면 나머지 경로로 샌다 — 실측상 공개 463건 중 323건(69.8%)이 이 경로로 유입된 합성 데이터였다.

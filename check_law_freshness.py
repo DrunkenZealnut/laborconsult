@@ -169,16 +169,21 @@ def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
       저장본의 시행일·발령번호와 현행이 다르면 경고(재수집·앵커 재대조).
 
     답변 규칙(`prompts.ANSWER_RULE_ANCHORS`)도 손으로 쓴 사실이라 같은 점검을 받는다
-    (claim-authority-and-assessor-facts M11 — 규칙 블록만 돌면 새 등록부가 조용히 빠진다)."""
+    (claim-authority-and-assessor-facts M11 — 규칙 블록만 돌면 새 등록부가 조용히 빠진다).
+    계산기 근거 문구 앵커(`wage_calculator.legal_anchors.CALC_BASIS_ANCHORS`, wage-update-followups)도 같은 그룹
+    순회에 들어간다 — 고시 앵커의 효력 기간은 계산기 상한표(effective_to)가 관리하고, 여기서는 현행 고시 본문
+    대조만 한다."""
     import fetch_official_rules as fo
     from app.core.rule_facts import RULE_FACTS
     from app.templates.prompts import ANSWER_RULE_ANCHORS
+    from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
     articles = {a[0]: a for a in fo.ARTICLES}
     admruls = {a[0]: a for a in fo.ADMRULS}
     norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
     failures, warnings, next_cache = [], [], {}
     notice_phrases: dict[str, list[tuple[str, str]]] = {}
-    groups = [(f.name, f.anchors) for f in RULE_FACTS] + [("answer_rules", ANSWER_RULE_ANCHORS)]
+    groups = ([(f.name, f.anchors) for f in RULE_FACTS] + [("answer_rules", ANSWER_RULE_ANCHORS)]
+              + [("calc_basis", CALC_BASIS_ANCHORS)])
     for group, anchors in groups:
         for doc_id, phrase in anchors:
             if doc_id in admruls:

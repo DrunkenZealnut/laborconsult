@@ -1,0 +1,1055 @@
+[
+  {
+    "id": "ww26-01",
+    "category": "육아휴직 현행",
+    "question": "2026년 1월 1일부터 일반 육아휴직을 12개월 사용합니다. 만 3세 자녀이고 월 통상임금은 300만원, 주 40시간 근무했으며 고용보험 피보험 단위기간은 180일 이상입니다. 배우자 특례는 해당 없습니다. 월별 지급액과 복직 후 사후지급액은 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "total_benefit": 23100000,
+      "deferred_payment": 0
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-02",
+    "category": "육아기 단축 현행",
+    "question": "2026년 10월 한 달, 만 5세 자녀 양육을 위해 주 40시간에서 주 30시간으로 단축합니다. 월 통상임금은 300만원이고 고용보험 가입기간은 충분합니다. 고용보험 단축급여만 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "monthly_reduced_benefit": 625000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-03",
+    "category": "재직 중 체불 현행",
+    "question": "상사채무에 해당하는 회사에 재직 중입니다. 2026년 9월 25일 지급하기로 한 확정 임금 300만원을 아직 못 받았습니다. 지연이자 제외 사유는 없고, 2026년 10월 25일까지 이자만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "delay_days": 30,
+      "annual_rate": 0.2,
+      "interest_amount": 49315
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-04",
+    "category": "현행 연차 차감 금지",
+    "question": "2024년 1월 1일 입사해 계속 근무 중입니다. 2024년 출근율은 100%이고 첫해에 발생한 월별 연차 중 5일을 썼습니다. 2025년 1월 1일 발생한 연차에서 그 5일을 차감하나요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 15,
+      "deducted_first_year_days": 0
+    },
+    "required_notices": [],
+    "forbidden_claims": [
+      "re:15일\\s*[-−]\\s*5일\\s*=\\s*10일"
+    ],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-05",
+    "category": "중도퇴사 일할계산",
+    "question": "월급 300만원, 주5일 하루8시간, 2024년 1월 1일 입사했습니다. 2026년 10월 16일까지 재직하고 다음날 퇴직 효력이 발생합니다. 역일수 기준 약정이고 10월 급여를 일할계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 1548387,
+      "worked_days": 16,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-06",
+    "category": "연말정산 미지원",
+    "question": "월급 300만원입니다. 2026년 연말정산 환급액을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-07",
+    "category": "선택적 근로시간 정산",
+    "question": "선택적 근로시간제에서 2026년 10월 정산기간의 초과근로수당을 계산해주세요. 월급은 300만원입니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-08",
+    "category": "혼합 계산",
+    "question": "월급 300만원, 주5일 하루8시간, 직원10명입니다. 2026년 10월의 4대보험 공제액과 연말정산 환급액을 각각 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-09",
+    "category": "연차 발생과 사용 분리",
+    "question": "2025년 1월 1일 입사했고 2026년 7월 1일 기준 계속 재직 중입니다. 상시 10명, 주 5일 하루 8시간, 통상시급 1만원입니다. 2025년 출근율은 100%, 첫해 월별 개근으로 11일이 발생해 그중 5일을 썼고, 2026년 발생분에서는 2일을 썼습니다. 2026년 7월 1일 기준 당해 발생·사용·잔여 연차를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 15,
+      "used_days": 2,
+      "remaining_days": 13
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-10",
+    "category": "80% 미만 월 개근",
+    "question": "2024년 1월 1일 입사했고 2026년 1월 1일에도 재직 중입니다. 2025년 소정근로일 출근율은 70%이고 실제로 개근한 달은 7개월입니다. 법정 휴직은 없고 일반 결근입니다. 상시 10명, 주5일 하루8시간, 통상시급 1만원, 해당 발생분에서 사용한 연차 2일입니다. 2026년 1월 1일 기준 2025년 근로로 생긴 연차와 미사용 일수를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 7,
+      "remaining_days": 5
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-11",
+    "category": "육아휴직 출근 간주",
+    "question": "2025년 1월 1일 입사했고 2026년 1월 1일에도 재직 중입니다. 상시 10명, 주5일 하루8시간, 통상시급 1만원입니다. 2025년 소정근로일은 250일, 실제 출근은 150일이며 나머지 100일은 법정 육아휴직입니다. 휴직 구간은 2025년 7월 1일부터 12월 31일까지이고 최초 신청일은 2025년 6월 1일입니다. 다른 결근은 없습니다. 2026년 1월 1일 발생 연차일수를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 15,
+      "effective_attendance_rate": 1
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-12",
+    "category": "정확히 1년 계약 종료",
+    "question": "2025년 1월 1일부터 2025년 12월 31일까지 정확히 1년 기간제 계약입니다. 근로관계가 존재하는 마지막 날은 12월 31일이고 2026년 1월 1일에는 재직하지 않습니다. 2025년 12월 31일 기준 계산해주세요. 상시 10명, 주5일 하루8시간, 통상시급 1만원, 매월 개근했고 연차를 전혀 쓰지 않았습니다. 총 발생 연차와 미사용 수당 평가액은 얼마인가요?",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "accrued_days": 11,
+      "annual_leave_pay": 880000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-13",
+    "category": "육아휴직 개정 경계",
+    "question": "2024년 10월 1일부터 2025년 3월 31일까지 처음 일반 육아휴직을 사용했습니다. 개시일 월 통상임금 300만원이고 주 40시간 근무했습니다. 자녀는 당시 만 3세, 피보험 단위기간 180일 이상이며 특례는 해당 없고 회사가 휴직 중 지급한 돈은 없습니다. 2024년과 2025년의 월별 실제 급여와 사후지급액을 나눠 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "total_benefit": 9375000,
+      "deferred_payment": 1125000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-14",
+    "category": "6+6 실제 부모 사용",
+    "question": "같은 자녀(2024년 10월 1일생)에 대해 저는 2025년 1월 1일부터 6월 30일까지 처음 육아휴직을 사용했고, 배우자는 2024년 12월 1일부터 2025년 2월 28일까지 3개월 사용했습니다. 둘 다 고용보험 가입 근로자이고 각 피보험 단위기간은 180일 이상입니다. 제 개시일 월 통상임금은 500만원, 주 40시간이며 회사가 지급한 돈은 없습니다. 제 6+6 급여를 월별로 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "month_1_payment": 2500000,
+      "month_2_payment": 2500000,
+      "month_3_payment": 3000000,
+      "month_4_payment": 2000000,
+      "month_5_payment": 2000000,
+      "month_6_payment": 2000000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-15",
+    "category": "단기 육아휴직",
+    "question": "2026년 9월 1일부터 9월 7일까지 자녀의 어린이집 휴원으로 법정 단기 육아휴직을 처음 사용합니다. 자녀는 만 3세, 올해 단기 육아휴직 사용은 없고 기존 일반 육아휴직 사용도 없습니다. 개시일 월 통상임금 300만원, 주 40시간 근무, 피보험 단위기간 180일 이상이며 회사 지급액은 0원입니다. 7일 고용보험 급여를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "total_benefit": 583333
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-16",
+    "category": "단축급여 개정 경계",
+    "question": "만 5세 자녀 양육으로 2025년 12월 1일부터 2026년 1월 31일까지 주 40시간에서 30시간으로 육아기 단축을 처음 사용했습니다. 개시일 월 통상임금은 300만원이고 직전월 통상임금도 300만원이며 인상은 없었습니다. 회사는 월 225만원을 지급했고 피보험 단위기간은 180일 이상입니다. 두 달의 고용보험 단축급여만 각각 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "month_1_payment": 550000,
+      "month_2_payment": 625000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-17",
+    "category": "체불이자 개정 경계",
+    "question": "정기지급 임금 300만원의 확정 지급기일은 2025년 10월 22일입니다. 아직 재직 중이고 부분 지급과 법정 이자 적용 제외 사유는 없습니다. 2025년 10월 31일까지의 지연이자를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "interest_amount": 14795
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-18",
+    "category": "체불이자 상인 여부 미확인",
+    "question": "정기지급 임금 300만원의 확정 지급기일은 2025년 10월 21일입니다. 계속 재직 중이고 부분 지급과 법정 이자 적용 제외 사유는 없습니다. 채무가 상행위로 생겼는지는 확인되지 않았습니다. 2025년 10월 31일까지 지연이자를 조건별로 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "civil_interest": 4110,
+      "commercial_interest": 4932
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-19",
+    "category": "퇴직급여 14일 경계",
+    "question": "2024년 5월 31일까지 재직했고 퇴직 효력은 2024년 6월 1일 0시입니다. 확정 퇴직급여 일시금은 300만원, 지급기한은 2024년 6월 14일이며 기한 말일 공휴일은 없습니다. 전혀 지급받지 않았고 법정 적용 제외 사유도 없습니다. 2024년 6월 15일까지의 지연이자만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "interest_amount": 1644
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-20",
+    "category": "체불이자 부분 원금 변제",
+    "question": "정기지급 임금 300만원의 지급기일은 2026년 1월 1일입니다. 재직 중이며 1월 15일에 받은 돈 중 이자 충당과 별도로 원금 100만원에 충당한 사실이 합의서로 확인됩니다. 그 외 지급과 법정 적용 제외 사유는 없습니다. 2026년 1월 31일까지 남은 원금과 누적 지연이자, 합계를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 2000000,
+      "interest_amount": 40548,
+      "total_claim": null
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-21",
+    "category": "연 상여 주기",
+    "question": "월 기본급 300만원에 별도로 정기상여를 연간 총 120만원 받습니다. 상여는 모든 직원에게 동일 조건으로 지급됩니다. 주5일 하루8시간 근무합니다. 2026년 10월 기준 통상임금의 월 환산액만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "monthly_ordinary_wage": 3100000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-22",
+    "category": "실제 평균임금 제외",
+    "question": "2020년 1월 1일 입사했고 평균임금 산정 사유 발생일은 2026년 10월 1일입니다. 현재 월 기본급은 300만원, 주5일 하루8시간입니다. 직전 3개월 실제 임금은 7월 200만원, 8월 400만원, 9월 400만원이고 제외 전 달력일수는 92일입니다. 7월 1일부터 7월 10일까지 사용자 귀책 휴업이며 그 기간 지급한 100만원이 위 임금에 포함되어 있습니다. 상여금과 연차수당은 없습니다. 평균임금을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "period_days": 82,
+      "wage_total": 9000000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-23",
+    "category": "같은 상여 중복 방지",
+    "question": "2020년부터 재직 중이고 2026년 10월 1일 기준 평균임금을 추정해주세요. 월 기본급 300만원, 주5일 하루8시간, 별도 정기상여는 연간 총 120만원입니다. 평균임금용 직전 12개월 상여 실지급 총액도 120만원이며 앞의 정기상여와 정확히 같은 항목입니다. 최근 3개월 실지급 내역과 다른 수당은 없으니 기본급과 이 동일 상여만으로 3개월 임금총액을 추정해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "grand_total": 9300000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-24",
+    "category": "실지급액에 포함된 연 상여",
+    "question": "2020년 1월 1일 입사했고 평균임금 사유 발생일은 2026년 10월 1일입니다. 월 기본급 300만원, 주5일 하루8시간입니다. 직전 3개월 실제 임금이 각각 300만원, 300만원, 420만원이며 세 번째 달 금액에는 직전 12개월 정기상여 전액 120만원이 이미 들어 있습니다. 연 상여 총액은 바로 그 120만원이고, 제외 기간·연차수당·다른 수당은 없습니다. 달력일수 92일로 평균임금을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "grand_total": 9300000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-25",
+    "category": "난임치료휴가 단독",
+    "question": "2026년 11월 27일부터 12월 1일까지 난임치료휴가를 실제 3일 사용 예정입니다. 올해 같은 난임치료휴가를 이미 1일 썼고 법정 사용·신청 요건은 모두 충족합니다. 통상시급 15000원, 주5일 하루8시간 근무, 우선지원대상기업이며 휴가 종료 전 고용보험 피보험 단위기간 180일 이상입니다. 이번 3일의 유급액과 고용보험 지원액만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "employer_pay": 360000,
+      "insurance_benefit": 252630
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-26",
+    "category": "배우자 유산사산 단독",
+    "question": "2026년 10월 15일부터 10월 16일까지 배우자 유산·사산휴가를 처음 2일 사용했습니다. 같은 건의 기사용 휴가는 0일이며 법정 휴가 사용·신청 가능 기간의 요건을 모두 충족합니다. 통상시급 15000원, 주5일 하루8시간, 우선지원대상기업이고 휴가 종료 전 피보험 단위기간 180일 이상입니다. 이번 2일 사업주 유급액과 고용보험 지원액만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "employer_pay": 240000,
+      "insurance_benefit": 168420
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-27",
+    "category": "퇴직 효력일 일할",
+    "question": "2024년 1월 1일 입사한 월급제 근로자입니다. 월급 300만원 전액을 해당월 역일수로 일할하는 약정이며 다른 수당이나 무급 기간은 없습니다. 주5일 하루8시간 근무합니다. 2026년 10월 16일은 마지막 재직일이 아니라 퇴직 효력일이고 10월 15일까지 재직합니다. 2026년 10월 급여를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 1451613,
+      "worked_days": 15,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-28",
+    "category": "윤년 동일월 입퇴사",
+    "question": "월급 290만원 전액을 월 역일수로 일할하는 약정입니다. 2024년 2월 15일 입사해 2024년 2월 20일까지 재직하고 21일 퇴직 효력이 발생했습니다. 다른 수당이나 무급 기간은 없고 주5일 하루8시간입니다. 2024년 2월 세전 급여를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 600000,
+      "worked_days": 6,
+      "month_days": 29
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-29",
+    "category": "무급 휴직 복직",
+    "question": "2024년 1월 1일 입사한 근로자로 2026년 10월 내내 재직 중입니다. 월급은 310만원 전액을 해당월 역일수로 일할하는 약정이며 다른 수당은 없습니다. 주5일 하루8시간입니다. 2026년 10월 10일부터 14일까지 5일은 개인사유 무급휴직으로 확인됐고 15일 복직했습니다. 이 5일 외 무급 처리일은 없으며 주휴일 추가 공제도 없습니다. 2026년 10월 세전 임금을 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 2600000,
+      "worked_days": 26,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-30",
+    "category": "항목별 지급 조건",
+    "question": "2024년 1월 1일 입사해 2026년 10월 16일까지 재직하고 17일 퇴직 효력이 생깁니다. 주5일 하루8시간입니다. 2026년 10월 급여의 전체 항목은 기본급 280만원, 식대 20만원, 별도 실제 근로수당뿐입니다. 계약상 기본급만 10월 역일수로 일할하고, 식대는 재직일수와 관계없이 이번 달 20만원 전액을 지급하기로 확인됐습니다. 실제 근로수당은 별도로 산정 완료한 15만원을 지급하며 다시 일할하지 않습니다. 다른 무급 기간이나 지급항목은 없습니다. 10월 세전 급여 합계를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "prorated_amount": 1795161,
+      "worked_days": 16,
+      "month_days": 31
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-31",
+    "category": "일할 방식 미확인",
+    "question": "월급 300만원, 주5일 하루8시간, 2024년 1월 1일 입사했습니다. 2026년 10월 16일까지 재직하고 다음날 퇴직 효력이 발생합니다. 회사의 일할계산 방식과 수당별 지급 조건은 확인하지 못했습니다. 2026년 10월 지급액을 확정해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-32",
+    "category": "복수 월 원금",
+    "question": "2026년 10월 24일 기준 미지급 임금 원금만 계산해주세요. 근로자이고 아래는 세전 기준 전체 정산 내역입니다. 2026년 7월 급여의 지급 의무액은 300만원, 지급기일은 8월 10일이고 그날 200만원을 원금으로 지급받았습니다. 8월 급여 의무액도 300만원, 지급기일은 9월 10일이고 그날 100만원을 원금으로 받았습니다. 월별 귀속은 확정됐고 이후 지급이나 조정은 없습니다. 다른 수당·퇴직금·연차수당·이자는 합산하지 마세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 3000000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-33",
+    "category": "전액 지급",
+    "question": "2026년 9월 세전 급여 의무액 300만원을 지급기일인 2026년 10월 10일에 세전 기준 원금으로 전액 지급받았습니다. 근로자이고 이것이 정산 대상 전부이며 조정이나 다른 항목은 없습니다. 2026년 10월 24일 기준 남은 체불 원금만 계산해주세요. 이자는 요청하지 않습니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 0
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-34",
+    "category": "일할 원금 이자",
+    "question": "월급 300만원 전액을 해당월 역일수로 일할하는 약정입니다. 근로자로 2024년 1월 1일 입사했고 주5일 하루8시간, 2026년 10월 16일까지 재직하며 17일 퇴직 효력이 발생합니다. 다른 수당·무급일은 없습니다. 2026년 10월 임금의 약정 지급기일은 10월 20일이고, 그날 세전 기준 원금 100만원을 받았으며 해당 월 임금에 충당하기로 확인했습니다. 지급 이자·비용은 0원이고 이후 지급·법정 이자 제외 사유는 없습니다. 2026년 10월 24일 기준 남은 임금 원금과 지연이자 및 합계를 계산해주세요. 퇴직금·연차수당은 제외합니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 548387,
+      "remaining_interest": 1202,
+      "total_claim": 549589
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-35",
+    "category": "확정 실제 연장수당 차액",
+    "question": "5인 이상 사업장 근로자이고 통상시급은 15000원, 주5일 하루8시간입니다. 2026년 9월에 지급 대상인 실제 연장근로가 총 20시간으로 확정됐습니다. 매주 20시간이 아니라 그달 전체 20시간입니다. 야간·휴일근로는 없으며 연장수당은 기본급에 포함되지 않습니다. 지급기일 2026년 10월 10일에 이 연장수당 원금으로 세전 10만원만 지급받았고 그 뒤 지급은 없습니다. 기본급 등 다른 항목은 모두 지급돼 이번 정산에서 제외합니다. 2026년 10월 24일 기준 이 연장수당 미지급 원금만 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 350000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-36",
+    "category": "지급 귀속 미확인",
+    "question": "근로자이고 2026년 9월 기본급 의무액 200만원과 별도 연장수당 의무액 50만원의 지급기일은 모두 2026년 10월 10일입니다. 세전 기준 금액입니다. 10월 15일에 합계 100만원을 받았지만 어느 항목의 원금·이자·비용에 얼마씩 충당됐는지 확인되지 않았습니다. 다른 내역은 없습니다. 2026년 10월 24일 기준 항목별 체불 원금과 이자를 계산해주세요.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {},
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-37",
+    "category": "초과 지급과 미지급 분리",
+    "question": "근로자이고 아래 금액은 모두 세전이며 정산 범위 전체입니다. 2026년 8월 급여 의무액은 200만원인데 지급기일 9월 10일에 해당 급여로 210만원을 받았습니다. 9월 급여 의무액은 200만원인데 지급기일 10월 10일에 해당 급여로 150만원만 받았습니다. 각 지급은 해당 월 원금 귀속으로 확정됐으며 이자·비용은 없고 다른 지급·조정은 없습니다. 두 달 사이 상계 약정은 없습니다. 2026년 10월 24일 기준 체불 원금과 초과 지급액을 구분해주세요. 이자는 제외합니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 500000,
+      "overpayment": 100000
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  },
+  {
+    "id": "ww26-38",
+    "category": "최저임금과 미지급 중복 방지",
+    "question": "2026년 9월 한 달 내내 5인 이상 사업장에서 주5일 하루8시간 개근한 성인 근로자입니다. 수습·감액은 없고 주휴 포함 월 209시간입니다. 세전 기본 월급 계약은 200만원이며 상여·수당·연장근로는 전혀 없습니다. 지급기일 2026년 10월 10일에 세전 기준 원금 180만원을 받았고 이후 지급·조정은 없습니다. 2026년 10월 24일 기준 법정 최저임금까지 반영한 미지급 원금 총액을 계산해주세요. 계약 월급 미지급분과 최저임금 차액이 겹치지 않게 해주세요. 이자·퇴직금·연차수당은 제외합니다.",
+    "expected_intent": "",
+    "expected_topic": null,
+    "required_laws": [],
+    "allowed_sources": [
+      "law_article",
+      "precedent",
+      "interpretation",
+      "regulation",
+      "counsel",
+      "qa",
+      "textbook",
+      "nlrc_case",
+      "graph"
+    ],
+    "expected_calculation": null,
+    "expected_values": {
+      "remaining_principal": 356880
+    },
+    "required_notices": [],
+    "forbidden_claims": [],
+    "risk_level": "high",
+    "source_ref": "synthetic:wage-calculator-update-2026-10"
+  }
+]

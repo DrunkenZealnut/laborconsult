@@ -122,6 +122,64 @@ class CacheTest(_EnvClean, unittest.TestCase):
         self.assertEqual(r2.models, r1.models)
         self.assertEqual(calls["n"], 1, "실패도 캐시해야 DB 장애 중 매 요청이 2초씩 기다리지 않는다")
 
+    def test_m4_disconnected_connection_is_retried_once(self):
+        """쉬었던 연결을 재사용하다 서버가 끊으면 'Server disconnected'로 즉시 실패한다 — 재시도 없이 기본값으로 넘기면 그
+        실패가 60초 캐시돼 그동안 모든 답변이 코드 기본값(Claude)으로 갔다(audit-50 Do 실측, Anthropic 한도 중 폴백 3건).
+        타임아웃은 다시 기다리지 않는다."""
+        import httpx
+        calls = {"n": 0}
+
+        def client(first_error):
+            class Query:
+                def select(self, *_):
+                    return self
+
+                def eq(self, *_):
+                    return self
+
+                def execute(self):
+                    calls["n"] += 1
+                    if calls["n"] == 1:
+                        raise first_error
+                    from types import SimpleNamespace
+                    return SimpleNamespace(data=[{"settings": {"primary": "gemini"}, "revision": 7}])
+
+            class Client:
+                def table(self, *_):
+                    return Query()
+            return Client()
+        with patch.object(ms, "_read_client", return_value=client(httpx.RemoteProtocolError("Server disconnected"))):
+            self.assertEqual(ms._fetch(), ({"primary": "gemini"}, 7, True))
+        self.assertEqual(calls["n"], 2)
+        calls["n"] = 0
+        with patch.object(ms, "_read_client", return_value=client(httpx.ReadTimeout("slow"))):
+            self.assertEqual(ms._fetch(), ({}, None, False))
+        self.assertEqual(calls["n"], 1)
+
+    def test_m4_postgrest_retry_is_disabled_on_the_answer_path(self):
+        """postgrest의 503·520 재시도(1+2+4초)는 끈다 — 설정 읽기는 답변 경로 위에 있다(audit-50 Act-4 리뷰 L9)."""
+        calls = {"retry": []}
+
+        class Query:
+            def retry(self, enabled):
+                calls["retry"].append(enabled)
+                return self
+
+            def execute(self):
+                return type("R", (), {"data": [{"settings": {}, "revision": 3}]})()
+
+        class Table:
+            def select(self, *_):
+                return self
+
+            def eq(self, *_):
+                return Query()
+
+        client = type("C", (), {"table": lambda self, *_: Table()})()
+        with patch.object(ms, "_read_client", return_value=client):
+            self.assertEqual(ms._fetch(), ({}, 3, True))
+        self.assertEqual(calls["retry"], [False])
+
     def test_m4_missing_key_is_default(self):
         with patch.object(ms, "_read_client", return_value=None):
             r = ms.resolve()

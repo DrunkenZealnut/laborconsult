@@ -577,18 +577,20 @@ def test_public_exclude_keys() -> None:
     from app.core.storage import PUBLIC_EXCLUDE_KEYS, is_public_excluded
     from dedupe_board import PUBLIC_EXCLUDE_KEYS as SCRIPT_KEYS
 
-    for key in ("guard_flag", "truncated", "textbook", "synthetic"):
+    for key in ("guard_flag", "truncated", "textbook", "synthetic", "failed"):
         assert key in PUBLIC_EXCLUDE_KEYS, f"제외 키 누락: {key}"
     assert SCRIPT_KEYS is PUBLIC_EXCLUDE_KEYS, "정리 스크립트가 별도 집합을 씀"
 
     assert is_public_excluded({"synthetic": True})
+    # failed — 답변 없는 실패 행(llm-fallback-alert-blindspot). True만 기록한다.
+    assert is_public_excluded({"failed": True}) and not is_public_excluded({"failed": False})
     assert is_public_excluded({"guard_flag": "scope_monitor"})
     assert not is_public_excluded({"has_attachments": True})
     # PostgREST 필터는 키 부재(IS NULL)로 판정하므로 명시적 False를 쓰면 두 경로가
     # 갈라진다 — 이 키들은 True로만 기록한다는 계약을 여기서 고정한다.
     assert not is_public_excluded({"synthetic": False}), "False는 제외 대상이 아니다"
     assert not is_public_excluded(None) and not is_public_excluded("문자열")
-    print("  ✅ 공개 제외 키 4종 계약 + 단일 출처(app/core/storage.py) 공유")
+    print("  ✅ 공개 제외 키 6종 계약(failed 포함) + 단일 출처(app/core/storage.py) 공유")
 
 
 def test_board_posts_schema_source() -> None:
@@ -1327,6 +1329,30 @@ def test_safe_xml_single_choke_point() -> None:
     print("  ✅ safe_xml: prolog 전체 검사(우회 6종·UTF-16 포함)·폴백 안전·오탐 없음·단일 창구")
 
 
+def test_committed_vector_ledgers() -> None:
+    """커밋된 배치 원장이 롤백 도구가 받아들이는 형태인지 본다(source_pack_ledger.py).
+
+    원장은 프로덕션 NS의 유일한 삭제 수단이라, 손상되면 롤백할 때가 돼서야 드러난다.
+    검색 대상 NS만 가리키고 ID가 원장 자신의 패턴·개수와 일치해야 한다.
+    """
+    from pathlib import Path
+
+    from app.core import rag
+    import source_pack_ledger as spl
+
+    searched = {ns for group in rag.NS_GROUPS for ns in group}
+    paths = sorted(Path("data/vector_ledgers").glob("*.json"))
+    assert paths, "data/vector_ledgers 원장이 없다"
+    for path in paths:
+        ledger = spl.load_ledger(str(path))
+        assert ledger["namespace"] in searched, f"{path.name}: 검색 대상 밖 NS"
+        ids = spl.ledger_ids(ledger)
+        assert all(i.startswith(ledger["id_prefix"]) for i in ids), path.name
+        assert sum(ledger["composition"].values()) == len(ids), path.name
+        assert len(ledger["documents"]) == ledger["document_count"], path.name
+    print(f"  ✅ 배치 원장: {len(paths)}개 형식·개수·NS 일치")
+
+
 def main() -> None:
     test_citation_validator()
     test_rrf()
@@ -1351,6 +1377,7 @@ def main() -> None:
     test_ddl_no_quoted_identifiers()
     test_code_tables_defined_in_ddl()
     test_upload_namespace_contract()
+    test_committed_vector_ledgers()
     test_offline_index_not_on_request_path()
     test_bm25_interning()
     test_tokenizer_contract()

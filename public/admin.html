@@ -139,6 +139,8 @@
   .model-ok { color: var(--color-text); font-weight: 600; }
   .model-fail { color: var(--color-text); text-decoration: underline; }
   .badge { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0 6px; font-size: var(--text-label); }
+  .failed-notice { margin: var(--space-1) 0; font-size: var(--text-label); color: var(--color-text-muted); }
+  .badge-failed { color: var(--color-text); border-color: var(--color-text); font-weight: var(--weight-semibold); margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -638,6 +640,21 @@ async function loadConversations(page) {
 
 // ── Detail Modal ──────────────────────────────────────────────────────────────
 
+function failedNotice(data) {
+  const m = data && data.metadata;
+  if (!m || !m.failed) return '';
+  const llm = m.llm || {};
+  const cls = llm.error_class ? escapeHtml(String(llm.error_class)) : '';
+  const st = llm.status ? ' ' + escapeHtml(String(llm.status)) : '';
+  const pipeline = llm.stage === 'pipeline';
+  const label = (pipeline ? '처리 예외' : '답변 실패') + (cls ? ' · ' + cls + st : '');
+  const text = pipeline
+    ? '답변 처리 중 예외가 발생해 저장되지 않았습니다(코드 결함일 수 있고, 사용자에게 일부 답변이 전송됐을 수 있습니다).'
+    : '모든 AI 제공자 호출이 실패해 답변이 생성되지 않았습니다.';
+  return `<div class="failed-notice"><span class="badge badge-failed">${label}</span>` +
+         `${text} 공개 게시판에는 실리지 않습니다.</div>`;
+}
+
 async function openDetail(id) {
   const data = await adminFetch(API + '/conversations/' + id);
   if (!data) return;
@@ -658,6 +675,7 @@ async function openDetail(id) {
     </div>
     <div class="detail-section">
       <h4>답변</h4>
+      ${failedNotice(data)}
       <div class="detail-answer">${md(data.answer_text || '')}</div>
     </div>
   `;
@@ -749,5 +767,6 @@ function md(text) {
   return html;
 }
 </script>
+<script type="module" src="/analytics.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
-"""교차벤더 LLM 폴백 어댑터 (llm-fallback-hardening FR-05)
+"""교차벤더 LLM 어댑터 헬퍼 (llm-fallback-hardening FR-05)
 
-Anthropic tool_use 규약으로 작성된 도구 스펙을 OpenAI function calling으로
-번역해, Anthropic 장애 중에도 구조화 추출(의도분석)이 계속 동작하게 한다.
+Anthropic tool_use 규약으로 작성된 도구 스펙을 OpenAI function calling으로 번역하고,
+멀티모달 content를 평문으로 평탄화한다. 호출 자체는 `llm_gateway`가 한다.
 
 이 모듈이 별도로 존재하는 이유는 순환 import다 — `pipeline.py`가 `analyzer.py`를
 import하므로, analyzer가 pipeline의 헬퍼(`_flatten_content` 등)를 가져오면 순환이
@@ -10,7 +10,6 @@ import하므로, analyzer가 pipeline의 헬퍼(`_flatten_content` 등)를 가�
 
 from __future__ import annotations
 
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -56,43 +55,3 @@ def anthropic_tool_to_openai(tool: dict) -> dict:
             "parameters": tool["input_schema"],
         },
     }
-
-
-def call_openai_tool(
-    client,
-    model: str,
-    system: str,
-    messages: list[dict],
-    tool: dict,
-    *,
-    timeout: float,
-    max_tokens: int,
-) -> dict:
-    """OpenAI에 도구 호출을 강제하고 추출된 인자 dict를 반환.
-
-    Raises:
-        RuntimeError: 모델이 tool_call을 반환하지 않은 경우. 호출부가 이를
-            받아 기존 폴백 경로로 강등한다.
-    """
-    oai_msgs = [{"role": "developer", "content": system}]
-    for m in messages:
-        oai_msgs.append({
-            "role": m["role"],
-            "content": flatten_content(m.get("content", "")),
-        })
-
-    resp = client.with_options(timeout=timeout, max_retries=0).chat.completions.create(
-        model=model,
-        messages=oai_msgs,
-        tools=[anthropic_tool_to_openai(tool)],
-        tool_choice={"type": "function", "function": {"name": tool["name"]}},
-        # 기본 모델(gpt-4.1)은 비추론이라 reasoning 토큰 잠식이 없다. 추론 모델로
-        # 교체하면 추론이 이 한도를 함께 소비해 tool_call이 빈 채로 끊길 수 있으니
-        # 그때는 한도를 크게 올려야 한다.
-        max_completion_tokens=max_tokens,
-    )
-
-    calls = resp.choices[0].message.tool_calls
-    if not calls:
-        raise RuntimeError(f"OpenAI({model})가 tool_call을 반환하지 않음")
-    return json.loads(calls[0].function.arguments)

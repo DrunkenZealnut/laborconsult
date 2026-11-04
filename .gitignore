@@ -31,6 +31,9 @@ __pycache__/
 .venv/
 venv/
 
+# Node.js
+node_modules/
+
 # macOS
 .DS_Store
 

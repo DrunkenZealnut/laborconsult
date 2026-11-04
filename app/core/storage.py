@@ -264,7 +264,9 @@ def board_post_select(columns=BOARD_POST_PUBLIC_COLUMNS) -> str:
 # ⚠️ 이 키들은 **True일 때만 기록한다.** PostgREST 필터는 키 부재(`IS NULL`)로,
 #    Python 후처리는 truthiness로 판정하므로 `{"truncated": False}`처럼 명시적
 #    False를 쓰면 두 경로가 갈라진다.
-PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "counsel", "synthetic")
+# failed — 답변이 생성되지 않은 실패 행(llm-fallback-alert-blindspot). 전 제공자 실패·답변 중 예외를
+#   pipeline.record_failed_conversation()이 answer_text=""로 남긴다. 답변이 없으니 게시판에 실을 것도 없다.
+PUBLIC_EXCLUDE_KEYS = ("guard_flag", "truncated", "textbook", "counsel", "synthetic", "failed")
 
 
 def is_public_excluded(meta) -> bool:

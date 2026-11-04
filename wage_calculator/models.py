@@ -90,24 +90,29 @@ class FixedAllowance:
     payment_cycle: str = "매월"        # "매월" | "분기" | "반기" | "연"
     min_wage_type: str = ""            # "" | "standard" | "regular_bonus" | "welfare" | "excluded"
     guaranteed_amount: Optional[float] = None  # 최소보장 성과급의 보장분
+    source_id: str = ""                # 동일 급여 항목의 출처 식별자
 
     @property
     def monthly_amount(self) -> float:
         """월 환산 금액 (payment_cycle 반영)"""
-        if self.annual or self.payment_cycle == "연":
-            return self.amount / 12
-        elif self.payment_cycle == "분기":
-            return self.amount / 3
-        elif self.payment_cycle == "반기":
-            return self.amount / 6
-        return self.amount
+        from .calculators.pay_inputs import PayInputError, money
+        amount = money(self.amount, self.name)
+        if type(self.annual) is not bool:
+            raise PayInputError(f"{self.name}: 연간 총액 여부를 확인해주세요.")
+        if self.annual:
+            return amount / 12
+        divisors = {"매월": 1, "분기": 3, "반기": 6, "연": 12}
+        if not isinstance(self.payment_cycle, str) or self.payment_cycle not in divisors:
+            raise PayInputError(f"{self.name}: 지급 주기를 확인해주세요(매월·분기·반기·연).")
+        return amount / divisors[self.payment_cycle]
 
     @classmethod
     def from_dict(cls, d: dict) -> "FixedAllowance":
         """dict → FixedAllowance 변환 (하위 호환)"""
         return cls(
+            source_id=d.get("source_id", ""),
             name=d.get("name", "수당"),
-            amount=float(d.get("amount", 0)),
+            amount=d.get("amount", 0),
             condition=d.get("condition", "없음"),
             is_ordinary=d.get("is_ordinary"),
             annual=d.get("annual", False),
@@ -180,6 +185,34 @@ class WorkSchedule:
     # 교대근무 전용
     shift_monthly_hours: Optional[float] = None  # 교대근무 월 실근로시간 (None이면 자동 조회)
 
+    # 1일 시간을 '주 N시간'에서 나눠 구했는가 — 실업급여 하한의 1일 소정근로시간 산정 방식이 갈린다
+    # (고용보험법 시행규칙 제91조의2 제1항 제1호 일 단위 / 제2호 주 단위)
+    weekly_defined: bool = False
+
+
+@dataclass(frozen=True)
+class HourSplit:
+    """1일 8시간·1주 40시간을 넘는 시간을 소정근로와 연장근로로 나눈 결과(calc-card-followups D1·D9).
+
+    소정근로시간은 법정근로시간(근로기준법 제50조) 범위에서 정한 시간이라(제2조 제1항 제8호) 넘는 부분은 연장근로다
+    (대법원 2025. 8. 14. 선고 2022다291153 판결 [2]① — 격일제도 같다). 계산은 `shared.split_hours`, 적용은
+    `shared.apply_hour_split`이 한다. 적용하면 `WageInput.schedule`이 소정 기준으로 바뀌고 원래 값은 여기 남는다.
+    """
+    raw_daily: float            # 질문(입력)의 1일 근로시간
+    raw_days: float             # 질문(입력)의 주 근무일수
+    daily: float                # 1일 평균 소정근로시간(≤ 8)
+    days: float                 # 1주 소정근로일 수
+    excess: float = 0.0         # 1주 연장근로시간(1일·1주 한도 초과분)
+    mode: str = "none"          # none(초과 없음) | applied(나눔) | skipped(나누지 않는 입력) | held(제도 확인 필요)
+    reason: str = ""            # skipped·held 사유
+    stated_overtime: float = 0.0  # 질문에 따로 적힌 주 연장시간
+    overtime: float = 0.0       # 나눈 뒤 쓰는 주 연장시간(D8 — 따로 적힌 값과 초과분의 조정 결과)
+
+    @property
+    def weekly(self) -> float:
+        """1주 소정근로시간."""
+        return self.daily * self.days
+
 
 @dataclass
 class WageInput:
@@ -196,6 +229,10 @@ class WageInput:
     hourly_wage: Optional[float] = None    # 시급 (원)
     daily_wage: Optional[float] = None     # 일급 (원)
     monthly_wage: Optional[float] = None   # 월 기본급 또는 포괄임금 총액 (원)
+    # 월 임금총액(연장·야간·휴일·연차수당 등 포함, 원) — 평균임금·4대보험 보수월액·근로장려금 소득·DC형 적립의 기준.
+    # None이면 monthly_wage·통상임금으로 추정한다(기존 동작). monthly_wage가 기본급이고 그 수당이 따로 있으면 그 추정은
+    # 과소다 — 통상임금(기본급)과 평균임금(총액)의 기준이 갈리는 질문을 한 번에 계산하려고 둔다(audit-50 Act-3).
+    monthly_total_pay: Optional[float] = None
     annual_wage: Optional[float] = None    # 연봉 (원)
 
     # ── 사업장/근무 정보 ─────────────────────────────────────────────────────
@@ -208,6 +245,14 @@ class WageInput:
 
     # ── 근무 스케줄 ──────────────────────────────────────────────────────────
     schedule: WorkSchedule = field(default_factory=WorkSchedule)
+    # 소정·연장 분리 결과 — 파이프라인 또는 facade가 계산 전에 한 번 채운다(shared.apply_hour_split). None이면 아직 안 나눴다
+    hour_split: Optional[HourSplit] = None
+    # 임금 구성(월급에 연장수당 등이 들어 있는지)을 확인했는가 — 파이프라인이 구성 진술·포괄임금제 경로에서 True로 둔다.
+    # False면 일급·월급·연봉에 연장 등이 있을 때 최저임금을 '연장 별도'와 '연장 포함 역산' 둘로 본다(D4)
+    wage_composition_known: bool = False
+    # 질문이 연장·야간·휴일 근로 임금을 따로 받는다고 밝혔다 — 구성이 'A(연장 별도)'로 정해져 D4의 두 구성을 보지 않는다(독립 리뷰
+    # M1: "연장수당은 별도로 받아요"에도 보류했다). wage_composition_known(금액에 들어 있음)과 뜻이 반대라 따로 둔다
+    premium_paid_separately: bool = False
 
     # ── 통상임금 포함 고정수당 목록 ──────────────────────────────────────────
     # 예: [{"name": "직책수당", "amount": 100000, "is_ordinary": True},
@@ -228,6 +273,7 @@ class WageInput:
     # 퇴직금 계산 시 사용. None이면 monthly_wage × 3으로 추정
     last_3m_wages: Optional[list] = None   # 최근 3개월 각 지급액 [m1, m2, m3]
     last_3m_days: Optional[int] = None     # 최근 3개월 총 일수 (기본 92일)
+    average_wage_date: Optional[str] = None  # 평균임금 사유 발생일; 퇴직 외 사건에도 사용
 
     # 퇴직금 평균임금 — 1년치 임금 (대법원 2023다302579 반영)
     # None이면 monthly_wage × 12 추정. 제공 시 3개월 vs 1년 중 유리한 쪽 선택
@@ -236,6 +282,9 @@ class WageInput:
 
     # 일용직 월 근무일수 (퇴직금 자격 판단용)
     daily_worker_monthly_days: Optional[int] = None  # 월 평균 근무일수 (4~15일 이상 시 퇴직금 인정)
+    # 질문이 일용근로자라고 밝혔다 — 실업급여 기초일액을 통상임금과 비교하지 않는다(고용보험법 제45조 제2항 단서, 리뷰 L2).
+    # work_type을 DAILY_WORKER로 두지 않는 것은 퇴직금 계산기의 일용직 갈래(판례 문구 원문 미확인)까지 켜지기 때문이다
+    is_daily_worker: bool = False
 
     # ── 연차 계산용 ──────────────────────────────────────────────────────────
     annual_leave_used: float = 0.0         # 사용한 연차 일수
@@ -243,7 +292,18 @@ class WageInput:
     use_fiscal_year: bool = False          # 회계연도(1/1) 기준 여부
     leave_use_promotion: bool = False      # 사용촉진제도 실시 여부 (근기법 제61조)
                                            # True면 미사용 연차수당 지급 의무 면제 가능
-    first_year_leave_used: float = 0.0    # 1년 미만 기간 중 사용한 연차 (제60조③ 2년차 차감용)
+    first_year_leave_used: Optional[float] = None  # 첫해 사용 일수. None=미확인, 현행 다음 연도 15일과 별도
+    first_year_leave_used_hours: Optional[float] = None  # 첫해 발생분의 실제 차감 시간(단축 중 일수와 구분)
+    annual_full_attendance_months: Optional[int] = None  # 현재 산정기간 실제 월 개근 수
+    first_year_full_attendance_months: Optional[int] = None  # 과거 첫해 개근 수(현재 출근율로 추정하지 않음)
+    annual_scheduled_days: Optional[float] = None  # 현재 산정기간 소정근로일수
+    annual_attended_days: Optional[float] = None  # 출근 간주를 더하기 전 출근일수
+    annual_deemed_periods: list = field(default_factory=list)  # 사유·기간·해당 소정일수(단축시간을 일수로 바꾸지 않음)
+    annual_original_weekly_hours: Optional[float] = None  # 법정 단축 전 주 소정시간
+    annual_original_daily_hours: Optional[float] = None  # 법정 단축 전 1일 소정시간
+    annual_leave_used_hours: Optional[float] = None  # 실제 차감한 시간. 일수보다 우선
+    fiscal_year_granted_days: Optional[float] = None  # 회사 규정으로 해당 회계연도에 실제 부여한 일수
+    last_employed_date: Optional[str] = None  # 근로관계가 존재한 마지막 날(포함)
 
     # ── 해고예고 계산용 ──────────────────────────────────────────────────────
     notice_days_given: int = 0             # 실제 해고예고일수
@@ -258,11 +318,33 @@ class WageInput:
     # ── 중도입사 일할계산용 ──────────────────────────────────────────────────
     join_date: Optional[str] = None                # 중도입사일
     first_month_worked_days: Optional[int] = None  # 입사 첫 달 근무일수
+    # 월별·항목별 원금 정산(C5), 세전 의무액과 확인된 변제충당 명세.
+    wage_claim_items: list | None = None
+    wage_claim_scope_complete: bool | None = None
+    wage_claim_amount_basis: str | None = None
+    wage_claim_calc_date: str | None = None
+    wage_claim_payments: list | None = None
+    wage_claim_adjustments: list | None = None
+    wage_claim_include_interest: bool = False
+
+    settlement_month: Optional[str] = None
+    proration_method: Optional[str] = None
+    proration_retirement_effective_date: Optional[str] = None
+    proration_employed_at_month_start: Optional[bool] = None
+    proration_unpaid_periods: Optional[list] = None
+    proration_scheduled_dates: Optional[list] = None
+    proration_all_items_proportional: Optional[bool] = None
+    proration_items: Optional[list] = None
+    proration_items_complete: Optional[bool] = None
 
     # ── 수습기간 여부 ─────────────────────────────────────────────────────────
     is_probation: bool = False             # 수습기간 여부 (최저임금 90% 특례)
-    probation_months: int = 3              # 수습기간 (개월)
-    contract_months: Optional[int] = None  # 근로계약기간 (개월). None=기간 정함 없음(=1년 이상으로 간주)
+    # 수습 감액 요건(최저임금법 제5조 제2항)은 질문에서 확인된 것만 충족으로 본다(calc-card-followups D5) — None은 '모름'이다.
+    # 예전 기본값(수습 3개월, 계약기간 없음 = 1년 이상)은 수습 6개월 중 5개월째에도 90%로 '충족'을 냈다
+    probation_months: Optional[int] = None          # 수습기간 길이(개월)
+    probation_elapsed_months: Optional[int] = None  # 수습을 시작한 뒤 몇 개월째인가
+    contract_months: Optional[int] = None  # 근로계약기간 (개월). None=모름 — 기간의 정함이 없는 계약은 contract_open_ended
+    contract_open_ended: Optional[bool] = None      # 정규직·무기계약 등 기간의 정함이 없는 계약이면 True(1년 이상으로 본다)
     occupation_code: Optional[str] = None  # 한국표준직업분류 코드 (예: "91", "9100"). 대분류 "9"=단순노무종사자
 
     # ── 특수고용직(노무제공자) ────────────────────────────────────────────────
@@ -289,11 +371,53 @@ class WageInput:
     voluntary_quit_reason: str = ""        # 자발적 이직 예외 사유 (임금체불/통근불가/간호 등)
 
     # ── 육아휴직급여 계산용 ───────────────────────────────────────────────────
-    parental_leave_months: int = 0              # 육아휴직 신청 개월 수 (최대 12개월)
-    is_second_parent: bool = False              # 두 번째 육아휴직자 여부 (아빠 보너스 적용)
-    reduced_work_hours_per_day: float = 0.0    # 육아기 근로시간 단축 시간/일 (0이면 미사용)
+    parental_leave_months: int = 0              # 이번 계산 기간; 기사용분은 별도
+    is_second_parent: bool = False              # 호환 입력; 이것만으로 특례 판정 불가
+    reduced_work_hours_per_day: float = 0.0      # 호환 입력; 주시간으로 추정하지 않음
+    childcare_example: bool = False            # 날짜 없는 기준일 제도 예시
+    childcare_child_birth_date: Optional[str] = None
+    childcare_child_age: Optional[int] = None   # 각 개시일 현재 만 나이
+    childcare_child_grade: Optional[int] = None # 각 개시일 초등 학년
+    childcare_reason: str = "child"             # child/pregnant_self/pregnant_spouse
+    childcare_spouse_risk_eligible: Optional[bool] = None
+    childcare_insured_days: Optional[int] = None # 피보험 단위기간; 달 수와 다름
+    childcare_employer_monthly_payment: Optional[float] = None # 월 환산 지급액; 일부월은 비례
+    parental_leave_start: Optional[str] = None
+    parental_first_leave_start: Optional[str] = None # 재사용 때 6+6 연령 확인용 최초 개시일
+    parental_first_leave_reason: Optional[str] = None
+    parental_leave_end: Optional[str] = None    # 포함
+    parental_leave_periods: Optional[list] = None # start_date,end_date,kind=regular/short
+    parental_prior_months: int = 0
+    parental_prior_days: int = 0
+    parental_scheme: str = "general"            # general/six_plus_six/single_parent
+    parental_same_child: Optional[bool] = None
+    parental_other_parent_months: Optional[int] = None
+    parental_other_parent_start: Optional[str] = None
+    parental_other_parent_reason: str = "child"
+    parental_other_parent_spouse_risk_eligible: Optional[bool] = None
+    parental_other_parent_periods: Optional[list] = None
+    parental_single_parent_eligible: Optional[bool] = None
+    parental_disabled_child_eligible: Optional[bool] = None
+    short_parental_reason_eligible: Optional[bool] = None
+    short_parental_used_this_year: Optional[bool] = None
+    reduced_weekly_hours_before: Optional[float] = None
+    reduced_weekly_hours_after: Optional[float] = None
+    reduced_start: Optional[str] = None
+    reduced_end: Optional[str] = None
+    reduced_periods: Optional[list] = None
+    reduced_months: int = 0
+    reduced_prior_months: int = 0
+    reduced_unused_parental_months: Optional[float] = None # 기본 12개월 중 미사용분
+    reduced_offset_monthly_ordinary_wage: Optional[float] = None # 감액 기준: 직전월/인상 후 통상임금
 
     # ── 출산전후휴가급여 계산용 ───────────────────────────────────────────────
+    maternity_leave_type: Optional[str] = None
+    family_leave_days: Optional[int] = None
+    family_leave_used_days: Optional[int] = None
+    family_leave_insured_days: Optional[int] = None
+    family_leave_eligible: Optional[bool] = None
+    family_leave_start_date: Optional[str] = None
+    family_leave_end_date: Optional[str] = None
     is_priority_support_company: bool = True    # 우선지원대상기업(중소기업) 여부
     is_multiple_birth: bool = False             # 다태아 여부 (True면 120일)
     is_premature_birth: bool = False            # 미숙아 여부 (2025-02-23~ 100일, 근기법 제74조①)
@@ -309,8 +433,16 @@ class WageInput:
     # ── 임금체불 지연이자 계산용 ──────────────────────────────────────────────
     arrear_amount: float = 0.0                  # 미지급 임금 원금 (원)
     arrear_due_date: str = ""                   # 원래 지급예정일 "YYYY-MM-DD"
-    arrear_calc_date: str = ""                  # 이자 계산 기준일 (빈 문자열이면 오늘)
-    is_post_retirement_arrear: bool = False     # True이면 연 20% (퇴직 후 14일 초과)
+    arrear_calc_date: Optional[str] = None      # 생략만 조회 기준일 사용; 잘못된 날짜는 보류
+    is_post_retirement_arrear: bool = False     # 호환용 퇴직 사실; 날짜나 14일 경과를 대체하지 않음
+    arrear_claim_kind: str = "regular_wage"     # regular_wage / retirement_lump_sum / other_rate
+    arrear_retirement_effective_date: Optional[str] = None  # 마지막 재직일 다음 날 0시
+    arrear_last_employed_date: Optional[str] = None
+    debtor_is_merchant: Optional[bool] = None
+    arrear_payments: Optional[list] = None
+    arrear_exclusions: Optional[list] = None
+    arrear_claims: Optional[list] = None
+    arrear_deadline_holidays: Optional[list] = None
 
     # ── 탄력적 근로시간제 계산용 ──────────────────────────────────────────────
     flexible_work_unit: str = ""               # "2주", "3개월", "6개월"
@@ -352,6 +484,9 @@ class WageInput:
 
     # ── 퇴직금 평균임금 가산용 ───────────────────────────────────────────────
     annual_bonus_total: float = 0.0            # 연간 상여금 총액
+    annual_bonus_allowance_ids: Optional[list] = None
+    last_3m_bonus_included: Optional[float] = None
+    monthly_total_bonus_included: Optional[float] = None
     unused_annual_leave_pay: float = 0.0       # 최종 미사용 연차수당
 
     # ── 평균임금 산정 제외 기간 (근기법 시행령 제2조) ──────────────────────
