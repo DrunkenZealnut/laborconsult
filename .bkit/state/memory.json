@@ -568,7 +568,7 @@
       "1766e60"
     ],
     "deployVerified": "2026-11-03 프로덕션 배포 Ready(sha 1766e60) · workflow_dispatch run 41654058777 exit 0('마지막 성공 답변: 10-28 22:39 KST (144.8시간 전) · 최근 24시간 실패 0건')",
-    "archivePR": "미생성 — 보관 변경(docs/archive/2026-11 이동·_INDEX·memory.json·ai-gateway 보고서 v1.6·완료 보고서 v1.2) 커밋·PR은 사용자 요청 시",
+    "archivePR": "#151 (2026-11-04, 머지 대기 — 보관 변경: docs/archive/2026-11 이동·_INDEX·memory.json·ai-gateway 보고서 v1.6·완료 보고서 v1.2)",
     "followups": "D-d 게시판 API 실패 행 회귀 · R-1 /api/health 사전 호출 · R-2 운영 절차 · R-3 사용자 결정 · L-2/L-3/L-9/L-10/L-6 · 저장 지연 상한(postgrest 타임아웃) · 관리자 목록 표지 · 카나리 U4(결제 승인 필요)"
   }
 }
