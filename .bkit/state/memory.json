@@ -333,7 +333,7 @@
       "gaps": "High 0 · Medium 3(M1 CLAUDE.md 상수명, M2 그만 나오지 말 서술, M3 business_size 비표준 문자열) · Low 8",
       "measurement": "10-09 topic30 12/14 — 보충 조문 순서(A1)·유보 지표 정의(F-2)",
       "independentReview": "code-analyzer High 0 · Medium 3(4대보험 배경 발동, 혼합 질문 괴롭힘 근거 누락, 별표 항 접속) · Low 7",
-      "next": "Act 브랜치(보관 이동 포함) 커밋·PR(요청 시) → 머지 → 등록 회선에서 --anchors·warm_law_cache 1회"
+      "next": "PR #152 머지 → 등록 회선에서 --anchors·warm_law_cache 1회 → launchd 작업 트리 main 갱신 확인"
     },
     "worktreeRemoved": "Do 워크트리 ~/DEV/laborconsult-lac 제거 후보(추적 변경 없음)",
     "iterationCount": 1,
@@ -351,14 +351,17 @@
     "reportPath": "docs/archive/2026-11/law-article-coverage/law-article-coverage.report.md",
     "archivedAt": "2026-11-05",
     "archivedTo": "docs/archive/2026-11/law-article-coverage/",
-    "archiveNote": "머지 앞서 보관(Act-1·보고서·분석·보관 이동 전부 fix/law-article-coverage-act 미커밋). plan·design은 git mv(스테이지된 rename), analysis·report는 미추적 이동",
+    "archiveNote": "머지 앞서 보관. plan·design은 git mv, analysis·report는 신규 추가 — 전부 PR #152에 커밋",
     "prs": [
-      104
+      104,
+      152
     ],
     "mergedCommits": [
       "3441594"
     ],
-    "followups": "L6(Match Rate 잔존) · F-9 _BULLYING_RE 어휘 겹침 · R1·R4·R5·R9 · F-2(유보 지표 정의)·F-5·F-6 · S3·S4·S5·S7·S8 · 등록 회선 --anchors 1회·skipped_unwarmed 실사용 확인"
+    "followups": "L6(Match Rate 잔존) · F-9 _BULLYING_RE 어휘 겹침 · R1·R4·R5·R9 · F-2(유보 지표 정의)·F-5·F-6 · S3·S4·S5·S7·S8 · 등록 회선 --anchors 1회·skipped_unwarmed 실사용 확인",
+    "actPR": "#152 (2026-11-05, Act-1 + 보고서·분석·보관 이동 — 머지 대기)",
+    "archivePR": "#152 (2026-11-05, 보관 이동이 Act PR에 포함)"
   },
   "unemployment-separation-grounds": {
     "phase": "design",
