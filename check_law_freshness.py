@@ -253,12 +253,14 @@ _BOX_RE = re.compile(r"[┃│┠┼┨━┯┷┏┓┗┛─┌┐└┘├�
 _ART = r"제(\d+)조(?:의(\d+))?"
 _RANGE_RE = re.compile(_ART + r"부터" + _ART + r"까지")
 # 항 접속: '·' ',' '및' '과'(나열)와 "제N항부터 제M항까지"(범위). 범위와 나열이 섞였거나 범위가 거꾸로면, 그리고
-# 모르는 접속('내지' 등) 뒤에 항이 이어지면(_DANGLING_PARA_RE) 그 조를 UNPARSED로 보낸다 — '·'·','만 알던 때
-# "제55조제1항부터 제2항까지"가 {1}로 읽혀 '제55조제2항 없음' 주장이 참이 됐다(fail-open, Check 독립 리뷰 R3).
+# 다음 조문 앞에 항 표기가 남아 있으면(_STRAY_PARA_RE — '내지'·'같은 조' 같은 모르는 접속) 그 조를 UNPARSED로 보낸다.
+# '·'·','만 알던 때 "제55조제1항부터 제2항까지"가 {1}로 읽혀 '제55조제2항 없음' 주장이 참이 됐다(fail-open, Check 독립
+# 리뷰 R3). 접속어 길이로 보던 첫 판(4자 상한)은 "부터 같은 조 제3항까지"(5자)를 놓쳤다(PR #152 CodeRabbit).
 _PARA_SEQ = r"(?:제\d+항)(?:(?:[·ㆍ,]|및|과)제\d+항|부터제\d+항까지)*"
 _ITEM_RE = re.compile(_ART + rf"({_PARA_SEQ})?(제\d+호)?")
 _PARA_RANGE_RE = re.compile(r"^제(\d+)항부터제(\d+)항까지$")
-_DANGLING_PARA_RE = re.compile(r"[^제\s]{0,4}제\d+항")   # _ITEM_RE 뒤에 항이 더 이어지면 접속을 못 읽은 것
+_NEXT_ART_RE = re.compile(_ART)
+_STRAY_PARA_RE = re.compile(r"제\d+항")                # 항목 뒤 ~ 다음 조문 사이에 항이 남아 있으면 접속을 못 읽은 것
 
 
 def _paragraph_set(seq: str) -> frozenset | None:
@@ -338,8 +340,9 @@ def annex_listing(text: str) -> AnnexListing:
     singles = _RANGE_RE.sub(lambda m: " " * len(m.group(0)), body_wo_paren)
     for m in _ITEM_RE.finditer(singles):
         key = (int(m.group(1)), int(m.group(2)) if m.group(2) else None)
-        if _DANGLING_PARA_RE.match(singles, m.end()):  # 모르는 접속 뒤에 항이 이어진다('내지' 등) — 첫 항만 읽지 않는다
-            listing.unparsed.add(key[0])
+        nxt = _NEXT_ART_RE.search(singles, m.end())
+        if _STRAY_PARA_RE.search(singles, m.end(), nxt.start() if nxt else len(singles)):
+            listing.unparsed.add(key[0])              # 모르는 접속('내지'·'같은 조') 뒤에 항이 이어진다 — 첫 항만 읽지 않는다
             continue
         if m.group(4) or qualified(m.end()):         # 호 한정·괄호 한정 → 부분
             value = ANNEX_PARTIAL

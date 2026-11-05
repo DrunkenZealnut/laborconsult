@@ -243,6 +243,13 @@ class AnnexTest(unittest.TestCase):
         self.assertIn(55, dangling.unparsed, "모르는 접속('내지') 뒤에 항이 이어지면 첫 항만 읽지 않고 해석 불가로 둔다")
         self.assertIsNone(c.annex_claim_holds(dangling, "제55조제3항", False))
         self.assertEqual(dangling.articles[(56, None)], c.ANNEX_ALL, "뒤 조문은 그대로 읽는다")
+        # PR #152 CodeRabbit — 접속어 길이(4자)로 보던 판정은 "부터 같은 조 제3항까지"(5자)를 놓쳐 제55조를 {1}로 읽었다.
+        # 다음 조문 앞에 항 표기가 남아 있으면 길이와 무관하게 해석 불가다
+        same = L("적용법규정 제55조제1항부터 같은 조 제3항까지, 제56조")
+        self.assertIn(55, same.unparsed, "'같은 조' 접속은 해석하지 않는다")
+        self.assertIsNone(c.annex_claim_holds(same, "제55조제3항", False))
+        self.assertEqual(same.articles[(56, None)], c.ANNEX_ALL)
+        self.assertIn(55, L("적용법규정 제55조제1항 및 같은 조 제3항").unparsed)
         header = L("별표 1 … 법 규정(제7조 관련) 구분 적용법규정 제1조")
         self.assertNotIn((7, None), header.articles, "머리말의 '(제7조 관련)'은 목록이 아니다")
 
@@ -382,6 +389,11 @@ class WiringTest(unittest.TestCase):
                         "회사가 신고를 '무시'한 것은 괴롭힘 행위가 아니다 — 성희롱 단독")
         self.assertTrue(_is_sexual_query("회식에서 성적인 농담을 들어 모욕감을 느꼈어요. 남성에 비하여 여성만 그래요"),
                         "'모욕감'(피해 감정)·'…에 비하여'(비교)는 괴롭힘 행위가 아니다")
+        # PR #152 Codex P2 — '성폭력·성폭행'은 성희롱 쪽 어휘다. 사전의 '폭력·폭행'이 그 안에서 맞으면 성희롱 단독 질문이
+        # 혼합이 되어 괴롭힘 블록·5인 조건이 되살아난다. '성' 뒤의 폭행·폭력만 빼고 별도 폭행은 그대로 섞임이다
+        self.assertTrue(_is_sexual_query("직원 3명인 회사에서 팀장에게 성추행을 당했습니다. 성폭력 신고는 어떻게 하나요?"))
+        self.assertTrue(_is_sexual_query("성추행에 성폭행 시도까지 있었습니다. 신고하려면요?"))
+        self.assertFalse(_is_sexual_query("상사가 성희롱 뒤 폭행까지 했습니다"), "따로 적힌 폭행은 괴롭힘 행위다")
 
     def test_ac13_deleted_refs_blocked(self):
         import check_law_freshness as c
@@ -434,14 +446,16 @@ class WiringTest(unittest.TestCase):
         known = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": "5인이상"})), "")
         self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE, known)
         # Check M3 — 의도분석 규모는 자유 문자열이다. 매핑 키가 아니어도 읽을 수 있으면 읽고, 아니면 미기재로 다룬다
-        for raw in ("5인 미만", "4명", "직원 3명", "직원수 3명", "4인 이하"):
+        for raw in ("5인 미만", "4명", "직원 3명", "직원수 3명", "4인 이하", "약 3명"):
             out = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": raw})), "")
             self.assertIn("휴업수당: 미적용 (상시 4명 이하 사업장)", out, f"{raw!r}는 4명 이하다")
-        for raw in ("소규모", "15인 미만", "1인 이상"):
+        for raw in ("소규모", "15인 미만", "1인 이상", "약 5명", "5명 정도", "4~5명"):   # 근사·범위는 경계를 걸치면 미기재(PR #152 CodeRabbit)
             out = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": raw})), "")
             self.assertIn(_SIZE_ASSUMED_CALC_NOTE, out, f"{raw!r}는 규모를 정하지 못해 미기재로 다룬다")
-        self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE,
-                         _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": "직원 10명"})), ""))
+        for raw in ("직원 10명", "10여 명", "약 30명"):
+            self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE,
+                             _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": raw})), ""),
+                             f"{raw!r}는 앞뒤 1명을 열어도 5명 이상이다")
         # gap-detector 재대조 관찰 4 — 연장 가산 안내(_SIZE_ASSUMED_NOTE)가 같은 가정을 이미 밝혔고 규모 의존 계산이
         # 연장·포괄뿐이면 가정 고지를 겹쳐 적지 않는다. 다른 규모 의존 계산(휴업수당)이 함께 있으면 붙는다.
         from app.core.pipeline import _SIZE_ASSUMED_NOTE
@@ -480,6 +494,9 @@ class WiringTest(unittest.TestCase):
                       "성희롱과 폭언이 섞이면 괴롭힘 블록도 붙는다 — '괴롭힘' 낱말이 없어도(Act A2)")
         self.assertNotIn("harassment_retaliation", names("성추행을 신고했는데 회사가 무시하고 조사를 안 해요"),
                          "회사의 '무시'는 괴롭힘 행위가 아니다 — 성희롱 단독으로 본다")
+        self.assertNotIn("harassment_retaliation",
+                         names("직원 3명인 회사에서 팀장에게 성추행을 당했습니다. 성폭력 신고는 어떻게 하나요?"),
+                         "'성폭력'의 '폭력'은 괴롭힘 행위가 아니다 — 5인 조건 문장을 싣지 않는다(PR #152 Codex)")
 
 
 if __name__ == "__main__":

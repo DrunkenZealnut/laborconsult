@@ -2550,7 +2550,8 @@ _SIZE_MAP = {
     "30인이상": BusinessSize.OVER_30,
     "300인이상": BusinessSize.OVER_300,
 }
-_SIZE_TEXT_RE = re.compile(r"^(?:약|상시|근로자|직원|사원|인원|총|수)*(\d[\d,]*)(?:명|인)?(미만|이하|이상|초과)?(?:사업장|사업)?$")
+_SIZE_TEXT_RE = re.compile(r"^((?:약|대략|상시|근로자|직원|사원|인원|총|수)*)(\d[\d,]*)(여)?(?:명|인)?"
+                           r"(미만|이하|이상|초과|내외|안팎|정도|가량|쯤|전후|남짓)?(?:사업장|사업)?$")
 
 
 def _canonical_business_size(raw) -> str | None:
@@ -2569,18 +2570,29 @@ def _canonical_business_size(raw) -> str | None:
     m = _SIZE_TEXT_RE.match(s)
     if not m:
         return None
-    n, qual = int(m.group(1).replace(",", "")), m.group(2) or ""
-    if qual in ("미만", "이하"):
-        upper = n - 1 if qual == "미만" else n          # 가능한 최대 인원
-        return "5인미만" if upper <= 4 else None
-    low = n + 1 if qual == "초과" else n                # 가능한 최소 인원(이상·초과·정확한 수)
-    if qual and low < 5:                                 # "1인 이상"은 4명 이하일 수도 있다
+    prefix, n, qual = m.group(1), int(m.group(2).replace(",", "")), m.group(4) or ""
+    approx = bool(re.search(r"약|대략", prefix)) or bool(m.group(3))
+    if qual == "미만":                                   # 가능한 인원 구간 [lo, hi]
+        lo, hi = 0, n - 1
+    elif qual == "이하":
+        lo, hi = 0, n
+    elif qual == "이상":
+        lo, hi = n, math.inf
+    elif qual == "초과":
+        lo, hi = n + 1, math.inf
+    elif qual or approx:                                 # "약 5명"·"10여 명"·"5명 정도" — 앞뒤 1명까지 열어 둔다
+        lo, hi = n - 1, n + 1                            # (harassment_assessor._size_bounds와 같은 폭, PR #152 CodeRabbit)
+    else:
+        lo, hi = n, n
+    if hi <= 4:
+        return "5인미만"
+    if lo < 5:                                           # "1인 이상"·"약 5명"은 4명 이하일 수도 있다 → 미기재
         return None
-    if low >= 300:
+    if lo >= 300:
         return "300인이상"
-    if low >= 30:
+    if lo >= 30:
         return "30인이상"
-    return "5인이상" if low >= 5 else "5인미만"
+    return "5인이상"
 
 
 def _run_calculator(params: dict, query: str = "") -> str | None:

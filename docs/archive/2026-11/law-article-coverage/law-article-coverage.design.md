@@ -1,6 +1,6 @@
 # law-article-coverage — Design rev2
 
-> Plan: `docs/01-plan/features/law-article-coverage.plan.md`
+> Plan: `docs/archive/2026-11/law-article-coverage/law-article-coverage.plan.md`(보관 전 `docs/01-plan/features/`)
 > 결정(2026-10-07, 사용자가 Plan §6 권고 확인 뒤 `/pdca design` 진행):
 > - 민법·형법은 **법령 전체를 예열**한다.
 > - 5인 조건은 **정확성 규칙(항상 적용)**에 둔다.
@@ -655,7 +655,7 @@ $PY compare_t30.py t30/lac_before1.json t30/lac_after.json --also t30/lac_before
 
 ## 14. Check·Act 반영 (2026-11-04)
 
-Check(`docs/03-analysis/law-article-coverage.analysis.md`, Match Rate 93.5%)와 독립 리뷰가 찾은 것을 Act-1에서 반영했다. 아래가 이 설계의 **현행 서술**이다 — 앞 절과 다르면 이 절이 우선한다.
+Check(`docs/archive/2026-11/law-article-coverage/law-article-coverage.analysis.md`, Match Rate 93.5%)와 독립 리뷰가 찾은 것을 Act-1에서 반영했다. 아래가 이 설계의 **현행 서술**이다 — 앞 절과 다르면 이 절이 우선한다.
 
 ### 14.1 설계 결정 변경
 

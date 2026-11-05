@@ -361,7 +361,8 @@
     ],
     "followups": "L6(Match Rate 잔존) · F-9 _BULLYING_RE 어휘 겹침 · R1·R4·R5·R9 · F-2(유보 지표 정의)·F-5·F-6 · S3·S4·S5·S7·S8 · 등록 회선 --anchors 1회·skipped_unwarmed 실사용 확인",
     "actPR": "#152 (2026-11-05, Act-1 + 보고서·분석·보관 이동 — 머지 대기)",
-    "archivePR": "#152 (2026-11-05, 보관 이동이 Act PR에 포함)"
+    "archivePR": "#152 (2026-11-05, 보관 이동이 Act PR에 포함)",
+    "reviewFixes": "PR #152 리뷰(11-05): Codex P2 '성폭력·성폭행'의 폭력·폭행 → is_sexual_only 제외(코퍼스 21건 뒤집힘 0) · CodeRabbit 4건 반영(근사 규모 ±1 구간, 별표 잔여 항 해석 불가, 설계서 보관 경로, §3.2 라벨) · 2건 F-9 보류(무시·배제·사적 용무, 부정 서술 — D16 결정·코퍼스 사례 0)"
   },
   "unemployment-separation-grounds": {
     "phase": "design",
