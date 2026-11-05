@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 89,
+  "sessionCount": 92,
   "lastSession": {
-    "startedAt": "2026-11-03T15:33:45.926Z",
+    "startedAt": "2026-11-05T01:58:21.188Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -301,13 +301,13 @@
     "mergeCommit": "db28ee8"
   },
   "law-article-coverage": {
-    "phase": "do",
+    "phase": "archived",
     "startedAt": "2026-10-07T00:00:00Z",
-    "planPath": "docs/01-plan/features/law-article-coverage.plan.md",
+    "planPath": "docs/archive/2026-11/law-article-coverage/law-article-coverage.plan.md",
     "trigger": "지식iN 20문항 블라인드 재채점(2026-10-06 프로덕션, 78.4·오답0·누락25) 리뷰 — 처방 1~3(키워드 조문·5인 조건·예열 확장)",
     "dependsOn": "production-law-api-recovery (PR #102 머지·배포, 3일 관측 중)",
     "openDecisions": [],
-    "designPath": "docs/02-design/features/law-article-coverage.design.md",
+    "designPath": "docs/archive/2026-11/law-article-coverage/law-article-coverage.design.md",
     "designRev": 2,
     "decisions": {
       "warm_civil_criminal": "법령 전체 예열",
@@ -324,7 +324,41 @@
     },
     "branch": "feat/law-article-coverage (origin/main db28ee8 기반)",
     "doStartedAt": "2026-10-07",
-    "worktree": "/Users/zealnutkim/DEV/laborconsult-lac"
+    "matchRate": 99.4,
+    "checkedAt": "2026-11-04",
+    "analysisPath": "docs/archive/2026-11/law-article-coverage/law-article-coverage.analysis.md",
+    "merged": "PR #104 → 3441594 (2026-11-04, 관문 2건 수용·충돌 5건 해결·CodeRabbit 6건 반영)",
+    "checkSummary": {
+      "matchRate": "93.5% (157/168)",
+      "gaps": "High 0 · Medium 3(M1 CLAUDE.md 상수명, M2 그만 나오지 말 서술, M3 business_size 비표준 문자열) · Low 8",
+      "measurement": "10-09 topic30 12/14 — 보충 조문 순서(A1)·유보 지표 정의(F-2)",
+      "independentReview": "code-analyzer High 0 · Medium 3(4대보험 배경 발동, 혼합 질문 괴롭힘 근거 누락, 별표 항 접속) · Low 7",
+      "next": "Act 브랜치(보관 이동 포함) 커밋·PR(요청 시) → 머지 → 등록 회선에서 --anchors·warm_law_cache 1회"
+    },
+    "worktreeRemoved": "Do 워크트리 ~/DEV/laborconsult-lac 제거 후보(추적 변경 없음)",
+    "iterationCount": 1,
+    "actedAt": "2026-11-04",
+    "actBranch": "fix/law-article-coverage-act (미커밋)",
+    "actSummary": "A1 2-1 순서(주→의도분석→보충) · A2 혼합 질문 is_sexual_only · A3 business_size 정규화 · A4 freshness 예외 출력/고시 비교/root · A5 별표 항 접속 · A6 _ineligible is_applicable · A7 문서. 재검증 스위트 15종·--anchors 통과. Match Rate 93.5 → 99.4(L6 잔존)",
+    "gapRerun": {
+      "at": "2026-11-05",
+      "independent": "98.8% (166/168) · §14 포함 98.5% (194/197)",
+      "afterFix": "167/168 = 99.4% (L6만) · 196/197 = 99.5%",
+      "fixed": "N1 CLAUDE.md 옛 판정 함수·제116조 · N2 P2 위치 · N3 별표 '내지' 접속 fail-closed · N4 2-1 주석 · 관찰 2~4",
+      "deferred": "F-9 _BULLYING_RE 어휘 겹침(다음 측정 표본) · 관찰 5 수용 · 관찰 6 S3"
+    },
+    "completedAt": "2026-11-05",
+    "reportPath": "docs/archive/2026-11/law-article-coverage/law-article-coverage.report.md",
+    "archivedAt": "2026-11-05",
+    "archivedTo": "docs/archive/2026-11/law-article-coverage/",
+    "archiveNote": "머지 앞서 보관(Act-1·보고서·분석·보관 이동 전부 fix/law-article-coverage-act 미커밋). plan·design은 git mv(스테이지된 rename), analysis·report는 미추적 이동",
+    "prs": [
+      104
+    ],
+    "mergedCommits": [
+      "3441594"
+    ],
+    "followups": "L6(Match Rate 잔존) · F-9 _BULLYING_RE 어휘 겹침 · R1·R4·R5·R9 · F-2(유보 지표 정의)·F-5·F-6 · S3·S4·S5·S7·S8 · 등록 회선 --anchors 1회·skipped_unwarmed 실사용 확인"
   },
   "unemployment-separation-grounds": {
     "phase": "design",
