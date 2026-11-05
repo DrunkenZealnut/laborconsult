@@ -218,10 +218,34 @@ def derive_input(query: str) -> HarassmentInput:
 def is_sexual_harassment(text: str) -> bool:
     """직장 내 성희롱 서술인가 — **단일 판정**(production-law-api-recovery D10).
 
-    판정 모드(아래 decide_mode)·2-1/2-2 조문 선택(근로기준법 제76조의2·3 제외)·키워드 조문(남녀고용평등법
-    제12·14조)이 모두 이 함수를 쓴다. 판정이 두 벌이면 "성적인 농담"처럼 한쪽만 잡는 표현이 생긴다.
+    판정 모드(아래 decide_mode)·키워드 조문(남녀고용평등법 제12·14조)이 이 함수를 쓴다. 판정이 두 벌이면
+    "성적인 농담"처럼 한쪽만 잡는 표현이 생긴다. 괴롭힘 조문·블록을 **빼는** 판정은 `is_sexual_only`다.
     """
     return bool(_SEXUAL_RE.search(_norm(text)))
+
+
+# 성희롱과 함께 서술된 비성적 괴롭힘 행위 — 폭행·폭언·따돌림(행위 사전 BEHAVIOR_TYPE_PATTERNS와 같은 출처)과
+# '괴롭힘' 낱말. '무시·배제'(회사가 신고를 무시했다)·부당인사(신고 뒤 전보 — 제14조⑥ 불리한 처우 영역)는 넣지
+# 않는다 — 넣으면 성희롱 단독 질문이 다시 괴롭힘 법리("5인 이상")로 답해진다(law-article-coverage D16).
+_BULLYING_RE = re.compile(
+    (r"괴롭힘|따돌|왕따|투명\s*인간|" + BEHAVIOR_TYPE_PATTERNS["폭행_협박"].pattern
+     + "|" + BEHAVIOR_TYPE_PATTERNS["폭언_모욕"].pattern)
+    # 성희롱 서술에 흔한 '모욕감'(피해 감정)과 비교 표현 '…에 비하여'는 괴롭힘 행위가 아니다(코퍼스 성희롱 21건 대조).
+    # '성폭력·성폭행'은 성희롱 쪽 어휘다 — 사전의 '폭력|폭행'이 그 안에서 맞으면 "성추행 … 성폭력 신고"가 혼합 질문이
+    # 되어 괴롭힘 블록·5인 조건이 되살아난다(PR #152 Codex P2). '성' 바로 뒤의 폭행·폭력만 뺀다.
+    .replace("폭행|폭력|", "(?<!성)폭행|(?<!성)폭력|")
+    .replace("모욕", "모욕(?!감)").replace("비하", "비하(?!여)"), re.I)
+
+
+def is_sexual_only(text: str) -> bool:
+    """성희롱 서술이고 비성적 괴롭힘 행위(폭행·폭언·따돌림·'괴롭힘')가 **함께 없는가** — 괴롭힘 블록 생략(D16)과
+    2-1·2-2의 근로기준법 제76조의2·3·제116조 제외(D10)가 쓰는 단일 판정(law-article-coverage Act A2).
+
+    "팀장이 매일 폭언하고 회식 때 성추행까지 했어요"처럼 섞인 질문은 성희롱 조문과 괴롭힘 조문이 둘 다 필요하다 —
+    성희롱 여부만 보면 폭언 부분의 괴롭힘 조문·불리한 처우 금지·5인 조건이 통째로 빠졌다(Check 독립 리뷰 R2).
+    """
+    q = _norm(text)
+    return bool(_SEXUAL_RE.search(q)) and not _BULLYING_RE.search(q)
 
 
 def decide_mode(query: str) -> GroundingResult:

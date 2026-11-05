@@ -36,7 +36,7 @@ from wage_calculator.calculators.shared import (
 from wage_calculator.utils import WEEKS_PER_MONTH, fmt_hours, fmt_won
 from harassment_assessor import (assess_harassment, HarassmentInput, format_assessment,
                                  held_assessment, ground, decide_mode, as_list,
-                                 is_sexual_harassment)
+                                 is_sexual_only)
 from app.core.labor_offices import find_commission, format_commission, format_all_commissions
 from app.core.employment_centers import find_center, format_center, format_center_guide
 from app.core.comwel_offices import find_office, format_office, format_office_guide
@@ -45,7 +45,7 @@ from app.core.legal_api import (
     search_precedent_multi, fetch_precedent_details, fetch_relevant_nlrc,
     new_law_stats, law_stats_requested, law_api_live_mode, law_ref_key, select_law_refs,
 )
-from app.core.law_catalog import keyword_laws, SEXUAL_HARASSMENT_DROP_REFS
+from app.core.law_catalog import keyword_law_tiers, SEXUAL_HARASSMENT_DROP_REFS
 from app.core.precedent_query import build_precedent_queries
 from app.core.query_decomposer import (
     decompose_query, classify_complexity, COMPLEXITY_PARAMS, QUERY_MERGE_HEADROOM,
@@ -373,6 +373,10 @@ def _citation_source_hits(
 # 아래 _cap은 문자 단위 절삭이라 meta_list와 어긋날 수 있어(외부 리뷰 A-9)
 # 이제 이중 안전망 역할만 한다 — 청크 단위 절단을 거친 텍스트는 이미 예산 안이다.
 PRECEDENT_TEXT_BUDGET = 8000
+
+
+# 2-1 조문 텍스트의 조문 헤더 — legal_api.fetch_relevant_articles가 "[법령명 제N조]" 한 줄로 시작한다(절삭 로그 전용)
+_ARTICLE_HEADER_RE = re.compile(r"^\[[^\]\n]*제\d+조(?:의\d+)?\]$", re.M)
 
 
 def _cap(text: str | None, limit: int) -> str | None:
@@ -1899,7 +1903,7 @@ _SIZE_DEPENDENT_TARGETS = frozenset({"overtime", "annual_leave", "comprehensive"
                                      "weekly_hours_check"})
 # 이름을 연장 가산 안내(_SIZE_ASSUMED_NOTE, calc-card-followups §3.4)와 분리한다 — 같은 이름으로 두면 모듈 뒤쪽 정의가
 # 앞쪽을 덮어 연장 카드의 가산 안내 문구가 조용히 바뀐다(law-article-coverage 머지 때 실제로 그랬다, CodeRabbit #104).
-_SIZE_ASSUMED_CALC_NOTE = ("※ 사업장 규모가 질문에 없어 상시 5명 이상으로 계산했습니다. 상시 4명 이하이면 "
+_SIZE_ASSUMED_CALC_NOTE = ("※ 사업장 규모를 질문에서 확인하지 못해 상시 5명 이상으로 계산했습니다. 상시 4명 이하이면 "
                            "가산수당·연차휴가·휴업수당·관공서 공휴일 유급휴일 등은 적용되지 않습니다.")
 
 
@@ -2540,10 +2544,70 @@ def _complete_explicit_reduced_calendar_month(inp, query):
     inp.reduced_end = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
 
 
+_SIZE_MAP = {
+    "5인미만": BusinessSize.UNDER_5,
+    "5인이상": BusinessSize.OVER_5,
+    "30인이상": BusinessSize.OVER_30,
+    "300인이상": BusinessSize.OVER_300,
+}
+_SIZE_TEXT_RE = re.compile(r"^((?:약|대략|상시|근로자|직원|사원|인원|총|수)*)(\d[\d,]*)(여)?(?:명|인)?"
+                           r"(미만|이하|이상|초과|내외|안팎|정도|가량|쯤|전후|남짓)?(?:사업장|사업)?$")
+
+
+def _canonical_business_size(raw) -> str | None:
+    """의도분석 `business_size`(자유 문자열)를 `_SIZE_MAP` 키 하나로 — 못 읽으면 None(= 규모 미기재).
+
+    도구 스키마가 "5인미만/5인이상/30인이상/300인이상"을 **설명**으로만 주므로 모델이 "5인 미만"(띄어쓰기)·
+    "4명"·"직원 10명"처럼 돌려줄 수 있다. 정확 키 4개만 보던 때는 그 값이 5명 이상 기본값으로 계산되면서, 값이
+    참이라 규모 가정 고지(D15 ②)·연장 가산 안내까지 빠졌다 — 틀린 수치가 안내 없이 주입되는 조용한 실패였다
+    (law-article-coverage Check M3). 경계가 걸리는 표현("15인 미만"·"1인 이상")은 추정하지 않고 미기재로 둔다.
+    """
+    s = re.sub(r"\s+", "", str(raw or ""))
+    if not s:
+        return None
+    if s in _SIZE_MAP:
+        return s
+    m = _SIZE_TEXT_RE.match(s)
+    if not m:
+        return None
+    prefix, n, qual = m.group(1), int(m.group(2).replace(",", "")), m.group(4) or ""
+    approx = bool(re.search(r"약|대략", prefix)) or bool(m.group(3))
+    if qual == "미만":                                   # 가능한 인원 구간 [lo, hi]
+        lo, hi = 0, n - 1
+    elif qual == "이하":
+        lo, hi = 0, n
+    elif qual == "이상":
+        lo, hi = n, math.inf
+    elif qual == "초과":
+        lo, hi = n + 1, math.inf
+    elif qual or approx:                                 # "약 5명"·"10여 명"·"5명 정도" — 앞뒤 1명까지 열어 둔다
+        lo, hi = n - 1, n + 1                            # (harassment_assessor._size_bounds와 같은 폭, PR #152 CodeRabbit)
+    else:
+        lo, hi = n, n
+    if hi <= 4:
+        return "5인미만"
+    if lo < 5:                                           # "1인 이상"·"약 5명"은 4명 이하일 수도 있다 → 미기재
+        return None
+    if lo >= 300:
+        return "300인이상"
+    if lo >= 30:
+        return "30인이상"
+    return "5인이상"
+
+
 def _run_calculator(params: dict, query: str = "") -> str | None:
     """지원하지 않는 정산의 안내를 보존한 뒤 실행 가능한 요청을 계산한다."""
     if not params or not params.get("needs_calculation"):
         return None
+    # 규모 문자열은 여기서 한 번 정규화한다 — 아래의 `params.get("business_size")` 참 판정(가정 고지·가산 안내)과
+    # `_SIZE_MAP` 조회가 같은 값을 보게(Check M3). 못 읽은 값은 지워 '규모 미기재'로 다룬다. 제자리 수정이다 —
+    # `_note_rejected_hours`처럼 호출부(계산 캐시)가 이 dict의 변경을 읽는다.
+    if "business_size" in params:
+        canon = _canonical_business_size(params.get("business_size"))
+        if canon:
+            params["business_size"] = canon
+        else:
+            params.pop("business_size", None)
     labels = params.get("calculation_types_kr") or (
         [params["calculation_type"]] if params.get("calculation_type") else [])
     notes = {}
@@ -2689,13 +2753,7 @@ def _run_supported_calculator(params: dict, query: str = "") -> str | None:
         weekly_holiday_hours=params.get("weekly_holiday_work_hours") or 0,
     )
 
-    size_map = {
-        "5인미만": BusinessSize.UNDER_5,
-        "5인이상": BusinessSize.OVER_5,
-        "30인이상": BusinessSize.OVER_30,
-        "300인이상": BusinessSize.OVER_300,
-    }
-    biz_size = size_map.get(params.get("business_size", ""), BusinessSize.OVER_5)
+    biz_size = _SIZE_MAP.get(params.get("business_size") or "", BusinessSize.OVER_5)
 
     inp = WageInput(wage_type=wt, business_size=biz_size, schedule=schedule)
     inp.reference_date = _normalize_reference_date(params.get("reference_date"))
@@ -3461,28 +3519,36 @@ _ARTICLE_REFS_LIMIT = 5
 
 
 def _is_sexual_query(query: str) -> bool:
-    """성희롱 서술 여부 — 판정기 실행 여부와 무관하게 질문 본문으로 계산한다(D10, 단일 판정)."""
+    """성희롱 **단독** 서술 여부 — 판정기 실행 여부와 무관하게 질문 본문으로 계산한다(D10, 단일 판정).
+
+    참이면 2-1·2-2에서 근로기준법 제76조의2·3·제116조를 뺀다. 성희롱과 폭언·폭행·따돌림이 섞인 질문은 거짓이다 —
+    성희롱 여부만 보면 폭언 부분의 괴롭힘 조문이 통째로 빠졌다(law-article-coverage Act A2, Check 독립 리뷰 R2).
+    """
     try:
-        return is_sexual_harassment(query)
+        return is_sexual_only(query)
     except Exception:   # 조문 선택용 — 실패해도 상담 경로를 막지 않는다
         logger.warning("성희롱 판정 실패", exc_info=True)
         return False
 
 
 def _article_refs_21(query: str, analysis, sexual: bool) -> list[str]:
-    """2-1 조문 목록 = 키워드 조문(최대 3) → 의도분석 조문, 정규화 키로 중복 제거, 합계 최대 5(D8).
+    """2-1 조문 목록 = 키워드 **주** 조문(최대 3) → 의도분석 조문 → 키워드 **보충** 조문, 정규화 키로 중복 제거,
+    합계 최대 5(D8).
 
+    보충 조문(과태료·시행령 절차)은 의도분석 조문 **뒤**다(law-article-coverage Act A1). 키워드 한 줄(주 → 보충)을
+    앞에 두던 때 topic30 #22(해고)에서 의도분석의 근로기준법 제28조(구제신청)가 고용보험법 제118조(과태료 보충)에
+    밀렸고, #14는 의도분석 조문이 5칸 중 3칸으로 줄었다 — 측정 관문 "밀려난 의도분석 조문 ≤1" 실패의 원인이다.
     키워드 조문은 의도분석이 없거나 `consultation_type`이 비어도, 계산 질문이어도 실린다 — 2-2는
     `consultation_type`이 있어야 돌고 계산 질문이면 건너뛰어, 키워드를 2-2에 두면 빠지는 질문이 생겼다.
     키워드는 질문 **본문**으로만 판정한다(첨부 문서의 '취업규칙' 같은 낱말로 조문이 붙지 않게).
     """
     try:
-        keyword = keyword_laws(query)
+        primary, extra = keyword_law_tiers(query)
     except Exception:   # 조문 선택용 — 실패해도 의도분석 조문은 그대로 조회한다
         logger.warning("키워드 조문 판정 실패", exc_info=True)
-        keyword = []
+        primary, extra = [], []
     relevant = list(getattr(analysis, "relevant_laws", None) or [])
-    return select_law_refs(keyword + relevant,
+    return select_law_refs(primary + relevant + extra,
                            drop_refs=SEXUAL_HARASSMENT_DROP_REFS if sexual else (),
                            limit=_ARTICLE_REFS_LIMIT)
 
@@ -3822,7 +3888,8 @@ def process_question(query: str, session: Session, config: AppConfig,
                 assessor_info = _not_called_info(tool_type, query)
         # else: 순수 비계산·비괴롭힘 상담 → _extract_params 생략, RAG/상담 경로로 진행
 
-    # 2-1. 법령 API 조문 조회 — 키워드 조문(최대 3) → 의도분석 조문, 합계 최대 5 (production-law-api-recovery D8)
+    # 2-1. 법령 API 조문 조회 — 키워드 주 조문(최대 3) → 의도분석 조문 → 키워드 보충 조문, 합계 최대 5
+    # (production-law-api-recovery D8 · law-article-coverage D1')
     legal_articles_text = None
     # 조문·판례 조회 관측(metadata.law_api v2, D7·D7b) — 2-1·2-2·판례 검색·NLRC가 같은 dict에 누적한다.
     law_api_stats: dict = new_law_stats()
@@ -4208,8 +4275,11 @@ def process_question(query: str, session: Session, config: AppConfig,
         parts.append(f"중앙노동위원회 주요판정사례 (법제처 국가법령정보센터 조회):\n\n{_cap(nlrc_text, 4000)}")
     if legal_articles_text:
         if len(legal_articles_text) > 5000:
-            # 키워드 조문 뒤에 오는 의도분석 조문이 먼저 잘린다 — 빈도를 보려고 남긴다(law-article-coverage §3.6)
-            logger.info("2-1 조문 텍스트 %d자 → 5000자에서 절삭", len(legal_articles_text))
+            # 뒤쪽 조문(의도분석 조문·보충 조문)이 먼저 잘린다 — 빈도를 보려고 길이와 조문 수(전체·헤더가 남은 것)를
+            # 남긴다(law-article-coverage §3.6)
+            logger.info("2-1 조문 텍스트 %d자(조문 %d개 중 %d개 헤더 보존) → 5000자에서 절삭", len(legal_articles_text),
+                        len(_ARTICLE_HEADER_RE.findall(legal_articles_text)),
+                        len(_ARTICLE_HEADER_RE.findall(legal_articles_text[:5000])))
         parts.append(f"현행 법조문 (법제처 국가법령정보센터 조회):\n\n{_cap(legal_articles_text, 5000)}")
     # 이미지 첨부는 Vision 블록으로 전달되므로 텍스트 프롬프트에서 제외 — 이중 주입 방지 (DB-5)
     non_vision_attachment_text = "\n\n".join(

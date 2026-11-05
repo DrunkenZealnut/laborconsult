@@ -58,7 +58,9 @@ class KeywordRulesTest(unittest.TestCase):
         ("장사가 안된다는 이유로 갑자기 해고통보를 받았는데 보상받을 방법이 없나요", "근로기준법 제24조"),  # 재채점 22
         ("직원16명 소기업 경영악화로 직원해고시 절차가 궁금합니다", "근로기준법 제24조"),
         ("매출이 줄어서 다음 달부터 그만 나오래요", "근로기준법 제24조"),
-        # '(그만) 나오지 말라'는 휴업 지시와 같은 표현이라 동사로 넣지 않는다(제46조와 갈리지 않는다)
+        # '그만 나오지 말라'는 해고 동사다. '그만' 없는 "(당분간) 나오지 말라"는 휴업 지시와 같은 표현이라 넣지 않는다
+        # (제46조와 갈리지 않는다 — Check M2: 문서가 반대로 적혀 있어 코드 쪽으로 맞췄다)
+        ("장사가 안 돼서 사장이 그만 나오지 말래요. 보상받을 수 있나요?", "근로기준법 제24조"),
         ("부당해고로 원직복직 대신 금전보상을 받고 싶어요", "근로기준법 제30조"),
         ("3개월미만 부당해고일 경우에는 어떤 보상을 받을 수 있나요?", "근로기준법 제30조"),        # 재채점 23
         ("특별연장근로 인가 없이 야근시키면 불법인가요", "근로기준법 시행규칙 제9조"),           # 재채점 26
@@ -75,6 +77,7 @@ class KeywordRulesTest(unittest.TestCase):
     NEGATIVES = [
         ("경영상 어려움으로 임금이 삭감됐어요", "제24조"),            # 기존 R9 반례 — 해고 동사가 없다
         ("장사가 안 돼서 월급이 밀렸어요", "제24조"),                 # 체불
+        ("매출이 줄어서 당분간 나오지 말라고 합니다", "제24조"),      # 휴업 지시 — '그만'이 없다
         ("회사사정이 안좋아서 구조조정으로 그만두시는분 연차수당 문의", "제24조"),
         ("경영악화로 인원감축 퇴사했는데 실업급여 받을 수 있나요", "제24조"),
         ("2주간 특별 연장수당이 퇴직금 계산에 포함되나요", "시행규칙 제9조"),
@@ -114,6 +117,13 @@ class KeywordRulesTest(unittest.TestCase):
                          ["근로기준법 제24조", "고용보험법 제15조", "고용보험법 제118조"],
                          "과태료 제118조는 보충 — 남는 칸에만")
         self.assertEqual(keyword_laws("육아휴직을 거부당했어요"), [f"{E} 제19조", f"{E} 시행령 제11조"])
+        from app.core import law_catalog
+        from app.core.law_catalog import KeywordLaw
+        synthetic = [KeywordLaw("t", ("근로기준법 제53조",), lambda q: True,
+                                extra=("근로기준법 제53조", "근로기준법 시행규칙 제9조"))]
+        with mock.patch.object(law_catalog, "KEYWORD_LAWS", synthetic):
+            self.assertEqual(keyword_laws("x"), ["근로기준법 제53조", "근로기준법 시행규칙 제9조"],
+                             "보충 조문은 주 조문과 같은 키로 중복되지 않는다")
 
     def test_ac3_all_refs_resolve_and_are_warmed(self):
         from app.core.law_catalog import KEYWORD_LAWS, warm_law_keys
@@ -219,6 +229,27 @@ class AnnexTest(unittest.TestCase):
         merged = L("적용법규정 제23조제2항, 제23조제1항")
         self.assertEqual(merged.articles[(23, None)], frozenset({1, 2}), "같은 조는 합친다")
         self.assertFalse(c.annex_claim_holds(merged, "제23조", False), "항 한정으로라도 있으면 조 단위 '없음'은 거짓")
+        # 항 접속 — '부터…까지'·'및'·'과'(Check 독립 리뷰 R3: '·'·','만 알던 때 범위가 첫 항으로 읽혀 거짓 안심)
+        para = L("적용법규정 제55조제1항부터제2항까지의 규정, 제23조제1항 및 제3항, 제24조제1항과 제2항")
+        self.assertEqual(para.articles[(55, None)], frozenset({1, 2}), "'부터…까지' 항 범위를 펼친다")
+        self.assertFalse(c.annex_claim_holds(para, "제55조제2항", False), "범위 안의 항 '없음'은 거짓")
+        self.assertTrue(c.annex_claim_holds(para, "제55조제2항", True))
+        self.assertEqual(para.articles[(23, None)], frozenset({1, 3}), "'및' 나열")
+        self.assertEqual(para.articles[(24, None)], frozenset({1, 2}), "'과' 나열")
+        mixed = L("적용법규정 제23조제1항·제3항부터제5항까지")
+        self.assertIn(23, mixed.unparsed, "범위와 나열이 섞인 항 접속은 해석하지 않는다(fail-closed)")
+        self.assertIsNone(c.annex_claim_holds(mixed, "제23조제4항", False))
+        dangling = L("적용법규정 제55조제1항내지제3항, 제56조")
+        self.assertIn(55, dangling.unparsed, "모르는 접속('내지') 뒤에 항이 이어지면 첫 항만 읽지 않고 해석 불가로 둔다")
+        self.assertIsNone(c.annex_claim_holds(dangling, "제55조제3항", False))
+        self.assertEqual(dangling.articles[(56, None)], c.ANNEX_ALL, "뒤 조문은 그대로 읽는다")
+        # PR #152 CodeRabbit — 접속어 길이(4자)로 보던 판정은 "부터 같은 조 제3항까지"(5자)를 놓쳐 제55조를 {1}로 읽었다.
+        # 다음 조문 앞에 항 표기가 남아 있으면 길이와 무관하게 해석 불가다
+        same = L("적용법규정 제55조제1항부터 같은 조 제3항까지, 제56조")
+        self.assertIn(55, same.unparsed, "'같은 조' 접속은 해석하지 않는다")
+        self.assertIsNone(c.annex_claim_holds(same, "제55조제3항", False))
+        self.assertEqual(same.articles[(56, None)], c.ANNEX_ALL)
+        self.assertIn(55, L("적용법규정 제55조제1항 및 같은 조 제3항").unparsed)
         header = L("별표 1 … 법 규정(제7조 관련) 구분 적용법규정 제1조")
         self.assertNotIn((7, None), header.articles, "머리말의 '(제7조 관련)'은 목록이 아니다")
 
@@ -338,6 +369,31 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(refs[:2], ["근로기준법 제74조", "근로기준법 시행령 제43조의2"])
         refs = _article_refs_21("팀장이 성추행을 해서 신고했어요", NS(relevant_laws=["근로기준법 제116조"]), True)
         self.assertNotIn("근로기준법 제116조", refs)
+        # Act A1 — 보충 조문은 의도분석 조문 뒤(topic30 #22: 구제신청 제28조가 과태료 제118조에 밀렸다)
+        from app.core.pipeline import _is_sexual_query
+        q = "장사가 안된다는 이유로 해고됐어요. 개인사정으로 4대보험 가입을 안 했어요"
+        self.assertEqual(_article_refs_21(q, NS(relevant_laws=["근로기준법 제26조", "근로기준법 제27조",
+                                                                "근로기준법 제28조"]), False),
+                         ["근로기준법 제24조", "고용보험법 제15조", "근로기준법 제26조", "근로기준법 제27조",
+                          "근로기준법 제28조"], "키워드 주 조문 → 의도분석 → 보충 조문")
+        self.assertEqual(_article_refs_21(q, NS(relevant_laws=["근로기준법 제26조"]), False),
+                         ["근로기준법 제24조", "고용보험법 제15조", "근로기준법 제26조", "고용보험법 제118조"],
+                         "자리가 남으면 보충 조문이 들어간다")
+        # Act A2 — 성희롱 + 폭언 혼합 질문은 성희롱 단독이 아니라 괴롭힘 조문을 빼지 않는다
+        mixed = "팀장이 매일 폭언하고 회식 때 성추행까지 했어요"
+        self.assertFalse(_is_sexual_query(mixed))
+        self.assertIn("근로기준법 제76조의2",
+                      _article_refs_21(mixed, NS(relevant_laws=["근로기준법 제76조의2"]), _is_sexual_query(mixed)))
+        self.assertTrue(_is_sexual_query("회식 자리에서 팀장이 성적인 농담을 해요"))
+        self.assertTrue(_is_sexual_query("성추행을 신고했는데 회사가 무시하고 조사를 안 해요"),
+                        "회사가 신고를 '무시'한 것은 괴롭힘 행위가 아니다 — 성희롱 단독")
+        self.assertTrue(_is_sexual_query("회식에서 성적인 농담을 들어 모욕감을 느꼈어요. 남성에 비하여 여성만 그래요"),
+                        "'모욕감'(피해 감정)·'…에 비하여'(비교)는 괴롭힘 행위가 아니다")
+        # PR #152 Codex P2 — '성폭력·성폭행'은 성희롱 쪽 어휘다. 사전의 '폭력·폭행'이 그 안에서 맞으면 성희롱 단독 질문이
+        # 혼합이 되어 괴롭힘 블록·5인 조건이 되살아난다. '성' 뒤의 폭행·폭력만 빼고 별도 폭행은 그대로 섞임이다
+        self.assertTrue(_is_sexual_query("직원 3명인 회사에서 팀장에게 성추행을 당했습니다. 성폭력 신고는 어떻게 하나요?"))
+        self.assertTrue(_is_sexual_query("성추행에 성폭행 시도까지 있었습니다. 신고하려면요?"))
+        self.assertFalse(_is_sexual_query("상사가 성희롱 뒤 폭행까지 했습니다"), "따로 적힌 폭행은 괴롭힘 행위다")
 
     def test_ac13_deleted_refs_blocked(self):
         import check_law_freshness as c
@@ -347,6 +403,9 @@ class WiringTest(unittest.TestCase):
         leaks = [(path, line, ref) for path, line, ref in refs
                  if ref in c.KNOWN_DELETED_REFS and (path, ref) not in c.DELETED_REF_MENTIONS]
         self.assertEqual(leaks, [], "알려진 삭제 조문이 코드에 남아 있다")
+        self.assertEqual(c.code_law_refs(), refs, "기본 기준은 스크립트가 있는 저장소 루트다 — 현재 디렉터리가 아니다(R7)")
+        with self.assertRaises(FileNotFoundError):
+            c.code_law_refs(str(ROOT / "no-such-dir"))
         self.assertTrue(legal_api.is_deleted_article("125\n제125조 삭제 <2022.6.10>"))
         self.assertFalse(legal_api.is_deleted_article("2(적용범위)\n제2조(적용범위) ① 법\n② 삭제 <2018.5.28>"),
                          "항 하나만 삭제된 조문은 살아 있다")
@@ -367,6 +426,9 @@ class WiringTest(unittest.TestCase):
         self.assertEqual([d["doc_id"] for d in docs], ["keyed"])
         self.assertEqual(anchor_only, ["anchor_only"])
         self.assertEqual(skipped, [])
+        import fetch_official_rules as fo
+        self.assertEqual(sum(1 for d in fo.ARTICLES + fo.ADMRULS if d[4]), 14,
+                         "현재 적재 대상(keys 있음)은 14건 = 원장 — 늘리면 BM25 재빌드가 따라온다(D12)")
 
     def test_ac15_shutdown_under_5_and_size_assumption_note(self):
         from app.core.pipeline import _SIZE_ASSUMED_CALC_NOTE, _analysis_to_extract_params, _run_calculator
@@ -383,6 +445,40 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(unknown.count("상시 5명 이상으로 계산했습니다"), 1, "가정 안내는 한 번만")
         known = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": "5인이상"})), "")
         self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE, known)
+        # Check M3 — 의도분석 규모는 자유 문자열이다. 매핑 키가 아니어도 읽을 수 있으면 읽고, 아니면 미기재로 다룬다
+        for raw in ("5인 미만", "4명", "직원 3명", "직원수 3명", "4인 이하", "약 3명"):
+            out = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": raw})), "")
+            self.assertIn("휴업수당: 미적용 (상시 4명 이하 사업장)", out, f"{raw!r}는 4명 이하다")
+        for raw in ("소규모", "15인 미만", "1인 이상", "약 5명", "5명 정도", "4~5명"):   # 근사·범위는 경계를 걸치면 미기재(PR #152 CodeRabbit)
+            out = _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": raw})), "")
+            self.assertIn(_SIZE_ASSUMED_CALC_NOTE, out, f"{raw!r}는 규모를 정하지 못해 미기재로 다룬다")
+        for raw in ("직원 10명", "10여 명", "약 30명"):
+            self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE,
+                             _run_calculator(_analysis_to_extract_params(stub({**base, "business_size": raw})), ""),
+                             f"{raw!r}는 앞뒤 1명을 열어도 5명 이상이다")
+        # gap-detector 재대조 관찰 4 — 연장 가산 안내(_SIZE_ASSUMED_NOTE)가 같은 가정을 이미 밝혔고 규모 의존 계산이
+        # 연장·포괄뿐이면 가정 고지를 겹쳐 적지 않는다. 다른 규모 의존 계산(휴업수당)이 함께 있으면 붙는다.
+        from app.core.pipeline import _SIZE_ASSUMED_NOTE
+        run = lambda info, types: _run_calculator(_analysis_to_extract_params(  # noqa: E731
+            NS(requires_calculation=True, calculation_types=types, extracted_info=info)), "")
+        ot_base = {"wage_type": "시급", "wage_amount": 12000, "daily_work_hours": 8, "weekly_work_days": 5,
+                   "weekly_overtime_hours": 5}
+        only_ot = run(ot_base, ["overtime"])
+        self.assertIn(_SIZE_ASSUMED_NOTE, only_ot, "연장 가산 안내는 붙는다")
+        self.assertNotIn(_SIZE_ASSUMED_CALC_NOTE, only_ot, "연장 가산 안내가 같은 가정을 이미 밝혔다")
+        both = run({**ot_base, "shutdown_days": 5}, ["overtime", "shutdown_allowance"])
+        self.assertIn(_SIZE_ASSUMED_NOTE, both)
+        self.assertIn(_SIZE_ASSUMED_CALC_NOTE, both, "연장 밖의 규모 의존 계산(휴업수당)이 있으면 고지가 붙는다")
+        # Check 독립 리뷰 R6 — 4명 이하 미적용은 자격 판정이라 총액 보류 카드의 '금액 보류' 목록에 들지 않는다
+        from wage_calculator.facade.helpers import _ineligible
+        self.assertTrue(_ineligible(NS(is_applicable=False)))
+        self.assertFalse(_ineligible(NS(is_applicable=True)))
+        held = _run_calculator(
+            _analysis_to_extract_params(stub({"wage_type": "월급", "wage_amount": 2700000, "shutdown_days": 5,
+                                              "daily_work_hours": 8, "weekly_work_days": 5, "business_size": "5인미만"})),
+            "월급 270만원에 연장수당이 포함되어 있어요. 사장 사정으로 5일 쉬었는데 휴업수당 받을 수 있나요?")
+        self.assertIn("휴업수당: 미적용 (상시 4명 이하 사업장)", held)
+        self.assertFalse(re.search(r"금액 보류:[^\n]*휴업수당", held), held)
         src = (ROOT / "wage_calculator" / "calculators" / "shutdown_allowance.py").read_text(encoding="utf-8")
         self.assertNotIn("- 5인 미만 사업장에도 적용", src, "핵심 규칙에서 4명 이하 적용 주장을 지웠다")
 
@@ -394,6 +490,13 @@ class WiringTest(unittest.TestCase):
                          "성희롱만이면 '규모 먼저 확인' 문장을 싣지 않는다")
         self.assertIn("harassment_retaliation", names("팀장의 괴롭힘과 성추행이 계속돼요"))
         self.assertIn("harassment_retaliation", names("상사가 매일 폭언을 해요"))
+        self.assertIn("harassment_retaliation", names("팀장이 매일 폭언하고 회식 때 성추행까지 했어요"),
+                      "성희롱과 폭언이 섞이면 괴롭힘 블록도 붙는다 — '괴롭힘' 낱말이 없어도(Act A2)")
+        self.assertNotIn("harassment_retaliation", names("성추행을 신고했는데 회사가 무시하고 조사를 안 해요"),
+                         "회사의 '무시'는 괴롭힘 행위가 아니다 — 성희롱 단독으로 본다")
+        self.assertNotIn("harassment_retaliation",
+                         names("직원 3명인 회사에서 팀장에게 성추행을 당했습니다. 성폭력 신고는 어떻게 하나요?"),
+                         "'성폭력'의 '폭력'은 괴롭힘 행위가 아니다 — 5인 조건 문장을 싣지 않는다(PR #152 Codex)")
 
 
 if __name__ == "__main__":
