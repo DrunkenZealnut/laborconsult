@@ -591,7 +591,8 @@ def calc_employer_insurance(inp: WageInput, ow: OrdinaryWageResult) -> EmployerI
         )
         warnings.append(
             f"특수고용직 산재보험료: 사업주 {employer_accident:,.0f}원 + "
-            f"노무제공자 {worker_accident:,.0f}원 (50:50 분담, 보험료징수법 제48조의6 제6항)"
+            f"노무제공자 {worker_accident:,.0f}원 (50:50 분담, 보험료징수법 제48조의6 제6항 — "
+            f"대통령령으로 정하는 일부 직종은 사업주가 전액 부담)"
         )
         legal.append("고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률 제48조의6 (산재보험 노무제공자의 보험료)")
     else:

@@ -39,10 +39,14 @@ def _basis_free(text) -> bool:
 
 
 def _ineligible(calc_result) -> bool:
-    """계산기가 자격 판정으로 0을 냈는가(퇴직금 미발생·주휴 미발생·해고예고 면제·공휴일 미적용)."""
+    """계산기가 자격 판정으로 0을 냈는가(퇴직금 미발생·주휴 미발생·해고예고 면제·공휴일 미적용·휴업수당 4명 이하 미적용).
+
+    `is_applicable=False`(휴업수당 — 상시 4명 이하, law-article-coverage D15 ①)를 빼면 총액 보류 카드에서 '금액 보류:
+    …휴업수당…'과 '제46조가 적용되지 않습니다'가 함께 실리고 '휴업수당: 미적용' 요약 줄이 사라졌다(Check 독립 리뷰 R6)."""
     return (getattr(calc_result, "is_eligible", None) is False
             or getattr(calc_result, "eligible", None) is False
-            or getattr(calc_result, "is_exempt", None) is True)
+            or getattr(calc_result, "is_exempt", None) is True
+            or getattr(calc_result, "is_applicable", None) is False)
 
 
 def _merge_amount_held(result, key, section, calc_result, populate, all_warnings, all_legal,

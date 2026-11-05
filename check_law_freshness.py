@@ -34,6 +34,16 @@ from app.core.legal_api import (  # noqa: E402
 )
 
 
+def _exc_label(e: BaseException) -> str:
+    """예외를 **클래스명 + HTTP 상태**로만 적는다 — 메시지는 쓰지 않는다.
+
+    requests의 `HTTPError`·`ConnectionError` 메시지는 쿼리 문자열이 붙은 URL을 담아 `OC`(LAW_API_KEY)가 표준출력에
+    찍힐 수 있다(law-article-coverage Check 독립 리뷰 R10). 메타데이터 규약(클래스명·상태 코드만)과 같은 원칙이다.
+    """
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    return f"{type(e).__name__}{f' {status}' if status else ''}"
+
+
 def _watched_laws() -> list[str]:
     """검증 목록 = 예열 대상과 같다(`law_catalog.warm_law_names()`, production-law-api-recovery D14).
 
@@ -117,7 +127,7 @@ def check_law(name: str, key: str, today: str) -> dict:
     try:
         versions = law_versions(name, key)
     except Exception as e:  # 조회 실패도 실패다(fail-closed)
-        res["reason"] = f"판본 목록 조회 실패: {e}"
+        res["reason"] = f"판본 목록 조회 실패: {_exc_label(e)}"
         return res
     if not versions:
         res["reason"] = "판본 목록에 법령명 일치 없음"
@@ -132,7 +142,7 @@ def check_law(name: str, key: str, today: str) -> dict:
         prod = fetch_law_root(name, key)
         base = fetch_law_root(name, key, ef_yd=ref)
     except Exception as e:
-        res["reason"] = f"본문 조회 실패: {e}"
+        res["reason"] = f"본문 조회 실패: {_exc_label(e)}"
         return res
     if prod is None or base is None:
         res["reason"] = f"본문 미매칭(프로덕션 {'O' if prod is not None else 'X'}, 기준판 {'O' if base is not None else 'X'})"
@@ -196,7 +206,7 @@ def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
             try:
                 nxt = _next_root(law, key, today, next_cache)
             except Exception as e:  # 경고 단계 — 원인을 남기고 다음 앵커로
-                warnings.append(f"{group}: {law} 다음 판본 확인 불가 ({e})")
+                warnings.append(f"{group}: {law} 다음 판본 확인 불가 ({_exc_label(e)})")
                 next_cache[law] = None
                 continue
             if not nxt:
@@ -213,7 +223,7 @@ def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
         try:
             doc = fo.fetch_admrul(key, query, exact, dept)
         except Exception as e:
-            failures.append(f"{doc_id}: 현행 고시 조회 실패 ({e})")
+            failures.append(f"{doc_id}: 현행 고시 조회 실패 ({_exc_label(e)})")
             continue
         if not doc or not doc.get("body"):
             failures.append(f"{doc_id}: 현행 고시 미수록 — {exact}")
@@ -223,9 +233,12 @@ def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
             if norm(phrase) not in body:
                 failures.append(f"{group}: 현행 고시({doc_id})에 앵커 구절 없음 — {phrase[:30]}")
         stored = fo.stored_notice(doc_id) or {}
-        current = doc.get("effective") or doc.get("issued") or ""
-        if stored.get("date") and current and stored["date"].replace("-", "") != current:
-            warnings.append(f"{doc_id}: 고시 시행일 {stored['date']} → {current} — "
+        # 저장본 `date`는 수집 경로에 따라 시행일(법제처)이거나 발령일(게시판)이다 — 어느 쪽과도 다를 때만 개정으로
+        # 본다. 시행일 하나와만 비교하던 때 출산전후휴가 상한액 고시(발령 09-17·시행 09-18)가 매 실행 '재수집'
+        # 경고를 냈다(Check 독립 리뷰 R8).
+        current = {d for d in (doc.get("effective"), doc.get("issued")) if d}
+        if stored.get("date") and current and stored["date"].replace("-", "") not in current:
+            warnings.append(f"{doc_id}: 고시 날짜 저장본 {stored['date']} ≠ 현행 {'/'.join(sorted(current))} — "
                             f"fetch_official_rules.py --doc {doc_id} 재수집 후 앵커 재대조")
     return failures, warnings
 
@@ -239,7 +252,23 @@ ANNEX_PARTIAL = "PARTIAL"
 _BOX_RE = re.compile(r"[┃│┠┼┨━┯┷┏┓┗┛─┌┐└┘├┤┬┴\s]")
 _ART = r"제(\d+)조(?:의(\d+))?"
 _RANGE_RE = re.compile(_ART + r"부터" + _ART + r"까지")
-_ITEM_RE = re.compile(_ART + r"((?:제\d+항)(?:[·ㆍ,]제\d+항)*)?(제\d+호)?")
+# 항 접속: '·' ',' '및' '과'(나열)와 "제N항부터 제M항까지"(범위). 범위와 나열이 섞였거나 범위가 거꾸로면, 그리고
+# 모르는 접속('내지' 등) 뒤에 항이 이어지면(_DANGLING_PARA_RE) 그 조를 UNPARSED로 보낸다 — '·'·','만 알던 때
+# "제55조제1항부터 제2항까지"가 {1}로 읽혀 '제55조제2항 없음' 주장이 참이 됐다(fail-open, Check 독립 리뷰 R3).
+_PARA_SEQ = r"(?:제\d+항)(?:(?:[·ㆍ,]|및|과)제\d+항|부터제\d+항까지)*"
+_ITEM_RE = re.compile(_ART + rf"({_PARA_SEQ})?(제\d+호)?")
+_PARA_RANGE_RE = re.compile(r"^제(\d+)항부터제(\d+)항까지$")
+_DANGLING_PARA_RE = re.compile(r"[^제\s]{0,4}제\d+항")   # _ITEM_RE 뒤에 항이 더 이어지면 접속을 못 읽은 것
+
+
+def _paragraph_set(seq: str) -> frozenset | None:
+    """항 접속 문자열 → 항 집합. 범위와 나열이 섞였거나 범위가 거꾸로면 None(해석 불가)."""
+    if "부터" in seq:
+        m = _PARA_RANGE_RE.match(seq)
+        if not m or int(m.group(1)) > int(m.group(2)):
+            return None
+        return frozenset(range(int(m.group(1)), int(m.group(2)) + 1))
+    return frozenset(int(x) for x in re.findall(r"제(\d+)항", seq))
 _PAREN_RE = re.compile(r"\(([^()]*)\)")
 _QUALIFIER_RE = re.compile(r"한정|제외")
 _CHAPTER_REF_RE = re.compile(r"제\d+장(?:의\d+)?$")
@@ -309,10 +338,16 @@ def annex_listing(text: str) -> AnnexListing:
     singles = _RANGE_RE.sub(lambda m: " " * len(m.group(0)), body_wo_paren)
     for m in _ITEM_RE.finditer(singles):
         key = (int(m.group(1)), int(m.group(2)) if m.group(2) else None)
+        if _DANGLING_PARA_RE.match(singles, m.end()):  # 모르는 접속 뒤에 항이 이어진다('내지' 등) — 첫 항만 읽지 않는다
+            listing.unparsed.add(key[0])
+            continue
         if m.group(4) or qualified(m.end()):         # 호 한정·괄호 한정 → 부분
             value = ANNEX_PARTIAL
         elif m.group(3):
-            value = frozenset(int(x) for x in re.findall(r"제(\d+)항", m.group(3)))
+            value = _paragraph_set(m.group(3))
+            if value is None:                         # 해석 못 한 항 접속 — 그 조는 판정하지 않는다(fail-closed, D10)
+                listing.unparsed.add(key[0])
+                continue
         else:
             value = ANNEX_ALL
         _merge_listing(listing.articles, key, value)
@@ -369,7 +404,7 @@ def _annex_checks(key: str, today: str) -> tuple[list[str], list[str]]:
             if claim.law not in current:
                 current[claim.law] = fetch_law_root(claim.law, key)
         except Exception as e:  # 현행판 확인 실패도 실패다(fail-closed)
-            failures.append(f"{label} — 별표 조회 실패 ({e})")
+            failures.append(f"{label} — 별표 조회 실패 ({_exc_label(e)})")
             continue
         text = annex_text(current[claim.law], claim.annex_title) if current[claim.law] is not None else None
         held = annex_claim_holds(annex_listing(text), claim.ref, claim.applies) if text is not None else None
@@ -388,7 +423,7 @@ def _annex_checks(key: str, today: str) -> tuple[list[str], list[str]]:
                 elif nheld is None:
                     warnings.append(f"{label} — {ef} 판본 별표 확인 불가")
         except Exception as e:
-            warnings.append(f"{label} — 다음 판본 별표 확인 불가 ({e})")
+            warnings.append(f"{label} — 다음 판본 별표 확인 불가 ({_exc_label(e)})")
     return failures, warnings
 
 
@@ -411,23 +446,29 @@ def _law_name_alternation() -> str:
     return "|".join(sorted(names, key=len, reverse=True))
 
 
-def code_law_refs(root_dir: str = ".") -> list[tuple[str, int, str]]:
-    """CODE_REF_PATHS의 파이썬 문자열 리터럴에서 (파일, 줄, "법령명 제N조[의M]")를 뽑는다. 주석은 보지 않는다."""
+def code_law_refs(root_dir: str | None = None) -> list[tuple[str, int, str]]:
+    """CODE_REF_PATHS의 파이썬 문자열 리터럴에서 (파일, 줄, "법령명 제N조[의M]")를 뽑는다. 주석은 보지 않는다.
+
+    기준 디렉터리는 이 스크립트가 있는 저장소 루트다 — 현재 디렉터리에 묶으면 저장소 밖에서 실행할 때 오류를
+    삼켜 조용히 0건이 되고 파일 개명도 같은 식으로 빠진다(Check 독립 리뷰 R7). 경로가 없으면 실패한다.
+    """
     import ast
     from pathlib import Path
     from app.core.legal_api import _alias_name
     # 앞 글자가 한글이면 다른 법령명의 일부다("국세징수법"의 '징수법', "…근로기준법"의 '기준법' 따위)
     pattern = re.compile(rf"(?<![가-힣])({_law_name_alternation()})\s*(시행령|시행규칙)?\s*제(\d+)조(?:의(\d+))?")
-    base = Path(root_dir)
+    base = Path(root_dir) if root_dir else Path(__file__).resolve().parent
     files: list[Path] = []
     for rel in CODE_REF_PATHS:
         p = base / rel
+        if not p.exists():
+            raise FileNotFoundError(f"생존 점검 대상 경로 없음: {p}")
         files += sorted(p.rglob("*.py")) if p.is_dir() else [p]
     out = []
     for path in files:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
+        except SyntaxError:   # 구문 오류 파일은 테스트가 따로 잡는다 — 읽기 오류(OSError)는 삼키지 않는다
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -469,7 +510,7 @@ def _liveness_checks(key: str, today: str, roots: dict[str, ET.Element]) -> tupl
             try:
                 root = roots[law] = fetch_law_root(law, key)
             except Exception as e:
-                failures.append(f"{origin}: {ref} — 현행판 조회 실패 ({e})")
+                failures.append(f"{origin}: {ref} — 현행판 조회 실패 ({_exc_label(e)})")
                 continue
         text = _extract_article(root, parsed["article"], None, parsed.get("sub")) if root is not None else None
         label = f"{origin}: {ref}"
@@ -485,7 +526,7 @@ def _liveness_checks(key: str, today: str, roots: dict[str, ET.Element]) -> tupl
         try:
             nxt = _next_root(law, key, today, next_cache)
         except Exception as e:
-            warnings.append(f"{label} — 다음 판본 확인 불가 ({e})")
+            warnings.append(f"{label} — 다음 판본 확인 불가 ({_exc_label(e)})")
             continue
         if nxt and nxt[1] is not None:
             ntext = _extract_article(nxt[1], parsed["article"], None, parsed.get("sub"))

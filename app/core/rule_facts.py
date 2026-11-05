@@ -31,7 +31,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
-from harassment_assessor.grounding import is_sexual_harassment
+from harassment_assessor.grounding import is_sexual_only
 
 logger = logging.getLogger(__name__)
 
@@ -233,9 +233,11 @@ RULE_FACTS: tuple[RuleFact, ...] = (
         name="harassment_retaliation",
         # 성희롱만 묻는 질문은 주제 enum에 성희롱이 없어 "직장내괴롭힘"으로 분류된다 — 그때 이 블록의
         # "사업장 규모를 먼저 확인" 문장이 붙으면 규모와 무관한 남녀고용평등법 사안에 5인 조건을 다는
-        # 오답이 된다(topic30 4번, law-article-coverage D16). 본문에 '괴롭힘'이 있으면 그대로 붙는다.
+        # 오답이 된다(topic30 4번, law-article-coverage D16). 본문에 '괴롭힘'이 있거나 폭언·폭행·따돌림이 성희롱과
+        # 섞여 있으면(`is_sexual_only` 거짓) 그대로 붙는다 — 성희롱 여부만 보면 "매일 폭언하고 성추행까지"에서
+        # 괴롭힘 근거가 통째로 빠졌다(Act A2).
         detect=lambda q, a: _has(q, _HARASSMENT_WORDS) or (
-            _topic(a) == "직장내괴롭힘" and not is_sexual_harassment(q)),
+            _topic(a) == "직장내괴롭힘" and not is_sexual_only(q)),
         lines=(
             "사용자는 직장 내 괴롭힘 발생 사실을 신고한 근로자와 피해근로자등에게 해고나 그 밖의 "
             "불리한 처우를 해서는 안 된다(근로기준법 제76조의3 제6항). 위반하면 3년 이하의 징역 또는 "

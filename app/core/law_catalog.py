@@ -7,7 +7,8 @@ production-law-api-recovery D14. 대상 목록이 셋으로 갈리면 "점검은
 import 방향: 이 모듈 → legal_api(module 수준). `legal_consultation`은 legal_api를 import하므로 주제 기본
 조문은 함수 안에서 늦게 import하고, legal_api도 이 모듈을 함수 안에서만 import한다(순환 회피).
 
-키워드 조문(KEYWORD_LAWS)은 2-1(조문 조회)에 의도분석 조문보다 **먼저** 실린다(D8, 최대 3개).
+키워드 주 조문(KEYWORD_LAWS의 refs)은 2-1(조문 조회)에 의도분석 조문보다 **먼저**, 보충 조문(extra)은 그 **뒤**에
+실린다(D8 · law-article-coverage D1', 주 조문 최대 3개).
 의도분석의 주제 enum에 모성보호·외국인 고용·파견·성희롱이 없어, 육아휴직 질문에 연차 조문이 실리는
 식으로 엉뚱한 기본 조문만 들어가던 문제의 처방이다(topic30 점검 2026-10-06). 주제 enum은 바꾸지
 않는다(D9 — 분류가 흔들리고 fixture 기대값이 바뀐다).
@@ -84,7 +85,7 @@ class KeywordLaw:
     """질문 표현 → 근거 조문. ``match``는 공백을 한 칸으로 정리한 질문 본문을 받는다.
 
     ``refs``는 주 조문, ``extra``는 보충 조문(시행령·시행규칙의 절차 조문)이다 — 보충 조문은 발동한 규칙들의
-    주 조문이 상한을 채우고 남긴 자리에만 들어간다(keyword_laws, D1).
+    주 조문이 상한을 채우고 남긴 자리에만 들어가며, 2-1에서는 의도분석 조문 **뒤**에 실린다(keyword_law_tiers, D1'·Act A1).
     """
     name: str
     refs: tuple[str, ...]
@@ -215,20 +216,30 @@ KEYWORD_LAWS: tuple[KeywordLaw, ...] = (
 KEYWORD_LAW_LIMIT = 3
 
 
-def keyword_laws(query: str, limit: int = KEYWORD_LAW_LIMIT) -> list[str]:
-    """질문 본문에 맞는 키워드 조문(표 순서, 정규화 키로 중복 제거, 최대 limit개).
+def keyword_law_tiers(query: str, limit: int = KEYWORD_LAW_LIMIT) -> tuple[list[str], list[str]]:
+    """질문 본문에 맞는 키워드 조문을 (주 조문, 보충 조문)으로 나눠 돌려준다(표 순서, 정규화 키로 중복 제거).
 
-    발동한 규칙들의 **주 조문**으로 먼저 채우고, 남는 자리에만 보충 조문을 넣는다(D1).
+    주 조문은 최대 limit개, 보충 조문은 주 조문이 남긴 자리(limit - 주 조문 수)만큼이다(D1). 호출부
+    (`pipeline._article_refs_21`)는 **보충 조문을 의도분석 조문 뒤에** 둔다 — 보충(과태료·시행령 절차)이
+    의도분석의 주요 조문보다 앞서면 해고 질문에서 구제신청 제28조가 고용보험법 제118조에 밀렸다
+    (Check §4.2, topic30 #22).
     """
     q = " ".join((query or "").split())
     if not q:
-        return []
+        return [], []
     fired = [rule for rule in KEYWORD_LAWS if rule.match(q)]
-    out = select_law_refs([ref for rule in fired for ref in rule.refs], limit=limit)
-    if len(out) < limit:
-        out += select_law_refs([ref for rule in fired for ref in rule.extra],
-                               exclude_keys={law_ref_key(r) for r in out}, limit=limit - len(out))
-    return out
+    primary = select_law_refs([ref for rule in fired for ref in rule.refs], limit=limit)
+    extra: list[str] = []
+    if len(primary) < limit:
+        extra = select_law_refs([ref for rule in fired for ref in rule.extra],
+                                exclude_keys={law_ref_key(r) for r in primary}, limit=limit - len(primary))
+    return primary, extra
+
+
+def keyword_laws(query: str, limit: int = KEYWORD_LAW_LIMIT) -> list[str]:
+    """키워드 조문 한 줄(주 조문 → 보충 조문, 최대 limit개) — 테스트·점검용. 2-1 조립은 `keyword_law_tiers`."""
+    primary, extra = keyword_law_tiers(query, limit)
+    return primary + extra
 
 
 def warm_law_names() -> list[str]:

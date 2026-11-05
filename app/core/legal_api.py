@@ -1412,7 +1412,7 @@ def fetch_relevant_articles(
                 # 출처(키워드·의도분석·주제 기본 조문)와 무관하게 막는다 — 삭제된 산재보험법 제125조가 분석
                 # 프롬프트 매핑으로 2-1에 실리고 있었다(law-article-coverage D5 ①, t30-09·12).
                 _count("articles", "deleted")
-                logger.info("삭제된 조문 제외: %s", ref)
+                logger.info("삭제된 조문 제외: %s (키 %s)", ref, law_ref_key(ref))
                 return idx, None
             if text:
                 law_display = _resolve_law_name(parsed_law["law"])
