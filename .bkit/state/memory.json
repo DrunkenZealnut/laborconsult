@@ -23,7 +23,7 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 92,
+  "sessionCount": 95,
   "lastSession": {
     "startedAt": "2026-11-05T01:58:21.188Z",
     "platform": "claude",
@@ -333,7 +333,7 @@
       "gaps": "High 0 · Medium 3(M1 CLAUDE.md 상수명, M2 그만 나오지 말 서술, M3 business_size 비표준 문자열) · Low 8",
       "measurement": "10-09 topic30 12/14 — 보충 조문 순서(A1)·유보 지표 정의(F-2)",
       "independentReview": "code-analyzer High 0 · Medium 3(4대보험 배경 발동, 혼합 질문 괴롭힘 근거 누락, 별표 항 접속) · Low 7",
-      "next": "PR #152 머지 → 등록 회선에서 --anchors·warm_law_cache 1회 → launchd 작업 트리 main 갱신 확인"
+      "next": "등록 회선에서 check_law_freshness --anchors·warm_law_cache.py 1회(L2 예열 만료 11-08 00:10 전) → launchd 작업 트리 main 확인(완료: 메인 작업 트리 main으로 전환)"
     },
     "worktreeRemoved": "Do 워크트리 ~/DEV/laborconsult-lac 제거 후보(추적 변경 없음)",
     "iterationCount": 1,
@@ -357,15 +357,16 @@
       152
     ],
     "mergedCommits": [
-      "3441594"
+      "3441594",
+      "cc4748b"
     ],
     "followups": "L6(Match Rate 잔존) · F-9 _BULLYING_RE 어휘 겹침 · R1·R4·R5·R9 · F-2(유보 지표 정의)·F-5·F-6 · S3·S4·S5·S7·S8 · 등록 회선 --anchors 1회·skipped_unwarmed 실사용 확인",
-    "actPR": "#152 (2026-11-05, Act-1 + 보고서·분석·보관 이동 — 머지 대기)",
-    "archivePR": "#152 (2026-11-05, 보관 이동이 Act PR에 포함)",
+    "actPR": "#152 머지 → cc4748b (2026-11-05, 커밋 4건: Act-1·보고서/보관·PR 번호·리뷰 반영)",
+    "archivePR": "#152 (2026-11-05, 머지 cc4748b — 보관 이동 포함)",
     "reviewFixes": "PR #152 리뷰(11-05): Codex P2 '성폭력·성폭행'의 폭력·폭행 → is_sexual_only 제외(코퍼스 21건 뒤집힘 0) · CodeRabbit 4건 반영(근사 규모 ±1 구간, 별표 잔여 항 해석 불가, 설계서 보관 경로, §3.2 라벨) · 2건 F-9 보류(무시·배제·사적 용무, 부정 서술 — D16 결정·코퍼스 사례 0)"
   },
   "unemployment-separation-grounds": {
-    "phase": "completed",
+    "phase": "archived",
     "startedAt": "2026-10-07T00:00:00Z",
     "planPath": "docs/01-plan/features/unemployment-separation-grounds.plan.md",
     "trigger": "코퍼스·실사용 질문 분석(2026-10-07): 실업급여 수요 1위(23%)·공공 근거 최저(0.02), 별표 2 공공 0건, 이직사유 답변 유보 48%",
@@ -416,7 +417,11 @@
     "recheckNote": "gap-detector 재대조 2026-11-08(11-07 Act-2·E6 반영): 구현 80항목 ✅79/⚠️1(U2)/❌0 → 99.4%(엄격 98.8%), 실행 E1~E5 ✅·E6 ⚠️(관문 8/9) → 실행 포함 98.8%(엄격 97.7%). 이전 갭: G-H1·G-M1·G-M2·L-1/2/3/5/6/7·§6 3건 해결, L-4·L-8 잔존, I-1~I-4 잔존. 신규: N-1(설계 §8.4 K 횟수 — 직후 정정) Low, N-2~N-4 정보. 판정: Report 진행 가능. 분석 §11.",
     "completedAt": "2026-11-08",
     "reportPath": "docs/04-report/features/unemployment-separation-grounds.report.md",
-    "reportNote": "report-generator 2026-11-08: 완료 보고서 저장(Executive Summary + 1.3 Value Delivered). Plan 목표 지표 4종 중 3종 충족, 유보 감소율만 미달(전체 0.235→0.14, 이직사유 요건 유보 0). 다음: 커밋(신규 5파일 포함)·PR·CodeRabbit·사전 예열·머지·전체 예열, 그 뒤 /pdca archive."
+    "reportNote": "report-generator 2026-11-08: 완료 보고서 저장(Executive Summary + 1.3 Value Delivered). Plan 목표 지표 4종 중 3종 충족, 유보 감소율만 미달(전체 0.235→0.14, 이직사유 요건 유보 0). 다음: 커밋(신규 5파일 포함)·PR·CodeRabbit·사전 예열·머지·전체 예열, 그 뒤 /pdca archive.",
+    "mergedPR": "#153 → bde8469 (2026-11-08, 커밋 3건: feat a827900·docs d419edf·fix fe44d28; 머지 직전 시행규칙 489행 사전 예열)",
+    "archivedAt": "2026-11-08",
+    "archivedTo": "docs/archive/2026-11/unemployment-separation-grounds/",
+    "archiveNote": "2026-11-08 보관(브랜치 docs/unemployment-separation-grounds-archive, 커밋은 요청 시): Plan·Design·분석·보고서 이동, 보고서 링크 같은 폴더 기준, _INDEX.md 행+※※※ 추가. 코드는 PR #153 머지 bde8469."
   },
   "audit-50-legal-accuracy": {
     "phase": "archived",

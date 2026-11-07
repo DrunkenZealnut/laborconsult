@@ -58,9 +58,9 @@
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| Plan | [unemployment-separation-grounds.plan.md](../../01-plan/features/unemployment-separation-grounds.plan.md) | 완료 |
-| Design | [unemployment-separation-grounds.design.md](../../02-design/features/unemployment-separation-grounds.design.md) | rev2 (design-validator 74점 반영, 사용자 승인) |
-| Check / Act | [unemployment-separation-grounds.analysis.md](../../03-analysis/unemployment-separation-grounds.analysis.md) | 재대조 11-08 반영 |
+| Plan | [unemployment-separation-grounds.plan.md](unemployment-separation-grounds.plan.md) | 완료 |
+| Design | [unemployment-separation-grounds.design.md](unemployment-separation-grounds.design.md) | rev2 (design-validator 74점 반영, 사용자 승인) |
+| Check / Act | [unemployment-separation-grounds.analysis.md](unemployment-separation-grounds.analysis.md) | 재대조 11-08 반영 |
 | Report | 현재 문서 | 완료 |
 
 측정 결과(`report.md`, `gates.json`)는 저장소 밖 측정 폴더에 있다. 이 보고서는 그 수치만 옮긴다.
