@@ -320,7 +320,10 @@ class ClaimAuthorityFactsTest(unittest.TestCase):
         today = datetime.now(KST).strftime("%Y%m%d")
         anchors = list(ANSWER_RULE_ANCHORS) + [a for f in RULE_FACTS for a in f.anchors]
         for doc_id, phrase in anchors:
-            text = (base / f"{doc_id}.md").read_text(encoding="utf-8")
+            path = base / f"{doc_id}.md"
+            if not path.exists():   # 로컬 관문 — 원문을 아직 받지 않은 문서는 수집 명령을 알려 준다(K6과 같다)
+                self.fail(f"{doc_id}.md 없음 — fetch_official_rules.py --doc {doc_id}")
+            text = path.read_text(encoding="utf-8")
             self.assertIn(norm(phrase), norm(text.split("## 본문", 1)[-1]), f"{doc_id}: {phrase[:30]}")
             date = re.search(r"^- date:\s*(\S+)", text, re.M)
             if date:   # 저장본 판본이 시행 예정분이면 안 된다(D16 — 4건이 20280101 헤더였다)

@@ -137,7 +137,10 @@ class RuleFactsTest(unittest.TestCase):
     def test_k4_at_most_max_blocks(self):
         from app.core.rule_facts import MAX_BLOCKS, build_rule_facts
         q = "수습 최저임금 80%에 주휴도 없었고 해고예고 없이 잘려서 실업급여 받을 수 있나요"
-        self.assertEqual(len(build_rule_facts(q, None)), MAX_BLOCKS)
+        names = [n for n, _ in build_rule_facts(q, None)]
+        # 동반 블록(separation_grounds — '잘려서'가 이직 단서)은 상한 칸을 쓰지 않는다(unemployment-separation-grounds D3)
+        self.assertEqual(len([n for n in names if n != "separation_grounds"]), MAX_BLOCKS)
+        self.assertIn("separation_grounds", names)
 
     def test_k4_unemployment_block_separates_14_and_7_days(self):
         """12번(54점)의 핵심 오류 — 조기재취업 14일을 대기기간 7일로 적용."""
@@ -184,8 +187,9 @@ class RuleFactsTest(unittest.TestCase):
     def test_k6_anchor_docs_are_registered_for_collection(self):
         import fetch_official_rules as fo
         from app.core.rule_facts import RULE_FACTS
-        # 고시 문서(ADMRULS)도 앵커 원문이 될 수 있다 — occupational_cardio(law-article-coverage D11)
-        ids = {a[0] for a in fo.ARTICLES} | {a[0] for a in fo.ADMRULS}
+        # 고시 문서(ADMRULS)·별표 문서(ANNEXES)도 앵커 원문이 될 수 있다 — occupational_cardio(law-article-coverage D11),
+        # separation_grounds(unemployment-separation-grounds D1)
+        ids = {a[0] for a in fo.ARTICLES} | {a[0] for a in fo.ADMRULS} | {a[0] for a in fo.ANNEXES}
         for fact in RULE_FACTS:
             for doc_id, _ in fact.anchors:
                 self.assertIn(doc_id, ids, doc_id)

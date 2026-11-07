@@ -382,8 +382,8 @@ class RuleBlockTest(unittest.TestCase):
         from app.core.rule_facts import MAX_BLOCKS, RULE_FACTS
         self.assertEqual(MAX_BLOCKS, 3)
         self.assertEqual([f.name for f in RULE_FACTS],
-                         ["unemployment", "insured_status", "harassment_retaliation", "occupational_cardio",
-                          "dismissal_notice", "weekly_holiday", "probation_wage"])
+                         ["unemployment", "separation_grounds", "insured_status", "harassment_retaliation",
+                          "occupational_cardio", "dismissal_notice", "weekly_holiday", "probation_wage"])
         self.assertEqual(self.names("알바인데 3.3% 떼고 고용보험 미가입이면 실업급여 못 받나요"),
                          ["unemployment", "insured_status"])
         self.assertIn("dismissal_notice", self.names("3주 정도 근무했는데 해고됐어요"))
@@ -517,7 +517,7 @@ class HandWrittenLegalFactsTest(unittest.TestCase):
         import xml.etree.ElementTree as ET
         import check_law_freshness as c
         from app.core.rule_facts import ANNEX_CLAIMS, RULE_FACTS
-        xml = ("<법령><별표><별표단위><별표제목>상시 4명 이하의 근로자를 사용하는 사업 또는 사업장에 "
+        xml = ("<법령><별표><별표단위><별표구분>별표</별표구분><별표제목>상시 4명 이하의 근로자를 사용하는 사업 또는 사업장에 "
                "적용하는 법 규정</별표제목><별표내용>구분 │적용법규정 제6장 안전과 보건 │제76조</별표내용>"
                "</별표단위></별표></법령>")
         text = c.annex_text(ET.fromstring(xml), "4명 이하")

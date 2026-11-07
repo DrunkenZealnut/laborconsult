@@ -341,13 +341,14 @@ class FreshnessChecksTest(unittest.TestCase):
     def test_ac11_notice_anchor_failures_and_exit_code(self):
         import check_law_freshness as c
         import fetch_official_rules as fo
-        with mock.patch.object(c, "_next_root", return_value=None), \
+        # 현행판 조문 대조(unemployment-separation-grounds D8)가 fetch_law_root를 부르므로 막는다 — 테스트는 네트워크를 쓰지 않는다
+        with mock.patch.object(c, "_next_root", return_value=None), mock.patch.object(c, "fetch_law_root", return_value=None), \
                 mock.patch.object(fo, "fetch_admrul", return_value={"body": "관련 없는 본문", "effective": "20260223"}), \
                 mock.patch.object(fo, "stored_notice", return_value={"date": "20260223"}):
             fails, warns = c._anchor_checks("k", "20261007")
         self.assertTrue(any("cardio_notice" in f for f in fails), fails)
         self.assertFalse(any("미등록 cardio_notice" in w for w in warns), "고시 문서를 미등록으로 보고하지 않는다")
-        with mock.patch.object(c, "_next_root", return_value=None), \
+        with mock.patch.object(c, "_next_root", return_value=None), mock.patch.object(c, "fetch_law_root", return_value=None), \
                 mock.patch.object(fo, "fetch_admrul", side_effect=RuntimeError("timeout")):
             fails, _ = c._anchor_checks("k", "20261007")
         self.assertTrue(any("조회 실패" in f for f in fails), "조회 실패도 실패(fail-closed)")
