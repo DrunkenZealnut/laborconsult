@@ -619,6 +619,22 @@ def fetch_law_root(lm: str, api_key: str, *, ef_yd: str | None = None,
     return root
 
 
+def annex_unit(root: ET.Element | None, title_part: str) -> ET.Element | None:
+    """법령 루트에서 **별표** 하나를 제목 부분일치로 고른다 — 공식 원문 수집·현행성 점검 공용(unemployment-separation-grounds D2).
+
+    조건은 ``별표구분 == "별표"``(서식 제외)이고 제목 부분일치가 **정확히 하나**인 것이다. 0개면 None, 2개 이상이면
+    ValueError — 고용보험법 시행규칙의 별표 2(근로자)·2의2(예술인)·2의3(노무제공자)은 제목에 모두 '정당한 이직 사유'가
+    있어, 첫 일치를 고르면 다른 별표의 본문이 앵커 대조·수집에 섞인다(실측). 호출부가 ValueError를 실패로 집계한다.
+    """
+    if root is None:
+        return None
+    units = [u for u in root.iter("별표단위")
+             if (u.findtext("별표구분") or "").strip() == "별표" and title_part in (u.findtext("별표제목") or "")]
+    if len(units) > 1:
+        raise ValueError(f"별표 제목 '{title_part}'이 {len(units)}개와 맞는다")
+    return units[0] if units else None
+
+
 # ── 조문 조회 (3단계 캐시: L1 → L2 → L3) ────────────────────────────────────
 
 def _is_warmed_law(law_name: str) -> bool:

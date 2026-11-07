@@ -37,6 +37,7 @@ from functools import lru_cache
 from typing import Callable
 
 from app.core.legal_api import _alias_name, _law_key, law_ref_key, parse_law_reference, select_law_refs
+from app.core.separation_signals import has_strong_separation_cue, is_unemployment_context
 from harassment_assessor.grounding import is_sexual_harassment
 
 # 현행성 점검 기본 17종(check_law_freshness의 구 _BASE_LAWS) — 과거 _PRELOADED_MST 목록이다
@@ -78,6 +79,10 @@ INTENT_WARM_LAWS: tuple[str, ...] = (
     "형법", "민법", "성폭력범죄의 처벌 등에 관한 특례법", "국민연금법", "국민건강보험법",
     "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률",
 )
+
+# 규칙 블록·이직확인서 조문(제82조의2·제101조·별표 2)의 법령 — 조문 요청보다 블록 앵커·현행성 점검이 쓰는 묶음이다
+# (unemployment-separation-grounds D6, 실측 489행). BASE_LAWS는 "기본 17종"의 역사적 목록이라 거기에 섞지 않는다.
+SUPPORT_WARM_LAWS: tuple[str, ...] = ("고용보험법 시행규칙",)
 
 
 @dataclass(frozen=True)
@@ -211,6 +216,12 @@ KEYWORD_LAWS: tuple[KeywordLaw, ...] = (
                      r"미가입|미신고|가입\s*(이|을|를)?\s*(안|않|되어\s*있지\s*않)|신고\s*(를|가)?\s*(안|않)", 40,
                      exclude=r"실업\s*급여|구직\s*급여"),
                extra=(f"{_EI} 제118조",)),
+    # 제58조 — 수급자격 제한(중대 귀책 해고·자기 사정 이직). 실업급여 **이직사유** 질문의 주 조문이다
+    # (unemployment-separation-grounds D6). 판정은 separation_signals 단일 출처 — 실업 문맥 + **강단서만**(자진퇴사·
+    # 권고사직·해고·계약 만료·폐업·체불·구어 해고). 약단서(간병·육아·임신)만 있는 질문은 동반 블록만 받는다.
+    # 시행규칙 제101조는 싣지 않는다 — 본문이 "별표 2를 말한다"뿐이다.
+    KeywordLaw("이직사유·수급자격 제한", (f"{_EI} 제58조",),
+               lambda q: is_unemployment_context(q) and has_strong_separation_cue(q)),
 )
 
 KEYWORD_LAW_LIMIT = 3
@@ -245,7 +256,8 @@ def keyword_laws(query: str, limit: int = KEYWORD_LAW_LIMIT) -> list[str]:
 def warm_law_names() -> list[str]:
     """예열·현행성 점검 대상 법령(정식명, 순서 보존·중복 제거).
 
-    = 기본 17종 + 주제 기본 조문의 법령 + 키워드 조문(주·보충)의 법령 + 의도분석 요청 법령(INTENT_WARM_LAWS).
+    = 기본 17종 + 주제 기본 조문의 법령 + 키워드 조문(주·보충)의 법령 + 의도분석 요청 법령(INTENT_WARM_LAWS)
+    + 규칙 블록 지원 법령(SUPPORT_WARM_LAWS).
     """
     from app.core.legal_consultation import TOPIC_SEARCH_CONFIG   # 순환 회피 — 늦은 import
 
@@ -256,7 +268,7 @@ def warm_law_names() -> list[str]:
         parsed = parse_law_reference(ref)
         if parsed:
             names.append(parsed["law"])
-    names += INTENT_WARM_LAWS
+    names += INTENT_WARM_LAWS + SUPPORT_WARM_LAWS
     # 약칭만 정식명으로 바꾼다(_alias_name) — canonical_law_name은 아래 색인을 쓰므로 여기서 부르면 순환한다.
     out: list[str] = []
     seen: set[str] = set()

@@ -189,7 +189,7 @@
     "archivedTo": "docs/archive/2026-10/kin-answer-accuracy/",
     "pr": 96
   },
-  "currentFeature": "llm-fallback-alert-blindspot",
+  "currentFeature": "unemployment-separation-grounds",
   "effective-law-and-graph-precedents": {
     "phase": "archived",
     "matchRate": 98,
@@ -365,7 +365,7 @@
     "reviewFixes": "PR #152 리뷰(11-05): Codex P2 '성폭력·성폭행'의 폭력·폭행 → is_sexual_only 제외(코퍼스 21건 뒤집힘 0) · CodeRabbit 4건 반영(근사 규모 ±1 구간, 별표 잔여 항 해석 불가, 설계서 보관 경로, §3.2 라벨) · 2건 F-9 보류(무시·배제·사적 용무, 부정 서술 — D16 결정·코퍼스 사례 0)"
   },
   "unemployment-separation-grounds": {
-    "phase": "design",
+    "phase": "completed",
     "startedAt": "2026-10-07T00:00:00Z",
     "planPath": "docs/01-plan/features/unemployment-separation-grounds.plan.md",
     "trigger": "코퍼스·실사용 질문 분석(2026-10-07): 실업급여 수요 1위(23%)·공공 근거 최저(0.02), 별표 2 공공 0건, 이직사유 답변 유보 48%",
@@ -388,7 +388,35 @@
     },
     "designApprovedAt": "2026-10-07",
     "measurementHarness": "~/DEV/laborconsult_eval/sep (synthetic 19, real R+25/R-7, compare_sep.py)",
-    "doBlockedBy": "PR #104 머지 + launchd 예열 운영 worktree 래퍼 전환(lac 자동 진행 post_merge)"
+    "doStartedAt": "2026-11-05",
+    "branch": "feat/unemployment-separation-grounds (origin/main cc4748b 기반)",
+    "worktree": "../laborconsult-usg (측정 base ../laborconsult-usg-base = cc4748b)",
+    "doProgress": "2026-11-05 코드·테스트·문서 구현: separation_signals(신규)·rule_facts companion_of+separation_grounds(앵커 45, 블록 ≤2,100자)·law_catalog SUPPORT_WARM_LAWS+제58조 규칙·legal_api.annex_unit·fetch_official_rules ANNEXES/article_body/별표 단계·check_law_freshness 현행판 조문·별표 대조·test_unemployment_separation U1~U12·E11/K4/K6/AC11 갱신·tests.yml·CLAUDE.md. 미완료(법제처 등록 IP 복구 대기): --doc ei_rule_annex2/ei_rule_annex1_2/ei_rule_101 수집 → data/annex_fixtures 별표 스냅샷 2종(U3·K6) → --anchors(현행 대조가 드러내는 저장본 차이 해소) → warm --dry-run(+489행) → 측정 §8(변경 전 2회·후 2회, cache 모드·openai) → PR",
+    "checkedAt": "2026-11-06",
+    "analysisPath": "docs/03-analysis/unemployment-separation-grounds.analysis.md",
+    "matchRate": 99.4,
+    "matchRateStrict": 98.8,
+    "matchRateWithExecution": 98.8,
+    "gaps": {
+      "high": 0,
+      "medium": 0,
+      "low": 2,
+      "info": 7
+    },
+    "checkNote": "gap-detector 2026-11-06: 구현 80항목 ✅75/⚠️5/❌0, 실행 6항목 전부 ⏸(법제처 등록 IP 인증 거절). G-H1 별표 fixture 2건 부재로 U3가 CI에서 실패 → PR 보류. 테스트 실측: U 18통과·1skip(U3b)·1실패(U3), K6·C12 로컬 원문 부재로 실패, AC/E/R 스위트 OK. Report는 E1~E5 실행 뒤.",
+    "pendingExecution": [],
+    "iterationCount": 2,
+    "actedAt": "2026-11-07",
+    "actNote": "Act-1 2026-11-06: Low 5건 정리(L-1 담당기관 문장·횟수, L-2 9호 기업 사정상, L-3 이중 공백 2곳, L-6 주석·설계 §1.3 10→8, L-7 --anchors 라벨). 회귀 없음(테스트 6종 동일). 남음 L-4·L-5·L-8·설계 §2 표, 실행 E1~E6. | Act-2 2026-11-07: 실행 E1~E5·G-M1·G-M2·L-5 처리. 남음: E6 측정, L-4·L-8, 설계 §2 표, /pdca analyze 재대조(실행 포함 수치), Report, PR.",
+    "executionDone": "2026-11-07 E1~E5 완료(법제처 등록 IP 복구 뒤): E1 별표 2·1의2·제101조 수집(시행 20260918) · E2 fixture 2종 · E3 U 20/20·K 39·C 21 OK · E4 --anchors 26종 ✅(G-M2 확정, lsa_act_109 낡은 저장본 재수집 — 앵커 유지) · E5 dry-run 26/26종 12,836행(+489, 설계 예측 일치) · G-M1 XML fixture 실제 응답 발췌로 교체 · L-5 CLAUDE.md 갱신. 메인 트리 --anchors 25종 ✅·실제 예열 1회.",
+    "measuredAt": "2026-11-07",
+    "measurement": "E6 2026-11-07(사용자 승인, 약 280답변 gpt-6-sol, cache 모드, base cc4748b vs 기능 트리): 관문 9 중 8 ✅ — 블록 발동 S+·R+ 100%, 비이직 미발동 0, 제58조 강단서 100%, 사유 적중 92%(p-advise만 '5호·고용조정' 어구 미출현), 반례 2/2, 금지 문구 S+ 0·kin 0→0, 벤더 동일. ❌ 근거 부재 유보: 전 [0.26, 0.21] → 후 [0.19, 0.09](평균 0.235→0.14, 목표 ≤0.117). 잔존 유보는 전부 이직사유 밖 쟁점(판례·행정해석 부재 문구, 금액·기간 계산, 지원금, 군복무 연장). 비용: 사용자 메시지 +2,300자(11,900→14,200), 첫 글자 17.0→17.0초. 결과: ~/DEV/laborconsult_eval/sep/report.md·gates.json(저장소 밖).",
+    "recheckedAt": "2026-11-08",
+    "matchRateWithExecutionStrict": 97.7,
+    "recheckNote": "gap-detector 재대조 2026-11-08(11-07 Act-2·E6 반영): 구현 80항목 ✅79/⚠️1(U2)/❌0 → 99.4%(엄격 98.8%), 실행 E1~E5 ✅·E6 ⚠️(관문 8/9) → 실행 포함 98.8%(엄격 97.7%). 이전 갭: G-H1·G-M1·G-M2·L-1/2/3/5/6/7·§6 3건 해결, L-4·L-8 잔존, I-1~I-4 잔존. 신규: N-1(설계 §8.4 K 횟수 — 직후 정정) Low, N-2~N-4 정보. 판정: Report 진행 가능. 분석 §11.",
+    "completedAt": "2026-11-08",
+    "reportPath": "docs/04-report/features/unemployment-separation-grounds.report.md",
+    "reportNote": "report-generator 2026-11-08: 완료 보고서 저장(Executive Summary + 1.3 Value Delivered). Plan 목표 지표 4종 중 3종 충족, 유보 감소율만 미달(전체 0.235→0.14, 이직사유 요건 유보 0). 다음: 커밋(신규 5파일 포함)·PR·CodeRabbit·사전 예열·머지·전체 예열, 그 뒤 /pdca archive."
   },
   "audit-50-legal-accuracy": {
     "phase": "archived",

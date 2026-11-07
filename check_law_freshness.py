@@ -17,7 +17,7 @@ CI에서는 돌지 않는다 — 법제처 API 키가 등록 IP에서만 동작�
    감시 도구가 실패를 삼키면 감시가 죽은 것도 조용해진다.
 
     python3 check_law_freshness.py            # 본문 대조 + 시행 예정 판본 목록
-    python3 check_law_freshness.py --anchors  # + 앵커(다음 판본·현행 고시)·별표 주장·참조 조문 생존
+    python3 check_law_freshness.py --anchors  # + 앵커(현행판·다음 판본·현행 고시·별표)·별표 주장·참조 조문 생존
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from xml.etree import ElementTree as ET
 
 from app.core import safe_xml
 from app.core.legal_api import (  # noqa: E402
-    LAW_SEARCH_URL, _format_full_article, _http, _norm_compact, _raise_if_error_root, fetch_law_root,
+    LAW_SEARCH_URL, _format_full_article, _http, _norm_compact, _raise_if_error_root, annex_unit, fetch_law_root,
 )
 
 
@@ -169,29 +169,53 @@ def _next_root(law: str, key: str, today: str, cache: dict) -> tuple[str, ET.Ele
     return cache[law]
 
 
-def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
-    """규칙 블록·답변 규칙 앵커 점검 → (실패, 경고).
+def _current_root(law: str, key: str, roots: dict, cache: dict) -> ET.Element | None:
+    """현행판 루트 — 감시 대상 법령은 `check_law`가 받은 root를 재사용하고, 그 밖의 법령은 1회만 조회한다(D8)."""
+    if law in roots:
+        return roots[law]
+    if law not in cache:
+        try:
+            cache[law] = fetch_law_root(law, key)
+        except Exception as e:   # 실패도 기억한다 — None으로 두면 같은 법령의 다음 앵커가 '조문·별표 없음'으로 오보고된다(L-8)
+            cache[law] = e
+            raise
+    cached = cache[law]
+    if isinstance(cached, BaseException):   # 같은 법령의 뒤 앵커 — 원인을 다시 올려 '조회 실패'로 보고한다
+        raise cached
+    return cached
 
-    - **조문 문서**(`fetch_official_rules.ARTICLES`): 다음 시행 판본에서도 구절이 참인지 본다(경고). 현행판의
-      참은 저장본 대조(K6·C12)가 맡는다.
-    - **고시 문서**(`ADMRULS`, law-article-coverage D11): 고시는 발령 즉시 시행되는 일이 많아 '다음 판본'을 미리
-      볼 수 없다. 그래서 **현행** 고시를 받아 구절을 대조하고, 없으면 실패다. 조회 실패도 실패다(fail-closed).
-      저장본의 시행일·발령번호와 현행이 다르면 경고(재수집·앵커 재대조).
+
+def _anchor_checks(key: str, today: str, roots: dict | None = None) -> tuple[list[str], list[str]]:
+    """규칙 블록·답변 규칙·계산기 근거 앵커 점검 → (실패, 경고).
+
+    - **조문 문서**(`fetch_official_rules.ARTICLES`): **현행판**에서 구절이 참인지 본다(거짓·조회 실패 → 실패). 다음 시행
+      판본에서 거짓이면 경고. 저장본(`output_공식법령/`)이 현행 본문과 다르면 경고("재수집") — 개정이 시행된 뒤에는
+      다음 판본 대조로 보이지 않고 저장본만 낡은 채 K6가 통과하므로, 현행 대조가 있어야 한다(unemployment-separation-
+      grounds D8). 본문 형식은 저장본과 같은 `fetch_official_rules.article_body`다.
+    - **고시 문서**(`ADMRULS`, law-article-coverage D11): 고시는 발령 즉시 시행되는 일이 많아 '다음 판본'을 미리 볼 수
+      없다. **현행** 고시를 받아 구절을 대조하고, 없으면 실패다. 조회 실패도 실패다(fail-closed). 저장본의 시행일·발령번호와
+      현행이 다르면 경고(재수집·앵커 재대조).
+    - **별표 문서**(`ANNEXES`): 현행판의 별표(`legal_api.annex_unit` — 제목 일치가 정확히 하나)에서 구절이 참인지 본다.
+      구절 없음·별표 0개 또는 2개 이상·조회 실패 → 실패. 다음 판본 거짓·별표 확인 불가 → 경고. 저장본 없음·차이 → 경고.
 
     답변 규칙(`prompts.ANSWER_RULE_ANCHORS`)도 손으로 쓴 사실이라 같은 점검을 받는다
     (claim-authority-and-assessor-facts M11 — 규칙 블록만 돌면 새 등록부가 조용히 빠진다).
     계산기 근거 문구 앵커(`wage_calculator.legal_anchors.CALC_BASIS_ANCHORS`, wage-update-followups)도 같은 그룹
     순회에 들어간다 — 고시 앵커의 효력 기간은 계산기 상한표(effective_to)가 관리하고, 여기서는 현행 고시 본문
-    대조만 한다."""
+    대조만 한다. ``roots``는 `check_law`가 받아 둔 현행판 루트(법령명 → root)다."""
     import fetch_official_rules as fo
     from app.core.rule_facts import RULE_FACTS
     from app.templates.prompts import ANSWER_RULE_ANCHORS
     from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
+    roots = roots or {}
     articles = {a[0]: a for a in fo.ARTICLES}
     admruls = {a[0]: a for a in fo.ADMRULS}
+    annexes = {a[0]: a for a in fo.ANNEXES}
     norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
-    failures, warnings, next_cache = [], [], {}
+    failures, warnings, next_cache, cur_cache = [], [], {}, {}
     notice_phrases: dict[str, list[tuple[str, str]]] = {}
+    annex_phrases: dict[str, list[tuple[str, str]]] = {}
+    stored_compared: set[str] = set()
     groups = ([(f.name, f.anchors) for f in RULE_FACTS] + [("answer_rules", ANSWER_RULE_ANCHORS)]
               + [("calc_basis", CALC_BASIS_ANCHORS)])
     for group, anchors in groups:
@@ -199,10 +223,36 @@ def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
             if doc_id in admruls:
                 notice_phrases.setdefault(doc_id, []).append((group, phrase))
                 continue
+            if doc_id in annexes:
+                annex_phrases.setdefault(doc_id, []).append((group, phrase))
+                continue
             if doc_id not in articles:
                 warnings.append(f"{group}: 앵커 문서 미등록 {doc_id}")
                 continue
             _, law, no, sub, _k = articles[doc_id]
+            label = f"{law} 제{no}조" + (f"의{sub}" if sub else "")
+            # ① 현행판 — 거짓·조회 실패는 실패(fail-closed)
+            try:
+                root = _current_root(law, key, roots, cur_cache)
+            except Exception as e:
+                failures.append(f"{group}: {label} 현행판 조회 실패 ({_exc_label(e)}) — {phrase[:30]}")
+                continue
+            if root is None:   # 빈 응답·법령명 미매칭 — '조문 없음'과 다른 원인이다
+                failures.append(f"{group}: {law} 현행판 미매칭(빈 응답) — {phrase[:30]}")
+                continue
+            body = fo.article_body(root, no, sub)
+            if body is None:
+                failures.append(f"{group}: {label} 현행판에 조문 없음(미매칭·삭제) — {phrase[:30]}")
+                continue
+            if norm(phrase) not in norm(body):
+                failures.append(f"{group}: 현행 {label}에 앵커 구절 없음 — {phrase[:30]}")
+            if doc_id not in stored_compared:   # 저장본 차이는 문서당 한 번만 경고
+                stored_compared.add(doc_id)
+                stored = fo.stored_body(doc_id)
+                if stored is not None and norm(stored) != norm(body):
+                    warnings.append(f"{doc_id}: 저장본이 현행 본문과 다름 — fetch_official_rules.py --doc {doc_id} 재수집 후 "
+                                    "앵커 재대조")
+            # ② 다음 시행 판본 — 거짓이면 경고
             try:
                 nxt = _next_root(law, key, today, next_cache)
             except Exception as e:  # 경고 단계 — 원인을 남기고 다음 앵커로
@@ -211,13 +261,60 @@ def _anchor_checks(key: str, today: str) -> tuple[list[str], list[str]]:
                 continue
             if not nxt:
                 continue
-            ef, root = nxt
-            if root is None:   # 판본 본문을 못 받았으면 '거짓'이 아니라 '확인 불가'다
+            ef, nroot = nxt
+            if nroot is None:   # 판본 본문을 못 받았으면 '거짓'이 아니라 '확인 불가'다
                 warnings.append(f"{group}: {law} {ef} 판본 본문 확인 불가")
                 continue
-            text = _article_texts(root).get(f"{no}의{sub}" if sub else str(no), "")
+            text = _article_texts(nroot).get(f"{no}의{sub}" if sub else str(no), "")
             if norm(phrase) not in norm(text):
-                warnings.append(f"{group}: {law} 제{no}조 앵커가 {ef}부터 거짓 — {phrase[:30]}")
+                warnings.append(f"{group}: {label} 앵커가 {ef}부터 거짓 — {phrase[:30]}")
+    for doc_id, phrases in annex_phrases.items():
+        _, law, title_part, _label = annexes[doc_id]
+        try:
+            root = _current_root(law, key, roots, cur_cache)
+        except Exception as e:
+            failures.append(f"{doc_id}: 현행 별표 조회 실패 ({_exc_label(e)})")
+            continue
+        if root is None:   # 빈 응답·법령명 미매칭 — '별표 없음'과 다른 원인이다
+            failures.append(f"{doc_id}: {law} 현행판 미매칭(빈 응답)")
+            continue
+        try:
+            unit = annex_unit(root, title_part)
+        except ValueError as e:                       # 제목 일치 2개 이상 — 첫 것을 고르지 않는다(D2)
+            failures.append(f"{doc_id}: 현행 별표 제목 중복 — {e}")
+            continue
+        if unit is None:
+            failures.append(f"{doc_id}: 현행판에 별표 없음 — {title_part[:24]}")
+            continue
+        body = unit.findtext("별표내용") or ""
+        for group, phrase in phrases:
+            if norm(phrase) not in norm(body):
+                failures.append(f"{group}: 현행 별표({doc_id})에 앵커 구절 없음 — {phrase[:30]}")
+        stored = fo.stored_body(doc_id)
+        if stored is None:
+            warnings.append(f"{doc_id}: 저장본 없음 — fetch_official_rules.py --doc {doc_id} 수집")
+        elif norm(stored) != norm(body):
+            warnings.append(f"{doc_id}: 저장본이 현행 별표와 다름 — fetch_official_rules.py --doc {doc_id} 재수집")
+        try:
+            nxt = _next_root(law, key, today, next_cache)
+        except Exception as e:
+            warnings.append(f"{doc_id}: {law} 다음 판본 확인 불가 ({_exc_label(e)})")
+            next_cache[law] = None
+            continue
+        if not nxt:
+            continue
+        ef, nroot = nxt
+        try:
+            nunit = annex_unit(nroot, title_part) if nroot is not None else None
+        except ValueError:
+            nunit = None
+        if nunit is None:
+            warnings.append(f"{doc_id}: {ef} 판본 별표 확인 불가(없음·중복)")
+            continue
+        nbody = nunit.findtext("별표내용") or ""
+        for group, phrase in phrases:
+            if norm(phrase) not in norm(nbody):
+                warnings.append(f"{group}: 별표({doc_id}) 앵커가 {ef}부터 거짓 — {phrase[:30]}")
     for doc_id, phrases in notice_phrases.items():
         _, query, exact, dept, _keys = admruls[doc_id]
         try:
@@ -389,12 +486,16 @@ def annex_claim_holds(listing: AnnexListing, ref: str, applies: bool) -> bool | 
     return (status == "all") == applies
 
 
-def annex_text(root: ET.Element, title_part: str) -> str | None:
-    """별표 제목에 title_part가 든 표의 본문(`별표내용`, 없으면 전체 텍스트). 표가 없으면 None."""
-    for annex in root.iter("별표단위"):
-        if title_part in (annex.findtext("별표제목") or ""):
-            return annex.findtext("별표내용") or "".join(annex.itertext())
-    return None
+def annex_text(root: ET.Element | None, title_part: str) -> str | None:
+    """별표 제목에 title_part가 든 **별표**(서식 제외, 정확히 하나)의 본문. 없으면 None, 둘 이상이면 ValueError.
+
+    `legal_api.annex_unit` 위에서 구현한다(unemployment-separation-grounds D2) — 첫 일치를 고르던 구 구현은 제목이
+    겹치는 별표(고용보험법 시행규칙 2·2의2·2의3)와 서식까지 섞었다. `ANNEX_CLAIMS`의 두 별표는 이 규칙에서도 유일하다.
+    """
+    unit = annex_unit(root, title_part)
+    if unit is None:
+        return None
+    return unit.findtext("별표내용") or "".join(unit.itertext())
 
 
 def _annex_checks(key: str, today: str) -> tuple[list[str], list[str]]:
@@ -409,7 +510,11 @@ def _annex_checks(key: str, today: str) -> tuple[list[str], list[str]]:
         except Exception as e:  # 현행판 확인 실패도 실패다(fail-closed)
             failures.append(f"{label} — 별표 조회 실패 ({_exc_label(e)})")
             continue
-        text = annex_text(current[claim.law], claim.annex_title) if current[claim.law] is not None else None
+        try:
+            text = annex_text(current[claim.law], claim.annex_title)
+        except ValueError as e:                       # 제목 일치 2개 이상(D2) — 첫 것을 고르지 않는다
+            failures.append(f"{label} — 별표 제목 중복({e})")
+            continue
         held = annex_claim_holds(annex_listing(text), claim.ref, claim.applies) if text is not None else None
         if held is not True:
             failures.append(f"{label} — {'거짓이 됐다' if held is False else '확인 불가(별표 없음·해석 불가)'}"
@@ -419,7 +524,7 @@ def _annex_checks(key: str, today: str) -> tuple[list[str], list[str]]:
                 nxt[claim.law] = _next_root(claim.law, key, today, versions_cache)
             if nxt[claim.law]:
                 ef, nroot = nxt[claim.law]
-                ntext = annex_text(nroot, claim.annex_title) if nroot is not None else None
+                ntext = annex_text(nroot, claim.annex_title)
                 nheld = annex_claim_holds(annex_listing(ntext), claim.ref, claim.applies) if ntext else None
                 if nheld is False:
                     warnings.append(f"{label} — {ef}부터 거짓")
@@ -545,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--anchors", action="store_true",
-                        help="앵커(다음 판본·현행 고시)·별표 주장·참조 조문 생존 점검")
+                        help="앵커(현행 조문·별표 대조, 다음 판본·현행 고시)·별표 주장·참조 조문 생존 점검")
     args = parser.parse_args(argv)
 
     key = os.getenv("LAW_API_KEY")
@@ -579,12 +684,12 @@ def main(argv: list[str] | None = None) -> int:
         for name, items in upcoming:
             print(f"  {name}: " + ", ".join(f"{d}({k})" for d, k in items))
     if args.anchors:
-        anchor_fail, warnings = _anchor_checks(key, today)
+        anchor_fail, warnings = _anchor_checks(key, today, roots)
         annex_fail, annex_warn = _annex_checks(key, today)
         live_fail, live_warn = _liveness_checks(key, today, roots)
         warnings += annex_warn + live_warn
         fails = anchor_fail + annex_fail + live_fail
-        print("앵커(다음 판본·현행 고시)·별표 주장·참조 조문 생존:", "이상 없음" if not (warnings or fails) else "")
+        print("앵커(현행 조문·별표 대조, 다음 판본·현행 고시)·별표 주장·참조 조문 생존:", "이상 없음" if not (warnings or fails) else "")
         for w in warnings:
             print(f"  ⚠️ {w}")
         for f in fails:

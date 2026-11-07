@@ -109,6 +109,20 @@ ARTICLES = [
     ("eeo_act_3",     "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률", 3, None, []),
     ("eeo_enf_2",     "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률 시행령", 2, None, []),
     ("iaci_act_112",  "산업재해보상보험법",              112, None, []),
+    # 이직사유 동반 블록(rule_facts.separation_grounds)의 앵커 — 제101조는 "별표 1의2·2·2의2·2의3을 말한다"는 위임 조문이고
+    # 별표 본문은 아래 ANNEXES로 받는다(unemployment-separation-grounds D1·D6). 앵커 전용(keys 없음).
+    ("ei_rule_101",   "고용보험법 시행규칙",             101, None, []),
+]
+
+# ── 별표(annex) — 조문이 "별표 N을 말한다"로 위임하는 본문 ─────────────────────────────────────────────
+# (doc_id, 법령명, 별표 제목 부분일치 — legal_api.annex_unit이 **정확히 하나**를 고른다, URL 표기)
+# 출처는 eflaw 현행판의 `별표단위/별표내용`이고 **가공 없이** 저장한다 — 별표 본문은 표 폭에서 줄이 바뀌며 낱말이 쪼개지지만
+# (`경     \n  우`) 앵커 대조가 공백을 무시하므로 다듬을 이유가 없고, 다듬으면 저장본이 원문과 달라진다(D1). 전부 앵커 전용
+# (keys 없음)이라 업로더가 올리지 않는다. 별표 2의2(예술인)·2의3(노무제공자)도 제목에 '정당한 이직 사유'가 있어 제목은
+# 근로자 별표에만 맞는 긴 구절을 쓴다(D2). URL 규약은 `법령별표서식/(법령명,별표N)` — 없는 번호는 '오류페이지'가 열린다.
+ANNEXES = [
+    ("ei_rule_annex2",   "고용보험법 시행규칙", "근로자의 수급자격이 제한되지 아니하는 정당한 이직 사유", "별표2"),
+    ("ei_rule_annex1_2", "고용보험법 시행규칙", "사업에 막대한 지장을 초래하거나 재산상 손해를 끼친 경우", "별표1의2"),
 ]
 
 # 조문이 "고용노동부장관이 고시하는 금액"으로 **위임**하는 수치들 — 조문만으로는
@@ -157,6 +171,11 @@ def law_article_url(law_name: str, article_no: int, sub: int | None) -> str:
     return "https://www.law.go.kr/" + urlparse.quote(f"법령/{law_name}/{suffix}", safe="/")
 
 
+def annex_url(law_name: str, label: str) -> str:
+    """별표 페이지 — `법령별표서식/(법령명,별표N)`(실측: 법령명 제목 페이지로 열리고, 없는 번호는 오류페이지)."""
+    return "https://www.law.go.kr/" + urlparse.quote(f"법령별표서식/({law_name},{label})")
+
+
 def admrul_url(rule_name: str) -> str:
     return "https://www.law.go.kr/" + urlparse.quote(f"행정규칙/{rule_name}", safe="/")
 
@@ -192,6 +211,22 @@ def fetch_article_xml(api_key: str, law_name: str, article_no: int, sub: int | N
         return None
     if root is None:                            # 미매칭·다른 법령·폐지
         return None
+    body = article_body(root, article_no, sub)
+    if body is None:
+        return None
+    # 수집일을 문서 날짜로 쓰면 동일 조문도 다음 날 새 근거가 된다. 법제처가
+    # 제공하는 시행일을 내용 버전 날짜로 저장하고, 조회 시각은 별도 provenance가 맡는다.
+    official_date = (root.findtext(".//시행일자") or
+                     root.findtext(".//공포일자") or "").strip()
+    return {"body": body, "date": official_date}
+
+
+def article_body(root: ET.Element, article_no: int, sub: int | None) -> str | None:
+    """법령 루트에서 한 조문의 저장 본문(조문내용·항·호·목을 줄로 이은 것). 없으면 None.
+
+    저장본 형식의 **단일 출처**다 — `check_law_freshness --anchors`가 현행판 본문을 같은 형식으로 만들어 저장본과
+    대조한다(unemployment-separation-grounds D8). 형식이 갈리면 공백을 무시해도 '저장본과 다름' 경고가 매번 난다.
+    """
     want = f"{article_no:04d}" + (f"{sub:02d}" if sub else "00")
     # **목(目)까지 반드시 포함한다.** 조문이 "다음 각 목과 같다"로 넘기고 실제 수치는
     # 목에 있는 경우가 흔하다 — 국민건강보험법 시행령 제32조(보험료 상·하한)를 항·호만
@@ -210,12 +245,23 @@ def fetch_article_xml(api_key: str, law_name: str, article_no: int, sub: int | N
             continue
         parts = [("".join(el.itertext())).strip()
                  for el in jo.iter() if el.tag in wanted_tags]
-        # 수집일을 문서 날짜로 쓰면 동일 조문도 다음 날 새 근거가 된다. 법제처가
-        # 제공하는 시행일을 내용 버전 날짜로 저장하고, 조회 시각은 별도 provenance가 맡는다.
-        official_date = (root.findtext(".//시행일자") or
-                         root.findtext(".//공포일자") or "").strip()
-        return {"body": "\n".join(p for p in parts if p), "date": official_date}
+        return "\n".join(p for p in parts if p)
     return None
+
+
+def fetch_annex(api_key: str, law_name: str, title_part: str) -> dict | None:
+    """별표 본문(`별표내용` 원문 그대로, D1). 조회는 fetch_law_root(eflaw 현행판) 단일 출처고, 별표 선택은
+    legal_api.annex_unit — 제목 일치가 2개 이상이면 ValueError가 그대로 올라온다(호출부가 실패로 집계)."""
+    from app.core.legal_api import annex_unit, fetch_law_root
+    try:
+        root = fetch_law_root(law_name, api_key, timeout=TIMEOUT)
+    except ET.ParseError:
+        return None
+    unit = annex_unit(root, title_part)
+    if unit is None or not (unit.findtext("별표내용") or "").strip():
+        return None
+    return {"body": unit.findtext("별표내용"), "date": (root.findtext(".//시행일자") or "").strip(),
+            "annex_date": (unit.findtext("별표시행일자") or "").strip()}
 
 
 def pdf_attachment_text(droot: ET.Element) -> str:
@@ -682,7 +728,7 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="조회만 하고 파일을 쓰지 않는다")
     parser.add_argument("--only", help="이 기준 키에 관련된 문서만 수집")
     parser.add_argument("--doc", action="append",
-                        help="이 doc_id만 수집(반복 가능, 조문·고시 모두). 이미 수집한 승인 근거 문서를 "
+                        help="이 doc_id만 수집(반복 가능, 조문·고시·별표 모두). 이미 수집한 승인 근거 문서를 "
                              "다시 받으면 본문 변화로 sha256 이 바뀌어 승인 근거가 무효가 될 수 있다")
     parser.add_argument("--skip-url-check", action="store_true",
                         help="official_url 확인 생략(오프라인 점검용 — 운영 수집에는 쓰지 말 것)")
@@ -821,6 +867,48 @@ def main(argv=None) -> int:
               f"시행 {doc['effective'] or '?'})")
         if not args.dry_run:
             write_doc(os.path.join(OUT_DIR, f"{doc_id}.md"), header, doc["body"])
+        saved.append(doc_id)
+        time.sleep(0.2)
+
+    print(f"\n=== 별표 {len(ANNEXES)}건 ===")
+    for doc_id, law, title_part, label in ANNEXES:
+        if args.only:                       # 별표는 전부 앵커 전용(keys 없음) — 기준 키 필터에는 걸리지 않는다
+            continue
+        if args.doc and doc_id not in args.doc:
+            continue
+        shown = f"{law} {label[:2]} {label[2:]}"
+        try:
+            annex = fetch_annex(api_key, law, title_part)
+        except LawApiAuthError as exc:
+            return _auth_abort(exc)
+        except ValueError as exc:           # 제목 일치 2개 이상 — 첫 것을 고르지 않는다(D2)
+            failed.append((doc_id, shown, f"별표 제목 중복: {exc}"))
+            print(f"  ✗ {shown}: 별표 제목이 둘 이상에 맞음")
+            continue
+        except Exception as exc:
+            annex = None
+            print(f"  ✗ {shown}: {type(exc).__name__}")
+        if not annex or not annex["body"].strip():
+            failed.append((doc_id, shown, "별표 조회 실패(없음·빈 본문)"))
+            print(f"  ✗ {shown}")
+            continue
+        url = annex_url(law, label)
+        if not args.skip_url_check and not url_resolves(url):
+            failed.append((doc_id, shown, f"official_url 미확인: {url}"))
+            print(f"  ✗ {shown}: official_url 이 열리지 않음")
+            continue
+        header = {"doc_id": doc_id, "source_type": "law", "title": shown,
+                  "official_url": url, "issuer": "법제처 국가법령정보센터",
+                  "date": annex["date"], "keys": []}
+        stored = stored_body(doc_id)
+        if stored is None:
+            change = "신규"
+        else:
+            same = re.sub(r"\s+", "", stored) == re.sub(r"\s+", "", annex["body"])
+            change = "저장본과 동일" if same else "⚠️ 저장본과 다름"
+        print(f"  ✓ {shown}  ({len(annex['body'])}자, 별표 시행 {annex['annex_date'] or '?'}, {change})")
+        if not args.dry_run:
+            write_doc(os.path.join(OUT_DIR, f"{doc_id}.md"), header, annex["body"])
         saved.append(doc_id)
         time.sleep(0.2)
 

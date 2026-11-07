@@ -94,6 +94,9 @@ jobs:
       - name: 근거 조문 공급 테스트
         run: python3 test_law_article_coverage.py
 
+      - name: 실업급여 이직사유 근거(감지·동반 블록·별표 앵커·2-1 배선·현행성 점검) 테스트
+        run: python3 test_unemployment_separation.py
+
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 
