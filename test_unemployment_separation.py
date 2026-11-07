@@ -325,6 +325,21 @@ class FreshnessTest(unittest.TestCase):
         self.assertTrue(any("현행판 조회 실패" in f for f in fails), fails)
         self.assertTrue(any("현행 별표 조회 실패" in f for f in fails), fails)
 
+    def test_u8c_fetch_failure_is_remembered_per_law(self):
+        """L-8(PR #153 리뷰) — 현행판 조회가 예외로 실패하면 같은 법령의 다음 조문·별표 앵커도 '조회 실패(원인)'로 보고한다.
+        예전에는 캐시에 None을 넣어 뒤 앵커가 '현행판에 조문 없음·별표 없음'으로 잘못 나갔다. 빈 응답(None 루트)도 '없음'과 구분한다."""
+        class Down(dict):
+            def __getitem__(self, k):
+                raise RuntimeError("down")
+        fact = self._fact([("ei_rule_101", "x"), ("ei_rule_annex2", "y"), ("ei_rule_annex1_2", "z")])
+        fails, _ = self._run(fact, Down())
+        self.assertFalse(any("조문 없음" in f or "별표 없음" in f for f in fails), fails)
+        self.assertEqual(sum("조회 실패" in f and "RuntimeError" in f for f in fails), 3, fails)
+        # 빈 응답(None 루트)은 '미매칭'으로 — 조문·별표 모두
+        fails, _ = self._run(fact, {"고용보험법 시행규칙": None})
+        self.assertFalse(any("조문 없음" in f or "별표 없음" in f for f in fails), fails)
+        self.assertEqual(sum("현행판 미매칭" in f for f in fails), 3, fails)
+
     def test_u8_next_version_and_stored_cells_are_warnings(self):
         law, rule = ET.fromstring(self.LAW), ET.fromstring(self.RULE)
         roots = {"고용보험법": law, "고용보험법 시행규칙": rule}

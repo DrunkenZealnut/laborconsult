@@ -174,8 +174,15 @@ def _current_root(law: str, key: str, roots: dict, cache: dict) -> ET.Element | 
     if law in roots:
         return roots[law]
     if law not in cache:
-        cache[law] = fetch_law_root(law, key)
-    return cache[law]
+        try:
+            cache[law] = fetch_law_root(law, key)
+        except Exception as e:   # 실패도 기억한다 — None으로 두면 같은 법령의 다음 앵커가 '조문·별표 없음'으로 오보고된다(L-8)
+            cache[law] = e
+            raise
+    cached = cache[law]
+    if isinstance(cached, BaseException):   # 같은 법령의 뒤 앵커 — 원인을 다시 올려 '조회 실패'로 보고한다
+        raise cached
+    return cached
 
 
 def _anchor_checks(key: str, today: str, roots: dict | None = None) -> tuple[list[str], list[str]]:
@@ -229,9 +236,11 @@ def _anchor_checks(key: str, today: str, roots: dict | None = None) -> tuple[lis
                 root = _current_root(law, key, roots, cur_cache)
             except Exception as e:
                 failures.append(f"{group}: {label} 현행판 조회 실패 ({_exc_label(e)}) — {phrase[:30]}")
-                cur_cache[law] = None
                 continue
-            body = fo.article_body(root, no, sub) if root is not None else None
+            if root is None:   # 빈 응답·법령명 미매칭 — '조문 없음'과 다른 원인이다
+                failures.append(f"{group}: {law} 현행판 미매칭(빈 응답) — {phrase[:30]}")
+                continue
+            body = fo.article_body(root, no, sub)
             if body is None:
                 failures.append(f"{group}: {label} 현행판에 조문 없음(미매칭·삭제) — {phrase[:30]}")
                 continue
@@ -263,13 +272,16 @@ def _anchor_checks(key: str, today: str, roots: dict | None = None) -> tuple[lis
         _, law, title_part, _label = annexes[doc_id]
         try:
             root = _current_root(law, key, roots, cur_cache)
-            unit = annex_unit(root, title_part) if root is not None else None
-        except ValueError as e:                       # 제목 일치 2개 이상 — 첫 것을 고르지 않는다(D2)
-            failures.append(f"{doc_id}: 현행 별표 제목 중복 — {e}")
-            continue
         except Exception as e:
             failures.append(f"{doc_id}: 현행 별표 조회 실패 ({_exc_label(e)})")
-            cur_cache[law] = None
+            continue
+        if root is None:   # 빈 응답·법령명 미매칭 — '별표 없음'과 다른 원인이다
+            failures.append(f"{doc_id}: {law} 현행판 미매칭(빈 응답)")
+            continue
+        try:
+            unit = annex_unit(root, title_part)
+        except ValueError as e:                       # 제목 일치 2개 이상 — 첫 것을 고르지 않는다(D2)
+            failures.append(f"{doc_id}: 현행 별표 제목 중복 — {e}")
             continue
         if unit is None:
             failures.append(f"{doc_id}: 현행판에 별표 없음 — {title_part[:24]}")
