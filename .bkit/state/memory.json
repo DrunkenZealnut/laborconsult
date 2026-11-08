@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 95,
+  "sessionCount": 96,
   "lastSession": {
-    "startedAt": "2026-11-05T01:58:21.188Z",
+    "startedAt": "2026-11-08T01:05:40.181Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -189,7 +189,7 @@
     "archivedTo": "docs/archive/2026-10/kin-answer-accuracy/",
     "pr": 96
   },
-  "currentFeature": "unemployment-separation-grounds",
+  "currentFeature": "adjudication-corpus",
   "effective-law-and-graph-precedents": {
     "phase": "archived",
     "matchRate": 98,
@@ -641,5 +641,52 @@
     "deployVerified": "2026-11-03 프로덕션 배포 Ready(sha 1766e60) · workflow_dispatch run 41654058777 exit 0('마지막 성공 답변: 10-28 22:39 KST (144.8시간 전) · 최근 24시간 실패 0건')",
     "archivePR": "#151 (2026-11-04, 머지 대기 — 보관 변경: docs/archive/2026-11 이동·_INDEX·memory.json·ai-gateway 보고서 v1.6·완료 보고서 v1.2)",
     "followups": "D-d 게시판 API 실패 행 회귀 · R-1 /api/health 사전 호출 · R-2 운영 절차 · R-3 사용자 결정 · L-2/L-3/L-9/L-10/L-6 · 저장 지연 상한(postgrest 타임아웃) · 관리자 목록 표지 · 카나리 U4(결제 승인 필요)"
+  },
+  "adjudication-corpus": {
+    "phase": "do",
+    "startedAt": "2026-11-08T00:00:00Z",
+    "plannedAt": "2026-11-08",
+    "planPath": "docs/01-plan/features/adjudication-corpus.plan.md",
+    "trigger": "unemployment-separation-grounds Plan §6 D2(재결례 별도 사이클) — 실업급여 심사 쟁점 공공 공급 0.12, 직전 측정 잔존 유보가 '인용할 판례·행정해석 없음'",
+    "scope": "법제처 eiac 118 + iaciac 934 전량 적재(source_type=ruling), 공공 쿼터·승격·라벨·우선순위·인용 검증·BM25 배선, 측정 하네스",
+    "keyFacts": "eiac 118(2019~23, 이유 중앙값 6,677자) · iaciac 934(2011~22, 4,522자, 사건번호 2건 중복→일련번호 키) · 청크 약 8,800(+9%) · CI BM25 RSS 459/550MB · 실사용 170건 중 실업급여 45·산재 9",
+    "designedAt": "2026-11-08",
+    "designPath": "docs/02-design/features/adjudication-corpus.design.md",
+    "decisions": "D1~D7 권고안 확정(사용자 \"권고안대로 진행\", 2026-11-08)",
+    "designDecisions": [
+      "D8 제목·번호 정규화(iaciac 사건 접두사 제거, 날짜 0채움)",
+      "D9 이유 상위 소제목 분할·관계법령 절 제외·화이트리스트 태그 정제",
+      "D10 ID ruling_{agency}_{serial}_chunk_{idx}",
+      "D11 모든 청크 text 머리글(BM25 경로 case_no 없음)",
+      "D12 인용 패턴 A + B(기관 문맥 필수) + 코어 마스킹 + iaciac 별칭(실키 우선) + 기관 판정",
+      "D13 배선 PR-A 먼저, 데이터 PR-B 뒤",
+      "D14 커밋 원장 source_pack_ledger 형식",
+      "D15 K=14+산재 8=22, 비용 356답변",
+      "D16 청구취지 제외·각주 포함",
+      "D17 official_url DRF 규약",
+      "D18 RULING_CITATION_RULES 두 분기 공통",
+      "D19 fixture allowed_sources에 ruling",
+      "D20 metadata.rag_sources 관측 키",
+      "D21 측정 계측은 하네스 spy(format_pinecone_hits·validate_response_citations)"
+    ],
+    "nextStep": "D7 승인 → Do(worktree ../laborconsult-rul): PR-A 배선·테스트 먼저 → 머지·배포 → before 측정 → 수집·PII → 적재 → BM25 → PR-B 초안(CI 관문) → after 측정 → PR-B",
+    "designRev": 2,
+    "designValidator": {
+      "rev1Score": 72,
+      "findings": "High 3·Medium 11·Low 13 — 전부 재현 후 rev2 반영(§12 처리표)",
+      "date": "2026-11-08"
+    },
+    "measurementCost": "356답변(gpt-6-sol) — D7 사용자 승인 대기",
+    "doStartedAt": "2026-11-08",
+    "d7Approved": "2026-11-08 사용자 \"D7 승인\"(356답변)",
+    "worktree": "../laborconsult-rul (feat/adjudication-corpus)",
+    "doProgress": {
+      "prA": "구현 완료 2026-11-08 — test_rulings_ingest 21/21, 기존 11스위트·node public_fetch 통과, 실답변 26,496파일 패턴 스캔 0건, BM25 비재결 패턴 0건(RU19). 커밋·PR 대기(요청 시)",
+      "collection": "완료 11-08 — eiac 118·iaciac 934(1,052/1,052, 실패 0, PII 0). 13063 사건번호·의결일자 폴백, 6427 날짜 폴백. 이유 이미지만 152건(2016~2018 iaciac).",
+      "next": "사용자 \"커밋·PR\" → PR-A → CI·리뷰 → 머지·배포 → (before 측정 완료 확인) → 업로드",
+      "dryRun": "통과 — 문서 1,052·청크 11,415(패킹 뒤)·관계법령 제외 470,677자·폴백 1·잔존 태그 0. BM25 추정 약 107,200문서(+11.9%) → RSS 약 514MB(선형).",
+      "headingRule": "실측으로 어휘 보강(결정이유·적법 여부 등)·번호 중복/+2 허용(어휘 필수)·제외 절 탈출 어휘 필수 → 폴백 446→1",
+      "measurement": "before1 synthetic 완료 20:16, real_pos·kin·risk → before2 진행 중(run_before.sh nohup, Monitor)"
+    }
   }
 }
