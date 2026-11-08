@@ -9,6 +9,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -48,6 +49,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -86,6 +88,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -125,6 +128,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -163,6 +167,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -199,6 +204,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -237,6 +243,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -275,6 +282,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -313,6 +321,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -353,6 +362,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -391,6 +401,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -429,6 +440,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -467,6 +479,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -504,6 +517,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -544,6 +558,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -585,6 +600,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -627,6 +643,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -666,6 +683,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",
@@ -704,6 +722,7 @@
   "allowed_sources": [
    "law_article",
    "precedent",
+   "ruling",
    "interpretation",
    "regulation",
    "counsel",

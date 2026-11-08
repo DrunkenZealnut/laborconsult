@@ -104,7 +104,9 @@ def _query_namespaces(
 # 어떤 배분을 넣어도 공공이 2→3건에서 멈췄다(없는 것은 넣을 수 없다).
 #
 # 여기서 부족분을 채우면 공공 2→15건·법률 근거 도달 2/12→11/12가 된다.
-POOL_PUBLIC_SOURCES = frozenset({"precedent", "interpretation", "regulation"})
+# `ruling`(재결례 — 고용보험심사위원회·산재재심사위원회, adjudication-corpus D1)도 공공 저작물이라
+# 쿼터·법률근거 승격·I-9 보호의 대상이다. 집합은 이 한 곳에만 있다(아래 LEGAL_PROMOTE_SOURCES 주석).
+POOL_PUBLIC_SOURCES = frozenset({"precedent", "interpretation", "regulation", "ruling"})
 
 # search_top_k → pool에 확보할 공공저작물 목표 건수 (등록값은 pool의 20~25%).
 #
@@ -962,6 +964,7 @@ def format_pinecone_hits(hits: list[dict], top_n: int | None = None,
             "counsel": "노무사 상담",
             "qa": "상담 Q&A",
             "textbook": "노동법 해설서",
+            "ruling": "재결례",   # G5 — public/index.html renderSources labels와 쌍
         }.get(h["source_type"], h["source_type"])
 
         header = f"[{source_label}] {h['title']}"

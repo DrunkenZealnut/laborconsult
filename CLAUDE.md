@@ -57,6 +57,16 @@ python3 sync_overlap_precedents.py --emit-targets      # 교재∩기존코퍼�
 python3 sync_overlap_precedents.py --delete-ctx --dry-run  # 대체 성공분의 ctx 구벡터 삭제 (실행 전 반드시 dry-run)
 python3 test_precedent_ingest.py               # 오프라인 회귀 테스트 (API 키 불요)
 
+# 재결례 코퍼스 (고용보험심사위원회 eiac 118 · 산재재심사위원회 iaciac 934 → laborlaw-v2, source_type="ruling")
+# 업로드는 배선 PR(라벨·공공 쿼터·인용 검증)이 **배포된 뒤**에만 — laborlaw-v2는 프로덕션이 읽는 NS라 올리는 즉시 검색에 섞인다.
+python3 fetch_rulings.py                       # 목록 전량 → 상세 → output_재결례/{agency}/ (재개, 등록 IP 전용 — 인증 오류는 exit 2)
+python3 fetch_rulings.py --list-only           # 목록·연도 분포만
+python3 pinecone_upload_rulings.py --dry-run   # 청킹·관계법령 제외량·소제목 폴백·잔존 태그·PII 미확인 집계(중단 조건)
+python3 pinecone_upload_rulings.py             # 적재 + 고아 정리(그룹 = {agency}_{일련번호}) — _pii_report.json 전건 reviewed가 선행조건
+python3 pinecone_upload_rulings.py --exclude-before 2016 --agency iaciac   # BM25 관문 미달 시 축소(md 이동만) → --prune-missing
+python3 pinecone_upload_rulings.py --write-batch-ledger data/vector_ledgers/rulings_202611.json --verify   # 커밋 원장
+python3 test_rulings_ingest.py                 # 오프라인 회귀(CI)
+
 # 판례 아카이브 (문서 번들 + 인벤토리 장부 → data/precedent_archive/, 커밋 대상)
 # 수집·업로드·ctx 정리 후 build 재실행 → 커밋 (스냅샷 갱신 누락은 로컬 verify V4가 탐지)
 python3 archive_precedents.py build            # 번들·inventory.csv·records/ 스냅샷 (오프라인)
@@ -110,6 +120,7 @@ python3 test_wage_claims_update.py        # 월별 체불 원금·차액(월급�
 python3 test_audit50.py               # 외부 점검 50문항(쟁점 근거 패턴 양성·음성·지침 앵커·감지 규칙·월급 구성 가드·월 환산 시간)
 python3 test_law_article_coverage.py  # 근거 조문 공급(키워드 2단·구어 근접·별표 파서·삭제 조문 차단·5인 조건·휴업수당)
 python3 test_unemployment_separation.py  # 실업급여 이직사유 근거(감지 강·약 단서·동반 블록·수량 결속·별표 fixture 앵커·annex_unit·2-1 배선·현행성 점검)
+python3 test_rulings_ingest.py           # 재결례(수집 정규화·정제·소제목 청킹·원장·배선 7지점·인용 패턴 문맥·BM25 비재결 문서 패턴 0건)
 
 # Local API server
 uvicorn api.index:app --reload --port 5555  # FastAPI dev server (port 5555)
@@ -392,6 +403,13 @@ All crawlers use `lxml` parser (not `html.parser` — it has `<hr>` void element
   - **법제처 수집 성공률은 단일 기준선으로 예측할 수 없다 — 대상의 사건부호 구성이 지배한다.** 표본으로 잡으면 낙관 편향이 크고(40건 표본 95% → 전량 83%, precedent-corpus-expansion), 교재 인용 판례는 하급심·구판례 비중이 높아 72%였으며(textbook-corpus-embedding, 166건 중 120건), **실무 지침서에서는 21%까지 떨어진다**(yeoncha 47건 중 10건, 2026-09-05). 원인은 스크립트가 아니라 구성이다 — 실측 계열별 수집률은 **하급심 부호(구합·나·누·가단·가합) 2/29 = 7% vs 대법원형(다·두·도) 8/18 = 44%**이고, yeoncha는 하급심 인용이 62%(29/47)였다. 법제처는 하급심을 거의 수록하지 않는다. **수집 전에 대상 CSV의 사건부호 분포를 먼저 세면** 기대치를 맞출 수 있고, 낮은 수집률을 스크립트 결함으로 오진하지 않는다(확인법: 실패 사건번호를 `lawSearch.do`에 직접 넣어 `totalCnt=0`이면 DB 미수록이 확정된다). 미달분은 재시도해도 회수되지 않고 `_미발견.csv`에 누적된다(**2026-09-05 실측 1,793건** — 여러 사이클 누적치). **이 수치는 인용하지 말고 매번 세어 볼 것** — 사이클마다 늘어나는데 문서가 따라가지 못해 156 → 967 → 1,793으로 세 번 어긋났고, 마지막 어긋남은 바로 이 줄을 편집하면서 옆의 숫자를 안 고쳐 생겼다. 세는 법: `_미발견.csv`의 고유 사건번호 수(= `_progress.json`의 `not_found` 크기).
   - **판례 중복 판정은 파일당 대표 사건번호 1개로 해야 한다.** 본문 전체를 정규식으로 긁으면 참조판례 인용까지 잡혀 "A가 B를 인용"을 "B가 코퍼스에 있음"으로 오판한다(실측: 836개 파일에서 819개가 아니라 2,450개가 잡혀 수집 대상 601건 중 133건이 부당 스킵).
   - **`prec`(법원)와 `detc`(헌재)는 XML 스키마가 다르다** — 결과 태그 대소문자(`prec`/`Detc`), `판결요지`↔`결정요지`, `판례내용`↔`전문`, `선고일자`↔`종국일자`. 법원명·판결유형은 detc에 없다.
+- **재결례 코퍼스(`source_type="ruling"`, adjudication-corpus)는 법제처 `target=eiac`(고용보험심사위원회)·`iaciac`(산재재심사위원회) 상세를 `fetch_rulings.py`로 받아 `pinecone_upload_rulings.py`가 `laborlaw-v2`에 올린다.** 비보호 공공저작물이라 노출 가드는 없고 공공 쿼터·법률근거 승격 집합(`rag.POOL_PUBLIC_SOURCES`)에 든다. 지킬 것(전부 조용히 실패한다 — 설계 `docs/02-design/features/adjudication-corpus.design.md`):
+  - **ID·그룹은 일련번호다**(`ruling_{agency}_{serial}_chunk_{idx}`, 그룹 `{agency}_{serial}`). iaciac 사건번호는 2건이 중복이다. `chunk_index`는 정수여야 한다 — BM25 빌더가 `{"chunk_index": {"$gte": 0}}` 필터로 페이지를 돈다.
+  - **모든 청크 `text` 첫 줄이 머리글** `[{기관} {사건번호} · 의결 {YYYY.MM.DD} · {분류}]`다. BM25 hit에는 `case_no`가 없고 BM25는 `text`만 토큰화하므로 번호·의결일자는 본문에 있어야 한다. iaciac `사건` 필드의 선행 `YYYY재결 제N호`(eiac형 표기)는 제목에서 뗀다 — 두 기관의 번호 표기가 겹친다.
+  - **이유의 관계법령 절·소절은 임베딩하지 않는다** — 의결 당시 법령 전문이라 '재결례' 라벨로 구 조문이 실리는 경로다(iaciac 12699 실측 약 2,080자). 소제목 인식은 짧은 제목(12자)·어휘 목록·순차 번호 세 조건을 **모두** 본다 — 관계법령 소절 안의 조문 목 `가.~라.`·호 `1.~4.`는 번호가 되돌아가고 제목이 문장형이라 그 조건에서 걸러진다(`test_rulings_ingest` RU7이 fixture로 고정).
+  - **청구인·청구취지는 어떤 청크에도 넣지 않는다.** PII 스캔 보고(`_pii_report.json`)가 전건 `reviewed`여야 업로드가 돈다. 가림은 md를 고치지 않고 `_pii_redactions.json`을 업로더가 청킹 시점에 적용한다 — md를 고치면 재수집이 원본으로 덮어쓴다.
+  - **인증 오류(`<Response>`)는 exit 2로 멈추고 `_progress.json`의 failed에 적지 않는다.** 그 밖의 실패는 클래스명+상태만 적고 다음 실행에 재시도한다(court의 `not_found`처럼 영구 저장하지 않는다 — '없음'이 아니라 '못 받음'이다).
+  - **배선 PR(라벨·쿼터·인용 검증)을 데이터보다 먼저 배포한다.** 업로드 즉시 Dense 검색에 섞이므로, 배선 없는 프로덕션은 라벨을 `ruling` 원문으로 보이고 재결 번호를 검증하지 않는다. 측정 base도 업로드 전에 끝낸다(공유 인덱스).
 - **노동법 해설서 코퍼스(`source_type="textbook"`)는 저작물 본문이라 인용 가드 5종이 전제다.** 2026-08-10에 "교재 본문은 Pinecone에 올리지 않는다"는 기존 결정(`precedent-corpus-expansion` 사이클)을 **가드 구현을 조건으로 변경**했다. 가드 중 하나라도 빠지면 설계 전제가 깨진다:
   - **G1~G3**(`app/templates/prompts.py::TEXTBOOK_CITATION_RULES`) — 축자 인용 금지·해설서 단독 근거 금지·서명 표기. **소프트 가드**라 LLM이 우회할 수 있다. **시스템 프롬프트 본문에 넣지 말 것** — 답변 경로가 `CONSULTATION_SYSTEM_PROMPT`와 `SYSTEM_PROMPT_TEMPLATE`(`pipeline.py` 인라인) 두 갈래인데 해설서 청크는 그 분기와 무관하게 컨텍스트에 실린다. 한쪽에만 넣으면 임금계산·괴롭힘 판정·법제처 실패 경로에서 저작물이 무가드로 나간다(실제로 그렇게 구현했다가 발견됨). `INJECTION_RESISTANCE`와 같이 `pipeline.py`가 두 분기 모두에 접미하고, 컨텍스트에 해설서가 실렸을 때만 붙인다.
   - **G4**(`app/core/rag.py::_cap_by_book`, 상한 3) — **유일한 구조적 통제.** `format_pinecone_hits()` 진입부에 두는 이유는 그 함수가 파이프라인의 단일 초크포인트(`pipeline.py`에서만 호출)이기 때문이다. 다른 곳으로 옮기면 호출부가 늘 때 가드가 샌다.
@@ -1011,7 +1029,7 @@ Standalone module for workplace harassment (직장 내 괴롭힘) assessment.
   - **계산기도 같은 조건을 따른다**(D15). 규모가 질문에 없으면 계산기는 `BusinessSize.OVER_5`로 계산하므로, 규모에 따라 결과가 달라지는 섹션(연장·연차·보상휴가·탄력·포괄·공휴일·휴업수당·주52시간)이 있으면 결과에 `pipeline._SIZE_ASSUMED_CALC_NOTE`("상시 5명 이상으로 계산했습니다…")를 붙인다 — 계산 결과는 "이 수치를 사용하세요"로 주입돼 답변 규칙과 어긋나면 수치가 이긴다. 부착 조건은 규모 미기재 + 규모 의존 섹션 8종(`_SIZE_DEPENDENT_TARGETS`) 실행 + 미실행·보류 아님 + (연장·포괄만이면) 연장 가산 안내 `_SIZE_ASSUMED_NOTE`(calc-card-followups, **다른 상수**)와 중복 금지다 — 두 상수를 같은 이름으로 두면 모듈 뒤쪽 정의가 앞을 덮는다(PR #104 머지에서 실제 발생). **의도분석 `business_size`는 자유 문자열이라 `_canonical_business_size`로 먼저 정규화한다**("5인 미만"·"4명"·"직원 10명" → 매핑 키, 못 읽는 값·경계가 걸리는 값("15인 미만"·"1인 이상")은 미기재. 근사 표현("약 5명"·"10여 명"·"5명 정도")은 판정기 `_size_bounds`처럼 앞뒤 1명 구간으로 보아 "약 5명"은 미기재, "약 30명"은 5인이상이다 — PR #152 CodeRabbit) — 정확 키 4개만 보던 때 비표준 값이 5명 이상으로 계산되면서 값이 참이라 가정 고지까지 빠졌다(Check M3). 휴업수당 계산기는 설명문에 "5인 미만 사업장에도 적용"이라고 정반대로 적혀 있었고 규모 분기가 없었다(제46조는 별표 1에 없다).
 - **코드가 만든 사실도 인용 화이트리스트에 넣는다**(`_citation_source_hits(..., extra_hits=, system_texts=)`, effective-law D10). 화이트리스트가 상담·RAG·법령API·NLRC·그래프 다섯 소스로만 만들어져, 규칙 블록이 "따르라"고 준 판례와 계산기 법적 근거(`weekly_holiday.py` "대법원 2025.8.14. 선고 2022다291153 판결")를 LLM이 인용하면 **환각으로 판정돼 지워질 수 있었다**. 규칙 블록은 화이트리스트 **앞에서** 계산하고(`rule_fact_blocks`), 블록의 `prec_anchors` 판례와 그래프가 **최종 컨텍스트에 실제로 렌더한** 판례(`graph.rendered_precedents`)는 `case_no`를 가진 primary hit으로, 블록 전문·`calc_result`는 텍스트 블록으로 넣는다. 판례 앵커(`RuleFact.prec_anchors`)는 조문 앵커(`anchors`, K6 로컬)와 필드를 나눈다 — 원문 기록이 커밋돼 있어 CI(E11)에서 실검증된다.
 - **답변 경로의 판례 번호 참조는 사건번호 정확일치만 채택한다**(`legal_api._pick_exact_case`, 헌재 포함). 법제처 검색은 사건명 기준 fuzzy인데 `fetch_relevant_articles`가 **첫 결과를 그대로** 채택하고 있었다 — 수집 스크립트에만 게이트가 있던 비대칭. 정규화·병합 대조는 `app/core/case_numbers.py` 단일 출처이고 `fetch_court_precedents`가 같은 객체를 re-export한다(동일성 E14). 그 스크립트는 import 시 `load_dotenv(override=True)`를 실행하므로 답변 경로가 import하면 안 된다. 헤더는 `[사건명 사건번호]` — 판례 본문은 자기 번호를 적지 않는 경우가 많아 사건명만 두면 정당한 인용이 화이트리스트에 오르지 못한다.
-- Citation validator (`citation_validator.py`) regex patterns: `대법원 YYYY[가-힣]NNNN` for precedents (사건부호 자리에서 날짜·수량 단위 글자 `_NOT_CASE_CODE`는 제외 — 없으면 "2026년 9월"이 판례로 잡혀 답변에서 지워졌다), `[부서명]과-NNNN` for administrative interpretations.
+- Citation validator (`citation_validator.py`) regex patterns: `대법원 YYYY[가-힣]NNNN` for precedents (사건부호 자리에서 날짜·수량 단위 글자 `_NOT_CASE_CODE`는 제외 — 없으면 "2026년 9월"이 판례로 잡혀 답변에서 지워졌다), `[부서명]과-NNNN` for administrative interpretations. **재결 번호 2종**(adjudication-corpus D12): A `YYYY재결 제N호`(고용보험심사위원회), B `YYYY-N호`는 **"재심사위원회" 문맥이 앞에 있을 때만**이다 — `제YYYY-N호`·`고시(2025-124호)`·`공고 2021-244호`처럼 고시·공고 번호가 같은 형태라 문맥 없는 B는 BM25 코퍼스 438건·실답변 2건을 환각 재결로 지웠을 것이다(문맥 없는 환각은 의도된 미탐). `_PREC_PATTERN`은 **재결 구간을 가린 뒤** 돈다(`…재심사위원회 2015-1987호 2015. 8. 27.`의 `1987호 2015`가 판례가 됐다). iaciac 키에는 A 형태 별칭을 실키가 없을 때만 등록하고, 답변의 기관명이 등록 기관과 다르면 환각이다. `test_rulings_ingest` RU19가 BM25 코퍼스의 비재결 문서 전량에 두 패턴 일치 0건을 CI에서 고정한다 — 패턴을 넓히면 그 검사부터 본다.
 - Graceful degradation everywhere: Pinecone 초기화/쿼리 실패 → `pinecone_index=None`으로 RAG 비활성(계산기·법령 API·LLM 답변은 정상, `config.py`에서 try/except), BM25 미설치 → Dense-only, Self-RAG 실패 → rerank 유지, `classify_complexity` 실패 → MODERATE 폴백. 새 기능 추가 시 반드시 폴백 경로 구현.
 - `public/calculator_flow/*.html` 내 `sendPrompt()` 호출은 반드시 `window.parent?.sendPrompt?.()` 로 — iframe 내에서 실행되므로 부모 컨텍스트 필요.
 - `api/index.py`의 파일 서빙 엔드포인트는 `os.path.commonpath` + `.html` allowlist로 path traversal 방지 필수.
