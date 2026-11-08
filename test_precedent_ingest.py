@@ -1682,7 +1682,7 @@ def t24_legal_diversity_promotion() -> None:
     check("T24-a3 promoted 마커는 'legal'", out[-1].get("promoted") == "legal")
     # 대상 판정 — 행정해석·훈령예규도 대상, textbook은 절대 아님(저작권 §6).
     check("T24-a4 대상 집합 고정",
-          LEGAL_PROMOTE_SOURCES == {"precedent", "interpretation", "regulation"})
+          LEGAL_PROMOTE_SOURCES == {"precedent", "interpretation", "regulation", "ruling"})
     check("T24-a5 해석도 대상", _is_legal_source(src(0, "interpretation")))
     check("T24-a6 textbook은 비대상", not _is_legal_source(tb(0)))
     only_tb_window = [src(i) for i in range(5)] + [tb(0)]

@@ -100,6 +100,11 @@ jobs:
       - name: 판례 수집·업로드 테스트
         run: python3 test_precedent_ingest.py
 
+      # 재결례(eiac·iaciac) — 수집 정규화·정제·소제목 청킹·원장·인용 패턴(기관 문맥·마스킹)·배선 7지점·
+      # BM25 코퍼스 비재결 문서에 재결 패턴 일치 0건(고시 번호 오삭제 방지, adjudication-corpus RU19)
+      - name: 재결례 수집·업로드·배선 테스트
+        run: python3 test_rulings_ingest.py
+
       - name: 보완 공식 근거 전달·사실 단위·절차 회귀 테스트
         run: python3 test_source_followup.py
 

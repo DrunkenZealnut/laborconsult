@@ -57,6 +57,7 @@ from app.core.citation_validator import (
     correct_hallucinated_citations,
     extract_precedents_from_hits,
     extract_admin_refs_from_hits,
+    extract_rulings_from_hits,
     validate_response_citations,
     micro_polish,
 )
@@ -214,6 +215,12 @@ def uses_counsel(precedent_meta: list[dict] | None) -> bool:
     from app.core.rag import is_counsel_source
 
     return any(is_counsel_source(m or {}) for m in (precedent_meta or []))
+
+
+def uses_ruling(precedent_meta: list[dict] | None) -> bool:
+    """LLM 컨텍스트에 재결례(고용보험심사위원회·산재재심사위원회)가 실렸는가 — `RULING_CITATION_RULES`
+    부착 판정(adjudication-corpus D18). 공공 저작물이라 게시판 제외와는 무관하다."""
+    return any((m or {}).get("source_type") == "ruling" for m in (precedent_meta or []))
 
 
 # Q6 제외 임계 — 상담이 컨텍스트의 이 비율을 **넘을 때만** 게시판에서 뺀다.
@@ -4232,7 +4239,7 @@ def process_question(query: str, session: Session, config: AppConfig,
     if graph_context:
         parts.append(f"법령 관계 분석 (지식 그래프):\n\n{graph_context}")
     if precedent_text:
-        parts.append(f"관련 판례 (법제처 국가법령정보센터 검색):\n\n{_cap(precedent_text, PRECEDENT_TEXT_BUDGET)}")
+        parts.append(f"관련 판례·재결례 (법제처 국가법령정보센터):\n\n{_cap(precedent_text, PRECEDENT_TEXT_BUDGET)}")
     if calc_result:
         heading = _calculation_context_heading(calc_result)
         parts.append(f"{heading}:\n\n{calc_result}")
@@ -4439,6 +4446,8 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 상담 게시물(제3자 저작물)이 실렸는가 — 가드 Q1~Q3 부착과 Q6(게시판 제외)의
     # 공용 변수. used_textbook과 같은 이유로 판정을 복제하지 않는다.
     used_counsel = uses_counsel(precedent_meta)
+    # 재결례가 실렸는가 — RULING_CITATION_RULES 부착 판정(adjudication-corpus D18).
+    used_ruling = uses_ruling(precedent_meta)
     full_text = ""
     used_provider = None
     outcome = AnswerOutcome()
@@ -4465,6 +4474,11 @@ def process_question(query: str, session: Session, config: AppConfig,
         if used_counsel:
             from app.templates.prompts import COUNSEL_CITATION_RULES
             system_prompt = system_prompt + COUNSEL_CITATION_RULES
+        # 재결례 인용 규칙(adjudication-corpus D18) — 같은 이유로 두 분기 공통 접미. 기관명+사건번호 형식과
+        # 개별 사안 판단임을 지시한다. 재결례가 실렸을 때만 붙인다.
+        if used_ruling:
+            from app.templates.prompts import RULING_CITATION_RULES
+            system_prompt = system_prompt + RULING_CITATION_RULES
         # 임금 계산 규칙(단시간 주휴 비례·예시 시급) — 같은 이유로 두 분기 공통 접미한다.
         # 계산기가 실행되지 않는 경로(시급 미제공 등)에서 LLM이 산식을 직접 고른다.
         from app.templates.prompts import WAGE_CALC_RULES, ANSWER_ACCURACY_RULES
@@ -4531,8 +4545,10 @@ def process_question(query: str, session: Session, config: AppConfig,
     # 법령 API·NLRC·graph 소스의 정당한 인용이 삭제되던 사각지대 해소 (DB-4)
     available_precs = extract_precedents_from_hits(whitelist_hits)
     available_admins = extract_admin_refs_from_hits(whitelist_hits)
+    # 재결 번호 화이트리스트(adjudication-corpus D12) — 같은 원천. 검증기는 재결 구간을 가린 뒤 판례를 본다.
+    available_rulings = extract_rulings_from_hits(whitelist_hits)
     citation_check = validate_response_citations(
-        full_text, available_precs, available_admins,
+        full_text, available_precs, available_admins, available_rulings,
     )
     citation_fixed = None
     if citation_check["hallucinated"]:
@@ -4680,6 +4696,14 @@ def process_question(query: str, session: Session, config: AppConfig,
         }
     if stale_filtered:
         conv_metadata["stale_filtered"] = sorted(set(stale_filtered))
+    # RAG 컨텍스트 출처 분포(adjudication-corpus D20) — `sources` 이벤트는 저장되지 않아 재결례가 실제로
+    # 실리는지 프로덕션에서 볼 수단이 없었다. 관측 키라 게시판 제외(PUBLIC_EXCLUDE_KEYS)와 무관하다.
+    if precedent_meta:
+        rag_counts: dict[str, int] = {}
+        for m in precedent_meta:
+            st = (m or {}).get("source_type") or "unknown"
+            rag_counts[st] = rag_counts.get(st, 0) + 1
+        conv_metadata["rag_sources"] = rag_counts
     if citation_relevance:
         conv_metadata["citation_relevance"] = citation_relevance
     # 법령 조회 관측(v2, production-law-api-recovery D7b) — 요청이 1건이라도 있으면 **항상** 남긴다.

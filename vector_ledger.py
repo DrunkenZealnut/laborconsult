@@ -198,3 +198,41 @@ class VectorLedger:
         print(f"  고아 벡터 {len(stale)}건 삭제 (예: {stale[:2]})")
         self.finalize(groups)
         return len(stale)
+
+    def drop_groups(self, group_ids: list[str], index, namespace: str, *,
+                    batch_size: int = 100, allow_large: bool = False,
+                    dry_run: bool = False, label: str = "") -> list[str]:
+        """그룹을 **통째로** 지운다 — 벡터 삭제 + 원장 키 제거.
+
+        `prune`은 "이번에 올린 그룹 안의 차집합"만 다루고 분모도 그 그룹의 청크 합이라,
+        소스 문서가 사라진 그룹(코퍼스 축소 — adjudication-corpus §4.6)을 지우는 데는
+        쓸 수 없다: 빠진 그룹만 `[]`로 넘기면 분모가 0이 되어 한 건만 지워도 가드에 걸리고,
+        `finalize`는 키를 `[]`로 남겨 배치 원장 생성기가 빈 문서를 만든다.
+
+        여기서는 **원장 전체 벡터 수**가 분모다. 그룹 ID는 원장에 있어야 하며(오타로 엉뚱한
+        그룹을 '없다'고 넘기는 조용한 실패 방지), 삭제 뒤 키를 제거한다. `dry_run`은 삭제
+        대상 ID만 돌려주고 아무것도 쓰지 않는다.
+
+        Returns: 삭제한(또는 삭제할) 벡터 ID 목록.
+        """
+        data = self.read()
+        missing = [g for g in group_ids if g not in data]
+        if missing:
+            sys.exit(f"[오류] 원장에 없는 그룹: {missing[:3]} — 그룹 키를 확인하세요.")
+        ids = sorted(i for g in group_ids for i in data[g])
+        if dry_run:
+            return ids
+        total = sum(len(v) for v in data.values())
+        if ids and not allow_large and len(ids) > total * 0.5:
+            sys.exit(
+                f"[오류] {label or '대상'} 삭제 대상이 {len(ids)}건으로 원장 전체({total})의 50%를 "
+                f"넘습니다. 의도한 축소면 --allow-large-prune 으로 재실행하세요."
+            )
+        for i in range(0, len(ids), batch_size):
+            index.delete(ids=ids[i:i + batch_size], namespace=namespace)
+        for g in group_ids:
+            data.pop(g, None)
+        self.write(data)
+        if ids:
+            print(f"  그룹 {len(group_ids)}개·벡터 {len(ids)}건 삭제 (예: {ids[:2]})")
+        return ids
