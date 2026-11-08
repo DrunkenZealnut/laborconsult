@@ -94,9 +94,8 @@ _FALLBACK_SIGNAL_RE = re.compile(r"결\s*론|판\s*단")
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\[이미지 생략[^\]]*\]")
 IMAGE_ONLY_LIMIT = 300
 # 잔존 태그 판정은 **알려진 HTML 태그 이름**만 — 본문의 `HORIZON<ALL>`(의료기기 규격)처럼 꺾쇠가 든 내용은 태그가 아니다
-RESIDUAL_TAG_RE = re.compile(
-    r"</?(?:img|span|div|p|br|table|tbody|thead|tr|td|th|font|b|i|u|strong|em|a|sup|sub|ul|ol|li|h[1-6])\b[^>]*>",
-    re.I)
+# 잔존 태그 정규식은 수집기와 단일 출처다(Check G-3) — 복제해 두면 한쪽만 고쳐져 dry-run 중단 조건이 어긋난다.
+from fetch_rulings import RESIDUAL_TAG_RE   # noqa: E402,F401
 
 
 def _compact(text: str) -> str:
@@ -447,6 +446,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write-batch-ledger", metavar="PATH")
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args(argv)
+
+    # 조용히 무시되던 조합을 막는다(Check B-3). 각 분기는 자기 플래그만 보고 return 0으로 끝나므로
+    # 함께 준 다른 플래그는 아무 일도 하지 않은 채 성공처럼 보였다.
+    conflicts = []
+    if args.write_batch_ledger and args.dry_run:
+        conflicts.append("--write-batch-ledger는 --dry-run과 함께 쓰지 않습니다(원장 파일을 씁니다).")
+    if args.verify and not args.write_batch_ledger:
+        conflicts.append("--verify는 --write-batch-ledger와 함께 써야 합니다(단독으로는 아무 일도 하지 않습니다).")
+    if args.exclude_before and args.prune_missing:
+        conflicts.append("--exclude-before와 --prune-missing은 따로 실행합니다(이동을 확인한 뒤 prune).")
+    if conflicts:
+        for c in conflicts:
+            print("[오류]", c)
+        return 1
 
     if args.exclude_before:
         if not args.agency:

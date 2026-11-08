@@ -759,5 +759,50 @@ class OperationsTest(unittest.TestCase):
                     up.write_batch_ledger(out)
 
 
+    def test_ru22_uploader_rejects_silently_ignored_flag_combinations(self):
+        """Check B-3: 각 분기가 자기 플래그만 보고 return 0 하던 조합은 거절한다(부작용 없이 1)."""
+        import pinecone_upload_rulings as up
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "ledger.json")
+            self.assertEqual(up.main(["--write-batch-ledger", out, "--dry-run"]), 1)
+            self.assertFalse(os.path.exists(out))          # 원장 파일을 쓰지 않았다
+            self.assertEqual(up.main(["--verify"]), 1)       # 단독 --verify는 아무 일도 하지 않으므로 거절
+            self.assertEqual(up.main(["--exclude-before", "2016", "--agency", "iaciac", "--prune-missing"]), 1)
+
+    def test_ru23_empty_list_exits_nonzero(self):
+        """Check B-4: 목록 0건(첫 페이지 실패·형식 변경)은 요약만 찍고 0으로 끝나지 않는다."""
+        import fetch_rulings as fr
+        empty_xml = b'<?xml version="1.0" encoding="UTF-8"?><Eiac><totalCnt>0</totalCnt></Eiac>'
+        with tempfile.TemporaryDirectory() as tmp:
+            patches = dict(OUTPUT_DIR=tmp, PROGRESS_FILE=os.path.join(tmp, "_progress.json"),
+                           PII_REPORT_FILE=os.path.join(tmp, "_pii_report.json"))
+            with mock.patch.multiple(fr, **patches), mock.patch.object(fr.time, "sleep", lambda s: None), \
+                    mock.patch.dict(os.environ, {"LAW_API_KEY": "fake"}):
+                with mock.patch.object(fr._session, "get", lambda url, params=None, timeout=None: _FakeResp(empty_xml)):
+                    self.assertEqual(fr.main(["--agency", "eiac", "--list-only"]), 1)
+                    self.assertEqual(fr.main(["--agency", "eiac"]), 1)
+                self.assertEqual(fr.load_progress()["eiac"]["failed"], {})   # 목록 실패는 건별 failed가 아니다
+
+    def test_ru24_residual_tag_regex_single_source(self):
+        """Check G-3: 업로더 dry-run 중단 조건의 정규식은 수집기 것과 같은 객체다(복제 금지)."""
+        import fetch_rulings as fr
+        import pinecone_upload_rulings as up
+        self.assertIs(up.RESIDUAL_TAG_RE, fr.RESIDUAL_TAG_RE)
+        self.assertFalse(hasattr(fr, "REQUIRED_FIELDS"))   # 쓰이지 않는 상수는 두지 않는다
+
+    def test_ru25_eval_corpus_mix_spy_passes_keyword_args(self):
+        """Check B-6: 파이프라인이 넘기는 stale_out= 등 키워드 인자를 spy가 투과한다(AST — 실행은 LLM 비용)."""
+        import ast
+        tree = ast.parse(open(os.path.join(ROOT, "eval_corpus_mix.py"), encoding="utf-8").read())
+        spies = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "spy"]
+        self.assertTrue(spies)
+        for fn in spies:
+            self.assertIsNotNone(fn.args.kwarg, "spy는 **kwargs를 받아야 한다")
+            calls = [c for c in ast.walk(fn) if isinstance(c, ast.Call)
+                     and isinstance(c.func, ast.Name) and c.func.id == "orig"]
+            self.assertTrue(calls and all(any(k.arg is None for k in c.keywords) for c in calls),
+                            "orig 호출에 **kwargs를 넘겨야 한다")
+
+
 if __name__ == "__main__":
     unittest.main()

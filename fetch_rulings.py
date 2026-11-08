@@ -57,7 +57,6 @@ MAX_RETRIES = 3
 TIMEOUT = 20
 PAGE_SIZE = 100
 
-REQUIRED_FIELDS = ("사건번호", "이유")   # 의결일자는 재결 번호 연도로 폴백한다(normalize_record)
 
 # 기관별 필드 차이(설계 §1.1 실측). iaciac 상세에는 `기관명`이 없어 상수를 쓴다.
 AGENCIES: dict[str, dict] = {
@@ -440,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     agencies = list(AGENCIES) if args.agency == "all" else [args.agency]
     progress = _empty_progress() if args.force else load_progress()
     summary: dict[str, dict] = {}
+    list_failed: list[str] = []
     try:
         for agency in agencies:
             spec = AGENCIES[agency]
@@ -455,6 +455,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  totalCnt={total} 수집 목록={len(items)}"
                   + (f"  ⚠️ 건수 불일치" if total and len(items) != total else "")
                   + f"  연도={dict(sorted(years.items()))}")
+            if not items:
+                # 첫 페이지 조회 실패·응답 형식 변경이면 totalCnt도 0이라 '건수 불일치' 경고가 뜨지 않는다 —
+                # 0건 요약 뒤 exit 0은 수집 완료로 읽힌다(Check B-4). 재개 실행이라 피해는 없지만 종료 코드로 알린다.
+                print(f"  [실패] 목록 0건 — 조회 실패 또는 응답 형식 변경(수집 완료가 아니다)")
+                list_failed.append(agency)
+                summary[agency] = {"total": total, "listed": 0, "error": "empty_list"}
+                continue
             if args.list_only:
                 summary[agency] = {"total": total, "listed": len(items)}
                 continue
@@ -517,6 +524,9 @@ def main(argv: list[str] | None = None) -> int:
     print("\n요약:", json.dumps(summary, ensure_ascii=False))
     if not args.list_only:
         print(f"진행 기록: {PROGRESS_FILE}\nPII 보고: {PII_REPORT_FILE} (업로드 전 reviewed 표시 필요)")
+    if list_failed:
+        print(f"[실패] 목록 0건 기관: {list_failed}")
+        return 1
     return 0
 
 
