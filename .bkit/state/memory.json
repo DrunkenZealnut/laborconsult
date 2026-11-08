@@ -294,7 +294,10 @@
         "CodeRabbit 2건 반영(cd6fa0e)",
         "PR #102 머지·배포(health 200)",
         "로컬 체크아웃 main"
-      ]
+      ],
+      "bm25": " → CI(Linux) RSS 490MB ≤ 550 ✅(이전 459), 로드 6.8초, M6 4.33%·M4 91.5%",
+      "prB": "커밋 c734ea5 → 초안 PR #156(11-09, base main), CI 전부 통과(G6 490MB). Ready·머지는 요청 시",
+      "next": "PR-B #156 Ready·머지(사용자 요청 시) → output_재결례 main 이동·worktree 제거 → /pdca analyze"
     },
     "pr": 102,
     "mergedAt": "2026-10-06",
@@ -683,10 +686,29 @@
     "doProgress": {
       "prA": "구현 완료 2026-11-08 — test_rulings_ingest 21/21, 기존 11스위트·node public_fetch 통과, 실답변 26,496파일 패턴 스캔 0건, BM25 비재결 패턴 0건(RU19). 커밋·PR 대기(요청 시)",
       "collection": "완료 11-08 — eiac 118·iaciac 934(1,052/1,052, 실패 0, PII 0). 13063 사건번호·의결일자 폴백, 6427 날짜 폴백. 이유 이미지만 152건(2016~2018 iaciac).",
-      "next": "사용자 \"커밋·PR\" → PR-A → CI·리뷰 → 머지·배포 → (before 측정 완료 확인) → 업로드",
+      "next": "PR-B 커밋·초안(사용자 요청 시) → CI test_bm25_memory 판정(G6) → PR-B Ready·머지 → output_재결례 main 이동 → /pdca analyze",
       "dryRun": "통과 — 문서 1,052·청크 11,415(패킹 뒤)·관계법령 제외 470,677자·폴백 1·잔존 태그 0. BM25 추정 약 107,200문서(+11.9%) → RSS 약 514MB(선형).",
       "headingRule": "실측으로 어휘 보강(결정이유·적법 여부 등)·번호 중복/+2 허용(어휘 필수)·제외 절 탈출 어휘 필수 → 폴백 446→1",
-      "measurement": "before1 synthetic 완료 20:16, real_pos·kin·risk → before2 진행 중(run_before.sh nohup, Monitor)"
+      "measurement": "before1 synthetic 완료 20:16, real_pos·kin·risk → before2 진행 중(run_before.sh nohup, Monitor)",
+      "upload": "완료 2026-11-08 21:5x — laborlaw-v2 44,676 → 56,091(+11,415 정확히), 원장 1,052그룹·11,415 ID, 고아 0, 표본 메타 확인(chunk_index int)",
+      "batchLedger": "data/vector_ledgers/rulings_202611.json 생성·verify 통과(존재 11,415/11,415·표식 불일치 0·state=verified, 22:18)",
+      "bm25": "재빌드 완료 11-09 00:03 — 107,177문서(=95,762+11,415), gz 29.3MB, macOS RSS 578MB(main gz 545 vs CI 459 → Linux 추정 약 487MB), eval_tokenizer 통과",
+      "afterMeasurement": "after1·after2 완료 11-09 01:17 — compare_rul 관문 G1~G5 전부 ✅(S+ 재결 공급 0.94/0.89, R 0.27, 환각 0, 유효 인용 26/29, 유보 0, K 0). R4 관측: 재결 뺀 공공 S+ 42·53→20·16(후속: 재결례 상한)"
+    },
+    "prA": {
+      "number": 155,
+      "url": "https://github.com/DrunkenZealnut/laborconsult/pull/155",
+      "branch": "feat/adjudication-corpus",
+      "commits": [
+        "b557b6c feat",
+        "3ca0cb4 docs",
+        "b89d5e7 fix(Codex 3건: IA 패턴 날짜 배제·번호만 마스킹·redact_doc 메타)",
+        "e18c38d fix(CodeRabbit 15건: 기관 근접·미확인 번호·별칭 해소·일련번호 대조·재시도·이전 파일·콜론 제목·dry-run·prune 단독·청크0·재스캔 PII)",
+        "6a5b0a0 fix(의결연도 폴백 정정 — 번호 연도는 접수 연도, 143/1050 다음 해 의결)"
+      ],
+      "opened": "2026-11-08",
+      "status": "머지 f2fc2e8(2026-11-08) — 배포 확인 대기",
+      "mergeCommit": "f2fc2e8"
     }
   }
 }
