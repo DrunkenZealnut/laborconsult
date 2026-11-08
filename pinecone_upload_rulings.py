@@ -194,7 +194,7 @@ def parse_doc(path: str) -> dict | None:
     case_name = title_m.group(1).strip() if title_m else case_no
     agency_name = meta.get("기관", "")
     decided_at = meta.get("의결일자", "")
-    year_m = re.match(r"^(\d{4})(?:\.\d{2}\.\d{2}|\(일자 미상\))$", decided_at)
+    year_m = re.match(r"^(\d{4})\.\d{2}\.\d{2}$", decided_at)   # "미상(…년 접수)"는 연도 None — 제외 대상이 아니다
     summary_label = "개요" if "개요" in sections else ("쟁점" if "쟁점" in sections else "")
     return {
         "agency": agency, "serial": serial, "case_no": case_no, "case_name": case_name,

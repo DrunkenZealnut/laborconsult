@@ -296,13 +296,13 @@ def normalize_record(root: ET.Element, agency: str, serial: str) -> dict:
     agency_name = _text(root.find("기관명")) or spec["name"]
     decided_at, decided_year = format_date(_text(root.find("의결일자")))
     if decided_year is None:
-        # 의결일자가 깨졌거나(실측 iaciac 6427 `202.0.0`) 없는 건(13063 — 필드 자체가 없다) — 재결 번호의 연도는
-        # 의결 연도다. 일자는 미상으로 둔다. 번호에도 연도가 없으면 필수 필드 부재다.
+        # 의결일자가 깨졌거나(실측 iaciac 6427 `202.0.0`) 없는 건(13063 — 필드 자체가 없다). 재결 번호의 연도는 **접수
+        # 연도**라 의결 연도로 쓰면 안 된다 — 1,050건 실측에서 143건(13.6%)이 다음 해에 의결됐다(CodeRabbit #155).
+        # 의결 연도는 미상으로 두고(--exclude-before가 제외하지 않는다) 머리글에는 접수 연도만 참고로 적는다.
         year = re.match(r"^\s*(\d{4})", case_no)
         if not year:
             raise MissingField("필수 필드 없음: 의결일자")
-        decided_year = int(year.group(1))
-        decided_at = f"{decided_year}(일자 미상)"
+        decided_at = f"미상({year.group(1)}년 접수)"
     category = " > ".join(v for v in (f(n) for n in spec["category_fields"]) if v)
     return {
         "agency": agency,

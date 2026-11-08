@@ -129,13 +129,22 @@ class FetchNormalizeTest(unittest.TestCase):
         self.assertEqual(fr.derive_case_no("iaciac", "2012재결 제3198호 요양불승인처분취소"), "2012-3198호")
         self.assertEqual(fr.derive_case_no("eiac", "2019재결 제117호 X"), "2019재결 제117호")
         self.assertEqual(fr.derive_case_no("iaciac", "요양불승인처분취소"), "")
-        # 사건번호가 빈 상세(실측 iaciac 13063)는 `사건` 접두사로 번호를 만든다; 깨진 의결일자(6427 `202.0.0`)는 번호 연도로 폴백
+        # 사건번호가 빈 상세(실측 iaciac 13063)는 `사건` 접두사로 번호를 만든다; 깨진 의결일자(6427 `202.0.0`)는 **의결 연도
+        # 미상**이다 — 재결 번호의 연도는 접수 연도라 143/1,050건이 다음 해 의결(CodeRabbit #155). 머리글엔 접수 연도만 참고로
         root2 = _root("iaciac_detail_12699.xml")
         root2.find("사건번호").text = ""
         root2.find("의결일자").text = "202.0.0"
         rec2 = fr.normalize_record(root2, "iaciac", "12699")
         self.assertEqual(rec2["case_no"], "2010-2071호")
-        self.assertEqual((rec2["decided_at"], rec2["decided_year"]), ("2010(일자 미상)", 2010))
+        self.assertEqual((rec2["decided_at"], rec2["decided_year"]), ("미상(2010년 접수)", None))
+        import pinecone_upload_rulings as up
+        with tempfile.TemporaryDirectory() as tmp:
+            pth = os.path.join(tmp, "12699_x.md")
+            with open(pth, "w", encoding="utf-8") as f:
+                f.write(fr.to_markdown(rec2))
+            doc2 = up.parse_doc(pth)
+            self.assertIsNone(doc2["decided_year"])                                   # --exclude-before가 제외하지 않는다
+            self.assertIn("· 의결 미상(2010년 접수) ·", up.build_header(doc2))
         self.assertEqual(fr.case_no_ascii("2019재결 제117호"), "2019jg117")
         self.assertEqual(fr.case_no_ascii("2010-2071호"), "2010-2071")
         # 필수 필드 부재 → MissingField
