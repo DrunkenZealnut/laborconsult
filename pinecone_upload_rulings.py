@@ -249,16 +249,24 @@ def _redact(text: str, literals: list[str]) -> str:
     return text
 
 
+def redact_doc(doc: dict, literals: list[str] | None) -> dict:
+    """문서의 모든 문자열 필드에 가림 목록을 적용한 사본 — 머리글·메타데이터(title·disposition·category…)도
+    청크 본문과 같은 가림을 받아야 한다. 본문만 가리면 승인된 가림이 메타데이터로 그대로 올라간다(Codex 리뷰 #155)."""
+    if not literals:
+        return doc
+    return {k: (_redact(v, literals) if isinstance(v, str) and k != "path" else v) for k, v in doc.items()}
+
+
 def chunk_doc(doc: dict, redactions: list[str] | None = None) -> tuple[list[dict], dict]:
     """(청크 목록, 집계). 청구인·청구취지는 넣지 않는다."""
-    redactions = redactions or []
+    doc = redact_doc(doc, redactions)      # 머리글·개요·주문·이유·각주 전부 가린 사본으로 청킹한다
     header = build_header(doc)
     chunks: list[dict] = []
     idx = 0
 
     def _emit(body: str, section: str) -> None:
         nonlocal idx
-        for piece in split_by_size(_redact(body, redactions), CHUNK_MAX, CHUNK_OVERLAP):
+        for piece in split_by_size(body, CHUNK_MAX, CHUNK_OVERLAP):
             text = f"{header}\n{piece}"
             chunks.append({
                 "vector_id": make_vector_id(doc["agency"], doc["serial"], idx),
@@ -365,11 +373,12 @@ def write_batch_ledger(path: str, *, verify: bool = False, index=None) -> dict:
     from app.config import resolve_index_name
 
     ledger_groups = _LEDGER.read()
+    redactions = load_redactions()
     docs_by_group: dict[str, dict] = {}
     for p in source_files():
         d = parse_doc(p)
         if d:
-            docs_by_group[f"{d['agency']}_{d['serial']}"] = d
+            docs_by_group[f"{d['agency']}_{d['serial']}"] = redact_doc(d, redactions.get((d["agency"], d["serial"])))
     documents: dict[str, dict] = {}
     for group, ids in sorted(ledger_groups.items()):
         if not ids:
@@ -469,7 +478,9 @@ def main(argv: list[str] | None = None) -> int:
         if not doc:
             agg["skipped"].append(os.path.basename(path))
             continue
-        chunks, st = chunk_doc(doc, redactions.get((doc["agency"], doc["serial"])))
+        # 메타데이터(title·disposition·category…)도 가림을 받는다 — chunk_doc 안의 가림과 같은 목록
+        doc = redact_doc(doc, redactions.get((doc["agency"], doc["serial"])))
+        chunks, st = chunk_doc(doc)
         if not chunks:
             agg["skipped"].append(f"{os.path.basename(path)} (청크 0)")
             continue

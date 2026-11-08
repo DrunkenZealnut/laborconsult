@@ -169,11 +169,18 @@ class FetchNormalizeTest(unittest.TestCase):
         found = fr.scan_pii(bad)
         self.assertEqual(sorted(f["pattern"] for f in found), ["이메일", "주민등록번호", "휴대전화"], found)
         self.assertTrue(all("snippet" in f and f["field"] for f in found))
-        # 가림 목록은 업로더가 청킹 시점에 적용한다(§3.5)
-        _, _, chunks, _ = _doc_and_chunks("iaciac", "12699", redactions=["기계기능공"])
+        # 가림 목록은 업로더가 청킹 시점에 적용한다(§3.5) — 본문뿐 아니라 머리글·메타 필드도(Codex #155)
+        import pinecone_upload_rulings as up
+        _, doc, chunks, _ = _doc_and_chunks("iaciac", "12699", redactions=["기계기능공", "작업시간 중 사고", "기각한다"])
         joined = "\n".join(c["text"] for c in chunks)
         self.assertNotIn("기계기능공", joined)
+        self.assertNotIn("작업시간 중 사고", joined)                          # 머리글의 분류도 가려진다
         self.assertIn("***", joined)
+        red = up.redact_doc(doc, ["기각한다", "작업시간 중 사고"])
+        self.assertNotIn("기각한다", red["disposition"])
+        self.assertNotIn("작업시간 중 사고", up.build_header(red))
+        self.assertEqual(red["path"], doc["path"])
+        self.assertIs(up.redact_doc(doc, None), doc)
 
 
 class ChunkingTest(unittest.TestCase):
@@ -400,7 +407,9 @@ class WiringTest(unittest.TestCase):
         self.assertEqual((r["valid"], r["hallucinated"]), ([], ["2010재결제2071호"]))
         # 음성 — 고시·공고 번호와 날짜·문맥 없는 번호는 검증 대상이 아니다(total_cited 불변)
         for benign in ("2026년 적용 고시(2025-124호)", "(고용노동부 고시 2018-23호)", "고용노동부고시 제2026-67호",
-                       "2024-01-15 기준", "2010-2071호", "고용노동부 공고 2021-244호", "25-124호"):
+                       "2024-01-15 기준", "2010-2071호", "고용노동부 공고 2021-244호", "25-124호",
+                       "산재재심사위원회에 2026-11-08 재심사청구를 접수했습니다",          # ISO 날짜(Codex #155)
+                       "재심사위원회 결정일 2026-11-08", "재심사위원회(2026. 11. 08.)"):
             r = check(benign)
             self.assertEqual((r["total_cited"], r["hallucinated"]), (0, []), benign)
         r = check("고용보험심사위원회 2019재결 제999호")
@@ -412,6 +421,13 @@ class WiringTest(unittest.TestCase):
         r = check(s)
         self.assertEqual((r["valid"], r["hallucinated"]), ([], ["2015-1987호"]))                  # 재결로만 판정
         self.assertEqual(set(cv.extract_precedents_from_hits([{"title": "x", "chunk_text": s}])), set())
+        # 가림은 번호 구간만 — 기관명과 번호 사이의 판례는 살아 있어야 한다(Codex #155)
+        s2 = "산재재심사위원회는 대법원 2020두12345 및 2010-2071호를 참고했습니다."
+        self.assertIn("2020두12345", cv._mask_ruling_spans(s2))
+        self.assertNotIn("2010-2071호", cv._mask_ruling_spans(s2))
+        self.assertEqual(set(cv.extract_precedents_from_hits([{"title": "x", "chunk_text": s2}])), {"2020두12345"})
+        r = cv.validate_response_citations(s2, {"2020두12345": {}}, {}, rulings)
+        self.assertEqual((sorted(r["valid"]), r["hallucinated"]), (["2010-2071호", "2020두12345"], []))
         self.assertEqual(cv._ADMIN_PATTERN.findall("2019재결 제117호 2010-2071호"), [])
         # 3인자 호출 호환(기존 test_offline_units) — 재결 검증은 건너뛰되 마스킹은 한다
         r = cv.validate_response_citations("재심사위원회 2010-2071호 대법원 2023다302838", precs, {})

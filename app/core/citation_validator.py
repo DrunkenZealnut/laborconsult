@@ -86,9 +86,11 @@ _ADMIN_PATTERN = re.compile(
 # `_PREC_PATTERN`은 재결 구간을 가린 뒤 돌린다 — `…재심사위원회 2015-1987호 2015. 8. 27.`에서
 # `1987호 2015`를 판례(연도 1987 + 부호 '호' + 번호 2015)로 잡았다(설계 검증 M6).
 _RULING_EI_PATTERN = re.compile(r"(?<!\d)((?:19|20)\d{2})\s*재결\s*제?\s*(\d{1,5})\s*호")
+# 번호 뒤에 `-숫자`·`.숫자`가 이어지면 날짜다(`산재재심사위원회에 2026-11-08 재심사청구` — Codex 리뷰 #155).
+# `호`가 없을 때는 번호 끝이 숫자로 이어지지 않아야 한다.
 _RULING_IA_PATTERN = re.compile(
     r"(?:산업재해보상보험\s*재심사\s*위원회|산재\s*재심사\s*위원회|재심사\s*위원회)"
-    r"[^.\n]{0,25}?((?:19|20)\d{2})\s*-\s*(\d{1,5})\s*호?"
+    r"[^.\n]{0,25}?((?:19|20)\d{2})\s*-\s*(\d{1,5})(?!\s*[-–.]\s*\d)(?:\s*호)?(?!\d)"
 )
 # 코어 — ruling hit의 `case_no` 메타 파싱과 _PREC_PATTERN 마스킹 전용. 답변 검증에는 쓰지 않는다.
 _RULING_CORE_IA = re.compile(r"(?<![\d\-])((?:19|20)\d{2})\s*-\s*(\d{1,5})\s*호")
@@ -140,7 +142,9 @@ def _mask_ruling_spans(text: str) -> str:
         return text
     out = text
     for pattern in (_RULING_EI_PATTERN, _RULING_IA_PATTERN, _RULING_CORE_IA):
-        out = pattern.sub(lambda m: " " * (m.end() - m.start()), out)
+        # 번호 구간(연도 시작 ~ 끝)만 가린다 — 문맥 패턴의 기관명·사이 본문까지 가리면 그 사이의 판례
+        # ("산재재심사위원회는 대법원 2020두12345 및 2010-2071호를")가 함께 사라진다(Codex 리뷰 #155).
+        out = pattern.sub(lambda m: m.group(0)[:m.start(1) - m.start()] + " " * (m.end() - m.start(1)), out)
     return out
 
 
