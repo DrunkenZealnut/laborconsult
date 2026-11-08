@@ -117,12 +117,18 @@ def _ruling_year_ok(year: str, number: str) -> bool:
 
 
 def _agency_near(text: str, pos: int) -> str | None:
-    """`pos` 앞 30자 안에 적힌 기관(eiac|iaciac). 없으면 None."""
+    """`pos` 앞 30자 안에서 **번호에 가장 가까운** 기관(eiac|iaciac). 없으면 None.
+
+    어휘 순서로 고르면 "산재재심사위원회와 고용보험심사위원회 2019재결 제117호"에서 먼 쪽 기관을 집어 정당한 인용이
+    환각이 된다(CodeRabbit #155).
+    """
     window = text[max(0, pos - _RULING_AGENCY_LOOKBACK):pos]
+    best, best_pos = None, -1
     for agency, word in _RULING_AGENCY_WORDS:
-        if word in window:
-            return agency
-    return None
+        i = window.rfind(word)
+        if i >= 0 and i + len(word) > best_pos:
+            best, best_pos = agency, i + len(word)
+    return best
 
 
 def _agency_in(text: str) -> str | None:
@@ -145,6 +151,17 @@ def _mask_ruling_spans(text: str) -> str:
         # 번호 구간(연도 시작 ~ 끝)만 가린다 — 문맥 패턴의 기관명·사이 본문까지 가리면 그 사이의 판례
         # ("산재재심사위원회는 대법원 2020두12345 및 2010-2071호를")가 함께 사라진다(Codex 리뷰 #155).
         out = pattern.sub(lambda m: m.group(0)[:m.start(1) - m.start()] + " " * (m.end() - m.start(1)), out)
+    return out
+
+
+def resolve_ruling_aliases(keys: list[str], available_rulings: dict[str, dict] | None) -> list[str]:
+    """별칭 키(`2010재결제2071호`)를 실키(`2010-2071호`)로 바꾼다 — citation_relevance.classify_paths는 title·case_no에서
+    키를 찾으므로 별칭은 결과에서 빠진다(CodeRabbit #155). 순서 유지, 중복 제거."""
+    out = []
+    for k in keys:
+        real = (available_rulings or {}).get(k, {}).get("alias_of") or k
+        if real not in out:
+            out.append(real)
     return out
 
 
@@ -197,12 +214,16 @@ def extract_rulings_from_hits(hits: list[dict]) -> dict[str, dict]:
                     key = _ruling_key_ia(m.group(1), m.group(2))
                     _add(key, f"{m.group(1)}-{int(m.group(2))}호", agency or "iaciac", title, i, "meta")
                     ia_keys.append((key, m.group(1), m.group(2), i))
+        # 기관 문맥이 없는 A형 번호: 재결례 hit 안이면 그 hit의 기관(위원회가 자기 선례를 인용한다)을 물려받고,
+        # 그 밖(상담글 등)이면 기관 미확인으로 둔다 — 미확인 번호는 인용 목록에 싣지 않고, 답변이 기관명을 붙이면
+        # 확인할 수 없으므로 환각으로 판정한다(CodeRabbit #155).
+        hit_agency = (hit.get("agency") or _agency_in(title)) if hit.get("source_type") == "ruling" else None
         for text_field, source in ((title, "title"), (chunk, "chunk")):
             for m in _RULING_EI_PATTERN.finditer(text_field):
                 if _ruling_year_ok(m.group(1), m.group(2)):
                     _add(_ruling_key_ei(m.group(1), m.group(2)),
                          f"{m.group(1)}재결 제{int(m.group(2))}호",
-                         _agency_near(text_field, m.start(1)), title, i, source)
+                         _agency_near(text_field, m.start(1)) or hit_agency, title, i, source)
             for m in _RULING_IA_PATTERN.finditer(text_field):
                 if _ruling_year_ok(m.group(1), m.group(2)):
                     key = _ruling_key_ia(m.group(1), m.group(2))
@@ -338,12 +359,13 @@ def build_available_citations_text(
 
     # 재결례 — 별칭(alias_of)은 싣지 않는다. 기관명을 함께 적어 그 형식으로 인용하게 한다(D18 — 산재 재결의
     # 검증 패턴은 "재심사위원회" 문맥이 있을 때만 동작한다).
-    real_rulings = {k: v for k, v in rulings.items() if not v.get("alias_of")}
+    # 기관이 확인된 실키만 — 기관 미확인 번호(상담글 본문의 재결 번호 등)는 어느 기관의 재결인지 보증할 수 없다.
+    real_rulings = {k: v for k, v in rulings.items() if not v.get("alias_of") and v["agencies"]}
     if real_rulings:
         lines.append("\n재결례(기관명과 함께 인용):")
         for key, info in real_rulings.items():
-            agency = RULING_AGENCY_NAMES.get(info["agencies"][0], "") if info["agencies"] else ""
-            lines.append(f"  - {agency} {info['display']} (출처: {info['title']})".replace("  -  ", "  - "))
+            agency = RULING_AGENCY_NAMES.get(info["agencies"][0], "")
+            lines.append(f"  - {agency} {info['display']} (출처: {info['title']})")
 
     return "\n".join(lines)
 
@@ -385,7 +407,8 @@ def validate_response_citations(
                 result["total_cited"] += 1
                 info = available_rulings.get(key)
                 mentioned = _agency_near(response_text, match.start(1))
-                if info is None or (mentioned and info["agencies"] and mentioned not in info["agencies"]):
+                # 기관을 적었는데 등록 기관과 다르거나(별칭 충돌) 등록 기관이 없으면(미확인 번호) 환각이다
+                if info is None or (mentioned and mentioned not in info["agencies"]):
                     result["hallucinated"].append(key)
                 else:
                     result["valid"].append(key)

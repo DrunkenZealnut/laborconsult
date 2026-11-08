@@ -58,6 +58,7 @@ from app.core.citation_validator import (
     extract_precedents_from_hits,
     extract_admin_refs_from_hits,
     extract_rulings_from_hits,
+    resolve_ruling_aliases,
     validate_response_citations,
     micro_polish,
 )
@@ -4590,7 +4591,9 @@ def process_question(query: str, session: Session, config: AppConfig,
         from app.core import citation_relevance as _cr
         if _cr.mode() != "off":
             yield {"type": "ping"}   # 임베딩 1회(최대 10초) 동안 무이벤트가 되지 않게
-        citation_relevance = _cr.assess(query, citation_check["valid"], whitelist_hits, config)
+        # 재결 별칭은 실키로 바꿔 넘긴다 — classify_paths는 title·case_no로 primary를 찾는다(adjudication-corpus)
+        citation_relevance = _cr.assess(query, resolve_ruling_aliases(citation_check["valid"], available_rulings),
+                                        whitelist_hits, config)
         _rel_deadline = time.monotonic() + CITATION_STAGE_BUDGET   # 사유 전체가 예산 하나를 공유
         for _reason, _keys in _cr.enforcement_targets(citation_relevance).items():
             yield {"type": "ping"}

@@ -88,6 +88,10 @@ class MissingField(ValueError):
     """상세 응답에 필수 필드가 없다 — failed에 기록하고 재시도한다."""
 
 
+class SerialMismatch(ValueError):
+    """상세 응답의 결정문일련번호가 요청과 다르다 — 다른 결정문을 요청 번호로 저장하지 않는다(CodeRabbit #155)."""
+
+
 # ── 정제 ─────────────────────────────────────────────────────────────────────
 
 _HIDDEN_SPAN_RE = re.compile(r"<span[^>]*display\s*:\s*none[^>]*>.*?</span>", re.S | re.I)
@@ -137,7 +141,11 @@ def format_date(raw: str | None) -> tuple[str, int | None]:
         if len(parts) != 3 or not all(p.isdigit() for p in parts):
             return raw, None
         y, m, d = parts[0], parts[1].zfill(2), parts[2].zfill(2)
-    if len(y) != 4 or not (1 <= int(m) <= 12) or not (1 <= int(d) <= 31):
+    if len(y) != 4:
+        return raw, None
+    try:
+        _dt.date(int(y), int(m), int(d))     # 달력 유효성(2019.02.31 같은 값은 일자 미상 경로로)
+    except ValueError:
         return raw, None
     return f"{y}.{m}.{d}", int(y)
 
@@ -271,6 +279,10 @@ def normalize_record(root: ET.Element, agency: str, serial: str) -> dict:
     def f(name: str) -> str:
         return clean_ruling_text(_text(root.find(name)))
 
+    got_serial = _text(root.find("결정문일련번호"))
+    if got_serial and got_serial != str(serial):
+        raise SerialMismatch(f"일련번호 불일치: 응답 {got_serial}")
+
     case_no = unicodedata.normalize("NFC", _text(root.find("사건번호")))
     if not case_no:
         # iaciac 13063(실측): 사건번호가 비고 `사건`에만 `2012재결 제3198호 …`가 있다 → 그 기관 표기(`YYYY-N호`)로 만든다
@@ -320,8 +332,9 @@ def normalize_record(root: ET.Element, agency: str, serial: str) -> dict:
 def scan_pii(rec: dict) -> list[dict]:
     """전 필드(청구인 포함)에서 PII 패턴 적중 → [{field, pattern, snippet}]."""
     found = []
-    fields = {k: v for k, v in rec.items() if isinstance(v, str)}
-    fields["footnotes"] = "\n".join(rec.get("footnotes") or [])
+    fields = {k: v for k, v in rec.items() if isinstance(v, str) and k != "path"}
+    fn = rec.get("footnotes") or []
+    fields["footnotes"] = fn if isinstance(fn, str) else "\n".join(fn)
     for field, value in fields.items():
         for name, pat in PII_PATTERNS.items():
             for m in pat.finditer(value):
@@ -449,7 +462,9 @@ def main(argv: list[str] | None = None) -> int:
             stats = {"saved": 0, "skipped": 0, "failed": 0, "missing": 0, "pii": 0, "date_fail": 0}
             fetched = progress[agency]["fetched"]
             failed = progress[agency]["failed"]
-            todo = [it for it in items if args.force or args.serial or it["serial"] not in fetched]
+            # failed에 있는 번호는 fetched에 있어도(--serial 재수집 실패) 다시 시도한다(CodeRabbit #155)
+            todo = [it for it in items if args.force or args.serial or it["serial"] not in fetched
+                    or it["serial"] in failed]
             if args.limit:
                 todo = todo[:args.limit]
             stats["skipped"] = len(items) - len(todo)
@@ -464,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 try:
                     rec = normalize_record(root, agency, serial)
-                except MissingField as e:
+                except (MissingField, SerialMismatch) as e:
                     failed[serial] = {"reason": str(e), "at": _now()}
                     stats["missing"] += 1
                     save_progress(progress)
@@ -480,6 +495,10 @@ def main(argv: list[str] | None = None) -> int:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(to_markdown(rec))
+                # 같은 일련번호의 이전 파일(사건번호가 바뀌어 이름이 다른 것)은 지운다 — 남으면 업로더가 둘을 다 읽는다
+                for old in os.listdir(os.path.dirname(path)):
+                    if old.startswith(f"{serial}_") and old.endswith(".md") and old != os.path.basename(path):
+                        os.remove(os.path.join(os.path.dirname(path), old))
                 fetched[serial] = os.path.basename(path)
                 failed.pop(serial, None)
                 stats["saved"] += 1

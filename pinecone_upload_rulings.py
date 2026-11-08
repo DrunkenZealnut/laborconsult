@@ -124,7 +124,8 @@ def _top_number_ok(n: int, last_top: int, title: str) -> bool:
 
 
 def _is_excluded_title(title: str) -> bool:
-    return bool(_EXCLUDE_TITLE_RE.match(_compact(title)))
+    # 끝의 콜론·마침표("2. 관계법령:")를 떼고 본다(CodeRabbit #155) — 떼지 않으면 그 절의 당시 조문이 실린다
+    return bool(_EXCLUDE_TITLE_RE.match(_compact(title).rstrip(":：.·")))
 
 
 @dataclass
@@ -343,17 +344,37 @@ def source_files(agency_filter: str | None = None) -> list[str]:
     return out
 
 
-def exclude_before(year: int, agency: str) -> list[str]:
-    """`decided_year < year`인 md를 `_excluded/{agency}/`로 이동만 한다. 날짜 미상은 제외하지 않는다."""
+def exclude_before(year: int, agency: str, *, dry_run: bool = False) -> list[str]:
+    """`decided_year < year`인 md를 `_excluded/{agency}/`로 이동한다(dry_run이면 목록만). 날짜 미상은 제외하지 않는다."""
     moved = []
     for path in source_files(agency):
         doc = parse_doc(path)
         if doc and doc["decided_year"] is not None and doc["decided_year"] < year:
-            dst_dir = os.path.join(EXCLUDED_DIR, agency)
-            os.makedirs(dst_dir, exist_ok=True)
-            shutil.move(path, os.path.join(dst_dir, os.path.basename(path)))
+            if not dry_run:
+                dst_dir = os.path.join(EXCLUDED_DIR, agency)
+                os.makedirs(dst_dir, exist_ok=True)
+                shutil.move(path, os.path.join(dst_dir, os.path.basename(path)))
             moved.append(os.path.basename(path))
     return moved
+
+
+def pii_problems(doc: dict, reviewed: set[tuple[str, str, str, str]]) -> list[dict]:
+    """문서 자체를 다시 스캔해 보고서에서 검토(reviewed)되지 않은 적중을 돌려준다(CodeRabbit #155).
+
+    `_pii_report.json`의 reviewed 수만 보면 보고서가 없거나(다른 기계에서 수집) 지워진 경우 미검토 개인정보가 그대로
+    올라간다. 가림 목록이 적용된 사본을 스캔하므로 "검토 뒤 가림"은 적중이 사라져 통과하고, "검토했지만 가리지 않음"
+    (오탐)은 보고서의 reviewed 항목으로 통과한다.
+    """
+    from fetch_rulings import scan_pii
+    return [h for h in scan_pii(doc)
+            if (doc["agency"], str(doc["serial"]), h["field"], h["pattern"]) not in reviewed]
+
+
+def reviewed_pii_index() -> set[tuple[str, str, str, str]]:
+    if not os.path.exists(PII_REPORT_FILE) or os.path.getsize(PII_REPORT_FILE) == 0:
+        return set()
+    with open(PII_REPORT_FILE, encoding="utf-8") as f:
+        return {(e["agency"], str(e["serial"]), e["field"], e["pattern"]) for e in json.load(f) if e.get("reviewed")}
 
 
 def groups_without_source() -> list[str]:
@@ -431,15 +452,17 @@ def main(argv: list[str] | None = None) -> int:
         if not args.agency:
             print("[오류] --exclude-before에는 --agency가 필요합니다.")
             return 1
-        moved = exclude_before(args.exclude_before, args.agency)
-        print(f"{args.agency} {args.exclude_before}년 이전 {len(moved)}건 → {EXCLUDED_DIR}")
+        moved = exclude_before(args.exclude_before, args.agency, dry_run=args.dry_run)
+        print(f"{'[dry-run] ' if args.dry_run else ''}{args.agency} {args.exclude_before}년 이전 {len(moved)}건"
+              f"{' → ' + EXCLUDED_DIR if not args.dry_run else ' (이동 없음)'}")
         for m in moved[:10]:
             print("  ", m)
         return 0
 
     if args.prune_missing:
-        if args.allow_large_prune and (args.limit or args.agency):
-            print("[오류] --allow-large-prune은 --prune-missing 단독 실행에서만 받습니다.")
+        if args.limit or args.agency:
+            # 소스 없는 그룹은 두 기관 전부에서 계산한다 — --agency를 받으면 다른 기관까지 지우는데 그렇게 보이지 않는다
+            print("[오류] --prune-missing은 단독으로 실행합니다(--agency·--limit 불가).")
             return 1
         groups = groups_without_source()
         if not groups:
@@ -466,13 +489,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     redactions = load_redactions()
+    reviewed = reviewed_pii_index()
     print(f"\n{'=' * 62}\n재결례 업로드 {'(DRY RUN)' if args.dry_run else ''}\n"
           f"소스: {len(files)}개 파일  |  네임스페이스: {NAMESPACE}  |  source_type: {SOURCE_TYPE}\n{'=' * 62}\n")
 
     ready: list[tuple[dict, list[dict]]] = []
     agg = {"chunks": 0, "excluded_chars": 0, "fallback_docs": [], "residual_docs": [], "image_only": 0,
-           "date_fail": 0, "skipped": [], "excluded_titles": {}}
+           "date_fail": 0, "skipped": [], "excluded_titles": {}, "pii_docs": [], "pii_hits": 0}
     seen_ids: set[str] = set()
+    empty_groups: list[str] = []
     for path in files:
         doc = parse_doc(path)
         if not doc:
@@ -480,9 +505,15 @@ def main(argv: list[str] | None = None) -> int:
             continue
         # 메타데이터(title·disposition·category…)도 가림을 받는다 — chunk_doc 안의 가림과 같은 목록
         doc = redact_doc(doc, redactions.get((doc["agency"], doc["serial"])))
+        problems = pii_problems(doc, reviewed)
+        if problems:
+            agg["pii_docs"].append(os.path.basename(path))
+            agg["pii_hits"] += len(problems)
         chunks, st = chunk_doc(doc)
         if not chunks:
+            # 청크가 0인 문서(재수집으로 관계법령만 남은 경우)도 이전 벡터는 지워야 한다(CodeRabbit #155)
             agg["skipped"].append(f"{os.path.basename(path)} (청크 0)")
+            empty_groups.append(f"{doc['agency']}_{doc['serial']}")
             continue
         dup = [c["vector_id"] for c in chunks if c["vector_id"] in seen_ids]
         if dup:
@@ -504,7 +535,7 @@ def main(argv: list[str] | None = None) -> int:
         ready.append((doc, chunks))
 
     n_docs = len(ready)
-    unreviewed = pii_unreviewed()
+    unreviewed = pii_unreviewed() + agg["pii_hits"]
     print(f"문서 {n_docs} · 청크 {agg['chunks']} · 평균 {agg['chunks'] / max(n_docs, 1):.1f}청크/문서")
     print(f"관계법령 제외 {agg['excluded_chars']:,}자 · 제외 제목 상위: "
           f"{sorted(agg['excluded_titles'].items(), key=lambda x: -x[1])[:5]}")
@@ -521,7 +552,8 @@ def main(argv: list[str] | None = None) -> int:
     # 중단 조건(설계 §4.4) — dry-run도 같은 조건을 출력하되 결과는 실제 실행이 결정한다.
     stop = []
     if unreviewed:
-        stop.append(f"PII 보고 미확인 {unreviewed}건 — _pii_report.json을 확인해 reviewed를 표시하세요")
+        stop.append(f"PII 미검토 {unreviewed}건(보고 미확인 {pii_unreviewed()} + 문서 재스캔 적중 {agg['pii_hits']}: "
+                    f"{agg['pii_docs'][:3]}) — _pii_report.json에 reviewed를 표시하거나 _pii_redactions.json으로 가리세요")
     if agg["residual_docs"]:
         stop.append(f"잔존 HTML 태그 {len(agg['residual_docs'])}건")
     if n_docs and len(agg["fallback_docs"]) > n_docs * FALLBACK_LIMIT:
@@ -576,6 +608,9 @@ def main(argv: list[str] | None = None) -> int:
 
     _LEDGER.prune(groups, previous, index, NAMESPACE, batch_size=UPSERT_BATCH,
                   allow_large=args.allow_large_prune, label="재결례")
+    stale_empty = [g for g in empty_groups if g in _LEDGER.read()]
+    if stale_empty:
+        _LEDGER.drop_groups(stale_empty, index, NAMESPACE, batch_size=UPSERT_BATCH, label="재결례(청크 0)")
     try:
         count = index.describe_index_stats().namespaces[NAMESPACE].vector_count
         print(f"\n업로드 후 {NAMESPACE} 벡터 수: {count:,}")

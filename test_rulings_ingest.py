@@ -80,6 +80,7 @@ class FetchNormalizeTest(unittest.TestCase):
             self.assertEqual(len(items), 3, items)                       # 모든 페이지가 같은 3건 → 중복 제거
             self.assertEqual(len(calls), -(-total // fr.PAGE_SIZE), "display 100 → eiac 2·iaciac 10페이지")
             self.assertTrue(all(c["target"] == agency and c["type"] == "XML" for c in calls))
+            self.assertEqual([c["page"] for c in calls], [str(pg) for pg in range(1, -(-total // fr.PAGE_SIZE) + 1)])
             self.assertTrue(all(i["serial"].isdigit() and i["case_no"] and i["decided_at_raw"] for i in items))
         self.assertEqual(items[0]["serial"], "12699")
         self.assertEqual(items[0]["case_no"], "2010-2071호")
@@ -117,6 +118,10 @@ class FetchNormalizeTest(unittest.TestCase):
         self.assertEqual(rec["footnotes"], [])
         # 날짜 파싱 실패는 원문 유지 + 연도 None(낡았다고 단정하지 않는다)
         self.assertEqual(fr.format_date("2010.8"), ("2010.8", None))
+        self.assertEqual(fr.format_date("2019.02.31"), ("2019.02.31", None))          # 달력에 없는 날(CodeRabbit #155)
+        root3 = _root("iaciac_detail_12699.xml")
+        with self.assertRaises(fr.SerialMismatch):                                    # 다른 결정문이 오면 저장하지 않는다
+            fr.normalize_record(root3, "iaciac", "99999")
         self.assertEqual(fr.format_date("2019.10.23"), ("2019.10.23", 2019))
         self.assertEqual(fr.format_date("20100827"), ("2010.08.27", 2010))
         self.assertEqual(fr.strip_ruling_prefix("2010재결 제348호 유족급여부지급처분취소"), "유족급여부지급처분취소")
@@ -291,6 +296,8 @@ class ChunkingTest(unittest.TestCase):
         self.assertTrue(up._is_heading_title("이 사건 처분의 위법ㆍ부당 여부"))
         self.assertFalse(up._is_heading_title("위 '1. 사건개요'의 '가'부터 '라'까지의 기재 내용과 같다."))
         self.assertTrue(up._is_excluded_title("관계법령의 내용"))
+        self.assertTrue(up._is_excluded_title("관계법령:"))                             # 끝 콜론(CodeRabbit #155)
+        self.assertTrue(up._is_excluded_title("관련 법령."))
         self.assertFalse(up._is_excluded_title("관계법령, 사실관계 및 판단"))
         # 실측 어휘 — 276건에서 빠져 있던 상위 소제목
         self.assertTrue(up._is_heading_title("원처분기관 처분 및 심사기관 결정이유"))
@@ -451,6 +458,26 @@ class WiringTest(unittest.TestCase):
             self.assertEqual(rr["2010재결제348호"]["agencies"], ["eiac"], order)
             self.assertNotIn("alias_of", rr["2010재결제348호"])
             self.assertEqual(rr["2010-348호"]["agencies"], ["iaciac"])
+        # 혼합 기관 문맥 — 번호에 가까운 기관으로 판정한다(CodeRabbit #155)
+        r = check("산업재해보상보험재심사위원회와 고용보험심사위원회 2019재결 제117호에 따르면")
+        self.assertEqual((r["valid"], r["hallucinated"]), (["2019재결제117호"], []))
+        r = check("고용보험심사위원회가 아니라 산업재해보상보험재심사위원회 2010-2071호")
+        self.assertEqual((r["valid"], r["hallucinated"]), (["2010-2071호"], []))
+        # 기관 미확인 번호 — 재결례 hit 본문의 선례 인용은 그 hit의 기관을 물려받고, 상담글 본문의 번호는 미확인이다
+        body_hits = [dict(hits[0], chunk_text=hits[0]["chunk_text"] + "\n위원회는 2018재결 제45호에서 같은 취지로 판단했다"),
+                     {"source_type": "qa", "title": "상담글", "chunk_text": "심사위에서 2017재결 제9호가 있다고 들었어요"}]
+        rr = cv.extract_rulings_from_hits(body_hits)
+        self.assertEqual(rr["2018재결제45호"]["agencies"], ["eiac"])
+        self.assertEqual(rr["2017재결제9호"]["agencies"], [])
+        listing2 = cv.build_available_citations_text(body_hits)
+        self.assertIn("고용보험심사위원회 2018재결 제45호", listing2)
+        self.assertNotIn("2017재결 제9호", listing2)                                  # 기관 미확인은 목록에 없다
+        r = cv.validate_response_citations("고용보험심사위원회 2017재결 제9호", precs, {}, rr)
+        self.assertEqual((r["valid"], r["hallucinated"]), ([], ["2017재결제9호"]))     # 기관을 붙이면 확인 불가 → 환각
+        r = cv.validate_response_citations("2017재결 제9호에서는", precs, {}, rr)
+        self.assertEqual((r["valid"], r["hallucinated"]), (["2017재결제9호"], []))      # 기관 없이 쓰면 존재는 인정
+        self.assertEqual(cv.resolve_ruling_aliases(["2010재결제2071호", "2019재결제117호", "2010-2071호"], rulings),
+                         ["2010-2071호", "2019재결제117호"])
         # 교정 문구 — 머리말만 바뀌고 라벨은 그대로(test_kin_accuracy K12)
         self.assertIn("판례·재결 번호", cv._CORRECTION_TEXT["hallucinated"][0])
         self.assertEqual(cv._CORRECTION_TEXT["hallucinated"][1], "확인되지 않은 판례 번호")
@@ -490,6 +517,16 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(len(calls[0].args) + len(calls[0].keywords), 4)
         self.assertIn("extract_rulings_from_hits(whitelist_hits)", src)
+        self.assertIn("resolve_ruling_aliases(citation_check[\"valid\"], available_rulings)", src)
+        # 파이프라인 경로 그대로: precedent_meta → _citation_source_hits → 화이트리스트 → 검증(빈 사전이면 회귀)
+        from app.core import citation_validator as cv
+        meta = [{"title": "산업재해보상보험재심사위원회 2010-2071호 — 요양불승인처분취소", "source_type": "ruling",
+                 "case_no": "2010-2071호", "chunk_text": "[산업재해보상보험재심사위원회 2010-2071호 · 의결 2010.08.27 · X]\n본문",
+                 "section": "쟁점·주문", "score": 0.9}]
+        wl = pipeline._citation_source_hits(None, meta, None, None, None)
+        rulings = cv.extract_rulings_from_hits(wl)
+        r = cv.validate_response_citations("산업재해보상보험재심사위원회 2010-2071호(2010. 8. 27. 의결)에서", {}, {}, rulings)
+        self.assertEqual((r["valid"], r["hallucinated"]), (["2010-2071호"], []))
         self.assertIn('conv_metadata["rag_sources"]', src)
         self.assertIn("관련 판례·재결례 (법제처 국가법령정보센터)", src)
         from app.core import storage
@@ -532,6 +569,12 @@ class OperationsTest(unittest.TestCase):
                 self.assertEqual(progress["eiac"]["failed"], {})
                 self.assertEqual(progress["eiac"]["fetched"], {})
 
+                detail_tpl = (FIX / "eiac_detail_11327.xml").read_text(encoding="utf-8")
+
+                def detail_for(serial: str, body: str = detail_tpl) -> bytes:
+                    return body.replace("<결정문일련번호>11327</결정문일련번호>",
+                                        f"<결정문일련번호>{serial}</결정문일련번호>").encode("utf-8")
+
                 # HTTP 500 상세 → failed에 클래스명+상태만, 다음 실행에 재시도 대상
                 def fake_get(url, params=None, timeout=None):
                     if (params or {}).get("ID"):
@@ -546,23 +589,44 @@ class OperationsTest(unittest.TestCase):
                 self.assertIn("HTTPError 500", reason)
                 self.assertNotIn("OC=", reason)
 
-                # 필수 필드 부재 → failed(필드명만), 정상 → 저장 + PII 보고 없음
-                detail = (FIX / "eiac_detail_11327.xml").read_text(encoding="utf-8")
-                broken = re.sub(r"<이유>.*?</이유>", "<이유></이유>", detail, flags=re.S).encode("utf-8")
+                # 필수 필드 부재 → failed(필드명만), 정상(요청 일련번호와 같은 상세) → 저장 + PII 보고 없음,
+                # 다른 결정문(11279 요청에 11327 응답) → 일련번호 불일치 failed
+                broken = re.sub(r"<이유>.*?</이유>", "<이유></이유>", detail_tpl, flags=re.S)
 
                 def fake_get2(url, params=None, timeout=None):
-                    if (params or {}).get("ID"):
-                        return _FakeResp(broken if params["ID"] == "11327" else detail.encode("utf-8"))
+                    sid = (params or {}).get("ID")
+                    if sid == "11327":
+                        return _FakeResp(detail_for(sid, broken))
+                    if sid == "11279":
+                        return _FakeResp(detail_tpl.encode("utf-8"))                 # 11327 상세가 그대로 온다
+                    if sid:
+                        return _FakeResp(detail_for(sid))
                     return _FakeResp(list_xml)
                 with mock.patch.object(fr._session, "get", fake_get2):
                     rc = fr.main(["--agency", "eiac", "--force"])
                 self.assertEqual(rc, 0)
                 progress = fr.load_progress()
                 self.assertEqual(progress["eiac"]["failed"]["11327"]["reason"], "필수 필드 없음: 이유")
-                self.assertEqual(len(progress["eiac"]["fetched"]), 2)
+                self.assertEqual(progress["eiac"]["failed"]["11279"]["reason"], "일련번호 불일치: 응답 11327")
+                self.assertEqual(sorted(progress["eiac"]["fetched"]), ["11165"])
                 saved = sorted(os.listdir(os.path.join(tmp, "eiac")))
-                self.assertEqual(len(saved), 2)
+                self.assertEqual(saved, ["11165_2019jg117.md"])
                 self.assertFalse(os.path.exists(patches["PII_REPORT_FILE"]))
+
+                # failed에 있는 번호는 fetched에 있어도 일반 실행이 재시도하고, 같은 일련번호의 이전 파일은 지운다
+                progress["eiac"]["failed"]["11165"] = {"reason": "HTTPError 500", "at": "x"}
+                fr.save_progress(progress)
+                with open(os.path.join(tmp, "eiac", "11165_oldname.md"), "w", encoding="utf-8") as f:
+                    f.write("stale")
+                with mock.patch.object(fr._session, "get",
+                                       lambda url, params=None, timeout=None:
+                                       _FakeResp(detail_for(params["ID"])) if (params or {}).get("ID") else _FakeResp(list_xml)):
+                    rc = fr.main(["--agency", "eiac"])
+                self.assertEqual(rc, 0)
+                progress = fr.load_progress()
+                self.assertEqual(progress["eiac"]["failed"], {})
+                self.assertEqual(sorted(os.listdir(os.path.join(tmp, "eiac"))),
+                                 ["11165_2019jg117.md", "11279_2019jg117.md", "11327_2019jg117.md"])
 
     def test_ru19_bm25_corpus_has_no_ruling_pattern_hits_outside_rulings(self):
         from app.core import citation_validator as cv
@@ -621,6 +685,33 @@ class OperationsTest(unittest.TestCase):
             ids = led.drop_groups(["iaciac_1"], idx, "laborlaw-v2", allow_large=True)
             self.assertEqual(len(ids), 6)
             self.assertEqual(set(led.read()), {"eiac_3"})
+
+    def test_ru21_uploader_flags_and_pii_rescan(self):
+        import fetch_rulings as fr
+        import pinecone_upload_rulings as up
+        rec = _record("iaciac", "12699")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            os.makedirs(os.path.join(src, "iaciac"))
+            path = os.path.join(src, "iaciac", "12699_2010-2071.md")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(fr.to_markdown(rec))
+            with mock.patch.multiple(up, SOURCE_DIR=src, EXCLUDED_DIR=os.path.join(src, "_excluded"),
+                                     PII_REPORT_FILE=os.path.join(src, "_pii_report.json")):
+                # --exclude-before --dry-run 은 이동하지 않는다
+                self.assertEqual(up.exclude_before(2016, "iaciac", dry_run=True), ["12699_2010-2071.md"])
+                self.assertTrue(os.path.exists(path))
+                self.assertEqual(up.exclude_before(2016, "iaciac"), ["12699_2010-2071.md"])
+                self.assertFalse(os.path.exists(path))
+                self.assertTrue(os.path.exists(os.path.join(src, "_excluded", "iaciac", "12699_2010-2071.md")))
+                # --prune-missing 은 --agency·--limit 과 함께 받지 않는다
+                self.assertEqual(up.main(["--prune-missing", "--agency", "eiac"]), 1)
+                self.assertEqual(up.main(["--prune-missing", "--limit", "3"]), 1)
+            # 문서 재스캔 — 보고서 없이 PII 가 있으면 문제, reviewed 또는 가림이면 통과
+            doc = {"agency": "iaciac", "serial": "12699", "disposition": "연락 010-1234-5678", "title": "t", "path": "/x"}
+            self.assertEqual(len(up.pii_problems(doc, set())), 1)
+            self.assertEqual(up.pii_problems(doc, {("iaciac", "12699", "disposition", "휴대전화")}), [])
+            self.assertEqual(up.pii_problems(up.redact_doc(doc, ["010-1234-5678"]), set()), [])
 
     def test_ru17_batch_ledger_generator_rejects_empty_or_orphan_groups(self):
         import fetch_rulings as fr
