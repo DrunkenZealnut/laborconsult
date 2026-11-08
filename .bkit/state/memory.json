@@ -294,7 +294,10 @@
         "CodeRabbit 2건 반영(cd6fa0e)",
         "PR #102 머지·배포(health 200)",
         "로컬 체크아웃 main"
-      ]
+      ],
+      "bm25": " → CI(Linux) RSS 490MB ≤ 550 ✅(이전 459), 로드 6.8초, M6 4.33%·M4 91.5%",
+      "prB": "커밋 c734ea5 → 초안 PR #156(11-09, base main), CI 전부 통과(G6 490MB). Ready·머지는 요청 시",
+      "next": "PR-B #156 Ready·머지(사용자 요청 시) → output_재결례 main 이동·worktree 제거 → /pdca analyze"
     },
     "pr": 102,
     "mergedAt": "2026-10-06",
