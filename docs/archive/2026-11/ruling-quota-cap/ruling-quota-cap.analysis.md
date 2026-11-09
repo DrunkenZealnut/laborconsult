@@ -1,6 +1,6 @@
 # ruling-quota-cap — Check 분석 (2026-11-09)
 
-> 설계: `docs/02-design/features/ruling-quota-cap.design.md`(rev2) · Plan: `docs/01-plan/features/ruling-quota-cap.plan.md`
+> 설계: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.design.md`(rev2) · Plan: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.plan.md`
 > 구현: worktree `../laborconsult-rqc`(feat/ruling-quota-cap, base main c4a5f1a), **미커밋** — rag.py·eval_corpus_mix·eval_colloquial·test_rulings_ingest·test_precedent_ingest·CLAUDE.md(6파일 +390/−33)
 > 측정: `~/DEV/laborconsult_eval/rul/` cap1·cap2(196 + 재실행 3답변), base after1·after2. 결과 `report_rqc.md`·`gates_rqc.json`
 

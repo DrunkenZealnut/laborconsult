@@ -726,18 +726,18 @@
     "archivedTo": "docs/archive/2026-11/adjudication-corpus/"
   },
   "ruling-quota-cap": {
-    "phase": "completed",
+    "phase": "archived",
     "startedAt": "2026-11-09T05:40:00Z",
     "plannedAt": "2026-11-09",
-    "planPath": "docs/01-plan/features/ruling-quota-cap.plan.md",
+    "planPath": "docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.plan.md",
     "parent": "adjudication-corpus",
     "trigger": "adjudication-corpus Analysis B-1(Medium)·Report §6-1 — R4 관측: 재결례 뺀 공공 S+ 42·53→20·16, 공공 0건 문항 S+ 0→8·6/18, R 1·2→12·12/52. 되돌림이 데이터 롤백뿐",
     "scope": "검색 시점 코드만(데이터 불변): RULING_RETRIEVAL 킬스위치, 쿼터·승격 집합에서 ruling 분리(PUBLIC_DOMAIN_SOURCES 파생), 재결례 다양성 클래스(I-9), rerank 최종 재결례 총량 상한 max(1, top_n//2) 교체형, 테스트·CLAUDE.md, 측정 cap1·cap2(196답변, 승인 필요)",
     "keyFacts": "after 재집계: S+ 재결례 67·59청크(56·45 재결, 슬롯 59~64%), R은 재결례 포함 14문항 중 12문항 공공 0건(쿼터 충족 경로). 경로 3종: 쿼터 충족·승격 억제·자연 유입 | 검색 전용 재생(11-09, 76문항): R pool 재결례 117→4(쿼터 조회 산물), S+ 분리만으로 공공 5→20·공공0 14→5, 상한 C 재결 44→39(교체분 상담), 분리로 S+ 재결 포함 18→15 | validator 73점 → rev2(H1 상한 후보 1순위 quota_injected 공공, M4 해설서 후보 제외). v2 probe: 공공0 S+ 4문항 = 산재, pool 재결례 14~15/15·상담 0~2 → 1단 주입 0",
     "decisionsPending": "",
-    "nextStep": "커밋·PR·CI·머지(요청 시: plan·design·analysis·report·bkit을 worktree로 복사 → 커밋 → PR → CI → 머지) → /pdca archive ruling-quota-cap",
+    "nextStep": "실사용 metadata.rag_sources 분포 확인(배포 뒤) · worktree ../laborconsult-rqc 정리 · 후속 F-1~F-6",
     "designedAt": "2026-11-09",
-    "designPath": "docs/02-design/features/ruling-quota-cap.design.md",
+    "designPath": "docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.design.md",
     "decisions": "D1~D7 권고안 확정(사용자 \"권고안대로 진행\", 2026-11-09)",
     "designDecisions": [
       "D8 집합 3종(POOL_PUBLIC·RULING·PUBLIC_DOMAIN 파생) + 술어 4종",
@@ -764,7 +764,7 @@
     "measurement": "cap1·cap2(196+3 재실행): G1✅ G2부분(S+ 공공 34·28/≥34, 공공0 0·1✅) G3✅(R 공공0 2·0, 공공 79·75) G4✅ G5✅. 네트워크 단절로 cap2 3문항 재실행·치환. 진단: 창 밖 자연 공공은 상한 후보가 아님(r-ia-grade-finger 9/10 재결)",
     "matchRate": 85.0,
     "checkedAt": "2026-11-09",
-    "analysisPath": "docs/03-analysis/ruling-quota-cap.analysis.md",
+    "analysisPath": "docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.analysis.md",
     "actIterations": 3,
     "act1": "정합(문서 12·테스트 3·CLAUDE.md·하네스 3) 완료, 자체 재집계 75/75",
     "act2": "사용자 'A+C 진행'(11-09): A 상한 후보 ② 전체 자연 공공, C pipeline._restore_public_after_self_rag(2단 목표까지). RU28 확장·RU32 재작성·RU35·T26-s. 38/38. 실제 코드 검증 S+ 재결 50·51·공공 56·56(Self-RAG 전). 재측정 승인 대기(S+×2 48 + R×1 52)",
@@ -772,7 +772,10 @@
     "check2": "Act-2 뒤 gap-detector 재실행 2026-11-09: 85.0%(68/80, 부분 12 — 문서·주석·수치·하네스 G5 K 공허 참, 런타임 0). Act-3 정합: 설계 8·CLAUDE.md 2·테스트 docstring 1·주석 2 + compare_rqc --k-from → 자체 재집계 80/80",
     "act3": "정합(동작 변경 없음): G8 '2단 승격 15·31'은 1단 주입 오기 → 2단 6·6/S+ 생존 1·0, 1단 15·31/S+ 생존 4·9로 정정(Design §13·Analysis §3.2·pipeline docstring·CLAUDE.md); E14 --k-from; G7 복원 이벤트는 synthetic 24문항 값; G10 M7 간접 근거; D18 경계 기록",
     "completedAt": "2026-11-09",
-    "reportPath": "docs/04-report/features/ruling-quota-cap.report.md",
-    "report": "report-generator 작성·검증(줄 수 7파일 +491/−52 보충, §1.3 E 규칙 참조 정정, Check 분모 정의 명시, --k-from 명시). 금지 패턴 0. 커밋·PR·배포 미수행(요청 시)"
+    "reportPath": "docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.report.md",
+    "report": "report-generator 작성·검증(줄 수 7파일 +491/−52 보충, §1.3 E 규칙 참조 정정, Check 분모 정의 명시, --k-from 명시). 금지 패턴 0. 커밋·PR·배포 미수행(요청 시)",
+    "archivedAt": "2026-11-09",
+    "archivedTo": "docs/archive/2026-11/ruling-quota-cap/",
+    "merged": "PR #160 a51bea7 → main 04c4b3d(2026-11-09), 배포 success, /api/health 200"
   }
 }

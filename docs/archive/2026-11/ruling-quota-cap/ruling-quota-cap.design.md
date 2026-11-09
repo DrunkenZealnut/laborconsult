@@ -1,6 +1,6 @@
 # ruling-quota-cap — Design rev2
 
-> Plan: `docs/01-plan/features/ruling-quota-cap.plan.md`
+> Plan: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.plan.md`
 >
 > **결정**(2026-11-09, 사용자 "권고안대로 진행" — Plan §6 D1~D7 확정):
 > - D1: 킬스위치 **`RULING_RETRIEVAL=off`** — 검색 결과·쿼터 조회에서 재결례 제외(재배포 반영).
@@ -174,7 +174,7 @@ S−·R은 B~E3 전부 재결례 0·공공 12 / 103으로 같다(D22는 pool 재
 | `test_rulings_ingest.py` | RU10 개정, RU26~RU35 신설(RU35는 Act-2 C 복원 사례) | CI |
 | `test_precedent_ingest.py` | T24-a4 집합 리터럴 | CI |
 | `CLAUDE.md` | 재결례 절 R4 문단 교체, env 2종, 공공 쿼터(victim 규칙)·다양성 승격 절 보강 | §7 |
-| `docs/02-design/features/ruling-quota-cap.design.md` | §13 Do 실측 기록(main 작업 트리의 미추적 파일 — Plan·Analysis와 함께 커밋 때 worktree로 복사) | — |
+| `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.design.md` | §13 Do 실측 기록(PR #160으로 커밋 → 보관 이동) | — |
 | `~/DEV/laborconsult_eval/rul/run_act.sh`·`act_diag.py`·`compare_rqc.py --allow-partial/--k-from`(저장소 밖) | Act-2 재측정 실행·진단·부분 측정 판정(§6.4 5항) | — |
 | (저장소 밖) `~/DEV/laborconsult_eval/kin/run_eval.py` | spy `rag_hits_in`(D17) | 측정 전용 |
 | (저장소 밖) `~/DEV/laborconsult_eval/rul/compare_rqc.py`(신규, `compare_rul.metrics` 재사용)·`run_cap.sh`·`patch_run.py` | M1c·M1d·M1e·M5, 관문 G1~G5, 오염 문항 치환 | 측정 전용 — 출력 `report_rqc.md`·`gates_rqc.json` |
@@ -421,7 +421,7 @@ T26-s는 새 배선(`_restore_public_after_self_rag(` 호출)으로 고친다. �
 5. 킬스위치 양성 검증: `RULING_RETRIEVAL=off`로 S+ 3문항 재생 → 재결례 0건.
 6. **측정 승인(D7)** → cap1·cap2 → `compare_rul.py` → 관문.
 7. CLAUDE.md §7, Design §13 실측 기록.
-8. 커밋·PR(요청 시) → CI → 리뷰 반영 → 머지 → 배포 → 실사용 `metadata.rag_sources`로 사후 분포 확인.
+8. 커밋·PR(요청 시) → CI → 리뷰 반영 → 머지 → 배포 → 실사용 `metadata.rag_sources`로 사후 분포 확인. **PR #160(커밋 a51bea7, CI 통과) → main 04c4b3d 머지(2026-11-09), 프로덕션 배포 success·`/api/health` 200.** 사후 분포 확인은 남음.
 9. `/pdca analyze` → Report → Archive.
 
 ## 9. 위험·완화
@@ -451,7 +451,7 @@ T26-s는 새 배선(`_restore_public_after_self_rag(` 호출)으로 고친다. �
 4. P1 측정 cap1·cap2 — G1~G5 판정·기록(미달이 있어도 정의를 바꾸지 않는다).
 5. 킬스위치 양성 검증 기록.
 6. CLAUDE.md §7, Design §13.
-7. PR·CI·머지(요청 시), Vercel env 변경 없음.
+7. PR·CI·머지(요청 시), Vercel env 변경 없음. **충족 — PR #160(커밋 a51bea7, CI 통과) → main 04c4b3d 머지(2026-11-09), 프로덕션 배포 success·`/api/health` 200.**
 8. Act-2(A+C) 뒤 재측정 act1·act2(§6.4 5항) — G1~G5 재판정·G6·G7 재확인 기록(§13). **2026-11-09 충족.**
 
 ## 11. 범위 밖·후속
@@ -502,7 +502,7 @@ T26-s는 새 배선(`_restore_public_after_self_rag(` 호출)으로 고친다. �
 | **종합 판정** | 5관문 중 4 통과, G2는 공공 0건 조건 통과·건수 조건 한쪽(cap2 28) 미달. 공공 0건 문항은 S+ 8·6 → 0·1, R 12·12 → 2·0으로 이 사이클의 핵심 목표(재결례 때문에 공공 근거가 사라지는 문항 제거)는 두 실행 모두 달성. 재결례 공급(G1)·인용 정확(G4)·K(G5)는 유지. **정의를 바꾸지 않고 기록한다**(Plan §5) |
 | **진단 — cap2 공공 28의 구조적 원인** | 문항별 `rag_hits_in`: `r-ia-grade-finger`는 cap1·cap2 모두 wider(슬롯 10) 경로에서 **재결례 9·공공 1·`ruling-cap` 1·`quota_injected` 0** — 분해 쿼리 pool에 자연 공공이 쿼터 이상 있어 **1단이 조회를 건너뛰었고**(`have ≥ quota`), 그 자연 공공은 rerank에서 **창(`2×top_n`) 밖**으로 묻혀 상한 후보 ②(창 안 자연 공공)에 걸리지 않았다 — 교체 가능 후보 1건뿐. `r-ia-family`(cap2, 7슬롯: `PRRRRRPc`, 주입 0)도 같은 꼴(cap 3에 교체 1). 반대로 `r-ia-msk`(cap2 10슬롯, 주입 5)는 `RRRRR + P*c×5`로 설계대로 작동했다. 원문 쿼리 재생(§1.3)은 pool에 자연 공공이 거의 없어 이 경로를 보지 못했다(주입 경로만 관측). **사전 등록한 대안 E(상한 1)는 이것을 고치지 못한다** — 후보가 없으면 상한은 교체할 수 없다. 처방 후보: 상한 후보 ②를 '창 안'에서 **'top_n 밖 전체 ranked의 자연 공공(순위순)'** 으로 넓힌다 — pool 단계 RRF `top_k`를 통과한 공공이라 2단이 주입분을 창 없이 받는 것과 같은 근거이고, 구성 회복이 목적이라 rank-25 판례가 rank-8 재결례를 대체하는 것이 의도다. Check/Act에서 결정 |
 | **진단 2 — Self-RAG가 구성 작업을 되돌린다** | 프로덕션 S+ 24문항은 **전부 COMPLEX**다(의도분석의 `relevant_laws`·`calculation_types`가 복잡도 점수를 올려 — 원문 쿼리 재생의 MODERATE 16과 다르다) → Self-RAG가 매 문항 돈다. 로그 집계(synthetic 24문항): 상한 교체 **28·31건**(rerank 직후) → Self-RAG 뒤 `ruling-cap` 생존 **14·15건**; 1단 주입 **15·31건**(`quota_injected`) → S+ 생존 4·9건; 2단 `public-quota` 승격 **6·6건**(synthetic 24) → S+ 생존 **1·0건**(S− 2·4) — 1차 기록은 1단 주입 수를 2단 승격으로 적었다(Check 재실행 G8 정정). "공공 전멸 → 1건 복원"(`pipeline.py:4037~4043`)은 cap1 7회·cap2 5회(after 1·2회). Self-RAG 결과 분포(cap2): 7 → 7 5문항, 7 → 6 6문항, 7 → 5 4문항, 7 → 4 5문항, 7 → 3 1문항, 7 → 2 3문항(wider 3). **쿼터·상한은 Self-RAG 앞에서 돌고, Self-RAG는 하위 순위 공공(주입·교체분)을 irrelevant로 걸러내는 경향이 강하다** — 그래서 G2 공공 건수는 rerank 직후가 아니라 Self-RAG 뒤 값이고, 두 실행 차이(34·28)는 판정 모델의 판단 편차다. 원문 쿼리 재생(§1.3)은 Self-RAG가 없어 이 경로를 보지 못했다. 처방 후보 C: Self-RAG 복원을 '전멸 시 1건'에서 **'쿼터 집합 공공이 2단 목표(`_pool_public_quota_for_top_n`) 미만이면 목표까지'** 로 — 제거된 공공을 rerank 순위대로 되살린다. 2단의 보장("컨텍스트에 실린다")을 Self-RAG 뒤까지 연장하는 것이고 D14의 복원 지점을 그대로 쓴다. 판정 모델의 판단을 2건 한도로만 뒤집는다. Check/Act에서 결정 |
-| Check(gap-detector) | 80항목: 일치 62·부분 13·불일치 0·확인 불가 5 → **82.7%**(설계 내부 충돌 3건 일치 시 86.7%). 런타임 코드 불일치·부분 0. 분석 `docs/03-analysis/ruling-quota-cap.analysis.md` |
+| Check(gap-detector) | 80항목: 일치 62·부분 13·불일치 0·확인 불가 5 → **82.7%**(설계 내부 충돌 3건 일치 시 86.7%). 런타임 코드 불일치·부분 0. 분석 `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.analysis.md` |
 | Act-1(정합) | 설계 문서 불일치 12건·테스트 RU28/RU32/RU33 보강·CLAUDE.md 승격 절·하네스 M1e/M5/G5 정합. 스위트 통과(37/37). 자체 재집계 75/75. 동작 변경 없음 |
 | Act-2(사용자 "A+C 진행", 2026-11-09) | **A** `_cap_rulings_in_top_n` 후보 ② = top_n 밖 전체 자연 공공(상담은 창 안 유지) · **C** `pipeline._restore_public_after_self_rag`(Self-RAG 뒤 쿼터 집합 공공이 2단 목표 미만이면 목표까지 rerank 순 복원, 재결례 제외) + Self-RAG 블록 호출. 테스트 RU28 확장(`prec_far`·창 밖 상담 비후보)·RU32 재작성·RU35 신설·T26-s 갱신 → rulings **38/38**, precedent·pipeline_wiring·offline_units 통과. **실제 코드 검증**(cap1·cap2 로그의 분해 쿼리로 pool 재구성, Self-RAG 전): S+ 재결례 59·64 → **50·51**, 공공 42·43 → **56·56**, 후보 없음 9·12 → **0**, 교체 26·28 → 34·40 — 시뮬레이션 A(50·52 / 55·56)와 ±1. C는 LLM 판정이 필요해 재측정으로 확인. **재측정 승인 대기**: S+ ×2(48) + R ×1(52) |
 | **Act-2 재측정(P1-2)** — 사용자 "재측정 진행"(2026-11-09) | `run_act.sh` 18:55~19:32(37.5분): act1 synthetic 24 → act2 synthetic 24 → act1 real_pos 52 = **100답변, 오염 0**(전부 OpenAI/gpt-6-sol, 폴백 0, spy 누락 0). `compare_rqc.py --cap act1,act2 --allow-partial`(base after1·after2 / base cap1·cap2 둘 다 exit 0): **G1 ✅** S+ 0.94·0.89(cap 0.83·0.94)·S− 0 · **G2 ✅** 재결 뺀 공공 **42·42**(≥34; cap 34·28, after 20·16)·공공 0건 **0·0**(cap 0·1, after 8·6) · **G3 ✅** R 공공 0건 **0**(cap 2·0, after 12·12)·공공 **85**(≥68; cap 79·75, after 62·60; act2는 R 미측정) · **G4 ✅** 교정 후 잔여 0·비재결 오판 0·유효 재결 인용 23(act2 17 — S+만이라 임계 미적용) · **G5 ✅** S+ 일반화 금지 0·벤더 동일·누락 0(K는 재측정하지 않고 `--k-from cap1,cap2`로 cap 실행의 K 금지 0·allowed_source 거짓 0을 판정에 사용). 결과 `rul/report_act.md`·`gates_act.json`·`report_act_vs_cap.md`·`gates_act_vs_cap.json` |
