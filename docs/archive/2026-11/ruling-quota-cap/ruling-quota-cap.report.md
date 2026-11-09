@@ -3,8 +3,8 @@
 > **Feature**: 재결례(`source_type="ruling"`)가 판례·행정해석·훈령의 공공 쿼터·법률근거 승격 슬롯을 잠식하던 문제를 검색 시점 코드로 고침. 집합 3종 분리, 재결례 총량 상한(교체형), 킬스위치 2종
 > **PDCA Cycle**: Plan → Design(rev2) → Do(측정 cap1·cap2) → Check(gap-detector 82.7%) → Act-1(정합) → Act-2(A+C 구현·재측정 act1·act2) → Check 재실행(85.0%) → Act-3(정합, 자체 80/80)
 > **Period**: 2026-11-09 (단일 일자, KST)
-> **PR**: 없음 (커밋·PR·머지는 요청 시 — 미수행)
-> **Status**: Complete (로컬 구현·측정·문서 정합 완료). 커밋·PR·CI·배포 미수행. 독립 Check 재실행은 85.0%로 90%에 미달(§2.4 참조)
+> **PR**: #160 — 커밋 a51bea7(12파일 +1,680/−55), CI 통과(offline-tests·GitGuardian·Vercel preview), `--merge --delete-branch=false`로 main **04c4b3d**(2026-11-09). 보관 이동은 후속 PR
+> **Status**: Complete — 구현·측정·문서 정합·PR #160 머지·프로덕션 배포 success(`/api/health` 200). 독립 Check 재실행은 85.0%로 90%에 미달(§2.4 참조), Act-3 뒤 자체 재집계 80/80
 
 ---
 
@@ -21,7 +21,7 @@
 | 구현 범위 | 검색 시점 코드만. 데이터(Pinecone·BM25 gz·원장) 불변 |
 | 구현 파일 | Design §2 기준 7파일: `app/core/rag.py`, `app/core/pipeline.py`, `eval_corpus_mix.py`, `eval_colloquial.py`, `test_rulings_ingest.py`, `test_precedent_ingest.py`, `CLAUDE.md` |
 | 줄 수 | **7파일 +491/−52**(Act-3 뒤 worktree `git diff --stat`): `test_rulings_ingest.py` +287·`rag.py` +165·`pipeline.py` +46·`eval_corpus_mix.py` +20·`test_precedent_ingest.py` +12·`CLAUDE.md` +10·`eval_colloquial.py` +3(Act-1 시점 6파일 +390/−33) |
-| 상태 | 로컬 worktree `../laborconsult-rqc`(브랜치 `feat/ruling-quota-cap`, base main c4a5f1a), **미커밋** |
+| 상태 | worktree `../laborconsult-rqc`(브랜치 `feat/ruling-quota-cap`, base main c4a5f1a) → PR #160(커밋 a51bea7, CI 통과) → main 04c4b3d 머지(2026-11-09), 프로덕션 배포 success·`/api/health` 200 |
 
 ### 1.2 결과 요약
 
@@ -55,14 +55,14 @@
 
 ### 2.1 Plan
 
-- 문서: `docs/01-plan/features/ruling-quota-cap.plan.md` (미커밋)
+- 문서: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.plan.md` (PR #160, 보관 이동)
 - 목표: 재결례 적재로 사라진 공공 근거(판례·행정해석·훈령)를 before 수준으로 회복. 재결례 공급(G1)은 유지.
 - 실측 근거: adjudication-corpus after 기록(98문항 × 4회)의 `rag_meta`를 문항별로 재집계. 경로 세 개를 분해했다 — ① 쿼터 충족(재결례가 pool 쿼터를 채워 공공 조회를 건너뜀) ② 승격 억제('법률근거 있음' 판정) ③ 자연 유입(Dense+BM25 상위 점수).
 - 결정 D1~D7: 킬스위치 `RULING_RETRIEVAL=off`, 집합 분리, 자기 다양성 클래스, 교체형 상한 `max(1, top_n//2)`, 문서당 상한 보류, after 재사용 + cap 2회, 측정 비용 승인.
 
 ### 2.2 Design
 
-- 문서: `docs/02-design/features/ruling-quota-cap.design.md` (rev2, 미커밋, §13에 Do 실측)
+- 문서: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.design.md` (rev2, §13에 Do 실측, PR #160, 보관 이동)
 - 설계 결정 D8~D22를 Plan에 더했다. 주요 항목:
   - **D8 집합 셋 + 파생**: `POOL_PUBLIC_SOURCES = {precedent, interpretation, regulation}`, `RULING_SOURCES = {ruling}`, `PUBLIC_DOMAIN_SOURCES = POOL ∪ RULING`(저작권 분류). 리터럴은 두 개만 두고 합집합은 식으로 쓴다(구조 테스트 RU26).
   - **D9 킬스위치 위치**: `search_hybrid` 안에서 Dense·BM25 결과를 RRF 병합 **전에** 필터링. 병합 뒤에 걸면 pool이 빈다.
@@ -127,8 +127,8 @@
 
 | 항목 | 사유 |
 |---|---|
-| 커밋·PR·CI·머지 | 사용자 요청 시에만 진행한다(CLAUDE.md). 미수행 |
-| 배포 · 실사용 효과 | 미배포. 배포 뒤 `metadata.rag_sources`로 재결례·판례 건수 분포를 확인해야 한다 |
+| 커밋·PR·CI·머지 | **완료** — PR #160(커밋 a51bea7, CI 통과) → main 04c4b3d 머지(2026-11-09), 프로덕션 배포 success·`/api/health` 200 |
+| 배포 · 실사용 효과 | 배포 success(04c4b3d, Vercel env 변경 없음 — 기본 `on`). 실사용 효과는 `metadata.rag_sources`로 사후 확인해야 한다(미확인) |
 | 독립 Check 재실행 | 85.0%(Act-2 뒤)가 마지막 독립 값. Act-3 이후는 자체 재집계 80/80 |
 | 지연(D2 조회 1회 추가) | 측정 기록의 total_s로만 확인했다(문항당 15~28초, after와 같은 범위) |
 | R 재결례 공급률 실사용 값 | 간접 근거만 있다. after 0.27 → cap 0.13 → act 0.23(실행 편차 큼). CLAUDE.md에는 범위(0.13~0.23)로 적었다 |
@@ -232,7 +232,7 @@
 
 | 우선 | 항목 | 근거 |
 |---|---|---|
-| 1 | 커밋·PR·CI·머지, Vercel 배포 (요청 시). Vercel env 변경은 없다 — 기본값 `on`이라 배포 즉시 새 동작이 켜진다 | §3.2 |
+| 1 | ~~커밋·PR·CI·머지, Vercel 배포~~ — 완료(PR #160 → 04c4b3d, 배포 success). 남은 것은 실사용 `metadata.rag_sources` 분포 확인과 worktree `../laborconsult-rqc` 정리 | §3.2 |
 | 2 | 배포 뒤 실사용 `metadata.rag_sources`로 재결례·판례 분포 확인 | Plan §7 |
 | 3 | F-1: Self-RAG가 쿼터·상한 승격분을 걸러내는 구조 — 목표 건수 복원으로 처리했다. 보호 표식을 Self-RAG 입력에 넘기는 방식은 두지 않았다 | Analysis §5 |
 | 4 | F-2: 판례 0건 S+ 문항 16·15(before 14·15) — 판례 공급 확대는 다른 사이클 | Analysis §5 |
@@ -247,11 +247,11 @@
 
 ## 7. 참조 문서
 
-- Plan: `docs/01-plan/features/ruling-quota-cap.plan.md`
-- Design: `docs/02-design/features/ruling-quota-cap.design.md` (rev2, §13 Do 실측)
-- Analysis: `docs/03-analysis/ruling-quota-cap.analysis.md` (§1 gap-detector 1차·재실행, §2 측정 cap, §2.4 Act-2 재측정, §3 진단, §4 Act 후보, §5 후속, §6 Act 계획)
+- Plan: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.plan.md`
+- Design: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.design.md` (rev2, §13 Do 실측)
+- Analysis: `docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.analysis.md` (§1 gap-detector 1차·재실행, §2 측정 cap, §2.4 Act-2 재측정, §3 진단, §4 Act 후보, §5 후속, §6 Act 계획)
 - 선행 보고서: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.report.md`
-- 구현(미커밋): worktree `../laborconsult-rqc`(브랜치 `feat/ruling-quota-cap`)
+- 구현: PR #160(main 04c4b3d) — worktree `../laborconsult-rqc`(브랜치 `feat/ruling-quota-cap`, 유지)
 - 측정 하네스(저장소 밖): `~/DEV/laborconsult_eval/rul/` — `run_cap.sh`, `run_act.sh`, `compare_rqc.py`, `act_diag.py`, `report_rqc.md`, `report_act.md`, `gates_act.json`
 - 테스트: `test_rulings_ingest.py` (38/38, RU10·RU26~RU35), `test_precedent_ingest.py` (T24-a4·T26-s)
 - 운영 문서: `CLAUDE.md` 재결례 절·공공 쿼터 절·Self-RAG 항목·환경 변수
