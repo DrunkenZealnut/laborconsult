@@ -768,6 +768,11 @@ class OperationsTest(unittest.TestCase):
             self.assertFalse(os.path.exists(out))          # 원장 파일을 쓰지 않았다
             self.assertEqual(up.main(["--verify"]), 1)       # 단독 --verify는 아무 일도 하지 않으므로 거절
             self.assertEqual(up.main(["--exclude-before", "2016", "--agency", "iaciac", "--prune-missing"]), 1)
+            # 원장 생성은 이동·삭제·부분 선택 플래그와 함께 받지 않는다(PR #157 CodeRabbit — 분기가 먼저 끝나 원장을 안 썼다)
+            self.assertEqual(up.main(["--write-batch-ledger", out, "--prune-missing"]), 1)
+            self.assertEqual(up.main(["--write-batch-ledger", out, "--exclude-before", "2016", "--agency", "iaciac"]), 1)
+            self.assertEqual(up.main(["--write-batch-ledger", out, "--limit", "5"]), 1)
+            self.assertFalse(os.path.exists(out))
 
     def test_ru23_empty_list_exits_nonzero(self):
         """Check B-4: 목록 0건(첫 페이지 실패·형식 변경)은 요약만 찍고 0으로 끝나지 않는다."""
@@ -782,6 +787,25 @@ class OperationsTest(unittest.TestCase):
                     self.assertEqual(fr.main(["--agency", "eiac", "--list-only"]), 1)
                     self.assertEqual(fr.main(["--agency", "eiac"]), 1)
                 self.assertEqual(fr.load_progress()["eiac"]["failed"], {})   # 목록 실패는 건별 failed가 아니다
+
+    def test_ru23b_later_page_failure_exits_nonzero(self):
+        """PR #157 CodeRabbit: 첫 페이지 뒤의 조회 실패도 부분 목록으로 exit 0 하지 않는다(ListFetchError → 1)."""
+        import fetch_rulings as fr
+        page1 = (FIX / "eiac_list_p1.xml").read_bytes()      # totalCnt 118 → 2페이지
+
+        def fake_get(url, params=None, timeout=None):
+            return _FakeResp(page1) if (params or {}).get("page") == "1" else _FakeResp(b"", 500)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            patches = dict(OUTPUT_DIR=tmp, PROGRESS_FILE=os.path.join(tmp, "_progress.json"),
+                           PII_REPORT_FILE=os.path.join(tmp, "_pii_report.json"))
+            with mock.patch.multiple(fr, **patches), mock.patch.object(fr.time, "sleep", lambda s: None), \
+                    mock.patch.dict(os.environ, {"LAW_API_KEY": "fake"}), \
+                    mock.patch.object(fr._session, "get", fake_get):
+                with self.assertRaises(fr.ListFetchError):
+                    fr.fetch_list("eiac", "fake")
+                self.assertEqual(fr.main(["--agency", "eiac", "--list-only"]), 1)
+                self.assertEqual(fr.load_progress()["eiac"]["failed"], {})
 
     def test_ru24_residual_tag_regex_single_source(self):
         """Check G-3: 업로더 dry-run 중단 조건의 정규식은 수집기 것과 같은 객체다(복제 금지)."""

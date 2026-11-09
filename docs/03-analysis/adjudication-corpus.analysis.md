@@ -349,7 +349,7 @@ Match Rate는 **95.9%**로 90%를 넘는다. 불일치 0건, 부분 6건은 문�
 |---|---|---|
 | A 문서 | G-1 CLAUDE.md 재결례 절에 배선 5지점(우선순위 3항·두 분기 접미·4번째 인자·`rag_sources`·라벨 양쪽)·운영 플래그 조합·R4 슬롯 잠식과 되돌림 수단을 적고 소제목 규칙을 §13 기준(28자·같은 번호/+2 어휘 필수·탈출 어휘 필수)으로 고쳤다 | `CLAUDE.md` |
 | A 문서 | G-4 chunk 0 `쟁점·주문`(iaciac) · G-5 dry-run 집계에서 비율·문서별 열 생략 명시 · G-6 RU7 단언을 테스트에 맞춤 · B-2 `--allow-large-prune` 두 경로 수용·그룹 범위 · G-2 저장 주기(25건·종료 시) · B-9 356→348·RU1~RU21(27 테스트)·D9 28자·2,500→2,080자 · §13에 머지 전 스캔(U-1)과 Check 행 추가 | `docs/02-design/features/adjudication-corpus.design.md` |
-| B 코드 | B-3 플래그 조합 거절(`--write-batch-ledger`+`--dry-run` / 단독 `--verify` / `--exclude-before`+`--prune-missing` → exit 1, 부작용 없음) · G-3 `RESIDUAL_TAG_RE`를 수집기에서 import(단일 출처) | `pinecone_upload_rulings.py` |
+| B 코드 | B-3 플래그 조합 거절(`--write-batch-ledger`+`--dry-run` / 단독 `--verify` / `--exclude-before`+`--prune-missing` → exit 1, 부작용 없음) · G-3 `RESIDUAL_TAG_RE`를 수집기에서 import(단일 출처) — **검사 책임은 업로더 dry-run 한 곳**으로 설계 §3.4를 고쳤다(수집기 `failed` 기록은 하지 않는다; 중단 메시지에 문서 이름을 싣는다) | `pinecone_upload_rulings.py` |
 | B 코드 | B-4 목록 0건이면 `[실패]` 출력 + exit 1(건별 failed에는 적지 않음) · 미사용 `REQUIRED_FIELDS` 제거 | `fetch_rulings.py` |
 | B 코드 | B-6 spy가 `**kwargs`(`stale_out=`)를 투과 | `eval_corpus_mix.py` |
 | B 테스트 | RU22 플래그 조합 · RU23 목록 0건 exit 1 · RU24 정규식 동일 객체(`is`)·상수 부재 · RU25 spy `**kwargs`(AST) | `test_rulings_ingest.py` (23 → **27**) |
@@ -359,3 +359,15 @@ Match Rate는 **95.9%**로 90%를 넘는다. 불일치 0건, 부분 6건은 문�
 **자체 재집계**(gap-detector 재실행은 하지 않았다): 부분 6건 전부 해소(G-1·G-3 코드·문서, G-2·G-4·G-5·G-6 설계 정합), U-1·U-4 해소 → 일치 148 · 확인 불가 2(U-2 미측정·U-3 저장소 밖 보고서) → **148 ÷ 148 = 100%**(엄격 기준 동일). 설계 공백은 B-3·B-4·B-6·B-9 해소, B-2·G-2 문서 정합, **B-1(재결례 전용 상한·킬스위치)·B-5(`agency` 메타 운반)·B-7(G4 포화 기록)·B-8(이미지 152건)은 후속·Report 기록**으로 남는다.
 
 다음: `/pdca report adjudication-corpus` → archive. 커밋·PR은 사용자 요청 시.
+
+---
+
+## 8. PR #157 리뷰 반영 (CodeRabbit 3건 · Codex 0건)
+
+| # | 지적 | 검증 | 반영 |
+|---|---|---|---|
+| CR-1 | G-3을 정규식 공유만으로 해소로 셈했다 — 설계 §3.4는 여전히 수집기 `failed` 기록을 요구 | 타당. 설계 §3.4 문장이 rev2 그대로였다 | 설계 §3.4를 "수집기는 기록하지 않고 업로더 dry-run이 유일한 검사점"으로 고치고, 중단 메시지에 잔존 태그 문서 이름(최대 5)과 조치(`--serial` 재수집·정제 규칙 점검)를 싣는다. 재집계는 변동 없음(설계 정합으로 닫힘) |
+| CR-2 | 목록 2페이지 이후 조회 실패가 부분 목록 + exit 0 | 타당. `fetch_list`가 `root is None → break`라 '건수 불일치' 경고만 남았다 | `ListFetchError` — 어느 페이지든 실패면 raise, main이 `[실패]`로 받아 exit 1(건별 `failed`에는 적지 않음). RU23b |
+| CR-3 | `--write-batch-ledger`+`--exclude-before`/`--prune-missing`이 원장을 쓰지 않고 성공 | 타당. 이동·삭제 분기가 먼저 `return 0` | 거절 목록에 추가 + `--agency`·`--limit`도 거절(원장은 로컬 전체를 옮기므로 무시되던 플래그). RU22 보강 |
+
+테스트 **28/28**. CLAUDE.md 운영 플래그 문장도 같은 내용으로 갱신.

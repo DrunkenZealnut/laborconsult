@@ -217,8 +217,14 @@ def _text(el: ET.Element | None) -> str:
     return "".join(el.itertext()).strip() if el is not None else ""
 
 
+class ListFetchError(RuntimeError):
+    """목록 페이지 조회가 재시도 뒤에도 실패했다 — 부분 목록으로 '수집 완료'처럼 끝나지 않게 main이 exit 1로 올린다(PR #157 CodeRabbit)."""
+
+
 def fetch_list(agency: str, api_key: str) -> tuple[list[dict], int]:
-    """목록 전량 → ([{serial, case_no, title_raw, decided_at_raw}], totalCnt). 일련번호로 중복 제거."""
+    """목록 전량 → ([{serial, case_no, title_raw, decided_at_raw}], totalCnt). 일련번호로 중복 제거.
+    어느 페이지든 조회 실패면 ListFetchError — 첫 페이지 실패는 totalCnt 0, 뒤 페이지 실패는 '건수 불일치' 경고만
+    남기고 exit 0으로 끝났다(종료 코드로 완료를 판단하는 자동화가 성공으로 읽는다)."""
     items: dict[str, dict] = {}
     total = 0
     page = 1
@@ -228,7 +234,7 @@ def fetch_list(agency: str, api_key: str) -> tuple[list[dict], int]:
             "display": str(PAGE_SIZE), "page": str(page),
         })
         if root is None:
-            break
+            raise ListFetchError(f"{agency} 목록 page={page} ({_last_error})")
         total = int(root.findtext("totalCnt") or total or 0)
         spec = AGENCIES[agency]
         got = 0
@@ -447,7 +453,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.serial:
                 items, total = [{"serial": s} for s in args.serial], len(args.serial)
             else:
-                items, total = fetch_list(agency, api_key)
+                try:
+                    items, total = fetch_list(agency, api_key)
+                except ListFetchError as e:
+                    print(f"  [실패] 목록 조회 실패 — {e}(수집 완료가 아니다)")
+                    list_failed.append(agency)
+                    summary[agency] = {"error": "list_fetch", "detail": str(e)}
+                    continue
             years: dict[str, int] = {}
             for it in items:
                 y = (it.get("decided_at_raw") or "")[:4]
@@ -525,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.list_only:
         print(f"진행 기록: {PROGRESS_FILE}\nPII 보고: {PII_REPORT_FILE} (업로드 전 reviewed 표시 필요)")
     if list_failed:
-        print(f"[실패] 목록 0건 기관: {list_failed}")
+        print(f"[실패] 목록 조회 실패·0건 기관: {list_failed}")
         return 1
     return 0
 
