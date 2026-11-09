@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """재결례(`output_재결례/{eiac,iaciac}/*.md`) → Pinecone laborlaw-v2 업로드 (source_type="ruling").
 
-설계: docs/02-design/features/adjudication-corpus.design.md §4
+설계: docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md §4
 
 **적재 대상은 프로덕션이 읽는 NS(`laborlaw-v2`)다.** 업로드 즉시 Dense 검색에 섞이므로 배선 PR(라벨·공공 쿼터·
 인용 검증)이 배포된 **뒤에** 올린다(D13). 저작권: 재결은 저작권법 제7조 제3호 비보호 저작물 — 노출 가드 불요.

@@ -1,6 +1,6 @@
 # adjudication-corpus — Design rev2
 
-> Plan: `docs/01-plan/features/adjudication-corpus.plan.md`
+> Plan: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.plan.md`
 >
 > **결정**(2026-11-08, 사용자 "권고안대로 진행" — Plan §6 권고 7건 확정):
 > - D1: 출처 유형은 **`ruling` 하나** + 메타 `agency`(`eiac`|`iaciac`)·`category`. 라벨 '재결례'.
@@ -622,6 +622,6 @@ G1 M1(S+) ≥ 0.80 in after1·after2 각각 · G2 M1(S−) = 0 · G3 M2b = 0 **a
 | 측정(§8) | before1·before2(11-08 20:08~21:19, 업로드 전) / after1·after2(11-09 00:05~01:17, 업로드+BM25 반영), 각 98문항·gpt-6-sol·`--law-mode cache`, 오류 0, spy 기록 전건. **G1** S+ 재결례 공급 0.94·0.89(R 0.27·0.27) ✅ · **G2** S− 0 ✅ · **G3** 교정 전·후 환각 재결 0, 비재결 오판 0, 유효 재결 인용 26·29건 ✅ · **G4** 쟁점 한정 유보 S+ 0.0·0.06 → 0.0·0.0 ✅(기준선이 이미 0에 가깝다 — R은 0.06·0 → 0.10·0.04) · **G5** K 금지 0→0, allowed_source 거짓 0 ✅ · 일반화 금지 문구 0 · 벤더 동일 · spy 누락 0 | **R4 관측**: 재결례를 뺀 공공(판례·행정해석·훈령)이 S+ 42·53 → 20·16, R 72·72 → 62·60으로 줄었다 — 재결례가 공공 쿼터·승격 슬롯을 차지한다. 관문 아님, **후속 과제(재결례 전용 상한)**. 실사용 R의 재결 공급 27%는 R 질문 다수가 이직사유·금액·절차라 재결 쟁점이 아닌 것과 일치한다. 결과: `~/DEV/laborconsult_eval/rul/report.md`·`gates.json` |
 
 | 머지 전 스캔(§7-2) | PR #155 머지 전(11-08) 저장소 밖 실답변 `laborconsult_eval/**/*.json` **26,496파일**에 패턴 A·B(기관 문맥 포함) 일치 **0건**, BM25 코퍼스 비재결 문서 0건(RU19) | D13 머지 조건 충족 — Check에서 §13 누락으로 지적돼(U-1) 추가 |
-| Check(11-09) | gap-detector 150항목 → Match **95.9%**(불일치 0 · 부분 6 · 확인 불가 4 중 2 해소), 설계 공백 Medium 1(B-1 재결례 슬롯 잠식 — 킬스위치 없음)·Low 8. 분석 `docs/03-analysis/adjudication-corpus.analysis.md` | **Act-1**: CLAUDE.md 재결례 절 보강(G-1), 설계 정정(G-4 iaciac `쟁점·주문`·G-5 dry-run 집계·G-6 RU7 단언·B-2 `--allow-large-prune` 용법·B-9 348답변·RU 범위·D9 28자·2,080자), 코드 — 플래그 조합 거절(B-3)·목록 0건 exit 1(B-4)·잔존 태그 정규식 단일 출처(G-3)·`eval_corpus_mix` spy `**kwargs`(B-6)·`REQUIRED_FIELDS` 제거, RU22~RU25. 후속: B-1 상한·킬스위치, B-5 `agency` 메타 운반, B-8 이미지 152건, G-2 저장 주기, stale_rules 산재 |
+| Check(11-09) | gap-detector 150항목 → Match **95.9%**(불일치 0 · 부분 6 · 확인 불가 4 중 2 해소), 설계 공백 Medium 1(B-1 재결례 슬롯 잠식 — 킬스위치 없음)·Low 8. 분석 `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.analysis.md` | **Act-1**: CLAUDE.md 재결례 절 보강(G-1), 설계 정정(G-4 iaciac `쟁점·주문`·G-5 dry-run 집계·G-6 RU7 단언·B-2 `--allow-large-prune` 용법·B-9 348답변·RU 범위·D9 28자·2,080자), 코드 — 플래그 조합 거절(B-3)·목록 0건 exit 1(B-4)·잔존 태그 정규식 단일 출처(G-3)·`eval_corpus_mix` spy `**kwargs`(B-6)·`REQUIRED_FIELDS` 제거, RU22~RU25. 후속: B-1 상한·킬스위치, B-5 `agency` 메타 운반, B-8 이미지 152건, G-2 저장 주기, stale_rules 산재 |
 
 RU 테스트는 23개(RU7c 이미지 전용·패킹, RU21 운영 플래그·재스캔 PII, RU7b에 어휘·번호 허용 사례)에서 Act-1로 27개가 됐다. PR #155 리뷰(Codex 3·CodeRabbit 17)는 날짜형 번호 배제·번호 구간만 마스킹·가림을 메타데이터까지·기관 근접 판정·미확인 번호·별칭 해소·일련번호 대조·실패 재시도·이전 파일 제거·콜론 제목·dry-run 이동 금지·prune-missing 단독·청크 0 정리·문서 재스캔 PII로 반영했다. 원문 링크(DRF OC 빈값)는 설계 D17대로 유지했다. 변경 전 측정(before1·before2)은 11-08 20:08부터 worktree(PR-A 코드)에서 진행 중이다.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """법제처 OPEN API 재결례 수집 — 고용보험심사위원회(`eiac`)·산업재해보상보험재심사위원회(`iaciac`).
 
-설계: docs/02-design/features/adjudication-corpus.design.md §3
+설계: docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md §3
 
 목록(`lawSearch.do`)은 사건명 fuzzy 검색뿐이라 **전량**을 받는다(display 100 페이지 순회, 2026-11-08 실측
 118 + 934건). 상세(`lawService.do?ID=결정문일련번호`)를 받아 `output_재결례/{agency}/{일련번호}_{사건번호}.md`로
