@@ -167,7 +167,7 @@ unemployment-separation-grounds 측정(2026-11-07)에서 변경 후 잔존 유�
 
 ## 6. 결정이 필요한 것
 
-> **확정(2026-11-08)** — 사용자 "권고안대로 진행": D1~D7 모두 권고안으로 확정. 설계에서 더한 결정(D8~D19)은 `docs/02-design/features/adjudication-corpus.design.md` §0.
+> **확정(2026-11-08)** — 사용자 "권고안대로 진행": D1~D7 모두 권고안으로 확정. 설계에서 더한 결정(D8~D19)은 `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md` §0.
 
 | # | 결정 | 권고 | 대안 |
 |---|---|---|---|

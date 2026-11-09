@@ -8,8 +8,8 @@
 | 항목 | 내용 |
 |---|---|
 | 분석 대상 | `adjudication-corpus` (고용보험심사위원회 eiac 118 · 산재재심사위원회 iaciac 934 → `laborlaw-v2`, `source_type="ruling"`) |
-| 설계 문서 | `docs/02-design/features/adjudication-corpus.design.md` (rev2 + §13 Do 실측 기록) |
-| 참고 Plan | `docs/01-plan/features/adjudication-corpus.plan.md` |
+| 설계 문서 | `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md` (rev2 + §13 Do 실측 기록) |
+| 참고 Plan | `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.plan.md` |
 | 기준 코드 | `main` 4fa6c26 (PR #155 배선 f2fc2e8 + PR #156 데이터) |
 | 분석일 | 2026-11-09 |
 | 방법 | 설계 항목마다 코드 줄을 직접 읽어 대조했다. 저장소 밖 결과(측정 하네스, Pinecone, CI RSS)는 §13 기록으로 판정하고 "문서 기록 확인"으로 표시했다. 에이전트에는 셸이 없어 **테스트는 실행하지 않았다**. 테스트 판정은 단언 내용을 읽은 결과다. |
@@ -315,7 +315,7 @@ Match Rate는 **95.9%**로 90%를 넘는다. 불일치 0건, 부분 6건은 문�
 
 테스트는 단언 내용을 읽어 판정했고 실행하지 않았다. 실행 근거는 PR #155·#156 CI 통과 기록이다.
 
-관련 파일: `docs/02-design/features/adjudication-corpus.design.md` · `fetch_rulings.py` · `pinecone_upload_rulings.py` · `vector_ledger.py` · `app/core/citation_validator.py` · `app/core/pipeline.py` · `app/core/rag.py` · `app/templates/prompts.py` · `test_rulings_ingest.py` · `CLAUDE.md` · `eval_corpus_mix.py`
+관련 파일: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md` · `fetch_rulings.py` · `pinecone_upload_rulings.py` · `vector_ledger.py` · `app/core/citation_validator.py` · `app/core/pipeline.py` · `app/core/rag.py` · `app/templates/prompts.py` · `test_rulings_ingest.py` · `CLAUDE.md` · `eval_corpus_mix.py`
 
 ---
 
@@ -348,7 +348,7 @@ Match Rate는 **95.9%**로 90%를 넘는다. 불일치 0건, 부분 6건은 문�
 | 묶음 | 적용 | 파일 |
 |---|---|---|
 | A 문서 | G-1 CLAUDE.md 재결례 절에 배선 5지점(우선순위 3항·두 분기 접미·4번째 인자·`rag_sources`·라벨 양쪽)·운영 플래그 조합·R4 슬롯 잠식과 되돌림 수단을 적고 소제목 규칙을 §13 기준(28자·같은 번호/+2 어휘 필수·탈출 어휘 필수)으로 고쳤다 | `CLAUDE.md` |
-| A 문서 | G-4 chunk 0 `쟁점·주문`(iaciac) · G-5 dry-run 집계에서 비율·문서별 열 생략 명시 · G-6 RU7 단언을 테스트에 맞춤 · B-2 `--allow-large-prune` 두 경로 수용·그룹 범위 · G-2 저장 주기(25건·종료 시) · B-9 356→348·RU1~RU21(27 테스트)·D9 28자·2,500→2,080자 · §13에 머지 전 스캔(U-1)과 Check 행 추가 | `docs/02-design/features/adjudication-corpus.design.md` |
+| A 문서 | G-4 chunk 0 `쟁점·주문`(iaciac) · G-5 dry-run 집계에서 비율·문서별 열 생략 명시 · G-6 RU7 단언을 테스트에 맞춤 · B-2 `--allow-large-prune` 두 경로 수용·그룹 범위 · G-2 저장 주기(25건·종료 시) · B-9 356→348·RU1~RU21(27 테스트)·D9 28자·2,500→2,080자 · §13에 머지 전 스캔(U-1)과 Check 행 추가 | `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md` |
 | B 코드 | B-3 플래그 조합 거절(`--write-batch-ledger`+`--dry-run` / 단독 `--verify` / `--exclude-before`+`--prune-missing` → exit 1, 부작용 없음) · G-3 `RESIDUAL_TAG_RE`를 수집기에서 import(단일 출처) — **검사 책임은 업로더 dry-run 한 곳**으로 설계 §3.4를 고쳤다(수집기 `failed` 기록은 하지 않는다; 중단 메시지에 문서 이름을 싣는다) | `pinecone_upload_rulings.py` |
 | B 코드 | B-4 목록 0건이면 `[실패]` 출력 + exit 1(건별 failed에는 적지 않음) · 미사용 `REQUIRED_FIELDS` 제거 | `fetch_rulings.py` |
 | B 코드 | B-6 spy가 `**kwargs`(`stale_out=`)를 투과 | `eval_corpus_mix.py` |

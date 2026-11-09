@@ -53,14 +53,14 @@
 
 ### 2.1 Plan
 
-- 문서: `docs/01-plan/features/adjudication-corpus.plan.md`
+- 문서: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.plan.md`
 - 목표: 실업급여 심사 쟁점(피보험자격·부정수급·수급자격)과 산재 심사 쟁점(요양 불승인·장해등급)에 판단 사례를 공급한다.
 - 실측 근거: 실사용 질문 170건 중 실업급여 45건(26%), 공공 대 상담 비율 0.12. 법제처 API는 검색이 사건명 fuzzy라 전량 수집 후 분류하기로 했다.
 - 범위 밖: 노동위원회 판정문(`nlrc` 44,430건), 행정심판 재결(`decc`), 법령해석례(`expc`).
 
 ### 2.2 Design
 
-- 문서: `docs/02-design/features/adjudication-corpus.design.md` (rev2, §13에 Do 실측 기록)
+- 문서: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md` (rev2, §13에 Do 실측 기록)
 - 설계 결정 D8~D21을 Plan 결정 D1~D7에 더했다. 주요 항목은 다음과 같다.
   - **D9 소제목 규칙**: 소제목을 세 조건(번호 형식, 짧은 제목 또는 어휘 일치, 번호 순서)으로 인식하고, 관계법령 절과 소절은 임베딩에서 뺀다.
   - **D12 인용 패턴**: 고시·공고 번호와 형태가 같은 `YYYY-N호`는 기관 문맥(재심사위원회)이 있을 때만 재결 번호로 본다.
@@ -79,7 +79,7 @@
 
 - gap-detector 150항목 대조로 Match 95.9%(일치 140, 부분 6, 확인 불가 4, 불일치 0)를 얻었다.
 - 설계 공백은 Medium 1건(B-1, 재결례 슬롯 잠식과 킬스위치 부재), Low 8건이었다.
-- 문서 보고서는 `docs/03-analysis/adjudication-corpus.analysis.md`다.
+- 문서 보고서는 `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.analysis.md`다.
 
 ### 2.5 Act-1
 
@@ -198,9 +198,9 @@ G4(쟁점 한정 유보)는 before가 이미 0.0·0.06이라 판별력이 없다
 
 ## 7. 참조 문서
 
-- Plan: `docs/01-plan/features/adjudication-corpus.plan.md`
-- Design: `docs/02-design/features/adjudication-corpus.design.md`
-- Analysis: `docs/03-analysis/adjudication-corpus.analysis.md`
+- Plan: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.plan.md`
+- Design: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.design.md`
+- Analysis: `docs/archive/2026-11/adjudication-corpus/adjudication-corpus.analysis.md`
 - 수집·적재 스크립트: `fetch_rulings.py`, `pinecone_upload_rulings.py`, `vector_ledger.py`
 - 테스트: `test_rulings_ingest.py` (28/28)
 - 커밋 원장: `data/vector_ledgers/rulings_202611.json`
