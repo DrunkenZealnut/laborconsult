@@ -65,8 +65,9 @@ def _measure_production(query: str, config):
     captured: list[list[dict]] = []
     orig = _rag.format_pinecone_hits
 
-    def spy(hits, top_n=None, max_chars=None):
-        text, meta = orig(hits, top_n, max_chars)
+    def spy(hits, top_n=None, max_chars=None, **kwargs):
+        # 파이프라인은 stale_out= 같은 키워드 인자를 더 넘긴다 — 투과시키지 않으면 --production 경로가 TypeError로 죽는다
+        text, meta = orig(hits, top_n, max_chars, **kwargs)
         captured.append(meta)
         return text, meta
 

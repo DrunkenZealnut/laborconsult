@@ -57,7 +57,6 @@ MAX_RETRIES = 3
 TIMEOUT = 20
 PAGE_SIZE = 100
 
-REQUIRED_FIELDS = ("사건번호", "이유")   # 의결일자는 재결 번호 연도로 폴백한다(normalize_record)
 
 # 기관별 필드 차이(설계 §1.1 실측). iaciac 상세에는 `기관명`이 없어 상수를 쓴다.
 AGENCIES: dict[str, dict] = {
@@ -218,8 +217,14 @@ def _text(el: ET.Element | None) -> str:
     return "".join(el.itertext()).strip() if el is not None else ""
 
 
+class ListFetchError(RuntimeError):
+    """목록 페이지 조회가 재시도 뒤에도 실패했다 — 부분 목록으로 '수집 완료'처럼 끝나지 않게 main이 exit 1로 올린다(PR #157 CodeRabbit)."""
+
+
 def fetch_list(agency: str, api_key: str) -> tuple[list[dict], int]:
-    """목록 전량 → ([{serial, case_no, title_raw, decided_at_raw}], totalCnt). 일련번호로 중복 제거."""
+    """목록 전량 → ([{serial, case_no, title_raw, decided_at_raw}], totalCnt). 일련번호로 중복 제거.
+    어느 페이지든 조회 실패면 ListFetchError — 첫 페이지 실패는 totalCnt 0, 뒤 페이지 실패는 '건수 불일치' 경고만
+    남기고 exit 0으로 끝났다(종료 코드로 완료를 판단하는 자동화가 성공으로 읽는다)."""
     items: dict[str, dict] = {}
     total = 0
     page = 1
@@ -229,7 +234,7 @@ def fetch_list(agency: str, api_key: str) -> tuple[list[dict], int]:
             "display": str(PAGE_SIZE), "page": str(page),
         })
         if root is None:
-            break
+            raise ListFetchError(f"{agency} 목록 page={page} ({_last_error})")
         total = int(root.findtext("totalCnt") or total or 0)
         spec = AGENCIES[agency]
         got = 0
@@ -440,6 +445,7 @@ def main(argv: list[str] | None = None) -> int:
     agencies = list(AGENCIES) if args.agency == "all" else [args.agency]
     progress = _empty_progress() if args.force else load_progress()
     summary: dict[str, dict] = {}
+    list_failed: list[str] = []
     try:
         for agency in agencies:
             spec = AGENCIES[agency]
@@ -447,7 +453,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.serial:
                 items, total = [{"serial": s} for s in args.serial], len(args.serial)
             else:
-                items, total = fetch_list(agency, api_key)
+                try:
+                    items, total = fetch_list(agency, api_key)
+                except ListFetchError as e:
+                    print(f"  [실패] 목록 조회 실패 — {e}(수집 완료가 아니다)")
+                    list_failed.append(agency)
+                    summary[agency] = {"error": "list_fetch", "detail": str(e)}
+                    continue
             years: dict[str, int] = {}
             for it in items:
                 y = (it.get("decided_at_raw") or "")[:4]
@@ -455,6 +467,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  totalCnt={total} 수집 목록={len(items)}"
                   + (f"  ⚠️ 건수 불일치" if total and len(items) != total else "")
                   + f"  연도={dict(sorted(years.items()))}")
+            if not items:
+                # 첫 페이지 조회 실패·응답 형식 변경이면 totalCnt도 0이라 '건수 불일치' 경고가 뜨지 않는다 —
+                # 0건 요약 뒤 exit 0은 수집 완료로 읽힌다(Check B-4). 재개 실행이라 피해는 없지만 종료 코드로 알린다.
+                print(f"  [실패] 목록 0건 — 조회 실패 또는 응답 형식 변경(수집 완료가 아니다)")
+                list_failed.append(agency)
+                summary[agency] = {"total": total, "listed": 0, "error": "empty_list"}
+                continue
             if args.list_only:
                 summary[agency] = {"total": total, "listed": len(items)}
                 continue
@@ -517,6 +536,9 @@ def main(argv: list[str] | None = None) -> int:
     print("\n요약:", json.dumps(summary, ensure_ascii=False))
     if not args.list_only:
         print(f"진행 기록: {PROGRESS_FILE}\nPII 보고: {PII_REPORT_FILE} (업로드 전 reviewed 표시 필요)")
+    if list_failed:
+        print(f"[실패] 목록 조회 실패·0건 기관: {list_failed}")
+        return 1
     return 0
 
 

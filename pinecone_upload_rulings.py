@@ -94,9 +94,8 @@ _FALLBACK_SIGNAL_RE = re.compile(r"결\s*론|판\s*단")
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\[이미지 생략[^\]]*\]")
 IMAGE_ONLY_LIMIT = 300
 # 잔존 태그 판정은 **알려진 HTML 태그 이름**만 — 본문의 `HORIZON<ALL>`(의료기기 규격)처럼 꺾쇠가 든 내용은 태그가 아니다
-RESIDUAL_TAG_RE = re.compile(
-    r"</?(?:img|span|div|p|br|table|tbody|thead|tr|td|th|font|b|i|u|strong|em|a|sup|sub|ul|ol|li|h[1-6])\b[^>]*>",
-    re.I)
+# 잔존 태그 정규식은 수집기와 단일 출처다(Check G-3) — 복제해 두면 한쪽만 고쳐져 dry-run 중단 조건이 어긋난다.
+from fetch_rulings import RESIDUAL_TAG_RE   # noqa: E402,F401
 
 
 def _compact(text: str) -> str:
@@ -448,6 +447,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args(argv)
 
+    # 조용히 무시되던 조합을 막는다(Check B-3). 각 분기는 자기 플래그만 보고 return 0으로 끝나므로
+    # 함께 준 다른 플래그는 아무 일도 하지 않은 채 성공처럼 보였다.
+    conflicts = []
+    if args.write_batch_ledger and args.dry_run:
+        conflicts.append("--write-batch-ledger는 --dry-run과 함께 쓰지 않습니다(원장 파일을 씁니다).")
+    if args.verify and not args.write_batch_ledger:
+        conflicts.append("--verify는 --write-batch-ledger와 함께 써야 합니다(단독으로는 아무 일도 하지 않습니다).")
+    if args.exclude_before and args.prune_missing:
+        conflicts.append("--exclude-before와 --prune-missing은 따로 실행합니다(이동을 확인한 뒤 prune).")
+    if args.write_batch_ledger and (args.exclude_before or args.prune_missing):
+        conflicts.append("--write-batch-ledger는 --exclude-before·--prune-missing과 따로 실행합니다"
+                         "(이동·삭제 분기가 먼저 끝나 원장을 쓰지 않은 채 성공으로 보였다 — PR #157 CodeRabbit).")
+    if args.write_batch_ledger and (args.agency or args.limit):
+        conflicts.append("--write-batch-ledger는 로컬 원장 전체를 옮기므로 --agency·--limit을 받지 않습니다.")
+    if conflicts:
+        for c in conflicts:
+            print("[오류]", c)
+        return 1
+
     if args.exclude_before:
         if not args.agency:
             print("[오류] --exclude-before에는 --agency가 필요합니다.")
@@ -529,7 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         if st["image_only"]:
             agg["image_only"] += 1
         if st["residual_tags"]:
-            agg["residual_docs"].append(os.path.basename(path))
+            agg["residual_docs"].append(f"{doc['agency']}/{os.path.basename(path)}")   # 재수집 안내에 기관이 필요하다
         if doc["decided_year"] is None:
             agg["date_fail"] += 1
         ready.append((doc, chunks))
@@ -555,7 +573,10 @@ def main(argv: list[str] | None = None) -> int:
         stop.append(f"PII 미검토 {unreviewed}건(보고 미확인 {pii_unreviewed()} + 문서 재스캔 적중 {agg['pii_hits']}: "
                     f"{agg['pii_docs'][:3]}) — _pii_report.json에 reviewed를 표시하거나 _pii_redactions.json으로 가리세요")
     if agg["residual_docs"]:
-        stop.append(f"잔존 HTML 태그 {len(agg['residual_docs'])}건")
+        # 수집기는 잔존 태그를 기록하지 않는다(설계 §3.4 정합) — 여기가 유일한 검사점이라 문서를 이름으로 보여야 한다
+        stop.append(f"잔존 HTML 태그 {len(agg['residual_docs'])}건 (예: {agg['residual_docs'][:5]}) — "
+                    f"`fetch_rulings.py --agency <기관> --serial <일련번호>`로 재수집(--serial은 --agency 필수)하거나 "
+                    f"정제 규칙(fetch_rulings.clean_ruling_text)을 점검")
     if n_docs and len(agg["fallback_docs"]) > n_docs * FALLBACK_LIMIT:
         stop.append(f"소제목 폴백 {len(agg['fallback_docs'])}건이 {FALLBACK_LIMIT:.0%}를 넘음 — 소제목 규칙 점검")
     if stop:

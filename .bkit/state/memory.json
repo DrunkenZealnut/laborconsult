@@ -646,7 +646,7 @@
     "followups": "D-d 게시판 API 실패 행 회귀 · R-1 /api/health 사전 호출 · R-2 운영 절차 · R-3 사용자 결정 · L-2/L-3/L-9/L-10/L-6 · 저장 지연 상한(postgrest 타임아웃) · 관리자 목록 표지 · 카나리 U4(결제 승인 필요)"
   },
   "adjudication-corpus": {
-    "phase": "do",
+    "phase": "check",
     "startedAt": "2026-11-08T00:00:00Z",
     "plannedAt": "2026-11-08",
     "planPath": "docs/01-plan/features/adjudication-corpus.plan.md",
@@ -709,6 +709,11 @@
       "opened": "2026-11-08",
       "status": "머지 f2fc2e8(2026-11-08) — 배포 확인 대기",
       "mergeCommit": "f2fc2e8"
-    }
+    },
+    "matchRate": 95.9,
+    "checkedAt": "2026-11-09",
+    "actIterations": 1,
+    "actMatchRate": 100.0,
+    "act1": "2026-11-09 A 문서(CLAUDE.md 재결례 절·설계 G-2/G-4/G-5/G-6/B-2/B-9/§13) + B 코드(플래그 조합 거절·목록 0건 exit 1·RESIDUAL 단일 출처·spy kwargs·REQUIRED_FIELDS 제거) + RU22~RU25 → 27/27, 자체 재집계 148/148. 후속 B-1·B-5·B-7·B-8. 미커밋"
   }
 }
