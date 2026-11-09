@@ -370,4 +370,6 @@ Match Rate는 **95.9%**로 90%를 넘는다. 불일치 0건, 부분 6건은 문�
 | CR-2 | 목록 2페이지 이후 조회 실패가 부분 목록 + exit 0 | 타당. `fetch_list`가 `root is None → break`라 '건수 불일치' 경고만 남았다 | `ListFetchError` — 어느 페이지든 실패면 raise, main이 `[실패]`로 받아 exit 1(건별 `failed`에는 적지 않음). RU23b |
 | CR-3 | `--write-batch-ledger`+`--exclude-before`/`--prune-missing`이 원장을 쓰지 않고 성공 | 타당. 이동·삭제 분기가 먼저 `return 0` | 거절 목록에 추가 + `--agency`·`--limit`도 거절(원장은 로컬 전체를 옮기므로 무시되던 플래그). RU22 보강 |
 
+| CR-4 | 잔존 태그 중단 안내의 `--serial` 재수집은 `--agency` 없이는 수집기가 exit 1 | 타당(`fetch_rulings.main`: `--serial`은 `--agency` 필수) | `residual_docs`에 `기관/파일명`을 담고 안내를 `--agency <기관> --serial <일련번호>`로. RU24에 문구·동작 고정 |
+
 테스트 **28/28**. CLAUDE.md 운영 플래그 문장도 같은 내용으로 갱신.

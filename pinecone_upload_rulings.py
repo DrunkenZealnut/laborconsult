@@ -547,7 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         if st["image_only"]:
             agg["image_only"] += 1
         if st["residual_tags"]:
-            agg["residual_docs"].append(os.path.basename(path))
+            agg["residual_docs"].append(f"{doc['agency']}/{os.path.basename(path)}")   # 재수집 안내에 기관이 필요하다
         if doc["decided_year"] is None:
             agg["date_fail"] += 1
         ready.append((doc, chunks))
@@ -575,7 +575,8 @@ def main(argv: list[str] | None = None) -> int:
     if agg["residual_docs"]:
         # 수집기는 잔존 태그를 기록하지 않는다(설계 §3.4 정합) — 여기가 유일한 검사점이라 문서를 이름으로 보여야 한다
         stop.append(f"잔존 HTML 태그 {len(agg['residual_docs'])}건 (예: {agg['residual_docs'][:5]}) — "
-                    f"fetch_rulings.py --serial로 재수집하거나 정제 규칙(fetch_rulings.clean_ruling_text)을 점검")
+                    f"`fetch_rulings.py --agency <기관> --serial <일련번호>`로 재수집(--serial은 --agency 필수)하거나 "
+                    f"정제 규칙(fetch_rulings.clean_ruling_text)을 점검")
     if n_docs and len(agg["fallback_docs"]) > n_docs * FALLBACK_LIMIT:
         stop.append(f"소제목 폴백 {len(agg['fallback_docs'])}건이 {FALLBACK_LIMIT:.0%}를 넘음 — 소제목 규칙 점검")
     if stop:

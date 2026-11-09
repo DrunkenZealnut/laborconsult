@@ -813,6 +813,10 @@ class OperationsTest(unittest.TestCase):
         import pinecone_upload_rulings as up
         self.assertIs(up.RESIDUAL_TAG_RE, fr.RESIDUAL_TAG_RE)
         self.assertFalse(hasattr(fr, "REQUIRED_FIELDS"))   # 쓰이지 않는 상수는 두지 않는다
+        # 잔존 태그 중단 안내는 수집기가 실제로 받는 형태여야 한다 — --serial은 --agency 없이는 exit 1(PR #157 CodeRabbit)
+        src = open(os.path.join(ROOT, "pinecone_upload_rulings.py"), encoding="utf-8").read()
+        self.assertRegex(src, r"잔존 HTML 태그.*\n.*--agency <기관> --serial")
+        self.assertEqual(fr.main(["--serial", "1"]), 1)
 
     def test_ru25_eval_corpus_mix_spy_passes_keyword_args(self):
         """Check B-6: 파이프라인이 넘기는 stale_out= 등 키워드 인자를 spy가 투과한다(AST — 실행은 LLM 비용)."""
