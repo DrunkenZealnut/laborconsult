@@ -104,9 +104,16 @@ def _query_namespaces(
 # 어떤 배분을 넣어도 공공이 2→3건에서 멈췄다(없는 것은 넣을 수 없다).
 #
 # 여기서 부족분을 채우면 공공 2→15건·법률 근거 도달 2/12→11/12가 된다.
-# `ruling`(재결례 — 고용보험심사위원회·산재재심사위원회, adjudication-corpus D1)도 공공 저작물이라
-# 쿼터·법률근거 승격·I-9 보호의 대상이다. 집합은 이 한 곳에만 있다(아래 LEGAL_PROMOTE_SOURCES 주석).
-POOL_PUBLIC_SOURCES = frozenset({"precedent", "interpretation", "regulation", "ruling"})
+#
+# **재결례(`ruling`)는 이 집합에 없다**(ruling-quota-cap D2·D8). 공공저작물이지만 쿼터를
+# 채우지도, '법률근거 있음'을 만들지도 않는다 — 적재 뒤 측정에서 재결례가 쿼터를 충족해
+# 판례·행정해석 조회·주입이 멈추고(실사용 R: 재결례 포함 14문항 중 12문항 공공 0건)
+# '법률근거 있음'이라 판례 승격이 꺼졌다(adjudication-corpus R4). 집합은 셋이고 **리터럴은
+# 둘뿐**이다 — 합집합은 식으로만 쓴다(두 벌로 두면 소스 추가 때 한쪽만 갱신돼 총량 불변인
+# 채 어긋난다, 외부 리뷰 A-10. test_rulings_ingest RU26이 AST로 고정).
+POOL_PUBLIC_SOURCES = frozenset({"precedent", "interpretation", "regulation"})  # 쿼터·법률근거 승격·'법률근거 있음'
+RULING_SOURCES = frozenset({"ruling"})                     # 재결례 — 자기 다양성 클래스(I-9), 총량 상한 대상
+PUBLIC_DOMAIN_SOURCES = POOL_PUBLIC_SOURCES | RULING_SOURCES   # 저작권 분류(비보호 공공저작물) — 평가 스크립트용
 
 # search_top_k → pool에 확보할 공공저작물 목표 건수 (등록값은 pool의 20~25%).
 #
@@ -126,11 +133,21 @@ POOL_PUBLIC_QUOTA_CAP = 6
 # 실용성을 지킨다. 목적이 법률 근거 확보이지 상담 제거가 아니다.
 MIN_COUNSEL_IN_POOL = 2
 
+# 재결례 비율 상한의 분모 — 최종 top_n에 남길 재결례 `max(1, top_n // 2)`(3→1, 5→2, 7→3, wider 10→5),
+# pool에 남길 재결례 하한 `max(1, top_k // 2)`(8→4, 15→7, 20→10). 같은 비율이라 상한이 pool 하한을
+# 넘어서는 일이 없다. 0이 되지 않는다 — 재결례 공급률(adjudication-corpus G1)을 깎지 않는다.
+RULING_CAP_DIVISOR = 2
+
 
 def _pool_public_quota(top_k: int) -> int:
     if top_k in POOL_PUBLIC_QUOTA:
         return POOL_PUBLIC_QUOTA[top_k]
     return min(max(2, top_k // 4), POOL_PUBLIC_QUOTA_CAP)
+
+
+def _pool_ruling_floor(top_k: int) -> int:
+    """1단 쿼터가 재결례를 victim 삼을 때 pool에 남길 최소 건수(ruling-quota-cap D22)."""
+    return max(1, top_k // RULING_CAP_DIVISOR)
 
 
 def _pool_quota_enabled() -> bool:
@@ -151,8 +168,50 @@ def _pool_quota_enabled() -> bool:
     return os.getenv("LEGAL_POOL_QUOTA", "on").strip().lower() != "off"
 
 
+def _ruling_retrieval_enabled() -> bool:
+    """재결례 킬스위치 — RULING_RETRIEVAL=off면 검색 결과(Dense·BM25)에서 재결례를 뺀다.
+
+    재배포-반영 의미론(LEGAL_POOL_QUOTA·TEXTBOOK_PROMOTE와 같다). 데이터는 그대로다 —
+    되돌림이 원장 rollback + BM25 재빌드(3.5시간)뿐이던 것을 코드 스위치로 바꾼 것이다
+    (ruling-quota-cap D1). 끄지 못하는 것: BM25 코퍼스 메모리(gz에 재결례 11,415문서가
+    남는다). 알 수 없는 값은 on.
+    """
+    return os.getenv("RULING_RETRIEVAL", "on").strip().lower() != "off"
+
+
+def _ruling_cap_enabled() -> bool:
+    """재결례 총량 상한(_cap_rulings_in_top_n)만 끈다 — RULING_CAP=off. 재결례 자체는 유지.
+
+    ⚠️ 재결례 포화 pool(산재 질의)에서는 상한이 1단 주입 공공을 top_n으로 끌어오는 경로라,
+    끄면 공공 0건이 재발할 수 있다(설계 §1.3 B3). 재결례 전체를 끄는 RULING_RETRIEVAL과 다르다.
+    """
+    return os.getenv("RULING_CAP", "on").strip().lower() != "off"
+
+
 def _is_public_source(hit: dict) -> bool:
+    """쿼터·법률근거 집합(판례·행정해석·훈령) — 재결례는 **아니다**. 공공저작물 판정은 is_public_domain."""
     return hit.get("source_type") in POOL_PUBLIC_SOURCES
+
+
+def _is_ruling_source(hit: dict) -> bool:
+    return hit.get("source_type") in RULING_SOURCES
+
+
+def is_public_domain(hit_or_meta: dict) -> bool:
+    """비보호 공공저작물(판례·행정해석·훈령·재결례)인가 — 저작권 분류용 술어. 런타임 쿼터·승격은
+    `_is_public_source`(쿼터 집합)를 쓰고, `eval_corpus_mix.classify`는 집합 상수를 직접 읽는다(D20) — 현재 소비자는 테스트(RU10)뿐."""
+    return hit_or_meta.get("source_type") in PUBLIC_DOMAIN_SOURCES
+
+
+def _exclude_rulings_if_disabled(hits: list[dict]) -> list[dict]:
+    """RULING_RETRIEVAL=off일 때 재결례를 제거한다. search_hybrid가 Dense·BM25 결과에 RRF **전**에 건다 —
+    병합 뒤에 걸면 pool이 그만큼 빈다. 켜져 있으면 입력 그대로."""
+    if _ruling_retrieval_enabled():
+        return hits
+    kept = [h for h in hits if not _is_ruling_source(h)]
+    if len(kept) != len(hits):
+        logger.info("RULING_RETRIEVAL=off: 재결례 %d건 제외", len(hits) - len(kept))
+    return kept
 
 
 def _fetch_public_hits(query: str, config: "AppConfig", want: int) -> list[dict]:
@@ -186,8 +245,12 @@ def _apply_public_quota(hits: list[dict], public_hits: list[dict],
     지켜야 할 것 넷(전부 회귀 T26이 고정):
       · **교체이지 증량이 아니다** — pool 크기가 불변이라 Cohere rerank 입력
         건수가 그대로다. 과금·지연 불변이 이 설계의 성립 전제다.
-      · **victim은 상담(qa/counsel)만** — 해설서를 밀어내면 저작권 노출은
-        줄지만 eval_retrieval의 도달률 75%가 회귀한다(T1-b: 해설서 불변).
+      · **victim은 상담(qa/counsel) → pool 상한 초과 재결례** 순이고 해설서는 절대
+        아니다 — 해설서를 밀어내면 저작권 노출은 줄지만 eval_retrieval의 도달률
+        75%가 회귀한다(T1-b: 해설서 불변). 재결례 victim은 ruling-quota-cap D22 —
+        산재 질의는 pool 15건 중 14~15건이 재결례라 상담 victim만으로는 공공 조회가
+        후보를 돌려줘도 **주입 0건**이었다(설계 §1.3 probe). 하한 `_pool_ruling_floor`
+        (top_k//2) 아래로는 줄이지 않는다(RU34).
       · **상담을 전멸시키지 않는다**(MIN_COUNSEL_IN_POOL).
       · **후보가 없으면 그대로 둔다** — 강제 공백을 만들지 않는다.
     """
@@ -199,15 +262,21 @@ def _apply_public_quota(hits: list[dict], public_hits: list[dict],
     merged = list(hits)
     seen = {h["id"] for h in merged}
     added = 0
+    ruling_victims = 0
     for cand in public_hits:
         if have + added >= quota:
             break
         if cand["id"] in seen:
             continue
-        victims = [i for i, h in enumerate(merged) if is_counsel_source(h)]
-        if len(victims) <= MIN_COUNSEL_IN_POOL:
-            break
-        merged.pop(victims[-1])       # 점수 최하위 상담부터
+        counsel = [i for i, h in enumerate(merged) if is_counsel_source(h)]
+        if len(counsel) > MIN_COUNSEL_IN_POOL:
+            merged.pop(counsel[-1])       # 점수 최하위 상담부터
+        else:
+            rulings = [i for i, h in enumerate(merged) if _is_ruling_source(h)]
+            if len(rulings) <= _pool_ruling_floor(top_k):
+                break                     # 상담도 재결례도 하한 — 강제 공백 없음
+            merged.pop(rulings[-1])       # 점수 최하위 재결례부터(D22)
+            ruling_victims += 1
         # 주입 표식 — rerank가 이 후보를 top_n 밖으로 밀어냈을 때 2단 보장
         # (_ensure_public_quota)이 되돌릴 대상을 식별하는 근거다. 실측상
         # 1단만으로는 최종 컨텍스트에 반영되지 않았다(pool 3건 → 최종 0건).
@@ -216,8 +285,8 @@ def _apply_public_quota(hits: list[dict], public_hits: list[dict],
         added += 1
 
     if added:
-        logger.info("공공저작물 pool 쿼터: %d건 주입 (기존 %d → %d/%d)",
-                    added, have, have + added, quota)
+        logger.info("공공저작물 pool 쿼터: %d건 주입 (기존 %d → %d/%d, 재결례 victim %d건)",
+                    added, have, have + added, quota, ruling_victims)
     return merged
 
 
@@ -371,8 +440,9 @@ def search_hybrid(
     Returns:
         RRF 결합된 검색 결과 (또는 Dense-only 폴백)
     """
-    # Dense 검색
-    dense_hits = search_pinecone_multi(queries, config, top_k=top_k, source_type=source_type)
+    # Dense 검색 — 재결례 킬스위치(RULING_RETRIEVAL=off)는 여기와 BM25 쿼리별 결과에, RRF 병합 **전**에 건다.
+    dense_hits = _exclude_rulings_if_disabled(
+        search_pinecone_multi(queries, config, top_k=top_k, source_type=source_type))
 
     # BM25 검색 시도
     try:
@@ -383,7 +453,7 @@ def search_hybrid(
 
         load_bm25_corpus()
         # 쿼리별 검색 후 순위 병합 — 단일 문자열 결합의 분해 이점 상실 방지 (DB-8)
-        per_query = [search_bm25(q, top_k=top_k) for q in queries[:3]]
+        per_query = [_exclude_rulings_if_disabled(search_bm25(q, top_k=top_k)) for q in queries[:3]]
         bm25_hits = rrf_merge_ranked_lists(per_query, top_k=top_k)
 
         if bm25_hits:
@@ -471,6 +541,10 @@ def _diversity_class_of(hit: dict):
         return _book_id_of
     if _is_legal_source(hit):
         return _is_legal_source
+    if _is_ruling_source(hit):
+        # 재결례는 자기 클래스다(ruling-quota-cap D3) — 법률근거 클래스에 넣으면 "재결례 1 + 판례 1"이
+        # 같은 클래스 2건으로 세어져 어느 쪽도 I-9 보호를 받지 못했다.
+        return _is_ruling_source
     return None
 
 
@@ -485,7 +559,7 @@ def _pick_swap_victim(selected: list[dict]) -> int | None:
     비승격 원본이 2건 미만이면 None(I-8) — 교체를 허용하면 승격 연쇄가 원본을
     전멸시켜 100% 승격 컨텍스트가 된다.
 
-    다양성 클래스(해설서·법률근거)의 **마지막 1건**은 I-4 폴백에서도 victim이
+    다양성 클래스(해설서·법률근거·재결례)의 **마지막 1건**은 I-4 폴백에서도 victim이
     되지 않는다(I-9) — 해설서 승격이 유일한 판례를 지우면 법률근거 승격의
     발동 조건이 새로 생겨, rerank 상위 판례가 랭크 창의 하위 판례로 되메워지는
     강등 순환이 생긴다(분석 P1-3). 자연 유입 해설서를 legal 승격이 지우는
@@ -573,7 +647,9 @@ def _ensure_public_quota(selected: list[dict], ranked: list[dict],
         한정된다 — 공공 전용 조회에서 상위로 뽑힌 문서라 품질 근거가 이미 있다.
         표식 없는 자연 유입 공공은 대상이 아니다(그건 rerank 판단을 존중한다).
 
-    victim 규칙은 상담 한정 + 하한 유지로 `_apply_public_quota`와 같다.
+    victim은 상담 한정 + 하한 유지다. 1단(`_apply_public_quota`)과 달리 재결례는 victim이
+    아니다 — 재결례 위주 top_n(비승격 상담 < 3)에서 주입 공공을 끌어오는 것은 재결례 총량
+    상한(`_cap_rulings_in_top_n`, 후보 ①)의 몫이다(ruling-quota-cap D11·D22).
     """
     quota = _pool_public_quota_for_top_n(top_n)
     have = sum(1 for h in selected if _is_public_source(h))
@@ -631,6 +707,59 @@ def _ensure_textbook_presence(ranked: list[dict], top_n: int) -> list[dict]:
     )
 
 
+def _ruling_cap(top_n: int) -> int:
+    """최종 top_n에 남길 재결례 최대 건수 — 3→1, 5→2, 7→3, wider 10→5. 0이 되지 않는다(G1 공급률)."""
+    return max(1, top_n // RULING_CAP_DIVISOR)
+
+
+def _cap_rulings_in_top_n(selected: list[dict], ranked: list[dict], top_n: int) -> list[dict]:
+    """top_n의 재결례가 상한을 넘으면 초과분(rerank 하위부터)을 비재결 후보와 **교체**한다(ruling-quota-cap D4·D12).
+
+    차감이 아니다 — 총 건수 불변(I-1). 적재 뒤 측정에서 재결례가 심사 쟁점 질문 컨텍스트의 59~64%를
+    차지했다(R4). 후보 순서: ① 전체 ranked의 quota_injected 공공(순위순 — 공공 전용 조회의 상위라
+    품질 근거가 있다, 2단과 같은 이유) → ② **top_n 밖 전체 ranked의 자연 유입 공공**(순위순) →
+    ③ 창(top_n ~ FACTOR×top_n)의 상담. **해설서는 후보가 아니다**(노출 증가는 저작권 재검토 대상).
+    후보가 없으면 남은 재결례를 그대로 둔다(강제 공백 없음). 교체분은 promoted="ruling-cap"(I-7
+    적용·계측 마커), 유지되는 재결례는 rerank 상위 cap건.
+
+    ①이 필요한 이유: 2단은 비승격 상담 ≥ 3건에서만 돌고 재결례·승격분을 victim 삼지 않아, 재결례
+    위주 top_n에서는 1단이 주입한 공공이 들어갈 길이 없었다(설계 §1.3 — 공공 0건 S+ 문항이 상한
+    없이 3~5건, 이 함수로 0건).
+    ②가 창에 묶이지 않는 이유(ruling-quota-cap Act-2 A): 분해 쿼리 pool에 자연 공공이 쿼터 이상이면
+    1단이 조회를 건너뛰는데, 그 공공을 rerank가 창 밖으로 묻으면 상한이 바꿔 넣을 후보가 없었다
+    (실측 cap1·cap2 `r-ia-grade-finger` wider 10슬롯에 재결례 9·교체 1). pool 단계 RRF top_k를 통과한
+    공공이라 2단이 주입분을 창 없이 받는 것과 같은 근거다. 상담(③)은 창 안으로 둔다 — 낮은 순위
+    상담을 끌어올릴 이유가 없다.
+    """
+    if not _ruling_cap_enabled():
+        return selected
+    cap = _ruling_cap(top_n)
+    ruling_idx = [i for i, h in enumerate(selected) if _is_ruling_source(h)]
+    if len(ruling_idx) <= cap:
+        return selected
+    chosen = {h["id"] for h in selected}
+    injected = [h for h in ranked
+                if h.get("quota_injected") and not _is_ruling_source(h) and h["id"] not in chosen]
+    natural_public = [h for h in ranked[top_n:]
+                      if h["id"] not in chosen and _is_public_source(h) and not h.get("quota_injected")]
+    window = ranked[top_n: top_n * TEXTBOOK_PROMOTE_WINDOW_FACTOR]
+    counsel = [h for h in window if h["id"] not in chosen and is_counsel_source(h)]
+    candidates = injected + natural_public + counsel      # 각 부류 안은 rerank 순
+    result = list(selected)
+    swapped = 0
+    for i in reversed(ruling_idx[cap:]):          # 하위 재결례부터, 인덱스 보존을 위해 역순
+        if not candidates:
+            break
+        cand = candidates.pop(0)
+        result.pop(i)
+        result.append(dict(cand, promoted="ruling-cap"))
+        swapped += 1
+    if swapped:
+        logger.info("재결례 총량 상한: %d건 교체 (%d → %d/%d, top_n=%d)",
+                    swapped, len(ruling_idx), len(ruling_idx) - swapped, cap, top_n)
+    return result
+
+
 def rerank_results(
     query: str,
     hits: list[dict],
@@ -663,6 +792,10 @@ def rerank_results(
         # 앞 승격이 뒤 발동 조건을 바꾸지 않는다. 뒤 승격이 앞 승격분을 victim
         # 삼는 것은 _pick_swap_victim의 I-7이 막는다.
         selected = ranked[:top_n]
+        # 재결례 총량 상한 — 2단보다 **먼저**(ruling-quota-cap D11). 상한이 넣은 공공을 2단이 `have`로
+        # 세어야 중복 주입이 없다. 상한은 빈자리를 남기지 않고 즉시 교체하며 그 교체분은 promoted라
+        # 2단의 victim이 아니다. ensure_textbook=False(A/B 기준선)에서도 적용 — 쿼터와 같은 구조 가드.
+        selected = _cap_rulings_in_top_n(selected, ranked, top_n)
         # T1 2단 — 해설서 승격보다 **먼저**. 뒤에 두면 해설서 승격분을 victim
         # 후보에서 제외해야 하는 순서 의존이 생긴다. 여기서는 대상이 상담뿐이라
         # 뒤따르는 승격들의 발동 조건(해설서 0건 / 법률 0건)을 바꾸지 않는다
