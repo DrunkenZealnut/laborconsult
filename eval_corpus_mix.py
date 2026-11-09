@@ -35,11 +35,19 @@ EVAL_FILE = os.path.join(BASE_DIR, "data", "eval_corpus_mix.json")
 
 
 def classify(meta: dict) -> str:
-    from app.core.rag import POOL_PUBLIC_SOURCES, is_counsel_source
+    """공공(판례·행정해석·훈령) / 재결례 / 해설서 / 상담 / 기타.
+
+    재결례는 **따로** 센다(ruling-quota-cap D20) — 공공에 섞으면 재결례 증가가 판례·행정해석
+    감소를 가린다(adjudication-corpus M11 "재결례 섞인 공공 상승은 지표가 아니다"). 기준선
+    (2026-08-23)은 재결례가 없던 때라 '공공'의 정의가 그대로 맞는다. 집합은 rag의 단일 출처.
+    """
+    from app.core.rag import POOL_PUBLIC_SOURCES, RULING_SOURCES, is_counsel_source
 
     st = meta.get("source_type")
     if st == "textbook":
         return "textbook"
+    if st in RULING_SOURCES:
+        return "ruling"
     if st in POOL_PUBLIC_SOURCES:
         return "public"
     if is_counsel_source(meta):
@@ -105,7 +113,7 @@ def main() -> None:
         sys.exit("[오류] Pinecone 초기화 실패 — 측정 불가")
     cohere_key = os.getenv("COHERE_API_KEY", "")
 
-    totals = {"public": 0, "textbook": 0, "counsel": 0, "other": 0}
+    totals = {"public": 0, "ruling": 0, "textbook": 0, "counsel": 0, "other": 0}
     reached = 0
     rows = []
     elapsed: list[float] = []
@@ -132,7 +140,7 @@ def main() -> None:
             _text, meta = rag.format_pinecone_hits(
                 ranked, top_n=params["rerank_top_n"])
         elapsed.append(time.perf_counter() - t0)
-        counts = {"public": 0, "textbook": 0, "counsel": 0, "other": 0}
+        counts = {"public": 0, "ruling": 0, "textbook": 0, "counsel": 0, "other": 0}
         for m in meta:
             counts[classify(m)] += 1
         for k, v in counts.items():
@@ -143,13 +151,13 @@ def main() -> None:
         rows.append({"id": q["id"], "topic": q["topic"], "current": cur})
         base = f"  (기준 {q['baseline']})" if args.baseline and q.get("baseline") else ""
         print(f"  {q['id']} {q['topic']:14s} {comp.name:8s} "
-              f"공공/해설서/상담 = {cur}{base}")
+              f"공공/해설서/상담 = {cur} 재결례 {counts['ruling']}{base}")
 
     n = len(spec["queries"])
     total = sum(totals.values()) or 1
     print("\n" + "=" * 62)
-    print(f"공공저작물 {totals['public']}건 | 해설서 {totals['textbook']}건 | "
-          f"상담 {totals['counsel']}건 | 계 {total}건")
+    print(f"공공저작물 {totals['public']}건(재결례 제외) | 재결례 {totals['ruling']}건 | "
+          f"해설서 {totals['textbook']}건 | 상담 {totals['counsel']}건 | 계 {total}건")
     print(f"상담 비중 {totals['counsel'] / total * 100:.0f}%  |  "
           f"저작물 비중 {(totals['textbook'] + totals['counsel']) / total * 100:.0f}%")
     print(f"법률 근거 도달: {reached}/{n}")

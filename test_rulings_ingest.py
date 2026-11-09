@@ -363,16 +363,24 @@ class ChunkingTest(unittest.TestCase):
 class WiringTest(unittest.TestCase):
     """RU10~RU16 — rag 집합·라벨 G5·인용 검증·pipeline·우선순위·stale."""
 
-    def test_ru10_public_sources_include_ruling(self):
+    def test_ru10_public_sources_exclude_ruling(self):
+        """ruling-quota-cap D2·D8: 재결례는 쿼터·법률근거 집합 밖, 공공저작물 집합(파생)에는 포함, 자기 다양성 클래스."""
         from app.core import rag
-        self.assertIn("ruling", rag.POOL_PUBLIC_SOURCES)
+        self.assertNotIn("ruling", rag.POOL_PUBLIC_SOURCES)
+        self.assertEqual(rag.POOL_PUBLIC_SOURCES, {"precedent", "interpretation", "regulation"})
+        self.assertEqual(rag.RULING_SOURCES, {"ruling"})
+        self.assertEqual(rag.PUBLIC_DOMAIN_SOURCES, rag.POOL_PUBLIC_SOURCES | rag.RULING_SOURCES)
         self.assertIs(rag.LEGAL_PROMOTE_SOURCES, rag.POOL_PUBLIC_SOURCES)
         hit = {"id": "ruling_eiac_1_chunk_0", "source_type": "ruling", "title": "t", "section": "s",
                "content": "c", "score": 0.5}
-        self.assertTrue(rag._is_public_source(hit))
-        self.assertTrue(rag._is_legal_source(hit))
-        self.assertIs(rag._diversity_class_of(hit), rag._is_legal_source)
-        self.assertEqual(rag.POOL_PUBLIC_SOURCES, {"precedent", "interpretation", "regulation", "ruling"})
+        self.assertFalse(rag._is_public_source(hit))
+        self.assertFalse(rag._is_legal_source(hit))
+        self.assertTrue(rag._is_ruling_source(hit))
+        self.assertTrue(rag.is_public_domain(hit))
+        self.assertIs(rag._diversity_class_of(hit), rag._is_ruling_source)
+        prec = dict(hit, id="precedent_1", source_type="precedent")
+        self.assertTrue(rag._is_public_source(prec) and rag._is_legal_source(prec) and rag.is_public_domain(prec))
+        self.assertIs(rag._diversity_class_of(prec), rag._is_legal_source)
 
     def test_ru11_label_both_sides(self):
         from app.core.rag import format_pinecone_hits
@@ -830,6 +838,273 @@ class OperationsTest(unittest.TestCase):
                      and isinstance(c.func, ast.Name) and c.func.id == "orig"]
             self.assertTrue(calls and all(any(k.arg is None for k in c.keywords) for c in calls),
                             "orig 호출에 **kwargs를 넘겨야 한다")
+
+
+def _h(i, st, score=0.5, **kw):
+    return {"id": i, "score": score, "source_type": st, "title": "t", "section": "", "content": "c",
+            "book_id": kw.pop("book_id", ""), **kw}
+
+
+def _R(i):
+    return _h(f"ruling_iaciac_{i}_chunk_0", "ruling")
+
+
+class QuotaCapTest(unittest.TestCase):
+    """RU26~RU35 — ruling-quota-cap: 집합 3종·킬스위치·총량 상한(교체형)·1단 victim 확장·I-9·평가 스크립트·CLAUDE.md·Self-RAG 복원."""
+
+    def test_ru26_set_literals_single_source(self):
+        """D8: rag.py의 집합 리터럴 중 'precedent'를 담은 것 하나, 'ruling'을 담은 것 하나, PUBLIC_DOMAIN은 합집합 식."""
+        import ast
+        tree = ast.parse(open(os.path.join(ROOT, "app", "core", "rag.py"), encoding="utf-8").read())
+        literal_sets = []
+        for node in ast.walk(tree):
+            elts = None
+            if isinstance(node, ast.Set):
+                elts = node.elts
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id in ("frozenset", "set") and node.args
+                  and isinstance(node.args[0], (ast.List, ast.Tuple))):
+                elts = node.args[0].elts
+            if elts is not None:
+                literal_sets.append({e.value for e in elts if isinstance(e, ast.Constant)})
+        self.assertEqual(sum(1 for s in literal_sets if "precedent" in s), 1, literal_sets)
+        self.assertEqual(sum(1 for s in literal_sets if "ruling" in s), 1, literal_sets)
+        assigns = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                   and any(isinstance(t, ast.Name) and t.id == "PUBLIC_DOMAIN_SOURCES" for t in n.targets)]
+        self.assertEqual(len(assigns), 1)
+        self.assertIsInstance(assigns[0].value, ast.BinOp)
+        self.assertIsInstance(assigns[0].value.op, ast.BitOr)
+
+    def test_ru27_ruling_retrieval_kill_switch(self):
+        """D1·D9: RULING_RETRIEVAL=off면 search_hybrid가 Dense·BM25 결과의 재결례를 RRF 전에 뺀다. on·미지정·알 수 없는 값은 불변."""
+        from app.core import rag
+        from app.core import bm25_search as bm
+        dense = [_h("ruling_eiac_1_chunk_0", "ruling", 0.9), _h("precedent_1", "precedent", 0.8),
+                 _h("ctx_qa_1_c0", "qa", 0.7), _h("ruling_iaciac_2_chunk_0", "ruling", 0.6)]
+        bm_hits = [_h("ruling_iaciac_3_chunk_0", "ruling", 20.0), _h("ctx_qa_2_c0", "qa", 10.0)]
+        cfg = mock.Mock()
+        with mock.patch.object(rag, "search_pinecone_multi", side_effect=lambda *a, **k: list(dense)), \
+             mock.patch.object(bm, "load_bm25_corpus", return_value=True), \
+             mock.patch.object(bm, "search_bm25", side_effect=lambda *a, **k: list(bm_hits)), \
+             mock.patch.object(rag, "_fetch_public_hits", return_value=[]):
+            with mock.patch.dict(os.environ, {"RULING_RETRIEVAL": "off"}):
+                off = rag.search_hybrid(["q"], cfg, top_k=8)
+            self.assertEqual({x["id"] for x in off}, {"precedent_1", "ctx_qa_1_c0", "ctx_qa_2_c0"})
+            for val in ("on", "whatever"):
+                with mock.patch.dict(os.environ, {"RULING_RETRIEVAL": val}):
+                    on = rag.search_hybrid(["q"], cfg, top_k=8)
+                self.assertEqual(sum(1 for x in on if x["source_type"] == "ruling"), 3, val)
+            env = {k: v for k, v in os.environ.items() if k != "RULING_RETRIEVAL"}
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertTrue(rag._ruling_retrieval_enabled())
+            # Dense-only 폴백(BM25 예외)에도 걸린다
+            with mock.patch.object(bm, "load_bm25_corpus", side_effect=RuntimeError("no bm25")), \
+                 mock.patch.dict(os.environ, {"RULING_RETRIEVAL": "off"}):
+                off2 = rag.search_hybrid(["q"], cfg, top_k=8)
+            self.assertEqual({x["id"] for x in off2}, {"precedent_1", "ctx_qa_1_c0"})
+        # 공공 전용 조회의 $in 집합에 ruling이 없다(D8 — 집합이 바뀌어 자동)
+        captured = {}
+        def fake_query(namespaces, vector, top_k, source_type, index):
+            captured["source_type"] = source_type
+            return []
+        cfg.openai_client.with_options.return_value.embeddings.create.return_value.data = [mock.Mock(embedding=[0.0])]
+        with mock.patch.object(rag, "_query_namespaces", side_effect=fake_query):
+            rag._fetch_public_hits("q", cfg, 4)
+        self.assertEqual(captured["source_type"], rag.POOL_PUBLIC_SOURCES)
+        self.assertNotIn("ruling", captured["source_type"])
+
+    def test_ru28_ruling_cap_swap_invariants(self):
+        """D4·D12·D13: 상한 값, 교체형 불변식(길이·상위 유지·후보 순서 ①주입 공공 → ②top_n 밖 자연 공공(Act-2 A) → ③창 상담·해설서 제외·말미·마커·비변이·후보 없음·스위치)."""
+        from app.core import rag
+        self.assertEqual([rag._ruling_cap(n) for n in (3, 5, 7, 6, 8, 10)], [1, 2, 3, 3, 4, 5])
+        tb = _h("textbook_win_0001_0", "textbook", book_id="win")
+        ranked = [_R(1), _R(2), _R(3), _R(4), _h("qa1", "qa"),                       # top_n=5
+                  _h("qa2", "qa"), _h("prec_nat", "precedent"), tb, _R(5), _h("qa3", "qa"),  # 창 5~10
+                  _h("x", "qa"), _h("y", "qa"), _h("prec_inj", "precedent", quota_injected=True)]  # 창 밖 주입 공공
+        out = rag._cap_rulings_in_top_n(ranked[:5], ranked, 5)
+        self.assertEqual(len(out), 5)
+        self.assertEqual([x["id"] for x in out[:3]], ["ruling_iaciac_1_chunk_0", "ruling_iaciac_2_chunk_0", "qa1"])
+        self.assertEqual([x["id"] for x in out[3:]], ["prec_inj", "prec_nat"])       # ① 창 밖 주입 → ② 자연 공공, 해설서 건너뜀
+        # Act-2 A: 창 밖(순위 ≥ 2×top_n)의 **자연** 공공도 후보 ②다 — 창 안 상담보다 먼저. 창 밖 상담은 후보가 아니다.
+        ranked_far = [_R(1), _R(2), _R(3), _R(4), _h("qa1", "qa"),
+                      _h("qa2", "qa"), _R(5), tb, _R(6), _h("qa3", "qa"),            # 창: 상담 2·해설서 1·재결 2
+                      _h("x", "qa"), _h("y", "qa"), _h("prec_far", "precedent"), _h("z", "qa")]  # 창 밖: 자연 공공 1·상담 3
+        out_far = rag._cap_rulings_in_top_n(ranked_far[:5], ranked_far, 5)
+        self.assertEqual([x["id"] for x in out_far[3:]], ["prec_far", "qa2"])        # ② 창 밖 자연 공공 → ③ 창 안 상담
+        self.assertNotIn("x", [x["id"] for x in out_far]); self.assertNotIn("z", [x["id"] for x in out_far])
+        self.assertTrue(all(x.get("promoted") == "ruling-cap" for x in out[3:]))
+        self.assertNotIn("promoted", ranked[12])                                       # 원본 비변이
+        self.assertEqual(sum(1 for x in out if x["source_type"] == "textbook"), 0)
+        cnt = lambda hs, pred: sum(1 for x in hs if pred(x))
+        self.assertGreaterEqual(cnt(out, rag.is_counsel_source), cnt(ranked[:5], rag.is_counsel_source))   # 상담 비감소
+        self.assertGreaterEqual(cnt(out, lambda x: bool(rag._book_id_of(x))), cnt(ranked[:5], lambda x: bool(rag._book_id_of(x))))  # 해설서 비감소
+        # 후보가 창 상담뿐 → 상담(해설서는 아님)
+        ranked3 = [_R(1), _R(2), _R(3), _h("qa1", "qa"), _h("qa2", "qa"), _h("qa3", "qa"), _R(6), tb]
+        out3 = rag._cap_rulings_in_top_n(ranked3[:5], ranked3, 5)
+        self.assertEqual(sum(1 for x in out3 if x["source_type"] == "ruling"), 2)
+        self.assertEqual(out3[-1]["id"], "qa3")
+        # 후보 없음 → 그대로(강제 공백 없음)
+        ranked2 = [_R(i) for i in range(1, 11)]
+        self.assertEqual(rag._cap_rulings_in_top_n(ranked2[:5], ranked2, 5), ranked2[:5])
+        # 상한 이하 → 무변경
+        sel = [_R(1), _h("qa1", "qa"), _h("qa2", "qa")]
+        self.assertEqual(rag._cap_rulings_in_top_n(sel, sel + [_R(2)], 3), sel)
+        # RULING_CAP=off → 무변경
+        with mock.patch.dict(os.environ, {"RULING_CAP": "off"}):
+            self.assertEqual(rag._cap_rulings_in_top_n(ranked[:5], ranked, 5), ranked[:5])
+
+    def test_ru29_finalize_order_three_exits(self):
+        """D11: 상한 → 2단 → 승격. 창 밖 quota_injected 판례가 상한 ①로 들어온다(2단으로는 못 들어오는 배치). 세 exit 동일."""
+        import types
+        from app.core import rag
+        ranked = [_R(1), _R(2), _R(3), _R(4), _h("qa1", "qa"),
+                  _h("qa2", "qa"), _R(5), _h("qa3", "qa"), _h("qa4", "qa"), _R(6),
+                  _h("qa5", "qa"), _h("qa6", "qa"), _h("prec_inj", "precedent", quota_injected=True)]
+
+        def verify(out, label):
+            self.assertEqual(len(out), 5, label)
+            self.assertEqual(sum(1 for x in out if x["source_type"] == "ruling"), 2, label)
+            inj = [x for x in out if x["id"] == "prec_inj"]
+            self.assertEqual(len(inj), 1, label)
+            self.assertEqual(inj[0].get("promoted"), "ruling-cap", label)
+            self.assertEqual(sum(1 for x in out if x["source_type"] == "textbook"), 0, label)
+
+        verify(rag.rerank_results("q", ranked, cohere_api_key="", top_n=5), "무키")
+        with mock.patch.object(rag.llm_transport, "rerank_client", side_effect=RuntimeError("down")):
+            verify(rag.rerank_results("q", ranked, cohere_api_key="k", top_n=5), "예외")
+
+        class _Co:
+            def rerank(self, **kw):
+                return types.SimpleNamespace(results=[
+                    types.SimpleNamespace(index=i, relevance_score=1.0 - i * 0.01) for i in range(len(ranked))])
+        with mock.patch.object(rag.llm_transport, "rerank_client", return_value=_Co()), \
+             mock.patch.object(rag.llm_transport, "rerank_model", return_value="rerank-v3.5"):
+            verify(rag.rerank_results("q", ranked, cohere_api_key="k", top_n=5), "성공")
+        # ensure_textbook=False(A/B 기준선)에서도 상한은 적용된다
+        verify(rag.rerank_results("q", ranked, cohere_api_key="", top_n=5, ensure_textbook=False), "기준선")
+
+    def test_ru30_i9_protects_last_ruling_and_last_precedent_separately(self):
+        """D3: 전원 단일 출처 [qa, ruling, precedent] — 현행(재결례=법률근거 클래스)은 precedent(2), 신규는 qa(0)."""
+        from app.core import rag
+        sel = [_h("qa1", "qa"), _R(1), _h("p1", "precedent")]
+        self.assertEqual(rag._pick_swap_victim(sel), 0)
+        sel2 = [_R(1), _R(2), _h("qa1", "qa")]
+        self.assertEqual(rag._pick_swap_victim(sel2), 1)       # 재결례 2건이면 하위 재결례가 victim
+
+    def test_ru31_eval_scripts_use_derived_sets(self):
+        """D20·D21(AST — import는 load_dotenv 부작용): eval_corpus_mix.classify가 ruling을 따로 분류, eval_colloquial 집합은 파생."""
+        import ast
+        mix = ast.parse(open(os.path.join(ROOT, "eval_corpus_mix.py"), encoding="utf-8").read())
+        fn = next(n for n in ast.walk(mix) if isinstance(n, ast.FunctionDef) and n.name == "classify")
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        consts = {n.value for n in ast.walk(fn) if isinstance(n, ast.Constant)}
+        self.assertTrue({"RULING_SOURCES", "POOL_PUBLIC_SOURCES"} <= names, names)
+        self.assertIn("ruling", consts)
+        totals = [n for n in ast.walk(mix) if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id in ("totals", "counts") for t in n.targets)]
+        self.assertTrue(totals)
+        for a in totals:
+            self.assertIsInstance(a.value, ast.Dict)
+            self.assertIn("ruling", {k.value for k in a.value.keys if isinstance(k, ast.Constant)})
+        col = ast.parse(open(os.path.join(ROOT, "eval_colloquial.py"), encoding="utf-8").read())
+        lcs = [n for n in ast.walk(col) if isinstance(n, ast.Assign)
+               and any(isinstance(t, ast.Name) and t.id == "LEGAL_CORPUS_SOURCES" for t in n.targets)]
+        self.assertEqual(len(lcs), 1)
+        self.assertIsInstance(lcs[0].value, ast.BinOp)
+        self.assertEqual({n.id for n in ast.walk(lcs[0].value) if isinstance(n, ast.Name)}, {"PUBLIC_DOMAIN_SOURCES"})
+
+    def test_ru32_self_rag_restore_wiring(self):
+        """D14·Act-2 C: Self-RAG 뒤 복원은 `_restore_public_after_self_rag` 한 함수이고(AST), 쿼터 집합만 복원한다."""
+        import ast
+        src = open(os.path.join(ROOT, "app", "core", "pipeline.py"), encoding="utf-8").read()
+        tree = ast.parse(src)
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Name) and n.func.id == "_restore_public_after_self_rag"]
+        self.assertEqual(len(calls), 1, "Self-RAG 복원 호출부는 한 곳이어야 한다")
+        self.assertEqual(ast.unparse(calls[0].args[0]), "_before_self_rag")
+        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_restore_public_after_self_rag")
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        self.assertIn("_is_public_source", names); self.assertIn("_pool_public_quota_for_top_n", names)
+        self.assertNotIn("is_public_domain", names); self.assertNotIn("_is_ruling_source", names)
+        # 옛 '전멸 시 1건' 분기는 남아 있지 않다
+        self.assertFalse(any("_is_public_source(h) for h in _before_self_rag" in ast.unparse(n.test)
+                             for n in ast.walk(tree) if isinstance(n, ast.If)))
+
+    def test_ru35_self_rag_restore_to_quota_target(self):
+        """Act-2 C: 쿼터 집합 공공이 2단 목표 미만이면 제거된 공공을 rerank 순위대로 목표까지 되살린다. 재결례는 아니다."""
+        from app.core.pipeline import _restore_public_after_self_rag as restore
+        P = lambda i: _h(f"prec_{i}", "precedent"); C = lambda i: _h(f"qa{i}", "qa")
+        before = [_R(1), P(1), C(1), P(2), _R(2), C(2), P(3)]          # rerank 순
+        # 전부 제거 → 목표 2(top_n 7)까지 상위 2건 복원, 말미
+        after, got = restore(before, [_R(1), C(1)], 7)
+        self.assertEqual([h["id"] for h in got], ["prec_1", "prec_2"]); self.assertEqual([h["id"] for h in after][-2:], ["prec_1", "prec_2"])
+        # 1건 남음 → 1건만 복원(남은 것은 다시 넣지 않는다)
+        after, got = restore(before, [_R(1), P(2), C(1)], 7)
+        self.assertEqual([h["id"] for h in got], ["prec_1"]); self.assertEqual(len(after), 4)
+        # 목표 충족 → 무변경
+        after, got = restore(before, [P(1), P(3), C(1)], 7)
+        self.assertEqual(got, []); self.assertEqual(len(after), 3)
+        # SIMPLE(top_n 3)은 목표 1 — 이전 규칙과 같다
+        after, got = restore(before, [_R(1), C(1)], 3)
+        self.assertEqual([h["id"] for h in got], ["prec_1"])
+        # 재결례만 제거됐으면 복원하지 않는다(쿼터 집합 밖, D14)
+        after, got = restore([_R(1), _R(2), P(1), C(1)], [P(1), C(1)], 7)
+        self.assertEqual(got, [])
+        # before에 공공이 없으면 무변경
+        after, got = restore([_R(1), C(1), C(2)], [C(1)], 7)
+        self.assertEqual(got, []); self.assertEqual(len(after), 1)
+
+    def test_ru33_claude_md_documents_switches(self):
+        """CLAUDE.md: 킬스위치 부재 서술 제거, 스위치 2종·1단 victim 규칙 서술."""
+        text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertNotIn("킬스위치는 **없다**", text)
+        for key in ("RULING_RETRIEVAL", "RULING_CAP", "PUBLIC_DOMAIN_SOURCES"):
+            self.assertIn(key, text, key)
+
+        def section(start_marker: str) -> str:
+            i = text.index(start_marker)
+            j = text.find("\n- **", i + 1)
+            return text[i: j if j > 0 else None]
+        quota = section("- **공공저작물 쿼터는 2단이고")
+        self.assertIn("초과 재결례", quota)                    # 1단 victim 규칙은 공공 쿼터 절 안에
+        self.assertIn("충족하지 않는다", quota)
+        promote = section("- **다양성 승격 2종**")
+        self.assertIn("재결례", promote)                         # I-9 클래스 3종
+        self.assertIn("재결례 승격은 두지 않는다", promote)
+
+    def test_ru34_pool_quota_ruling_victims(self):
+        """D22: 1단 victim은 상담(하한 2) → pool 상한(top_k//2) 초과 재결례(점수 하위부터). 해설서는 victim이 아니다."""
+        from app.core import rag
+        self.assertEqual([rag._pool_ruling_floor(k) for k in (8, 15, 20)], [4, 7, 10])
+        pub = [_h(f"p{i}", "precedent") for i in range(4)]
+        kinds = lambda out, st: sum(1 for x in out if x["source_type"] == st)
+        # R×13 + C×2 → quota 3 주입, 상담 2 유지, 재결례 13 → 10(끝 3건 제거)
+        hits = [_R(i) for i in range(13)] + [_h("qa1", "qa"), _h("qa2", "qa")]
+        out = rag._apply_public_quota(hits, pub, top_k=15)
+        self.assertEqual(len(out), 15)
+        self.assertEqual((kinds(out, "precedent"), kinds(out, "qa"), kinds(out, "ruling")), (3, 2, 10))
+        self.assertEqual([x["id"] for x in out if x["source_type"] == "ruling"], [_R(i)["id"] for i in range(10)])
+        self.assertTrue(all(x.get("quota_injected") for x in out if x["source_type"] == "precedent"))
+        # 하한: R×7 + C×2 → 주입 0(기존 동작과 동일)
+        hits2 = [_R(i) for i in range(7)] + [_h("qa1", "qa"), _h("qa2", "qa")]
+        self.assertEqual(rag._apply_public_quota(hits2, pub, top_k=15), hits2)
+        # 해설서는 victim이 아니다: R×3 + T×5 + C×2 → 주입 0
+        hits3 = ([_R(i) for i in range(3)]
+                 + [_h(f"textbook_win_000{i}_0", "textbook", book_id="win") for i in range(5)]
+                 + [_h("qa1", "qa"), _h("qa2", "qa")])
+        self.assertEqual(rag._apply_public_quota(hits3, pub, top_k=15), hits3)
+        # 상담 우선: R×13 + C×5 → 상담 5 → 2, 재결례 13 유지
+        hits4 = [_R(i) for i in range(13)] + [_h(f"qa{i}", "qa") for i in range(5)]
+        out4 = rag._apply_public_quota(hits4, pub, top_k=15)
+        self.assertEqual((kinds(out4, "precedent"), kinds(out4, "qa"), kinds(out4, "ruling")), (3, 2, 13))
+        # 상담 하한에서 재결례로 넘어간다: R×13 + C×3 → 상담 1건 뒤 재결례 2건
+        hits5 = [_R(i) for i in range(13)] + [_h(f"qa{i}", "qa") for i in range(3)]
+        out5 = rag._apply_public_quota(hits5, pub, top_k=15)
+        self.assertEqual((kinds(out5, "precedent"), kinds(out5, "qa"), kinds(out5, "ruling")), (3, 2, 11))
+        # 상담만 있는 pool은 기존과 같다(T26-a)
+        hits6 = [_h(f"qa{i}", "qa") for i in range(8)]
+        out6 = rag._apply_public_quota(hits6, pub, top_k=8)
+        self.assertEqual((kinds(out6, "precedent"), kinds(out6, "qa")), (2, 6))
 
 
 if __name__ == "__main__":

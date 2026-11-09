@@ -224,6 +224,29 @@ def uses_ruling(precedent_meta: list[dict] | None) -> bool:
     return any((m or {}).get("source_type") == "ruling" for m in (precedent_meta or []))
 
 
+def _restore_public_after_self_rag(before: list[dict], after: list[dict], top_n: int) -> tuple[list[dict], list[dict]]:
+    """Self-RAG가 걸러낸 뒤 쿼터 집합 공공(판례·행정해석·훈령)이 2단 목표(`_pool_public_quota_for_top_n`)
+    미만이면 제거된 공공을 rerank 순위대로 목표까지 되살린다(ruling-quota-cap Act-2 C).
+
+    Self-RAG는 T1 2단·재결례 상한 **뒤**에 돌고, 승격·교체분은 rerank 하위라 목록 말미에 있다. 판정
+    모델은 그것을 irrelevant로 걸러내는 경향이 강했다 — 실측(cap1·cap2 synthetic 24문항): 상한 교체분 생존 14/28·15/31,
+    2단 승격 6·6건 중 S+ 생존 1·0건, 1단 주입 15·31건 중 S+ 생존 4·9건. 이전 규칙("전멸했을 때만 1건 복원", 외부 리뷰 A-6)은 '법률 근거 0건'만
+    막았다. 이 함수는 2단의 보장("컨텍스트에 실린다")을 Self-RAG 뒤까지 연장하되, 판정 모델의 판단은
+    목표 건수(SIMPLE 1·그 밖 2) 한도에서만 뒤집는다. 재결례는 복원 대상이 아니다(쿼터 집합 밖, D14).
+
+    Returns: (복원된 hits, 복원한 항목 목록) — 복원은 말미에 붙인다(순위를 속이지 않는다).
+    """
+    from app.core.rag import _is_public_source, _pool_public_quota_for_top_n
+    target = _pool_public_quota_for_top_n(top_n)
+    kept_ids = {h.get("id") for h in after}
+    have = sum(1 for h in after if _is_public_source(h))
+    if have >= target:
+        return list(after), []
+    removed = [h for h in before if _is_public_source(h) and h.get("id") not in kept_ids]
+    restore = removed[: target - have]
+    return list(after) + restore, restore
+
+
 # Q6 제외 임계 — 상담이 컨텍스트의 이 비율을 **넘을 때만** 게시판에서 뺀다.
 # 분수로 두는 이유: 비율 비교를 정수 곱으로 하면 부동소수 경계 오차가 없다
 # (2/3 컨텍스트에서 상담 2건은 통과, 3건은 제외 — 의도한 경계다).
@@ -4024,23 +4047,20 @@ def process_question(query: str, session: Session, config: AppConfig,
             if adaptive_params["self_rag"] and pinecone_hits and len(pinecone_hits) > 2:
                 try:
                     from app.core.self_rag import filter_by_relevance
-                    from app.core.rag import _is_public_source
                     _before_self_rag = list(pinecone_hits)
                     pinecone_hits, needs_wider = filter_by_relevance(
                         query, pinecone_hits, config,
                     )
-                    # Self-RAG는 T1 2단 **뒤**에 돌고, 쿼터 승격분은 rerank 하위라
-                    # 목록 말미에 있다. 판정 모델이 그것을 irrelevant로 판정하면 공공
-                    # 근거가 통째로 사라지는데 재적용 지점이 없었다(외부 리뷰 A-6).
-                    # 전멸했을 때만 최상위 1건을 되살린다 — 필터의 판단은 존중하되
-                    # "법률 근거 0건"이라는 결과만 막는 최소 보장이다.
-                    if (any(_is_public_source(h) for h in _before_self_rag)
-                            and not any(_is_public_source(h) for h in pinecone_hits)):
-                        restored = next(h for h in _before_self_rag
-                                        if _is_public_source(h))
-                        pinecone_hits = list(pinecone_hits) + [restored]
-                        logger.info("Self-RAG가 공공 근거를 전멸시켜 1건 복원: %s",
-                                    restored.get("id"))
+                    # Self-RAG는 T1 2단·재결례 상한 **뒤**에 돌고, 승격·교체분은 rerank 하위라
+                    # 목록 말미에 있다. 판정 모델이 그것을 irrelevant로 걸러내면 공공 근거가
+                    # 사라진다 — 전멸 시 1건 복원(외부 리뷰 A-6)에서 **2단 목표 건수까지 복원**으로
+                    # 넓혔다(ruling-quota-cap Act-2 C, 실측은 _restore_public_after_self_rag docstring).
+                    pinecone_hits, _restored = _restore_public_after_self_rag(
+                        _before_self_rag, pinecone_hits, adaptive_params["rerank_top_n"])
+                    if _restored:
+                        logger.info("Self-RAG 뒤 공공 근거 %d건 복원(top_n=%d): %s",
+                                    len(_restored), adaptive_params["rerank_top_n"],
+                                    [h.get("id") for h in _restored])
                     if needs_wider:
                         logger.info("Self-RAG wider search: top_k %d → %d",
                                     search_top_k, search_top_k * 2)

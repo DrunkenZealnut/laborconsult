@@ -1488,10 +1488,10 @@ def t26_public_quota() -> None:
           bool(_fmt_call) and "top_n=" in _fmt_call.group(0),
           _fmt_call.group(0)[:80] if _fmt_call else None)
 
-    # Self-RAG가 공공 근거를 전멸시키면 1건 복원
-    check("T26-s Self-RAG 공공 전멸 시 복원 배선",
-          "Self-RAG가 공공 근거를 전멸시켜" in pipe_src
-          and "_before_self_rag" in pipe_src)
+    # Self-RAG 뒤 공공 복원 — 전멸 시 1건에서 2단 목표 건수까지로(ruling-quota-cap Act-2 C, RU32·RU35)
+    check("T26-s Self-RAG 뒤 공공 복원 배선",
+          "_restore_public_after_self_rag(" in _pipe_code
+          and "_before_self_rag" in _pipe_code)
 
     # 길이 예산은 청크 단위 — 문자 단위로 자르면 meta_list가 그대로 남아
     # **본문이 잘린 판례를 인용 화이트리스트가 "인용 가능"으로 제시**한다
@@ -1681,8 +1681,8 @@ def t24_legal_diversity_promotion() -> None:
           sum(1 for h in out if h["source_type"] == "precedent") == 1)
     check("T24-a3 promoted 마커는 'legal'", out[-1].get("promoted") == "legal")
     # 대상 판정 — 행정해석·훈령예규도 대상, textbook은 절대 아님(저작권 §6).
-    check("T24-a4 대상 집합 고정",
-          LEGAL_PROMOTE_SOURCES == {"precedent", "interpretation", "regulation", "ruling"})
+    check("T24-a4 대상 집합 고정 — 재결례는 대상이 아니다(ruling-quota-cap D2)",
+          LEGAL_PROMOTE_SOURCES == {"precedent", "interpretation", "regulation"})
     check("T24-a5 해석도 대상", _is_legal_source(src(0, "interpretation")))
     check("T24-a6 textbook은 비대상", not _is_legal_source(tb(0)))
     only_tb_window = [src(i) for i in range(5)] + [tb(0)]

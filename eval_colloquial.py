@@ -52,7 +52,8 @@ FIXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 #    해설서는 자체 승격(TEXTBOOK_PROMOTE)이 따로 있어 섞으면 기여가 흐려진다.
 #    집합은 재선언하지 않고 rag의 단일 출처를 쓴다 — 재선언하면 승격 대상이
 #    바뀔 때 이 지표만 조용히 옛 정의로 남는다.
-LEGAL_CORPUS_SOURCES = {"precedent", "interpretation", "regulation", "ruling", "textbook"}
+from app.core.rag import PUBLIC_DOMAIN_SOURCES   # 리터럴 재선언 금지(ruling-quota-cap D21)
+LEGAL_CORPUS_SOURCES = PUBLIC_DOMAIN_SOURCES | {"textbook"}
 
 
 def load_fixture() -> list[dict]:
