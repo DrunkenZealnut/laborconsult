@@ -124,6 +124,10 @@ ARTICLES = [
     ("civ_act_479",   "민법",                           479, None, []),
     # 연차 출근 간주(제60조⑥3호 육아휴직, 4·5호 단축) — 연차 카드 '출근 간주 기준' 문구(wage-update-followups L3)
     ("lsa_act_60",    "근로기준법",                     60,  None, []),
+    # 조기재취업수당의 금액·청구(unemployment.py — calculator-statute-audit U1). 제40·64조·시행령 제84조·제49조는 unemployment
+    # 규칙 블록 앵커로 이미 등록돼 있다. 앵커 전용(keys 없음)
+    ("ei_enf_85",     "고용보험법 시행령",               85,  None, []),
+    ("ei_enf_86",     "고용보험법 시행령",               86,  None, []),
 ]
 
 # ── 별표(annex) — 조문이 "별표 N을 말한다"로 위임하는 본문 ─────────────────────────────────────────────
@@ -161,11 +165,15 @@ ADMRULS = [
     ("cardio_notice", "뇌혈관 질병",
      "뇌혈관 질병 또는 심장 질병 및 근골격계 질병의 업무상 질병 인정 여부 결정에 필요한 사항",
      "고용노동부", []),
+    # 조기재취업 수당 지급제외 임금액(시행령 제84조①1호 라목 위임, 고용노동부고시 제2026-71호, 2026-11-01~2029-10-31) —
+    # unemployment 카드 안내 문구의 앵커(calculator-statute-audit D2). 앵커 전용(keys 없음), 법제처 통합본으로만 받는다
+    ("ei_early_reemp_wage", "조기재취업 수당 지급제외",
+     "조기재취업 수당 지급제외 대상에 해당하는 임금액 고시", "고용노동부", []),
 ]
 
 # 게시판 첨부(PDF·HWPX·"…을 …로" 일부개정 형식)는 앵커 원문과 문자열이 달라질 수 있다 — 이 문서들은 법제처
 # 통합본(조문내용)으로만 받는다. 발령번호는 게시판에서 받아 헤더에 남긴다(board_find).
-ADMRUL_LAW_GO_KR_ONLY = {"cardio_notice"}
+ADMRUL_LAW_GO_KR_ONLY = {"cardio_notice", "ei_early_reemp_wage"}
 
 
 def kst_today() -> str:
