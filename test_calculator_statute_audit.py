@@ -75,5 +75,33 @@ class EarlyReemploymentTests(unittest.TestCase):
         self.assertNotIn("3,000,000", after)
 
 
+class UnemploymentWordingTests(unittest.TestCase):
+    """D3 — 기준기간 18개월(초단시간 24개월), 일용근로자 수급요건 안내, 상한 경과조치 안내."""
+
+    def test_reference_period_text_has_no_daily_worker_one_year(self):
+        res = _unemp(insurance_months=3)
+        self.assertFalse(res.is_eligible)
+        self.assertNotIn("1년", res.ineligible_reason)
+        self.assertIn("18개월", res.ineligible_reason)
+        self.assertIn("24개월", res.ineligible_reason)
+        self.assertIn("제40조", res.ineligible_reason)
+
+    def test_daily_worker_gets_the_one_third_rule_note(self):
+        res = _unemp(is_daily_worker=True)
+        note = next(w for w in res.warnings if w.startswith("일용근로자 추가 요건"))
+        for piece in ("3분의 1", "14일간", "제40조 제1항 제5호", "제49조 제1항 단서"):
+            self.assertIn(piece, note)
+        self.assertIn("고용보험법 제40조 제1항 제5호 (일용근로자 수급요건)", res.legal_basis)
+        self.assertFalse(any(w.startswith("일용근로자 추가 요건") for w in _unemp().warnings))
+
+    def test_upper_limit_note_when_separation_year_differs(self):
+        res = _unemp(end_date="2025-12-15", reference_year=2026)
+        note = next(w for w in res.warnings if w.startswith("구직급여 상한액은 이직일 기준"))
+        self.assertIn("66,000원", note)
+        self.assertIn("부칙", note)
+        self.assertEqual(res.upper_limit, 68_100)   # 계산 값은 기준연도 그대로
+        self.assertFalse(any(w.startswith("구직급여 상한액은 이직일 기준") for w in _unemp(end_date="2026-06-30").warnings))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

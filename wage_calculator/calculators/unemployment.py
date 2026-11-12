@@ -152,14 +152,23 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
                 "(고용보험법 제77조의8 제1항 제3호, 같은 법 시행령 제104조의15 제1항)."
             )
     else:
-        # ① 피보험단위기간 부족 (일반 근로자)
+        # ① 피보험단위기간 부족 (일반 근로자) — 기준기간은 18개월, 초단시간근로자(주 15시간 미만·주 2일 이하)는 24개월
+        # (고용보험법 제40조②). 일용근로자에 별도 기준기간은 없다 — 예전 문구의 '일용직은 1년'은 법에 없는 값이었다(U2)
         if insured_days_approx < MIN_INSURED_DAYS:
             reason = (
                 f"피보험단위기간 약 {insured_days_approx}일 — 최소 {MIN_INSURED_DAYS}일 필요. "
-                "이직일 이전 18개월 이내(초단시간근로자는 24개월, 일용직은 1년)에 "
-                "피보험단위기간 합계가 180일 이상이어야 합니다."
+                "이직일 이전 18개월 이내(초단시간근로자는 24개월)에 피보험단위기간 합계가 180일 이상이어야 합니다"
+                "(고용보험법 제40조 제1항·제2항)."
             )
             return _ineligible(reason, warnings, legal)
+        # 일용근로자 추가 요건(제40조①5호) — 근로일수 입력이 없어 판정하지 않고 안내만 한다(U3). 건설일용은 대기기간이 없다(제49조① 단서)
+        if getattr(inp, "is_daily_worker", False):
+            warnings.append(
+                "일용근로자 추가 요건(고용보험법 제40조 제1항 제5호): 수급자격 인정신청일이 속한 달의 직전 달 초일부터 신청일까지 "
+                "근로일수 합이 같은 기간 총일수의 3분의 1 미만이어야 합니다(건설일용근로자는 신청일 이전 14일간 연속 근로내역이 "
+                "없으면 됩니다). 건설일용근로자는 대기기간 없이 신고일부터 지급합니다(제49조 제1항 단서)."
+            )
+            legal.append("고용보험법 제40조 제1항 제5호 (일용근로자 수급요건)")
 
     # ② 자발적 이직 여부
     if not is_involuntary:
@@ -262,6 +271,15 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         upper = float(UNEMPLOYMENT_BENEFIT_UPPER.get(
             year, UNEMPLOYMENT_BENEFIT_UPPER[max(UNEMPLOYMENT_BENEFIT_UPPER)]
         ))
+        # 상한액은 이직일 기준 — 2026년 인상(68,100원)은 2026-01-01 이후 이직자에게 적용되고 그 전 이직자는 종전 규정
+        # (고용보험법 시행령 부칙 <제35934호> 제4조). 계산은 기준연도 의미론을 유지하고 어긋남만 알린다
+        end_year = _year_of(getattr(inp, "end_date", None))
+        if end_year and end_year < year and UNEMPLOYMENT_BENEFIT_UPPER.get(end_year) not in (None, upper):
+            warnings.append(
+                f"구직급여 상한액은 이직일 기준으로 적용됩니다 — 이직일 {inp.end_date}의 상한은 "
+                f"{UNEMPLOYMENT_BENEFIT_UPPER[end_year]:,.0f}원입니다(고용보험법 시행령 부칙 <제35934호> 제4조). "
+                f"이 카드는 {year}년 상한 {upper:,.0f}원으로 계산했습니다."
+            )
 
     # 하한액(최저구직급여일액) = 최저기초일액(이직 전 1일 소정근로시간 × 최저임금) × 80%(고용보험법 제45조 제4항·제46조).
     # 예전에는 1일 8시간 고정이라 단시간근로자에게 2배를 냈다(주 5일 × 4h: 66,048원, 맞는 값 33,024원 — R9). 노무제공자
@@ -433,3 +451,9 @@ def _early_reemployment_note(reference_date: str | None) -> str:
         f"신고 전 채용 약속, 공무원 채용, 병역 특례 근무, {wage_clause}은 제외됩니다. 재취업 전 2년 안에 수당을 받았으면 "
         "지급되지 않고, 청구는 재취업 12개월 뒤(65세 이상은 즉시)입니다(고용보험법 시행령 제84조·제86조)."
     )
+
+
+def _year_of(text) -> int | None:
+    """'YYYY-MM-DD' 문자열의 연도. 형식이 아니면 None."""
+    s = str(text or "")
+    return int(s[:4]) if len(s) >= 4 and s[:4].isdigit() else None
