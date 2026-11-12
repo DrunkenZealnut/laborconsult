@@ -12,10 +12,10 @@
 | D3 | 기준기간 문구는 "이직일 이전 18개월(초단시간근로자는 24개월)". 일용근로자(`is_daily_worker`)면 제40조①5호·제49조① 단서를 경고로 | 제40조②, 제40조①5호 가·나목, 제49조① 단서 |
 | D4 | 휴업급여: 요양일수 ≤ 3이면 0원, 근로기준법 제78·79조 안내 | 산재법 제52조 단서, 근로기준법 제79조① "평균임금의 100분의 60의 휴업보상" |
 | D5 | 최고·최저 보상기준은 **평균임금 결정 직후, 급여별로** 적용한다 — 장해·유족·상병보상연금·휴업급여에 최고, 장해·유족에 최저. 장례비 미적용. 최저 < 최저임금×8이면 최저임금×8 | 제36조⑦ 본문·단서("휴업급여 및 상병보상연금을 산정할 때에는 최저 보상기준 금액을 적용하지 아니한다", "보험급여(장례비는 제외한다)") |
-| D6 | 보상기준 표는 `COMPENSATION_LIMITS_DAILY = {연도: (최고, 최저)}` 하나. `MIN_COMPENSATION_DAILY`는 이 표의 최저 열로 파생해 기존 import를 유지한다. 최고가 없는 연도(2024·2025)는 최고 미적용 + 경고 | 같은 숫자를 두 곳에 적으면 한쪽만 고쳐진다(기준소득월액 교훈). 2026 고시 제2025-84호: 268,299/82,560 |
-| D7 | 61세 이후 감액은 **휴업급여 산정 경로별 계수**를 곱한다 — 제52조 기준(70%)이면 n/70, 제54조 본문·②(90%·최저임금액)면 n/90, 제54조 단서(최저보상×80%)면 최저보상×80%×n/90. 나이는 `inp.age`(만 나이)로 보고 0이면 적용·경고 없음 | 별표 1 제1~3호 표. 계산기는 1일 금액 하나를 요양일수에 곱하므로 연령 도달일 분할은 안내로 |
+| D6 | 보상기준 표는 `COMPENSATION_LIMITS_DAILY = {연도: (최고, 최저)}` 하나. `MIN_COMPENSATION_DAILY`는 이 표의 최저 열로 파생해 기존 import를 유지한다. 최고가 없는 연도(2024·2025)는 최고 미적용 + 경고(평균임금이 최저의 3.6배 = 1.8배 ÷ 1/2를 넘을 때만 — 무조건 내면 그 해의 모든 카드에 소음이다, Act-1 f) | 같은 숫자를 두 곳에 적으면 한쪽만 고쳐진다(기준소득월액 교훈). 2026 고시 제2025-84호: 268,299/82,560 |
+| D7 | 61세 이후 감액은 **휴업급여 산정 경로별 계수**를 곱한다 — 제52조 기준(70%)이면 n/70, 제54조 본문·②(90%·최저임금액)면 n/90, 제54조 단서(최저보상×80%)면 최저보상×80%×n/90. 나이는 `inp.age`(만 나이)로 보고 0이면 적용·경고 없음. 제52조 기준 감액 금액이 제3호 금액(최저보상×80%×n/90)보다 적으면 제3호(별표 1 제1호 단서, `floor3`) | 별표 1 제1~3호 표. 계산기는 1일 금액 하나를 요양일수에 곱하므로 연령 도달일 분할은 안내로. 최저 보상기준 = 최저임금액인 해(2024~2026)에는 제54조① 단서 경로가 제54조② 하한으로 올라가고 제1호 단서 하한도 걸리지 않는다 — 회귀는 표를 바꿔 넣어 확인(Act-1 d·g) |
 | D8 | 일용근로자 평균임금 = 일당 × 통상근로계수 73/100. 조건: `is_daily_worker and daily_wage` 이고 `start_date`로 3개월 이상 계속 근로가 확인되지 않을 때. 아니면 안내만 | 시행령 제23조①1호(단서 가목 "근로관계가 3개월 이상 계속되는 경우"), 제24조①1호, 고시 제2025-90호 |
-| D9 | 직업병 특례는 안내만(`injury_type`이 질병·뇌심혈관 또는 '진폐' 언급). 계산은 일반 평균임금 | 제36조⑥·시행령 제25조 — 산정에 사업체노동력조사·고시 금액이 필요해 계산기가 재현할 수 없다 |
+| D9 | 직업병 특례는 안내만(`injury_type`이 질병·뇌심혈관 — 의도분석이 질병으로 분류한 경우. `WageInput`에 질문 원문이 없어 '진폐' 문구 감지는 두지 않는다, Act-1 h). 계산은 일반 평균임금 | 제36조⑥·시행령 제25조 — 산정에 사업체노동력조사·고시 금액이 필요해 계산기가 재현할 수 없다 |
 | D10 | 새 근거 문구마다 `CALC_BASIS_ANCHORS` 앵커 + `fetch_official_rules` 등록(ARTICLES·ANNEXES·ADMRULS 추가분은 §3·§4 — 이미 등록된 조문은 재등록하지 않는다. 전부 keys 없음 = 앵커 전용, 고시는 law.go.kr 전용) | 등록(CI)·원문(로컬)·다음 판본(`--anchors`) 3층 대조. 앵커 전용 문서는 Pinecone에 올리지 않는다(law-article-coverage D12) |
 | D11 | 공개 흐름도 두 사본은 본문만 같이 고치고 `diff`로 head 95줄 차이만 남는지 확인. `sw.js` VERSION v15 | 두 사본 관례(wage-update-followups A7) |
 | D12 | 테스트는 `test_calculator_statute_audit.py` 하나, CI 등록. main에서 실패·PR에서 통과를 각 ID마다 확인 | Plan §7 |
@@ -60,7 +60,7 @@
 | PR-1 `fix/calc-statute-audit-ei` | 문서(Plan·Design·bkit 상태) + U1·U2·U3 + 흐름도 + 등록·앵커 + 테스트 | `wage_calculator/calculators/unemployment.py`, `wage_calculator/constants.py`(고시 표), `wage_calculator/legal_anchors.py`, `fetch_official_rules.py`, `public/calculator_flow/unemployment_benefit_calc.html`·패키지 사본, `public/sw.js`, `test_calculator_statute_audit.py`(신규), `.github/workflows/tests.yml`, `CLAUDE.md`, `docs/...`, `.bkit/state/memory.json` |
 | PR-2 `fix/calc-statute-audit-iaci` | I1~I5 + 흐름도 + 등록·앵커 + 테스트 확장 | `wage_calculator/calculators/industrial_accident.py`, `wage_calculator/constants.py`, `wage_calculator/legal_anchors.py`, `fetch_official_rules.py`, `public/calculator_flow/industrial_accident_compensation_calc.html`·패키지 사본, `test_calculator_statute_audit.py`, `CLAUDE.md` |
 
-PR-2는 PR-1 위에 쌓지 않고 main에서 따로 만든다(겹치는 파일은 `constants.py`·`legal_anchors.py`·`fetch_official_rules.py`·테스트 파일의 **추가 줄**뿐이라 먼저 머지된 쪽 위로 재기반하면 충돌이 단순하다).
+PR-2는 PR-1 위에 쌓는다(같은 새 테스트 파일을 두 PR이 만들면 main에서 따로 분기할 때 add/add 충돌이 난다 — §7). PR-1 머지 뒤 base를 main으로 재타깃한다.
 
 ## 3. PR-1 — 실업급여
 
@@ -116,7 +116,7 @@ EARLY_REEMPLOYMENT_WAGE_CAPS: tuple[tuple[str, str, int, str], ...] = (
 
 - `ARTICLES` +: `("ei_enf_85", "고용보험법 시행령", 85, None, [])`, `("ei_enf_86", "고용보험법 시행령", 86, None, [])` — 주석: 조기재취업수당 금액·청구 앵커 전용(calculator-statute-audit D10). 제40조·제64조·시행령 제84조·제49조는 unemployment 규칙 블록 앵커로 **이미 등록·수집돼 있다**(`ei_act_40`·`ei_act_64`·`ei_enf_84`·`ei_act_49`) — 재등록하지 않고 앵커 구절만 더한다.
 - `ADMRULS` +: `("ei_early_reemp_wage", "조기재취업 수당 지급제외", "조기재취업 수당 지급제외 대상에 해당하는 임금액 고시", "고용노동부", [])`, `ADMRUL_LAW_GO_KR_ONLY`에 추가.
-- `CALC_BASIS_ANCHORS` +: §1.1·§1.2의 구절 10개.
+- `CALC_BASIS_ANCHORS` +: §1.1·§1.2의 구절 13개(§1의 11개 + `ei_act_64` 금액 위임·`ei_enf_84` '소정급여일수를 2분의 1 이상 남기고').
 
 ## 4. PR-2 — 산재
 
@@ -157,7 +157,7 @@ avg_floor  = max(avg_capped, lo)                               # 최저 — 장�
 ```
 
 - 휴업급여·상병보상연금: `avg_capped`. 장해·유족: `avg_floor`. 장례비: `avg_daily`(원래 값, 자체 최고·최저).
-- 상한·하한이 걸리면 `formulas`에 "최고 보상기준 금액 268,299원 적용(제36조 제7항)" / "최저 보상기준 금액 … 적용(장해·유족급여 — 휴업급여·상병보상연금은 제외, 제36조 제7항 단서)". `hi is None`이면 경고 "{year}년 최고 보상기준 금액 미확인 — 평균임금이 전체 근로자 임금 평균액의 1.8배를 넘으면 그 금액으로 제한됩니다".
+- 상한이 걸리면 `formulas`에 "최고 보상기준 금액 적용 … (제36조 제7항, 장례비 제외)". 하한 메시지는 **장해급여나 유족급여를 계산할 때만**(`uses_floor` — 최저는 그 두 급여에만 쓰이므로 묻지 않은 카드에 '장해·유족급여는 … 산정'을 적지 않는다, Act-1 b); 값(`avg_floor`)은 항상 계산한다. `hi is None`이면 평균임금이 최저의 3.6배를 넘을 때만 경고 "{year}년 최고 보상기준 금액을 확인하지 못했습니다 …"(D6).
 - `breakdown["적용 평균임금"]`에 어느 급여에 어떤 값이 쓰였는지 한 줄.
 
 ### I3 — 61세 이후 휴업급여 감액
@@ -196,14 +196,14 @@ if daily_worker_rate:
 
 ### 흐름도
 
-`industrial_accident_compensation_calc.html`(두 사본): 휴업급여 공식 아래 "3일 이내 요양은 미지급(제52조 단서)" 한 줄, 평균임금 단계에 "최고·최저 보상기준 적용(제36조⑦, 2026: 268,299/82,560원 — 휴업·상병은 최고만)" 한 줄, 61세 감액 한 줄. `sw.js` VERSION은 PR-1에서 올리고 PR-2는 그 뒤 다시 올린다(배포마다 상향).
+`industrial_accident_compensation_calc.html`(두 사본): 휴업급여 공식 줄에 "3일 이내 요양은 미지급(제52조 단서)", 휴업급여 탭 설명에 최고 보상기준(2026년 268,299원)·최저 보상기준(82,560원)은 장해·유족급여에만·휴업·상병은 최고만·61세 감액 한 줄. 패키지 사본의 bare `sendPrompt(`는 공개 사본과 같은 `window.parent?.sendPrompt?.(`로 통일(Act-1 e — 두 사본 본문 동일 규칙). `sw.js` VERSION은 PR-1에서 올리고 PR-2는 그 뒤 다시 올린다(배포마다 상향).
 
 ### 등록·앵커 (PR-2)
 
 - `ARTICLES` +: iaci_act_36·iaci_act_52·iaci_act_54·iaci_act_55(산업재해보상보험법 36·52·54·55), iaci_enf_23·iaci_enf_24·iaci_enf_25(산업재해보상보험법 시행령), lsa_act_79(근로기준법 79).
 - `ANNEXES` +: `("iaci_annex1", "산업재해보상보험법", "고령자의 휴업급여 지급기준", "별표1")`.
 - `ADMRULS` +: `("iaci_comp_limits", "최고·최저 보상기준 금액", "최고·최저 보상기준 금액", "고용노동부", [])`, `("iaci_funeral_limits", "장례비 최고·최저 금액", "장례비 최고·최저 금액", "고용노동부", [])`, `("iaci_ordinary_coeff", "통상근로계수", "통상근로계수", "고용노동부", [])` — 셋 다 `ADMRUL_LAW_GO_KR_ONLY`.
-- `CALC_BASIS_ANCHORS` +: §1.3 구절 14개.
+- `CALC_BASIS_ANCHORS` +: §1.3 구절 17개 + Act-1 3개(`iaci_annex1` 제1호 단서, `iaci_enf_23` 일용근로자 정의, `iaci_enf_25` ②1호 고시 금액) = 20개.
 
 ## 5. 테스트 (`test_calculator_statute_audit.py`)
 
@@ -215,12 +215,13 @@ if daily_worker_rate:
 | 경과조치 | `end_date="2025-12-15"`·`reference_year=2026`면 "66,000원"·"부칙" 경고; `end_date` 2026이면 없음 |
 | I1 | `sick_leave_days=3` → 0원·"제52조 단서"·"제79조"; 4일 → 70% 계산 |
 | I2 | 평균임금 300,000원·장해 7급 일시금 → `268,299 × 616`; 휴업급여 → `268,299 × 70%`; 장례비는 300,000×120 → 최고액 19,279,760. 평균임금 60,000원·장해 14급 → `82,560 × 55`; 휴업급여는 60,000 기준 저소득 보정(최저 미적용). 2025년 고임금 → 최고 미적용 + 경고 |
-| I3 | 평균임금 200,000·`age=61` → 휴업 1일 = 200,000×0.7×66/70; `age=65` → ×50/70; 저소득(70,000원)·`age=62` → 90% 경로 ×82/90; `age=0` → 감액·경고 없음 |
+| I3 | 평균임금 200,000·`age=61` → 휴업 1일 = 200,000×0.7×66/70; `age=65`·70 → ×50/70; 60·0 → 감액 없음; 93,000·`age=62` → 제54조① 단서 금액(66,048)이 최저임금액 아래라 제54조② 경로 → 82,560×82/90; 60,000·`age=63` → 82,560×78/90; 제1호 단서 하한은 표를 `{2026: 120,000}`으로 바꿔 넣어 137,500·61세 → 96,000×86/90(Act-1 d·g) |
 | I4 | `is_daily_worker=True, daily_wage=150,000` → 평균임금 109,500(=150,000×0.73); `start_date` 4개월 전이면 미적용 + 안내; `daily_wage=None`이면 안내만 |
 | I5 | `injury_type="질병"` → "제36조 제6항" 경고; "사고"면 없음 |
 | 등록 | 새 앵커 doc_id가 `ARTICLES∪ADMRULS∪ANNEXES`에 있다(`CalcBasisAnchorTests`가 이미 함 — 중복 단언 없이 ADMRULS 3+1·ANNEXES 1 존재만 확인) |
 | 파생 | `MIN_COMPENSATION_DAILY == {y: lo}`, `COMPENSATION_LIMITS_DAILY[2026] == (268_299, 82_560)` |
-| 흐름도 | 두 사본 본문(`<body>` 이후)이 같다. 조기재취업 공식 줄에 "÷ 2) × 50%" 없음 |
+| 흐름도 | 두 사본 본문(첫 `<svg>` 이후, 공개 전용 스크립트 제외)이 같다. 조기재취업 공식 줄에 "÷ 2) × 50%" 없음, 산재 흐름도에 3일 단서·268,299·장해·유족급여에만·휴업·상병은 최고만 |
+| 기존 테스트 수정 | `test_wage_update_2026.py` 등록 검사에 `ANNEXES` 포함; `test_unemployment_separation.py` `ANNEX_FIXTURES`에 `iaci_annex1`(fixture `data/annex_fixtures/iaci_annex1_20260701.txt`), U3 앵커 집합에 `CALC_BASIS_ANCHORS` 포함, U5 제목 유일성 검사는 고용보험법 시행규칙 별표에만(fixture XML이 그 법령 것) — Act-1 c |
 
 `tests.yml`의 "2026년 10월 계산기 갱신 — 모듈별 회귀" 단계에 `python3 test_calculator_statute_audit.py` 추가.
 
@@ -245,12 +246,25 @@ CLI 116사례 전후 diff — 바뀐 사례 ID와 이유. 바뀐 사례가 이�
 
 ### PR-2 (2026-11-12, `fix/calc-statute-audit-ei` → `fix/calc-statute-audit-iaci`)
 
-CLI 116사례 출력 변화 **0줄**. 산재 사례 #71~#78은 평균임금이 2026년 최고(268,299원)와 최저(82,560원) 사이이고 요양일수가 3일을 넘으며 나이·일용·직업병 입력이 없어 새 규칙에 닿지 않았다(#72 저임금 사례는 최저 보상기준 아래지만 장해·유족급여를 묻지 않아 메시지도 붙지 않는다 — 최저는 그 두 급여에만 쓰이므로 안내도 그때만 낸다). 새 규칙의 금액은 `test_calculator_statute_audit.py`의 SickLeave·CompensationLimit·DailyWorkerAndDisease 11건이 고정한다.
+CLI 116사례 출력 변화 **0줄**. 산재 사례 #71~#78은 평균임금이 2026년 최고(268,299원)와 최저(82,560원) 사이이고 요양일수가 3일을 넘으며 나이·일용·직업병 입력이 없어 새 규칙에 닿지 않았다(#72 저임금 사례는 최저 보상기준 아래지만 장해·유족급여를 묻지 않아 메시지도 붙지 않는다 — 최저는 그 두 급여에만 쓰이므로 안내도 그때만 낸다). 새 규칙의 금액은 `test_calculator_statute_audit.py`의 SickLeave·CompensationLimit·DailyWorkerAndDisease 13건(Act-1 뒤 14건)이 고정한다.
 
 PR-2는 설계 §2와 달리 PR-1 브랜치 위에 쌓았다 — 두 PR이 같은 새 테스트 파일을 만들어 main에서 따로 분기하면 add/add 충돌이 났을 것이다. PR-1 머지 뒤 base를 main으로 재타깃한다(wage-update-followups 스택 절차).
+
+## 8. Act-1 (2026-11-12, 갭 분석 90.4% → 편차 반영)
+
+갭 분석(`docs/03-analysis/calculator-statute-audit.analysis.md`) 57항목 중 ⚠️ 9·❌ 1. 코드 수정 g·i·j, 설계 갱신 b·c·d·f·h·k·a·e, 수용 l·m.
+
+| # | 조치 |
+|---|---|
+| g | 별표 1 제1호 단서 하한(`floor3`) 테스트 추가(표 치환으로 도달) + 산식 문구에 하한 적용 표시 + 앵커 `("iaci_annex1", "제3호에 따라 산정한 금액보다 적으면")` |
+| i | 앵커 `("iaci_enf_23", "1일 단위로 고용되거나 근로일에 따라 일당")`·`("iaci_enf_25", "고용노동부장관이 매년 고시하는 금액")` 추가 → 산재 앵커 20 |
+| j | 산재 흐름도 두 사본에 최저 보상기준 82,560원(장해·유족급여에만)·'휴업·상병은 최고만' 추가, `sw.js` v17, 테스트 단언 추가 |
+| b·d·f·h·k·a·e·c | 이 문서 D6·D7·D9·§2·§3·§4·§5·§7 갱신 |
+| n | `check_law_freshness --anchors`는 회선 IP 미등록으로 미실행 — 등록 IP 회선에서 실행 후 보고서에 기록 |
 
 ## Version History
 
 | 버전 | 일자 | 내용 |
 |---|---|---|
 | 1.0 | 2026-11-12 | 초판 — D1~D12, 원문 앵커 구절, PR-1·PR-2 상세, 테스트 표 |
+| 1.1 | 2026-11-12 | Act-1 — 갭 분석 편차 반영(D6·D7·D9·§2·§3·§4·§5·§7), §8 추가 |
