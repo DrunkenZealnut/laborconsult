@@ -545,6 +545,17 @@ wage_calculator/
 - `FixedAllowance` dataclass in `models.py` has `from_dict()` factory and `monthly_amount` property.
 - `calc_wage_arrears()` is a standalone function (no WageInput dependency).
 - `constants.py` holds yearly minimum wages, insurance rates, tax brackets — update these when laws change.
+- **조기재취업수당은 구직급여일액 × 미지급일수 × 1/2이고 카드 값은 '절반 남긴 시점 기준' 하한이다**(고용보험법 시행령
+  제85조①, calculator-statute-audit U1). 재취업일이 입력에 없어 발생 요건의 경계(소정급여일수 1/2 잔여)에서의 금액만 확정할 수
+  있다 — 예전 카드는 그 하한을 '(최대)'라 불렀고 공개 흐름도는 '÷2 × 50%'로 절반 값을 예시했으며 패키지 사본 JS는 `×0.5`를
+  한 번 더 곱했다(두 사본은 head·공개 전용 스크립트만 다르고 SVG·JS 본문은 같아야 한다 — `FlowchartTests`). 요건(신고일 +14일
+  경과·12개월 고용·65세 6개월·전 사업주 재고용 제외·고시 임금 이상 제외·2년 내 수령 이력)은 `_early_reemployment_note`가 안내만
+  하고 판정하지 않는다. **고시 임금액은 효력 기간을 가진 표(`EARLY_REEMPLOYMENT_WAGE_CAPS`)로 둔다** — 제2026-71호(월 300만원)는
+  2026-11-01~2029-10-31에만 적고, 밖이면 "고용노동부장관이 고시하는 임금액"으로 쓴다(기한 없는 상수는 끝난 고시를 조용히
+  계속 적용한다). 실업급여 기준기간은 18개월(초단시간 24개월)이고 일용근로자 특례는 **없다**(제40조②) — '일용직은 1년'은 법에 없는
+  값이었다. 일용근로자(`is_daily_worker`)에는 제40조①5호(근로일수 3분의 1 미만·건설일용 14일 연속 무근로)를 안내만 한다. 상한
+  68,100원은 2026-01-01 이후 이직자에게 적용된다(시행령 부칙 제35934호 제4조) — 계산은 `reference_year`로 하고 이직 연도가 다르면
+  경고만 붙인다. 회귀는 `test_calculator_statute_audit.py`.
 - **출산·가족휴가 급여의 지급 기간 근거는 `maternity_leave.EI_LEAVE_BASIS` 단일 출처다**(고용보험법 제76조①1~4호). 제75조는
   수급 요건이고 **항이 없으며**, 제75조의2는 수급권 대위다 — 지급 기간을 '제75조제1항·제2항·제75조의2'로 적던 문구가 그대로
   답변 근거로 나갔다(wage-update-followups P3). 대규모 기업은 사업주 유급 60일(다태아 75일, 근로기준법 제74조④) 초과분 중
