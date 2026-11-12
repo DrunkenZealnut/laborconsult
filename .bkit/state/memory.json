@@ -810,6 +810,22 @@
     "archivedAt": "2026-11-12",
     "archivedTo": "docs/archive/2026-11/calculator-statute-audit/",
     "merged": "PR #162 1431e87 · #163 0c80a4a · #164 4cbbae3 · report #165 727ad63 (2026-11-12), 프로덕션 sw v17 배포",
-    "remaining": "check_law_freshness --anchors(회선 IP 미등록) · source-pack-refresh 후속"
+    "remaining": "source-pack-refresh 후속(freshness --anchors는 11-12 통과 — 118.33.130.107 회선)"
+  },
+  "source-pack-refresh": {
+    "phase": "do",
+    "planPath": "docs/01-plan/features/source-pack-refresh.plan.md",
+    "startedAt": "2026-11-12",
+    "plannedAt": "2026-11-12",
+    "baseline": "9838261",
+    "parent": "calculator-statute-audit",
+    "trigger": "report §4.4 자료팩 누락 26(보류 7·신설 19)+변경 1",
+    "decisionsPending": "",
+    "designPath": "docs/02-design/features/source-pack-refresh.design.md",
+    "designAt": "2026-11-12",
+    "designDecisions": "D1 대상 8조문(보류 7+국민연금법 126; 임금채권보장법 4는 빈 조문, 민사집행규칙 제외) · D2 img 태그만 제거·상자 표 텍스트 채택 · D4 사람 검토 후 적재 · D5 새 배치 qpack_20261112_ · D6 제126조 supersede · D7 source_pack_refresh.py 저장소 · D8 BM25 전체 재빌드 · D10 임베딩·업로드·BM25는 사용자 확인",
+    "doAt": "2026-11-12",
+    "worktree": "../laborconsult-spr (feat/source-pack-refresh)",
+    "doProgress": "source_pack_refresh.py·테스트 10건·targets·fixtures·CI 등록. fetch(5법령)·prepare 8조문 23청크·검토: 적재 5조문 11청크, 보류 3(제60조의2·104의8·104의15 — 법제처 텍스트에서 연산 기호가 '?'). upload·supersede·BM25는 사용자 승인 대기"
   }
 }

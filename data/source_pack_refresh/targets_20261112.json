@@ -1,0 +1,16 @@
+{
+ "batch": "20261112",
+ "as_of": "2026-11-12",
+ "prior_ledger": "data/vector_ledgers/qpack_20261009.json",
+ "note": "source-pack-refresh D1 — 자료팩(10-09)이 이미지 때문에 보류한 7조문 + 스냅숏 이후 본문이 바뀐 국민연금법 제126조. 임금채권보장법 제3조의2 등 4조문은 현행판에서도 빈 자리 조문이라 제외, 민사집행규칙은 범위 밖.",
+ "laws": [
+  {"work_id": "ei-decree", "law": "고용보험법 시행령", "articles": ["60의2", "104의2", "104의8", "104의15"]},
+  {"work_id": "ei-rule", "law": "고용보험법 시행규칙", "articles": ["105"]},
+  {"work_id": "ei-nhis-act-current", "law": "국민건강보험법", "articles": ["71"]},
+  {"work_id": "general_law_retirement_enf", "law": "근로자퇴직급여 보장법 시행령", "articles": ["8"]},
+  {"work_id": "general_law_nps", "law": "국민연금법", "articles": ["126"]}
+ ],
+ "supersede": [
+  {"work_id": "general_law_nps", "section": "제126조 외국인에 대한 적용"}
+ ]
+}
