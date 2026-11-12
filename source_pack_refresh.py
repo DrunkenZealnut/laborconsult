@@ -339,13 +339,18 @@ def build_ledger(spec: dict, vectors: list[dict]) -> dict:
 def superseded_ids(prior: dict, spec: dict) -> list[str]:
     """구 원장에서 대체 대상 조문(work_id + 섹션 이름)의 ID만 고른다(D6, S6)."""
     out = []
+    done = prior.get("revision", {}).get(f"superseded_by_{spec['batch']}", {}).get("ids", [])
     for item in spec.get("supersede", []):
         doc = prior["documents"][item["work_id"]]
         tag = f"_{sha(item['work_id'].encode())[:16]}_{sha(item['section'].encode())[:10]}_"
-        hit = [i for i in doc["ids"] if tag in i]
+        hit = [i for i in doc["ids"] + done if tag in i]      # 이미 대체했으면 revision 기록에서 찾는다(멱등)
         assert hit, f"구 원장에 없는 섹션: {item}"
         out.extend(hit)
-    return out
+    return sorted(set(out))
+
+
+def already_superseded(prior: dict, spec: dict) -> bool:
+    return f"superseded_by_{spec['batch']}" in prior.get("revision", {})
 
 
 def supersede(spec: dict, apply: bool) -> int:
@@ -353,6 +358,8 @@ def supersede(spec: dict, apply: bool) -> int:
     prior = json.loads(path.read_text(encoding="utf-8"))
     ids = superseded_ids(prior, spec)
     print(f"{prior['batch']}: 대체 삭제 대상 {len(ids)}벡터 {ids}")
+    if already_superseded(prior, spec):
+        print("이미 대체됨 — 구 원장 revision에 기록이 있다(재실행 불필요)"); return 0
     if not apply:
         print("[dry-run] 실행하려면 --apply"); return 0
     index = _index()

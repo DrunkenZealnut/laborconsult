@@ -59,8 +59,8 @@ class IdsAndLedgerTest(unittest.TestCase):
         work_key = vid.split("_")[2]
         prior_keys = {i.split("_")[2] for i in self.prior["documents"]["general_law_nps"]["ids"]}
         self.assertEqual(prior_keys, {work_key})       # 기존 배치와 같은 문서 키(D5)
-        # 같은 조문은 섹션 해시도 같다 — 날짜 접두사만 다르다
-        self.assertIn(vid.replace("qpack_20261112_", "qpack_20261009_"), self.prior["documents"]["general_law_nps"]["ids"])
+        # 같은 조문은 섹션 해시도 같다 — 날짜 접두사만 다르다(대체 뒤에는 구 원장 revision에 남는다)
+        self.assertIn(vid.replace("qpack_20261112_", "qpack_20261009_"), spr.superseded_ids(self.prior, self.spec))
 
     def test_s6_supersede_selects_only_that_article(self):
         ids = spr.superseded_ids(self.prior, self.spec)
@@ -70,6 +70,10 @@ class IdsAndLedgerTest(unittest.TestCase):
         others = [i for i in self.prior["documents"]["general_law_nps"]["ids"] if i not in ids]
         self.assertTrue(others)
         self.assertFalse(any(f"_{tag}_" in i for i in others))
+        if spr.already_superseded(self.prior, self.spec):
+            # 대체 뒤 구 원장: 그 ID는 문서에서 빠지고 revision에 남는다, 개수 정합
+            self.assertFalse(set(ids) & set(self.prior["documents"]["general_law_nps"]["ids"]))
+            self.assertEqual(self.prior["vector_count"], sum(len(d["ids"]) for d in self.prior["documents"].values()))
 
     def test_s6_supersede_dry_run_writes_nothing(self):
         before = (ROOT / self.spec["prior_ledger"]).read_bytes()
