@@ -401,11 +401,18 @@ def _calc_sick_leave(
         n70, n90 = factor
         if route == "base70":
             reduced = daily * n70 / 70
-            floor3 = min_comp_80 * n90 / 90          # 별표 1 제1호 단서 — 제3호 금액보다 적으면 제3호
-            daily, label = max(reduced, floor3), f"{n70}/70"
+            floor3 = min_comp_80 * n90 / 90          # 별표 1 제1호 단서 — 제3호(최저보상 × 80% × n/90) 금액보다 적으면 제3호
+            arith = f"1일 휴업급여 × {n70}/70 = {reduced:,.0f}원"     # 등식은 감액 전 값으로 — 카드 수치가 LLM 근거로 들어간다
+            if reduced < floor3:
+                daily = floor3
+                arith += f" → 별표 1 제1호 단서 하한 {floor3:,.0f}원(최저 보상기준 × 80% × {n90}/90) 적용"
+                label = f"{n90}/90(제1호 단서 → 제3호 하한)"
+            else:
+                daily, label = reduced, f"{n70}/70"
         else:
-            daily, label = daily * n90 / 90, f"{n90}/90"
-        formulas.append(f"고령자 감액(만 {age}세): 1일 휴업급여 × {label} = {daily:,.0f}원 (산재보험법 제55조·별표 1)")
+            daily = daily * n90 / 90
+            arith, label = f"1일 휴업급여 × {n90}/90 = {daily:,.0f}원", f"{n90}/90"
+        formulas.append(f"고령자 감액(만 {age}세): {arith} (산재보험법 제55조·별표 1)")
         warnings.append(
             f"61세 이후 휴업급여는 별표 1에 따라 감액됩니다(만 {age}세 계수 {label}). 각 연령에 도달하는 날부터 계수가 바뀌며, "
             "61세 이후 취업 중 재해 등 제55조 단서 사유는 일정 기간 감액하지 않습니다."

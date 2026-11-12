@@ -187,6 +187,17 @@ class SickLeaveTests(unittest.TestCase):
         daily, *_ = self._sick(60_000, 10, age=63)
         self.assertEqual(daily, round(82_560 * 78 / 90))
 
+    def test_annex_first_item_floor_binds_when_minimum_standard_exceeds_minimum_wage(self):
+        # 별표 1 제1호 단서: 제52조 기준 감액 금액이 제3호(최저보상 × 80% × n/90) 금액보다 적으면 제3호. 최저 보상기준이 최저임금액과
+        # 같은 해(2024~2026)에는 제52조 경로 금액이 늘 최저임금액 이상이라 닿지 않으므로 표를 바꿔 넣고 확인한다(Act-1 g)
+        from unittest import mock
+        import wage_calculator.calculators.industrial_accident as ia
+        with mock.patch.object(ia, "MIN_COMPENSATION_DAILY", {2026: 120_000}):
+            daily, _, _, formulas, _, _ = self._sick(137_500, 10, age=61)    # 70% = 96,250 > 96,000(최저보상 80%) → 제52조 경로
+        self.assertEqual(daily, round(96_000 * 86 / 90))                     # 96,250 × 66/70 = 90,750 < 91,733 → 제3호 하한
+        self.assertTrue(any("× 66/70 = 90,750원" in f and "하한 91,733원" in f for f in formulas), formulas)   # 등식은 감액 전 값(N1)
+        self.assertEqual(self._sick(200_000, 10, age=61)[0], round(140_000 * 66 / 70))   # 하한이 걸리지 않는 경우는 그대로
+
     def test_card_passes_age_and_days_through(self):
         res = _accident(sick_leave_days=2)
         self.assertEqual(res.sick_leave_total, 0)
@@ -267,7 +278,7 @@ class AccidentFlowchartTests(unittest.TestCase):
         svg = [re.sub(r"<script>\n// Mobile: wrap SVGs.*?</script>\n", "", b[b.index("<svg"):], flags=re.S)
                .replace('<script type="module" src="/analytics.js"></script>\n', "") for b in bodies]
         self.assertEqual(svg[0], svg[1])
-        for piece in ("3일 이내", "제52조 단서", "최고 보상기준", "268,299", "61세"):
+        for piece in ("3일 이내", "제52조 단서", "최고 보상기준", "268,299", "61세", "장해·유족급여에만", "휴업·상병은 최고만"):
             self.assertIn(piece, bodies[0])
 
 
