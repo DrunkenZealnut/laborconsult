@@ -141,4 +141,7 @@ def bonus_already_included(inp, ow):
     if len(matched) != len(ids) or {a.source_id for a in matched} != set(ids):
         raise PayInputError('상여 출처 식별자가 고정수당 목록과 일치하지 않거나 중복됩니다.')
     reduced = replace(inp, fixed_allowances=[a for a in allowances if a.source_id not in ids])
-    return max(0, monthly_wage_total(inp, ow)-monthly_wage_total(reduced,calc_ordinary_wage(reduced))) * 3
+    # 상여만 뺀다 — 기본(premium=True)으로 빼면 상여가 올린 통상시급의 연장수당 차이까지 '이미 포함된 상여'로 잡혀
+    # 3개월 차감액이 1,500,000이 아니라 2,062,500이 됐다(wage-update-followups G4)
+    return max(0, monthly_wage_total(inp, ow, premium=False)
+               - monthly_wage_total(reduced, calc_ordinary_wage(reduced), premium=False)) * 3
