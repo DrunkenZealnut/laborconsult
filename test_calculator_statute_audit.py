@@ -40,5 +40,40 @@ class EarlyReemploymentWageCapTests(unittest.TestCase):
         self.assertIsNone(early_reemployment_wage_cap(None))
 
 
+class EarlyReemploymentTests(unittest.TestCase):
+    """D1·D2 — 금액은 구직급여일액 × 미지급일수 × 1/2, 카드 값은 절반 남긴 시점 기준 하한, 요건·고시는 안내."""
+
+    def test_formula_names_the_unpaid_days_rule_and_drops_the_max_label(self):
+        res = _unemp()
+        line = next(f for f in res.formulas if f.startswith("조기재취업수당"))
+        self.assertIn("미지급일수", line)
+        self.assertIn("× 1/2", line)
+        self.assertIn("시행령 제85조", line)
+        self.assertNotIn("최대", line)
+        self.assertNotIn("최대", res.breakdown["조기재취업수당"])
+        self.assertIn("절반", res.breakdown["조기재취업수당"])
+
+    def test_floor_amount_is_unchanged_from_previous_card(self):
+        res = _unemp()
+        self.assertEqual(res.early_reemployment_bonus, round(res.daily_benefit * (res.benefit_days // 2) * 0.5, 0))
+
+    def test_requirements_note_lists_statutory_conditions(self):
+        res = _unemp()
+        note = next(w for w in res.warnings if w.startswith("조기재취업수당 요건"))
+        for piece in ("14일", "2분의 1", "12개월", "65세", "6개월", "최후 이직 사업주", "2년", "청구는 재취업 12개월 뒤"):
+            self.assertIn(piece, note)
+        self.assertIn("고용보험법 시행령 제84조 (지급기준)·제85조 (금액)·제86조 (청구)", res.legal_basis)
+
+    def test_wage_cap_notice_appears_only_inside_its_effective_period(self):
+        inside = next(w for w in _unemp(reference_date="2026-11-12").warnings if w.startswith("조기재취업수당 요건"))
+        self.assertIn("월 3,000,000원", inside)
+        self.assertIn("제2026-71호", inside)
+        before = next(w for w in _unemp(reference_date="2026-10-01").warnings if w.startswith("조기재취업수당 요건"))
+        self.assertNotIn("3,000,000", before)
+        self.assertIn("고용노동부장관이 고시하는 임금액", before)
+        after = next(w for w in _unemp(reference_date="2029-11-01").warnings if w.startswith("조기재취업수당 요건"))
+        self.assertNotIn("3,000,000", after)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

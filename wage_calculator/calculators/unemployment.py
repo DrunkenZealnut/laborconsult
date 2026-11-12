@@ -16,9 +16,9 @@
 ■ 소정급여일수 (고용보험법 제50조)
   피보험기간·나이(50세 기준)·장애인 여부에 따라 120~270일
 
-■ 조기재취업수당 (고용보험법 제64조)
-  소정급여일수 절반 이상 남기고 취업 → 남은 급여의 50%
-  (단, 12개월 이상 고용 유지 후 신청)
+■ 조기재취업수당 (고용보험법 제64조, 시행령 제84조~제86조)
+  금액 = 구직급여일액 × 미지급일수 × 1/2 (시행령 제85조①). 소정급여일수를 2분의 1 이상 남기고 재취업한 경우가 발생 요건이라
+  그 경계(절반 남김)의 금액이 하한이다. 요건·제외(14일 경과·12개월 고용·전 사업주·고시 임금 이상 등)는 안내만 한다.
 """
 
 from dataclasses import dataclass
@@ -30,7 +30,9 @@ from ..constants import (
     PLATFORM_UNEMPLOYMENT_UPPER,
     PLATFORM_INSURED_REQ_MONTHS,
     PLATFORM_INSURED_REQ_WINDOW,
+    early_reemployment_wage_cap,
 )
+from ..legal_rules import kst_today
 from ..models import WageInput, WorkType
 from ..utils import fmt_hours
 from .ordinary_wage import OrdinaryWageResult
@@ -320,14 +322,18 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         f"총 구직급여: {daily_benefit:,.0f}원/일 × {benefit_days}일 = {total:,.0f}원"
     )
 
-    # ── 7. 조기재취업수당 ─────────────────────────────────────────────────────
-    # 소정급여일수 절반 이상 남기고 취업 시, 남은 급여의 50%
+    # ── 7. 조기재취업수당 — 구직급여일액 × 미지급일수 × 1/2 (고용보험법 제64조③·시행령 제85조①) ──────────────────
+    # 재취업일은 입력에 없다. 발생 요건의 경계(재취업 전날 기준 소정급여일수의 2분의 1을 남김)에서의 금액이 **하한**이고, 더
+    # 일찍 재취업하면 미지급일수가 늘어 커진다. 예전 카드는 이 하한을 '(최대)'라 불렀다(calculator-statute-audit U1).
     half_days    = benefit_days // 2
     early_bonus  = daily_benefit * half_days * 0.50
     formulas.append(
-        f"조기재취업수당(최대): {daily_benefit:,.0f}원 × {half_days}일(절반) × 50% = {early_bonus:,.0f}원"
+        f"조기재취업수당(절반 남긴 시점 기준): {daily_benefit:,.0f}원 × 미지급일수 {half_days}일 × 1/2 = {early_bonus:,.0f}원 "
+        "— 미지급일수가 많을수록 커집니다(고용보험법 시행령 제85조 제1항)"
     )
-    legal.append("고용보험법 제64조 (조기재취업수당)")
+    warnings.append(_early_reemployment_note(getattr(inp, "reference_date", None)))
+    legal.append("고용보험법 제64조 (조기재취업 수당)")
+    legal.append("고용보험법 시행령 제84조 (지급기준)·제85조 (금액)·제86조 (청구)")
 
     # ── 8. 안내 사항 ─────────────────────────────────────────────────────────
     warnings.append(
@@ -355,7 +361,7 @@ def calc_unemployment(inp: WageInput, ow: OrdinaryWageResult) -> UnemploymentRes
         "실 지급 일액":    f"{daily_benefit:,.0f}원" + (f"  [{limit_applied}]" if limit_applied else ""),
         "소정급여일수":    f"{benefit_days}일",
         "총 구직급여":     f"{total:,.0f}원",
-        "조기재취업수당":  f"{early_bonus:,.0f}원  (절반 이상 남기고 취업 후 12개월 고용 유지 시)",
+        "조기재취업수당":  f"{early_bonus:,.0f}원  (소정급여일수의 절반을 남기고 재취업한 경우의 금액 — 요건·제외는 안내 참조)",
         "수급기간 만료":   "이직일 다음날부터 12개월",
     }
 
@@ -413,3 +419,17 @@ def _ei_daily_scheduled_hours(inp: WageInput) -> float:
         holiday = weekly_holiday_hours(s.weekly_work_days, s.daily_work_hours)[0] if weekly >= 15 else 0.0
         daily = (weekly + holiday) / 48 * 8
     return min(daily, 8.0)
+
+
+def _early_reemployment_note(reference_date: str | None) -> str:
+    """조기재취업수당 요건·제외·청구 시기 — 판정하지 않고 안내만(시행령 제84조·제86조, 법 제64조②). 고시 임금액은 기준일에
+    효력이 있는 행이 있을 때만 금액으로 적는다(calculator-statute-audit D2)."""
+    cap = early_reemployment_wage_cap(reference_date or kst_today())
+    wage_clause = (f"월 {cap[0]:,.0f}원 이상 임금({cap[1]}, {cap[2]}~{cap[3]} 재취업분)" if cap
+                   else "고용노동부장관이 고시하는 임금액 이상")
+    return (
+        "조기재취업수당 요건: 실업 신고일부터 14일이 지난 후 재취업하고, 재취업 전날 기준 소정급여일수를 2분의 1 이상 남겼으며, "
+        "12개월 이상 계속 고용(이직일 당시 65세 이상은 6개월 이상 고용 인정)이어야 합니다. 최후 이직 사업주·관련 사업주 재고용, "
+        f"신고 전 채용 약속, 공무원 채용, 병역 특례 근무, {wage_clause}은 제외됩니다. 재취업 전 2년 안에 수당을 받았으면 "
+        "지급되지 않고, 청구는 재취업 12개월 뒤(65세 이상은 즉시)입니다(고용보험법 시행령 제84조·제86조)."
+    )
