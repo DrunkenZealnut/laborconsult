@@ -257,5 +257,19 @@ class DailyWorkerAndDiseaseTests(unittest.TestCase):
         self.assertFalse(any("제36조 제6항" in w for w in _accident(injury_type="사고", sick_leave_days=30).warnings))
 
 
+class AccidentFlowchartTests(unittest.TestCase):
+    _FLOW = ("public/calculator_flow/industrial_accident_compensation_calc.html",
+             "wage_calculator/calculator_flow/industrial_accident_compensation_calc.html")
+
+    def test_copies_match_and_mention_the_new_rules(self):
+        import re
+        bodies = [(ROOT / p).read_text(encoding="utf-8") for p in self._FLOW]
+        svg = [re.sub(r"<script>\n// Mobile: wrap SVGs.*?</script>\n", "", b[b.index("<svg"):], flags=re.S)
+               .replace('<script type="module" src="/analytics.js"></script>\n', "") for b in bodies]
+        self.assertEqual(svg[0], svg[1])
+        for piece in ("3일 이내", "제52조 단서", "최고 보상기준", "268,299", "61세"):
+            self.assertIn(piece, bodies[0])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

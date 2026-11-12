@@ -202,8 +202,10 @@ def calc_industrial_accident(
             "제한됩니다(산재보험법 제36조 제7항). 이 카드는 상한 없이 계산했습니다."
         )
     avg_floor = avg_capped
+    uses_floor = inp.disability_grade > 0 or (inp.is_deceased and inp.num_survivors > 0)   # 최저는 장해·유족급여에만 쓰인다
     if avg_capped < comp_low:
         avg_floor = comp_low
+    if avg_capped < comp_low and uses_floor:
         formulas.append(
             f"최저 보상기준 금액 적용: 평균임금 {avg_daily:,.0f}원 < {comp_low:,.0f}원 → 장해·유족급여는 {comp_low:,.0f}원으로 "
             "산정(산재보험법 제36조 제7항 — 휴업급여·상병보상연금에는 적용하지 않음)"
@@ -214,7 +216,7 @@ def calc_industrial_accident(
     total_compensation = 0.0
     breakdown: dict = {"적용 평균임금": f"{avg_daily:,.0f}원/일"
                        + (f" (휴업·상병 {avg_capped:,.0f}원, 장해·유족 {avg_floor:,.0f}원 — 보상기준 적용)"
-                          if (avg_capped, avg_floor) != (avg_daily, avg_daily) else "")}
+                          if avg_capped != avg_daily or (uses_floor and avg_floor != avg_daily) else "")}
 
     # ── 2. 휴업급여 ───────────────────────────────────────────────────────
     sl_daily, sl_total, sl_min = 0.0, 0.0, False

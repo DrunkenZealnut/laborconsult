@@ -108,7 +108,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <line x1="500" y1="96" x2="590" y2="136" class="arr" marker-end="url(#ar)"/>
 
 <!-- 6가지 급여 유형 -->
-<g class="node c-teal" onclick="sendPrompt('휴업급여 계산과정을 더 자세히 알려줘')">
+<g class="node c-teal" onclick="window.parent?.sendPrompt?.('휴업급여 계산과정을 더 자세히 알려줘')">
 <rect x="40" y="136" width="130" height="56" rx="8" stroke-width="0.5"/>
 <text class="th" x="105" y="156" text-anchor="middle" dominant-baseline="central">휴업급여</text>
 <text class="ts" x="105" y="174" text-anchor="middle" dominant-baseline="central">요양 중 소득</text>
@@ -149,7 +149,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <rect x="40" y="336" width="290" height="86" rx="8" stroke-width="0.5"/>
 <text class="th" x="185" y="356" text-anchor="middle" dominant-baseline="central">휴업급여 (제52조)</text>
 <text class="ts" x="185" y="376" text-anchor="middle" dominant-baseline="central">기본: 평균임금 x 70%</text>
-<text class="ts" x="185" y="394" text-anchor="middle" dominant-baseline="central">저임금자: 최대 90%까지 상향</text>
+<text class="ts" x="185" y="394" text-anchor="middle" dominant-baseline="central">저임금자 90% 상향 · 3일 이내 요양은 미지급(제52조 단서)</text>
 <text class="ts" x="185" y="412" text-anchor="middle" dominant-baseline="central">총액 = 1일 수당 x 요양일수</text>
 </g>
 
@@ -200,7 +200,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div id="tab1" style="display:none">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
 <p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">휴업급여 — 저임금자 보호 로직이 핵심</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">산업재해보상보험법 제52조</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">산업재해보상보험법 제52조·제54조·제55조 — 요양 3일 이내는 미지급(제52조 단서), 평균임금은 최고 보상기준(2026년 268,299원/일, 제36조⑦)까지, 61세부터 별표 1 계수로 감액</p>
 </div>
 <svg width="100%" viewBox="0 0 680 660">
 <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
