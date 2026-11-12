@@ -51,12 +51,12 @@
 ## 2. PDCA 사이클 요약
 
 ### 2.1 Plan
-- 문서: `docs/01-plan/features/calculator-statute-audit.plan.md`
+- 문서: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.plan.md`
 - 목표: 계산기 산식·문구를 법령 원문과 대조해 확정 오류와 누락 규칙을 고친다. 대상이 아닌 입력의 금액은 바뀌지 않아야 한다.
 - 범위 판단: 해설서 3권은 계산기와 무관해 제외. 재결례는 개별 사건 판단이라 산식 근거로 쓰지 않고, 빠진 법정 규칙을 찾는 지표로만 썼다.
 
 ### 2.2 Design
-- 문서: `docs/02-design/features/calculator-statute-audit.design.md` v1.1
+- 문서: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md` v1.1
 - 결정 D1~D12: 조기재취업 산식과 카드 값의 의미(D1), 고시 임금 효력 표(D2), 최고·최저 보상기준의 적용 순서와 급여별 범위(D5·D6), 61세 감액의 경로별 분기(D7), 통상근로계수 적용 조건(D8), 직업병 특례 안내 범위(D9), 앵커 구절 선택(D10), 흐름도 사본 동기화(D11), 테스트 파일 구성(D12).
 
 ### 2.3 Do
@@ -195,9 +195,9 @@
 
 ## 7. 참조 문서
 
-- Plan: `docs/01-plan/features/calculator-statute-audit.plan.md`
-- Design: `docs/02-design/features/calculator-statute-audit.design.md` (v1.1, D1~D12, §7 변경 사례, §8 Act-1)
-- Analysis: `docs/03-analysis/calculator-statute-audit.analysis.md` (1차 90.4%, §5 재대조 98.2%, 편차 a~n, N1~N3)
+- Plan: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.plan.md`
+- Design: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md` (v1.1, D1~D12, §7 변경 사례, §8 Act-1)
+- Analysis: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.analysis.md` (1차 90.4%, §5 재대조 98.2%, 편차 a~n, N1~N3)
 - 구현 계획: `docs/superpowers/plans/2026-11-12-calculator-statute-audit.md`
 - 테스트: `test_calculator_statute_audit.py`, `test_unemployment_separation.py`, `test_wage_update_2026.py`
 - 코드: `wage_calculator/calculators/unemployment.py`, `wage_calculator/calculators/industrial_accident.py`, `wage_calculator/constants.py`, `wage_calculator/legal_anchors.py`, `fetch_official_rules.py`

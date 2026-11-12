@@ -1,6 +1,6 @@
 # calculator-statute-audit — Design
 
-> Plan: `docs/01-plan/features/calculator-statute-audit.plan.md` · 작성: 2026-11-12 · 기준: main `74400ff`
+> Plan: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.plan.md` · 작성: 2026-11-12 · 기준: main `74400ff`
 > 원문 대조는 자료팩 원본(법제처 2026-10-09 시행판)과 법제처 현행판(`target=eflaw`, 2026-11-12 조회)으로 했다. 아래 인용 구절은 그대로 앵커가 된다.
 
 ## 0. 설계 결정 요약
@@ -252,7 +252,7 @@ PR-2는 설계 §2와 달리 PR-1 브랜치 위에 쌓았다 — 두 PR이 같�
 
 ## 8. Act-1 (2026-11-12, 갭 분석 90.4% → 편차 반영)
 
-갭 분석(`docs/03-analysis/calculator-statute-audit.analysis.md`) 57항목 중 ⚠️ 9·❌ 1. 코드 수정 g·i·j, 설계 갱신 b·c·d·f·h·k·a·e, 수용 l·m.
+갭 분석(`docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.analysis.md`) 57항목 중 ⚠️ 9·❌ 1. 코드 수정 g·i·j, 설계 갱신 b·c·d·f·h·k·a·e, 수용 l·m.
 
 | # | 조치 |
 |---|---|
