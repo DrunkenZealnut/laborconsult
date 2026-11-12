@@ -29,6 +29,9 @@ from ..constants import (
     SICK_LEAVE_LOW_RATE,
     MIN_COMP_THRESHOLD,
     MIN_COMPENSATION_DAILY,
+    COMPENSATION_LIMITS_DAILY,
+    ORDINARY_WORK_COEFFICIENT,
+    get_minimum_hourly_wage,
 )
 from .ordinary_wage import OrdinaryWageResult
 from .average_wage import calc_average_wage
@@ -153,26 +156,58 @@ def calc_industrial_accident(
     if inp.accident_date:
         legal.append("근로기준법 시행령 제52조 (재해보상 시의 평균임금 산정 사유 발생일)")
 
+    # ── 1-2. 최고·최저 보상기준(제36조⑦) — 장례비 외 급여의 평균임금 상한, 장해·유족급여의 하한 ────────────────────
+    # 휴업급여·상병보상연금에는 최저를 적용하지 않는다(단서). 장례비는 자체 최고·최저(제71조②)가 있어 제외다(calculator-statute-audit D5).
+    comp_high, comp_low = _compensation_limits(year)
+    avg_capped = avg_daily
+    if comp_high is not None and avg_daily > comp_high:
+        avg_capped = comp_high
+        formulas.append(
+            f"최고 보상기준 금액 적용: 평균임금 {avg_daily:,.0f}원 > {comp_high:,.0f}원 → 휴업·장해·유족·상병보상연금은 "
+            f"{comp_high:,.0f}원으로 산정(산재보험법 제36조 제7항, 장례비 제외)"
+        )
+        legal.append("산업재해보상보험법 제36조 제7항 (최고·최저 보상기준 금액)")
+    elif comp_high is None and avg_daily > comp_low * 3.6:
+        # 최고/최저 = 1.8배 ÷ 1/2 = 3.6배(제36조⑦) — 최저만 아는 해에 최고를 넘었을 가능성이 큰 구간만 알린다
+        warnings.append(
+            f"{year}년 최고 보상기준 금액을 확인하지 못했습니다 — 평균임금이 전체 근로자 임금 평균액의 1.8배를 넘으면 그 금액으로 "
+            "제한됩니다(산재보험법 제36조 제7항). 이 카드는 상한 없이 계산했습니다."
+        )
+    avg_floor = avg_capped
+    if avg_capped < comp_low:
+        avg_floor = comp_low
+        formulas.append(
+            f"최저 보상기준 금액 적용: 평균임금 {avg_daily:,.0f}원 < {comp_low:,.0f}원 → 장해·유족급여는 {comp_low:,.0f}원으로 "
+            "산정(산재보험법 제36조 제7항 — 휴업급여·상병보상연금에는 적용하지 않음)"
+        )
+        if "산업재해보상보험법 제36조 제7항 (최고·최저 보상기준 금액)" not in legal:
+            legal.append("산업재해보상보험법 제36조 제7항 (최고·최저 보상기준 금액)")
+
     total_compensation = 0.0
-    breakdown: dict = {"적용 평균임금": f"{avg_daily:,.0f}원/일"}
+    breakdown: dict = {"적용 평균임금": f"{avg_daily:,.0f}원/일"
+                       + (f" (휴업·상병 {avg_capped:,.0f}원, 장해·유족 {avg_floor:,.0f}원 — 보상기준 적용)"
+                          if (avg_capped, avg_floor) != (avg_daily, avg_daily) else "")}
 
     # ── 2. 휴업급여 ───────────────────────────────────────────────────────
     sl_daily, sl_total, sl_min = 0.0, 0.0, False
     if inp.sick_leave_days > 0:
-        sl_daily, sl_total, sl_min, sl_f = _calc_sick_leave(
-            avg_daily, inp.sick_leave_days, year
+        sl_daily, sl_total, sl_min, sl_f, sl_w, sl_l = _calc_sick_leave(
+            avg_capped, inp.sick_leave_days, year, age=getattr(inp, "age", 0) or 0
         )
         total_compensation += sl_total
         formulas.extend(sl_f)
+        warnings.extend(sl_w)
+        legal.extend(l for l in sl_l if l not in legal)
         breakdown["휴업급여"] = (
             f"{sl_daily:,.0f}원/일 × {inp.sick_leave_days}일 = {sl_total:,.0f}원"
+            if sl_total else f"0원 (요양 {inp.sick_leave_days}일 ≤ 3일 — 제52조 단서)"
         )
 
     # ── 3. 상병보상연금 ───────────────────────────────────────────────────
     il_daily, il_annual = 0.0, 0.0
     if inp.severe_illness_grade > 0:
         il_daily, il_annual, il_f = _calc_illness_pension(
-            avg_daily, inp.severe_illness_grade
+            avg_capped, inp.severe_illness_grade
         )
         total_compensation += il_annual
         formulas.extend(il_f)
@@ -191,7 +226,7 @@ def calc_industrial_accident(
     dis_amount, dis_type, dis_days = 0.0, "", 0
     if inp.disability_grade > 0:
         dis_amount, dis_type, dis_days, dis_f, dis_w = _calc_disability(
-            avg_daily, inp.disability_grade, inp.disability_pension
+            avg_floor, inp.disability_grade, inp.disability_pension
         )
         total_compensation += dis_amount
         formulas.extend(dis_f)
@@ -205,7 +240,7 @@ def calc_industrial_accident(
     surv_amount, surv_type, surv_ratio = 0.0, "", 0.0
     if inp.is_deceased and inp.num_survivors > 0:
         surv_amount, surv_type, surv_ratio, surv_f = _calc_survivor(
-            avg_daily, inp.num_survivors, inp.survivor_pension
+            avg_floor, inp.num_survivors, inp.survivor_pension
         )
         total_compensation += surv_amount
         formulas.extend(surv_f)
@@ -249,56 +284,99 @@ def calc_industrial_accident(
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────────────────
 
-def _calc_sick_leave(
-    avg_daily: float, days: int, year: int
-) -> tuple[float, float, bool, list[str]]:
-    """
-    휴업급여 계산 (산재보험법 제52조, 제54조)
+def _compensation_limits(year: int) -> tuple[float | None, float]:
+    """(최고, 최저) 보상기준 금액. 최저는 최저임금액(시급 × 8)과 비교해 큰 쪽(제36조⑦ 후단). 표에 없는 해는 (None, 최저임금액)."""
+    high, low = COMPENSATION_LIMITS_DAILY.get(year, (None, 0.0))
+    return high, max(float(low), get_minimum_hourly_wage(year) * 8)
 
-    최저보상기준 적용 로직:
-    1단계: avg_daily × 70%
-    2단계: 결과 ≤ 최저보상기준 × 80% → avg_daily × 90%
-    3단계: avg_daily × 90% > 최저보상기준 × 80% → 최저보상기준 × 80%
-    4단계: 위 금액 < 최저임금 일급 → 최저임금 일급
+
+# 61세 이후 휴업급여 계수(산재보험법 제55조·별표 1) — {연령: (제52조 기준 n/70, 제54조 기준 n/90)}, 65세 이후는 (50, 70)
+_SENIOR_FACTORS: dict[int, tuple[int, int]] = {61: (66, 86), 62: (62, 82), 63: (58, 78), 64: (54, 74)}
+_SENIOR_FACTOR_65 = (50, 70)
+
+
+def _senior_factor(age: int) -> tuple[int, int] | None:
+    """만 나이가 61세 이상이면 별표 1 계수 (n70, n90). 모르거나(0) 60세 이하면 None."""
+    if not age or age < 61:
+        return None
+    return _SENIOR_FACTORS.get(age, _SENIOR_FACTOR_65)
+
+
+def _calc_sick_leave(
+    avg_daily: float, days: int, year: int, age: int = 0
+) -> tuple[float, float, bool, list[str], list[str], list[str]]:
+    """
+    휴업급여 계산 (산재보험법 제52조·제54조·제55조)
+
+    Returns: (1일 지급액, 총액, 최저보상기준 적용 여부, formulas, warnings, legal)
+
+    1단계: 요양 3일 이내면 미지급(제52조 단서) — 사용자의 요양보상·휴업보상(근로기준법 제78조·제79조)
+    2단계: avg_daily × 70% (제52조)
+    3단계: 결과 ≤ 최저보상기준 × 80% → avg_daily × 90% (제54조① 본문); 90%가 최저보상기준 × 80%보다 많으면 최저보상기준 × 80% (제54조① 단서)
+    4단계: 위 금액 < 최저임금액(시급 × 8) → 최저임금액 (제54조②)
+    5단계: 61세 이후면 별표 1 계수 — 제52조 기준은 n/70, 제54조 기준은 n/90(단서 기준은 최저보상 × 80% × n/90).
+          제52조 기준 금액이 제3호(단서 기준) 금액보다 적으면 제3호 금액(별표 1 제1호 단서)
+    avg_daily는 호출부가 최고 보상기준으로 자른 값이다(제36조⑦ — 최저 보상기준은 휴업급여에 적용하지 않는다).
     """
     formulas: list[str] = []
-    min_comp_applied = False
+    warnings: list[str] = []
+    legal: list[str] = []
+    if days <= 3:
+        formulas.append(
+            f"휴업급여: 취업하지 못한 기간 {days}일 ≤ 3일 → 산재 휴업급여 미지급(산재보험법 제52조 단서). "
+            "이 기간은 사업주가 요양보상·휴업보상(평균임금의 60%)을 합니다(근로기준법 제78조·제79조)"
+        )
+        legal.append("근로기준법 제78조·제79조 (사용자의 요양보상·휴업보상)")
+        return 0.0, 0.0, False, formulas, warnings, legal
 
+    min_comp_applied = False
     base = avg_daily * SICK_LEAVE_RATE  # 70%
     min_comp = MIN_COMPENSATION_DAILY.get(year, MIN_COMPENSATION_DAILY[max(MIN_COMPENSATION_DAILY.keys())])
     min_comp_80 = min_comp * MIN_COMP_THRESHOLD
-
-    from ..constants import get_minimum_hourly_wage
     min_wage_daily = get_minimum_hourly_wage(year) * 8
 
     daily = base
+    route = "base70"                       # 제52조
     formulas.append(f"기본 휴업급여: {avg_daily:,.0f}원 × 70% = {base:,.0f}원")
 
     if base <= min_comp_80:
         daily_90 = avg_daily * SICK_LEAVE_LOW_RATE
         if daily_90 > min_comp_80:
             daily = min_comp_80
-            formulas.append(
-                f"90%({daily_90:,.0f}원) > 최저보상기준 80%({min_comp_80:,.0f}원) "
-                f"→ 최저보상기준 80% 적용"
-            )
+            route = "low_min80"            # 제54조① 단서
+            formulas.append(f"90%({daily_90:,.0f}원) > 최저보상기준 80%({min_comp_80:,.0f}원) → 최저보상기준 80% 적용")
         else:
             daily = daily_90
-            formulas.append(
-                f"90%({daily_90:,.0f}원) ≤ 최저보상기준 80%({min_comp_80:,.0f}원) "
-                f"→ 90% 적용"
-            )
+            route = "low90"                # 제54조① 본문
+            formulas.append(f"90%({daily_90:,.0f}원) ≤ 최저보상기준 80%({min_comp_80:,.0f}원) → 90% 적용")
         min_comp_applied = True
 
     if daily < min_wage_daily:
         daily = min_wage_daily
+        route = "min_wage"                 # 제54조②
         formulas.append(f"최저임금 일급({min_wage_daily:,.0f}원) 하한 적용")
         min_comp_applied = True
 
+    factor = _senior_factor(age)
+    if factor:
+        n70, n90 = factor
+        if route == "base70":
+            reduced = daily * n70 / 70
+            floor3 = min_comp_80 * n90 / 90          # 별표 1 제1호 단서 — 제3호 금액보다 적으면 제3호
+            daily, label = max(reduced, floor3), f"{n70}/70"
+        else:
+            daily, label = daily * n90 / 90, f"{n90}/90"
+        formulas.append(f"고령자 감액(만 {age}세): 1일 휴업급여 × {label} = {daily:,.0f}원 (산재보험법 제55조·별표 1)")
+        warnings.append(
+            f"61세 이후 휴업급여는 별표 1에 따라 감액됩니다(만 {age}세 계수 {label}). 각 연령에 도달하는 날부터 계수가 바뀌며, "
+            "61세 이후 취업 중 재해 등 제55조 단서 사유는 일정 기간 감액하지 않습니다."
+        )
+        legal.append("산업재해보상보험법 제55조·별표 1 (고령자의 휴업급여)")
+
+    daily = round(daily)
     total = daily * days
     formulas.append(f"휴업급여 총액: {daily:,.0f}원 × {days}일 = {total:,.0f}원")
-
-    return daily, total, min_comp_applied, formulas
+    return daily, total, min_comp_applied, formulas, warnings, legal
 
 
 def _calc_illness_pension(

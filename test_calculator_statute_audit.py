@@ -150,5 +150,82 @@ class CompensationConstantsTests(unittest.TestCase):
         self.assertEqual(ORDINARY_WORK_COEFFICIENT, 0.73)
 
 
+class SickLeaveTests(unittest.TestCase):
+    """D4 3일 단서 · D7 61세 이후 별표 1 계수(산정 경로별)."""
+
+    def _sick(self, avg, days, age=0, year=2026):
+        from wage_calculator.calculators.industrial_accident import _calc_sick_leave
+        return _calc_sick_leave(avg, days, year, age=age)
+
+    def test_three_days_or_less_pays_nothing_and_points_to_employer(self):
+        daily, total, _, formulas, _, legal = self._sick(200_000, 3)
+        self.assertEqual((daily, total), (0.0, 0.0))
+        self.assertTrue(any("제52조 단서" in f and "제79조" in f for f in formulas), formulas)
+        self.assertIn("근로기준법 제78조·제79조 (사용자의 요양보상·휴업보상)", legal)
+        daily4, *_ = self._sick(200_000, 4)
+        self.assertEqual(daily4, 140_000)
+
+    def test_senior_factor_on_the_70_percent_route(self):
+        self.assertEqual(self._sick(200_000, 10, age=61)[0], round(140_000 * 66 / 70))
+        self.assertEqual(self._sick(200_000, 10, age=65)[0], round(140_000 * 50 / 70))
+        self.assertEqual(self._sick(200_000, 10, age=70)[0], round(140_000 * 50 / 70))
+        self.assertEqual(self._sick(200_000, 10, age=60)[0], 140_000)
+        self.assertEqual(self._sick(200_000, 10, age=0)[0], 140_000)
+
+    def test_senior_factor_on_the_minimum_standard_route(self):
+        # 93,000 × 70% = 65,100 ≤ 66,048(최저 82,560 × 80%) → 90% = 83,700 > 66,048 → 제54조① 단서 = 66,048
+        # → 최저임금액 82,560 미만이라 제54조② 하한으로 올라간다(최저 보상기준이 최저임금액과 같은 해에는 단서 금액이 늘 그 아래다)
+        # → 62세는 제54조 기준 계수 82/90
+        daily, *_, formulas, warnings, legal = self._sick(93_000, 10, age=62)
+        self.assertEqual(daily, round(82_560 * 82 / 90))
+        self.assertTrue(any("별표 1" in f for f in formulas))
+        self.assertTrue(any("61세 이후" in w for w in warnings))
+        self.assertIn("산업재해보상보험법 제55조·별표 1 (고령자의 휴업급여)", legal)
+
+    def test_senior_factor_on_the_minimum_wage_route(self):
+        # 60,000 × 70% = 42,000 → 90% = 54,000 ≤ 66,048 → 54,000 < 최저임금액 82,560 → 제54조② → 63세 × 78/90
+        daily, *_ = self._sick(60_000, 10, age=63)
+        self.assertEqual(daily, round(82_560 * 78 / 90))
+
+    def test_card_passes_age_and_days_through(self):
+        res = _accident(sick_leave_days=2)
+        self.assertEqual(res.sick_leave_total, 0)
+        self.assertTrue(any("제52조 단서" in f for f in res.formulas))
+        res61 = _accident(sick_leave_days=30, age=61)
+        self.assertTrue(any("고령자 감액(만 61세)" in f for f in res61.formulas), res61.formulas)
+
+
+class CompensationLimitTests(unittest.TestCase):
+    """D5 — 최고는 장례비 외 전 급여, 최저는 장해·유족만(제36조⑦)."""
+
+    def test_high_wage_is_capped_for_disability_and_sick_leave_but_not_funeral(self):
+        res = _accident(monthly_wage=12_000_000, sick_leave_days=30, disability_grade=7, disability_pension=False,
+                        is_deceased=True, num_survivors=0)
+        self.assertGreater(res.avg_daily_wage, 268_299)
+        self.assertEqual(res.disability_amount, round(268_299 * 616, 0))
+        self.assertEqual(res.sick_leave_daily, round(268_299 * 0.7))
+        self.assertEqual(res.funeral_amount, 19_279_760)        # 120일분이 최고액을 넘어 장례비 자체 최고액
+        self.assertTrue(any("최고 보상기준 금액 적용" in f for f in res.formulas), res.formulas)
+        self.assertIn("산업재해보상보험법 제36조 제7항 (최고·최저 보상기준 금액)", res.legal_basis)
+
+    def test_low_wage_is_floored_for_disability_only(self):
+        res = _accident(monthly_wage=1_500_000, sick_leave_days=30, disability_grade=14, disability_pension=False)
+        self.assertLess(res.avg_daily_wage, 82_560)
+        self.assertEqual(res.disability_amount, round(82_560 * 55, 0))
+        self.assertEqual(res.sick_leave_daily, 82_560)           # 최저임금액 하한(제54조②) — 최저 보상기준이 아니다
+        self.assertTrue(any("최저 보상기준 금액 적용" in f and "장해·유족" in f for f in res.formulas), res.formulas)
+
+    def test_unknown_high_limit_year_warns_instead_of_capping(self):
+        res = _accident(monthly_wage=12_000_000, disability_grade=7, disability_pension=False,
+                        reference_year=2025, reference_date="2025-06-01", accident_date="2025-03-01")
+        self.assertEqual(res.disability_amount, round(res.avg_daily_wage * 616, 0))
+        self.assertTrue(any("최고 보상기준 금액을 확인하지 못했습니다" in w for w in res.warnings), res.warnings)
+
+    def test_middle_wage_applies_no_limit(self):
+        res = _accident(monthly_wage=4_000_000, disability_grade=10, disability_pension=False, sick_leave_days=20)
+        self.assertFalse(any("보상기준 금액 적용" in f for f in res.formulas))
+        self.assertEqual(res.disability_amount, round(res.avg_daily_wage * 297, 0))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
