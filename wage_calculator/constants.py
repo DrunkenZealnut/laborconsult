@@ -45,6 +45,23 @@ UNEMPLOYMENT_BENEFIT_UPPER: dict[int, int] = {
     2026: 68_100,
 }
 
+# ── 조기재취업 수당 지급제외 임금액(고용보험법 시행령 제84조①1호 라목이 위임한 고시) ────────────────────────────
+# (시행일, 효력 종료일(포함), 월 임금액, 고시 번호). 효력 기간을 표에 두는 이유는 난임 1일 상한표(DAILY_LEAVE_CAPS)와
+# 같다 — 기한 없는 상수는 효력이 끝난 고시를 조용히 계속 적용한다. 새 고시가 나오면 행을 더한다(calculator-statute-audit D2).
+EARLY_REEMPLOYMENT_WAGE_CAPS: tuple[tuple[str, str, int, str], ...] = (
+    ("2026-11-01", "2029-10-31", 3_000_000, "고용노동부고시 제2026-71호"),
+)
+
+
+def early_reemployment_wage_cap(reference_date: str | None) -> tuple[int, str, str, str] | None:
+    """기준일(YYYY-MM-DD)에 효력이 있는 (월 임금액, 고시 번호, 시행일, 종료일). 없으면 None — 고시 시행 전·효력 종료 뒤."""
+    if not reference_date:
+        return None
+    for start, end, amount, notice in EARLY_REEMPLOYMENT_WAGE_CAPS:
+        if start <= str(reference_date)[:10] <= end:
+            return amount, notice, start, end
+    return None
+
 # ── 근로기준법 가산율 ────────────────────────────────────────────────────────
 OVERTIME_RATE        = 0.5   # 연장근로 가산 → 총 1.5배
 NIGHT_PREMIUM_RATE   = 0.5   # 야간근로 가산 (22~06시), 연장과 중복 적용

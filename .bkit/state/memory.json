@@ -777,5 +777,19 @@
     "archivedAt": "2026-11-09",
     "archivedTo": "docs/archive/2026-11/ruling-quota-cap/",
     "merged": "PR #160 a51bea7 → main 04c4b3d(2026-11-09), 배포 success, /api/health 200"
+  },
+  "calculator-statute-audit": {
+    "phase": "do",
+    "planPath": "docs/01-plan/features/calculator-statute-audit.plan.md",
+    "designPath": "docs/02-design/features/calculator-statute-audit.design.md",
+    "startedAt": "2026-11-12",
+    "designAt": "2026-11-12",
+    "doAt": "2026-11-12",
+    "baseline": "74400ff",
+    "source": "Pinecone 신규 적재분(qpack 54·rulings 1,052·official 14) × 계산기 대조",
+    "doOrder": [
+      "PR-1 실업급여+문서",
+      "PR-2 산재"
+    ]
   }
 }
