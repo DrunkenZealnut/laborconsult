@@ -24,6 +24,15 @@ def _unemp(**changes):
     return calc_unemployment(inp, calc_ordinary_wage(copy.deepcopy(inp)))
 
 
+def _accident(**changes):
+    inp = WageInput(monthly_wage=6_000_000, start_date="2020-01-01", end_date="2026-06-30",
+                    accident_date="2026-03-01", reference_year=2026, reference_date="2026-11-12")
+    for key, value in changes.items():
+        setattr(inp, key, value)
+    from wage_calculator.calculators.industrial_accident import calc_industrial_accident
+    return calc_industrial_accident(inp, calc_ordinary_wage(copy.deepcopy(inp)))
+
+
 class EarlyReemploymentWageCapTests(unittest.TestCase):
     """D2 — 지급제외 임금액 고시는 효력 기간을 가진 표다."""
 
@@ -128,6 +137,17 @@ class FlowchartTests(unittest.TestCase):
         self.assertIn("미지급(잔여)일수 × 1/2", body)
         self.assertIn("68,100 × 150일 × 1/2 = 5,107,500원", body)
         self.assertIn("14일", body)          # 요건 설명 줄
+
+
+class CompensationConstantsTests(unittest.TestCase):
+    """D6 — 최고·최저 보상기준 표 하나, 최저 열은 파생. 통상근로계수 73/100."""
+
+    def test_limits_table_and_derived_minimum(self):
+        from wage_calculator.constants import COMPENSATION_LIMITS_DAILY, MIN_COMPENSATION_DAILY, ORDINARY_WORK_COEFFICIENT
+        self.assertEqual(COMPENSATION_LIMITS_DAILY[2026], (268_299, 82_560))
+        self.assertEqual(COMPENSATION_LIMITS_DAILY[2025], (None, 80_240))
+        self.assertEqual(MIN_COMPENSATION_DAILY, {year: low for year, (_high, low) in COMPENSATION_LIMITS_DAILY.items()})
+        self.assertEqual(ORDINARY_WORK_COEFFICIENT, 0.73)
 
 
 if __name__ == "__main__":
