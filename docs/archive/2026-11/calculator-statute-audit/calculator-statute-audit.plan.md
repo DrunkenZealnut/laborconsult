@@ -144,7 +144,7 @@
 
 ## 9. Design에서 정한 것
 
-Design(`docs/02-design/features/calculator-statute-audit.design.md`) §0 결정 요약 D1~D12 참조 — 조기재취업수당 카드 값의 의미, 최고·최저 보상기준 적용 순서와 급여별 범위, 61세 감액의 경로 분기, 통상근로계수 적용 조건, 고시 효력 기간 표의 구조, 앵커 구절 선택.
+Design(`docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md`) §0 결정 요약 D1~D12 참조 — 조기재취업수당 카드 값의 의미, 최고·최저 보상기준 적용 순서와 급여별 범위, 61세 감액의 경로 분기, 통상근로계수 적용 조건, 고시 효력 기간 표의 구조, 앵커 구절 선택.
 
 ## Version History
 

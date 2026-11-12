@@ -1,6 +1,6 @@
 """calculator-statute-audit — 신규 적재 법령·고시·재결례 대조로 고친 계산기 규칙의 회귀(API 키 불요).
 
-Design: docs/02-design/features/calculator-statute-audit.design.md (D1~D12). 테스트는 2026년·고정 기준일에 묶는다 — 오늘 날짜에
+Design: docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md (D1~D12). 테스트는 2026년·고정 기준일에 묶는다 — 오늘 날짜에
 묶으면 해가 바뀔 때 깨진다(calc-card-followups 교훈).
 """
 from __future__ import annotations

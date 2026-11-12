@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11(`./.venv/bin/python`), unittest(API 키 불요), 법제처 Open API(`fetch_official_rules.py --doc`, 등록 IP), GitHub CLI.
 
-**Spec:** `docs/02-design/features/calculator-statute-audit.design.md` (Plan: `docs/01-plan/features/calculator-statute-audit.plan.md`)
+**Spec:** `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md` (Plan: `…/calculator-statute-audit.plan.md`, 2026-11-12 아카이브 — Task 본문의 경로는 작성 당시 위치)
 
 **규칙(저장소 관례):** 테스트 파일에 클래스를 더할 때 `if __name__ == "__main__"` **앞**에 둔다(CI는 `python3 test_x.py`로 실행). 테스트는 `reference_year=2026`·`reference_date`를 고정한다(오늘 날짜에 묶지 않는다). 커밋 메시지 끝에 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 

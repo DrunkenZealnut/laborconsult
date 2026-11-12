@@ -779,9 +779,9 @@
     "merged": "PR #160 a51bea7 → main 04c4b3d(2026-11-09), 배포 success, /api/health 200"
   },
   "calculator-statute-audit": {
-    "phase": "completed",
-    "planPath": "docs/01-plan/features/calculator-statute-audit.plan.md",
-    "designPath": "docs/02-design/features/calculator-statute-audit.design.md",
+    "phase": "archived",
+    "planPath": "docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.plan.md",
+    "designPath": "docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md",
     "startedAt": "2026-11-12",
     "designAt": "2026-11-12",
     "doAt": "2026-11-12",
@@ -793,19 +793,23 @@
     ],
     "matchRate": 98.2,
     "checkAt": "2026-11-12",
-    "analysisPath": "docs/03-analysis/calculator-statute-audit.analysis.md",
+    "analysisPath": "docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.analysis.md",
     "iterationCount": 1,
     "checkSummary": "57항목: 일치 47·부분 9·미완 1(check_law_freshness --anchors — 회선 IP 미등록). Act-1 후보 g(별표1 제1호 단서 하한 테스트·앵커)·i(앵커 2)·j(흐름도 최저 보상기준)",
     "actAt": "2026-11-12",
     "actSummary": "Act-1: g 별표1 제1호 단서 하한 테스트·앵커·산식 표시, i 앵커 2, j 산재 흐름도 최저 보상기준 문구 + 설계 갱신(b·c·d·f·h·k·a·e)",
     "recheckAt": "2026-11-12",
     "recheckSummary": "Act-1 재대조 57항목 ✅56·⚠️0·❌1(Plan §7-3 freshness 미실행) = 98.2%",
-    "reportPath": "docs/04-report/features/calculator-statute-audit.report.md",
+    "reportPath": "docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.report.md",
     "reportAt": "2026-11-12",
     "prs": {
       "PR-1": 162,
       "PR-2": 163,
       "Act-1": 164
-    }
+    },
+    "archivedAt": "2026-11-12",
+    "archivedTo": "docs/archive/2026-11/calculator-statute-audit/",
+    "merged": "PR #162 1431e87 · #163 0c80a4a · #164 4cbbae3 · report #165 727ad63 (2026-11-12), 프로덕션 sw v17 배포",
+    "remaining": "check_law_freshness --anchors(회선 IP 미등록) · source-pack-refresh 후속"
   }
 }

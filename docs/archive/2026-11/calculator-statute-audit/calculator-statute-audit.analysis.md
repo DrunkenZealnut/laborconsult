@@ -1,6 +1,6 @@
 # calculator-statute-audit — Design-Implementation 갭 분석
 
-> **기준 문서**: `docs/02-design/features/calculator-statute-audit.design.md` (v1.0) · Plan `docs/01-plan/features/calculator-statute-audit.plan.md`
+> **기준 문서**: `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md` (v1.0) · Plan `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.plan.md`
 > **기준 커밋**: main `0c80a4a` (PR #162 `fix/calc-statute-audit-ei` + PR #163 `fix/calc-statute-audit-iaci` 머지 후)
 > **대조 일자**: 2026-11-12 (gap-detector)
 > **대조 항목**: 57 · ✅ 일치 47 · ⚠️ 부분/편차 9 · ❌ 미완 1
@@ -138,8 +138,8 @@ Live 측정은 Plan §8에 따라 하지 않았으므로 대조 대상이 아닙
 
 ## 관련 파일
 
-- `docs/02-design/features/calculator-statute-audit.design.md`
-- `docs/01-plan/features/calculator-statute-audit.plan.md`
+- `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.design.md`
+- `docs/archive/2026-11/calculator-statute-audit/calculator-statute-audit.plan.md`
 - `wage_calculator/calculators/unemployment.py`
 - `wage_calculator/calculators/industrial_accident.py`
 - `wage_calculator/constants.py`
