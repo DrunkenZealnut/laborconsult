@@ -60,3 +60,6 @@ dedupe_board_*.sql
 # 판례 크롤분 비공개 보관본 — 게이트 미통과 계층(editorial·post)은 제3자 편집
 # 게시물이라 PUBLIC 저장소 커밋 금지. 우발 커밋은 회수 불가(precedent-archive 설계 §4.1)
 precedent_crawl_*.tar.gz
+
+# source-pack-refresh: 법제처 원본 XML·준비 산출물(다시 받을 수 있다 — sha256은 원장에)
+data/source_pack_refresh/2*/

@@ -6,10 +6,10 @@
  "namespace": "laborlaw-v2",
  "uploaded_on": "2026-10-09",
  "state": "verified",
- "vector_count": 7111,
+ "vector_count": 7109,
  "document_count": 54,
  "composition": {
-  "regulation": 7006,
+  "regulation": 7004,
   "precedent": 105
  },
  "metadata_flags": {
@@ -71,7 +71,20 @@
    "qpack_20261009_0faa222030e9b9c3_aa72d89f8d_0",
    "qpack_20261009_0faa222030e9b9c3_d521afb42d_0"
   ],
-  "reason": "Five independently verified currently operative supplementary modifiers; annotate every affected body chunk and separately index scoped verbatim clauses."
+  "reason": "Five independently verified currently operative supplementary modifiers; annotate every affected body chunk and separately index scoped verbatim clauses.",
+  "superseded_by_20261112": {
+   "ids": [
+    "qpack_20261009_0faa222030e9b9c3_30e4b8d456_0",
+    "qpack_20261009_0faa222030e9b9c3_30e4b8d456_1"
+   ],
+   "sections": [
+    {
+     "work_id": "general_law_nps",
+     "section": "제126조 외국인에 대한 적용"
+    }
+   ],
+   "reason": "현행판 본문 변경 — 새 배치로 대체"
+  }
  },
  "note": "원본 자료팩·권리 검토·준비 산출물은 저장소 밖(laborconsult_eval/source-integration-20261009)에 있다. 이 파일은 롤백·검증용 ID 원장이다.",
  "documents": {
@@ -7303,8 +7316,6 @@
     "qpack_20261009_0faa222030e9b9c3_cefed7d15b_0",
     "qpack_20261009_0faa222030e9b9c3_c8b4cf01d4_0",
     "qpack_20261009_0faa222030e9b9c3_46cdaa6b5b_0",
-    "qpack_20261009_0faa222030e9b9c3_30e4b8d456_0",
-    "qpack_20261009_0faa222030e9b9c3_30e4b8d456_1",
     "qpack_20261009_0faa222030e9b9c3_59be7c634d_0",
     "qpack_20261009_0faa222030e9b9c3_d1e1cfca46_0",
     "qpack_20261009_0faa222030e9b9c3_9a7b86aff5_0",

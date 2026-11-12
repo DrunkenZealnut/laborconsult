@@ -1,0 +1,79 @@
+{
+ "batch": "sourcepack_20261112",
+ "id_prefix": "qpack_20261112_",
+ "id_pattern": "^qpack_20261112_[0-9a-f]{16}_[0-9a-f]{10}_\\d+$",
+ "index": "laborconsult",
+ "namespace": "laborlaw-v2",
+ "uploaded_on": "2026-11-12",
+ "state": "verified",
+ "vector_count": 11,
+ "document_count": 5,
+ "composition": {
+  "regulation": 11
+ },
+ "metadata_flags": {
+  "official": true,
+  "source_batch": "sourcepack_20261112"
+ },
+ "embedding_tokens": 6643,
+ "supersedes": [
+  {
+   "work_id": "general_law_nps",
+   "section": "제126조 외국인에 대한 적용"
+  }
+ ],
+ "note": "source_pack_refresh.py로 법제처 현행판에서 대상 조문만 받아 적재했다. 대상·사람 검토는 data/source_pack_refresh/targets_20261112.json·review_20261112.md.",
+ "documents": {
+  "ei-decree": {
+   "title": "고용보험법 시행령",
+   "source_type": "regulation",
+   "official_url": "https://www.law.go.kr/법령/고용보험법 시행령/(20260918)",
+   "source_sha256": "65ec4de599490dff76b148ba1661d99cba9f6ca5881e23ab7effcf21776be2f2",
+   "ids": [
+    "qpack_20261112_a22b05ecede755d2_0a694c0e9c_0",
+    "qpack_20261112_a22b05ecede755d2_0a694c0e9c_1"
+   ]
+  },
+  "ei-rule": {
+   "title": "고용보험법 시행규칙",
+   "source_type": "regulation",
+   "official_url": "https://www.law.go.kr/법령/고용보험법 시행규칙/(20260918)",
+   "source_sha256": "24e483160e9c829bd61ee74b398196f54f9c1ecf8bee8eb269cd9134c2fa8ae9",
+   "ids": [
+    "qpack_20261112_7d6773c5f019c9dc_b71fd378f5_0",
+    "qpack_20261112_7d6773c5f019c9dc_b71fd378f5_1",
+    "qpack_20261112_7d6773c5f019c9dc_b71fd378f5_2"
+   ]
+  },
+  "ei-nhis-act-current": {
+   "title": "국민건강보험법",
+   "source_type": "regulation",
+   "official_url": "https://www.law.go.kr/법령/국민건강보험법/(20261008)",
+   "source_sha256": "bca486a4b33df6e0d2727a4d32f4e34dbdc6484f75937e10181d67fa4af6831e",
+   "ids": [
+    "qpack_20261112_36a398d34e2c9a46_26782ab7ae_0"
+   ]
+  },
+  "general_law_retirement_enf": {
+   "title": "근로자퇴직급여 보장법 시행령",
+   "source_type": "regulation",
+   "official_url": "https://www.law.go.kr/법령/근로자퇴직급여 보장법 시행령/(20260324)",
+   "source_sha256": "629d6a632cc333dfa7d651248b75e91f4fca88683889298b51baee08eb5aaa29",
+   "ids": [
+    "qpack_20261112_3fb4eaf60b9ab481_1e6ff7bf26_0"
+   ]
+  },
+  "general_law_nps": {
+   "title": "국민연금법",
+   "source_type": "regulation",
+   "official_url": "https://www.law.go.kr/법령/국민연금법/(20261020)",
+   "source_sha256": "0ab03a8bb9dd3d14bafa707d4c88a07d04693db0e0ab9558ef2b85876ef67d65",
+   "ids": [
+    "qpack_20261112_0faa222030e9b9c3_30e4b8d456_0",
+    "qpack_20261112_0faa222030e9b9c3_30e4b8d456_1",
+    "qpack_20261112_0faa222030e9b9c3_30e4b8d456_2",
+    "qpack_20261112_0faa222030e9b9c3_30e4b8d456_3"
+   ]
+  }
+ }
+}
