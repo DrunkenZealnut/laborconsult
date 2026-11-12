@@ -40,6 +40,24 @@ def _clamp_negative_inputs(inp: WageInput) -> None:
             sch.weekly_work_days = 0.0
 
 
+# 실제 사용 구간으로 지급 대상 기간의 내장 시행 규칙을 고르는 계산 — 승인 기준 키를 읽지 않는다. 값은 단축 여부.
+# 출산휴가는 승인 키(maternity.monthly_upper)를 읽으므로 넣지 않는다.
+_SELF_DATED_TARGETS = {"parental_leave": False, "reduced_work_benefit": True}
+
+
+def _self_dated_event(inp, targets, auxiliary=()):
+    """물은 계산이 전부 실제 구간을 가진 육아 급여면 그 첫 개시일, 아니면 None.
+
+    다른 계산이 하나라도 섞이면 None이다 — 섞인 요청의 기준일은 바꾸지 않는다(wage-update-followups R3). 그때 '연도만 있으면
+    기준일 필요'는 기반 단계 실패라 요청 전체 보류다(Legal Rule Registry 보류 범위)."""
+    asked = [t for t in (targets or ()) if t not in auxiliary]
+    if not asked or any(t not in _SELF_DATED_TARGETS for t in asked):
+        return None
+    from ..calculators.childcare_shared import first_period_start
+    starts = [first_period_start(inp, _SELF_DATED_TARGETS[t]) for t in asked]
+    return min(starts) if all(starts) else None
+
+
 class WageCalculator:
     """임금계산기 통합 퍼사드"""
 
@@ -69,7 +87,8 @@ class WageCalculator:
         try:
             # Resolve (and validate) before the store round trip: an unusable date
             # must not cost a query.
-            reference_date = resolve_reference_date(inp.reference_date, inp.reference_year)
+            reference_date = resolve_reference_date(inp.reference_date, inp.reference_year,
+                                                    event_date=_self_dated_event(inp, targets, auxiliary))
             store = self.rule_store if self.rule_store is not None else configured_store()
             _, document = store.load()
             snapshot = RuleSnapshot(document["records"], reference_date)
