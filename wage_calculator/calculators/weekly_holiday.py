@@ -29,6 +29,7 @@ from ..models import WageInput, WageType
 from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours, fmt_won, parse_date
 from .ordinary_wage import OrdinaryWageResult
 from .shared import weekly_holiday_hours  # noqa: F401 — 상담 경로(pipeline)가 이 모듈에서 가져간다
+from .shared import scheduled_weekly_hours
 
 _DAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -45,7 +46,8 @@ def calc_weekly_holiday(inp: WageInput, ow: OrdinaryWageResult) -> WeeklyHoliday
     """주휴수당 계산"""
     s = inp.schedule
     hourly = ow.hourly_ordinary_wage
-    weekly_scheduled = s.weekly_work_days * s.daily_work_hours
+    # 같은 카드의 연차와 같은 헬퍼 — 15h ÷ 5.5일 × 5.5일이 15h 미만으로 남으면 연차는 발생, 주휴는 0h가 된다(L6b)
+    weekly_scheduled = scheduled_weekly_hours(s.daily_work_hours, s.weekly_work_days)
     warnings = []
     formulas = []
     legal = [

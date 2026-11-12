@@ -13,6 +13,7 @@ from ..legal_rules import resolve_reference_date
 from ..models import WageInput, BusinessSize
 from ..constants import FULL_TIME_DAILY_HOURS, FULL_TIME_WEEKLY_HOURS
 from .ordinary_wage import OrdinaryWageResult
+from .shared import scheduled_weekly_hours
 
 ANNUAL_INPUT_FIELDS = (
     "annual_leave_used", "attendance_rate", "use_fiscal_year", "leave_use_promotion",
@@ -24,6 +25,11 @@ ANNUAL_INPUT_FIELDS = (
 LSA_URL = "https://www.law.go.kr/법령/근로기준법/제60조"
 HISTORY_URL = "https://opinion.lawmaking.go.kr/nl4li/lsItptEmp/396414"
 REDUCED_URL = "https://1350.moel.go.kr/rtmview.do?id=1000320803"
+# 육아휴직 출근 간주(제60조⑥3호)는 2018-05-29(법률 제15108호 시행일) 이후 **개시**한 휴직에 적용한다 — 고용노동부 개정 근로기준법
+# 설명자료(2018.5)의 해석. 부칙 제2조 문언은 '시행 후 최초로 육아휴직을 신청하는 근로자부터'라, 신청일이 그 전인 경계 사례에만
+# 조건을 카드에 남긴다(wage-update-followups L3). 신청일은 있을 때만 검증한다 — 신청서·30일 전 신청이 필수 요건이 아니다.
+CHILDCARE_DEEMED_FROM = date(2018, 5, 29)
+CHILDCARE_DEEMED_BASIS = "고용노동부 개정 근로기준법 설명자료(2018.5) — 2018-05-29 이후 개시한 육아휴직은 출근으로 간주"
 # 제17185호 부칙 제2조: 개정 전에 이미 발생한 휴가는 종전 소멸 규정 유지.
 MONTHLY_EXPIRY_RULES = (
     EffectiveRule("monthly-expiry-1year", date(2014, 7, 1), date(2020, 3, 31),
@@ -63,6 +69,14 @@ class AnnualLeaveResult(BaseCalculatorResult):
     first_year_used_hours: float | None = None
     first_year_remaining_hours: float | None = None
     accrual_basis: str = "statutory"
+    # 카드 요약에 싣는 결론 근거(답변은 summary만 본다 — breakdown은 카드에 나오지 않는다, wage-update-followups L1)
+    exclusion_reason: str = ""          # 적용 제외·미발생 사유
+    settlement_basis: str = "employed"  # retired(마지막 재직일 확인) / end_unconfirmed(종료일만) / employed(종료일 없음)
+    anniversary_boundary: bool = False  # 마지막 재직일 없이 종료일이 연차 발생일 당일
+    first_year_ledger: str = ""         # 별도 첫해 장부 요약(보류 포함)
+    hours_premise: str = ""             # 산정기간 소정근로시간 전제
+    weekly_hours: float = 0.0           # 발생 산정에 쓴 주 소정근로시간
+    deemed_basis_note: str = ""         # 육아휴직 출근 간주의 근거(경계 사례면 부칙 조건 포함)
 
 
 def _date(value, label):
@@ -130,7 +144,7 @@ def _attendance(inp, start, end):
     periods = inp.annual_deemed_periods
     if not isinstance(periods, list):
         raise ValueError("출근 간주 기간은 사유와 날짜가 있는 목록으로 입력해주세요")
-    intervals, credited, reduced = [], 0, False
+    intervals, credited, reduced, childcare, boundary = [], 0, False, [], ""
     for p in periods:
         if not isinstance(p, dict):
             raise ValueError("출근 간주 기간의 사유와 날짜가 필요합니다")
@@ -148,9 +162,19 @@ def _attendance(inp, start, end):
                 raise ValueError("단축시간을 결근일수로 환산하지 않습니다. 단축일은 출근일수에 포함해주세요")
         elif kind in ("childcare_leave", "short_childcare_leave", "occupational_injury", "maternity_leave"):
             if kind in ("childcare_leave", "short_childcare_leave"):
-                applied = _date(p.get("application_date"), "육아휴직 최초 신청일")
-                if applied > a or applied < date(2018,5,29):
-                    raise ValueError("2018-05-29 이후 최초 신청한 법정 육아휴직인지 확인해주세요. 종전 휴직은 별도 산정이 필요합니다")
+                if a < CHILDCARE_DEEMED_FROM:
+                    raise ValueError("2018-05-29 전에 시작한 육아휴직은 출근 간주 대상이 아닙니다(고용노동부 2018.5 설명자료). "
+                                     "종전 방식으로 따로 산정해야 해 계산을 보류합니다")
+                applied = p.get("application_date")
+                applied = _date(applied, "육아휴직 최초 신청일") if applied is not None else None
+                if applied is not None and applied > a:
+                    raise ValueError("육아휴직 최초 신청일이 휴직 시작일보다 늦습니다. 날짜를 확인해주세요")
+                childcare.append(f"{a}~{b}")
+                # 부칙 문언과 해석이 갈리는 경계: 신청일이 시행일 전(분할 사용 포함)이거나, 신청일 없이 2018년에 개시한 휴직
+                if applied is not None and applied < CHILDCARE_DEEMED_FROM:
+                    boundary = f"최초 신청일 {applied}"
+                elif applied is None and a.year == 2018 and not boundary:
+                    boundary = "최초 신청일 미기재"
             if kind == "short_childcare_leave" and (a < date(2026,8,20) or (b-a).days+1 not in (7,14)):
                 raise ValueError("단기 육아휴직은 2026-08-20 이후의 1주 또는 2주 법정 사용기간인지 확인해주세요")
             if a < start or b > end:
@@ -168,12 +192,20 @@ def _attendance(inp, start, end):
         if attended + credited > scheduled:
             raise ValueError("실제 출근일수와 출근 간주일수의 합이 소정근로일수를 초과합니다")
         rate = (attended+credited)/scheduled
-    return rate, reduced
+    note = ""
+    if childcare:
+        note = (f"육아휴직 기간({', '.join(childcare)})은 출근한 것으로 보았습니다(근로기준법 제60조제6항제3호). 휴직 개시일이 "
+                "2018-05-29 이후이면 적용한다는 고용노동부 해석(개정 근로기준법 설명자료, 2018.5)에 따랐습니다.")
+        if boundary:
+            note += (f" 다만 부칙 <제15108호> 제2조는 '시행 후 최초로 육아휴직을 신청하는 근로자부터' 적용한다고 적어, "
+                     f"최초 신청일이 2018-05-29 전이면 해석이 갈릴 수 있습니다({boundary})")
+    return rate, reduced, note
 
 
 def _hours(inp, reduced):
     daily = _number(inp.schedule.daily_work_hours, "1일 소정근로시간", lo=.01, hi=24)
-    weekly = daily * _number(inp.schedule.weekly_work_days, "주 소정근로일수", lo=.01, hi=7)
+    # 주 합계 ÷ 근무일수로 만든 1일 시간에 다시 곱하면 15 ÷ 5.5 × 5.5 = 14.999999999999998이 된다(L6)
+    weekly = scheduled_weekly_hours(daily, _number(inp.schedule.weekly_work_days, "주 소정근로일수", lo=.01, hi=7))
     if reduced:
         daily = _number(inp.annual_original_daily_hours, "단축 전 1일 소정근로시간", lo=.01, hi=8)
         weekly = _number(inp.annual_original_weekly_hours, "단축 전 주 소정근로시간", lo=.01, hi=40)
@@ -205,7 +237,8 @@ def _first_year_schedule(start, end):
 def calc_annual_leave(inp: WageInput, ow: OrdinaryWageResult) -> AnnualLeaveResult:
     legal = ["근로기준법 제60조 (연차 유급휴가)"]
     if inp.business_size == BusinessSize.UNDER_5:
-        return AnnualLeaveResult(is_eligible=False, breakdown={"법정 연차": "5인 미만 사업장 적용 제외"},
+        return AnnualLeaveResult(is_eligible=False, exclusion_reason="5인 미만 사업장 적용 제외",
+                                 breakdown={"법정 연차": "5인 미만 사업장 적용 제외"},
                                  warnings=["별도 약정휴가는 취업규칙·근로계약을 확인해주세요"],
                                  legal_basis=legal+["근로기준법 제11조"])
     try:
@@ -241,11 +274,14 @@ def _calculate(inp, ow, legal):
         assessment_start, assessment_end = max(start,date(end.year-1,1,1)), date(end.year,1,1)-timedelta(days=1)
         if assessment_end < assessment_start:
             assessment_start, assessment_end = start,end
-    rate, reduced = _attendance(inp,assessment_start,assessment_end)
+    rate, reduced, deemed_note = _attendance(inp,assessment_start,assessment_end)
     daily,weekly = _hours(inp,reduced)
     if weekly < 15:
+        reason = "4주 평균 주 소정근로시간 15시간 미만: 미발생"
         return AnnualLeaveResult(is_eligible=False,is_part_time_ratio=True,part_time_ratio=0,
-            breakdown={"법정 연차": "4주 평균 주 소정근로시간 15시간 미만: 미발생"},
+            exclusion_reason=reason, weekly_hours=weekly,
+            hours_premise=f"산정기간({assessment_start}~{assessment_end}) 소정근로시간이 현재 입력(주 {weekly:g}시간)과 같다는 전제",
+            breakdown={"법정 연차": reason},
             warnings=["입력한 소정근로시간이 산정기간에 동일하다는 전제입니다"],
             legal_basis=legal+["근로기준법 제18조 제3항"])
     used = _number(inp.annual_leave_used,"현재 기간 사용 연차")
@@ -360,6 +396,8 @@ def _calculate(inp, ow, legal):
         warnings.append("단축 전 소정시간이 산정기간의 기준이라는 전제입니다. 단축시간은 결근일수로 환산하지 않습니다")
     if inp.annual_deemed_periods:
         legal.append("근로기준법 제60조 제6항 (출근 간주)")
+    if deemed_note:
+        legal.append(CHILDCARE_DEEMED_BASIS)
     if not pay_date:
         warnings.append("단일 정산일로 표시할 수 없습니다. 월별 발생·소멸 일정과 사용 귀속을 확인해주세요")
     if weekly < 40:
@@ -367,12 +405,24 @@ def _calculate(inp, ow, legal):
     pay_due = last is not None and end == last
     if pay_due:
         pay_date = last+timedelta(days=1)
+    # 종료일만 있으면 퇴직일인지 기준일인지 모른다(재직자의 기준일도 end_date로 온다) — 둘 다 적는다(L2 A안).
+    # 발생일 당일이면 그날까지 근로했는지(마지막 재직일)에 따라 이번 발생분이 갈린다
+    settlement_basis = "retired" if pay_due else ("end_unconfirmed" if inp.end_date and last is None else "employed")
+    anniversary_boundary = (settlement_basis == "end_unconfirmed" and bool(years) and end == grant
+                            and not inp.use_fiscal_year)
     leave_pay = remaining_hours*ow.hourly_ordinary_wage
     if inp.leave_use_promotion:
         leave_pay = 0
         warnings.append("법정 사용촉진 절차가 적법하게 완료되고 사용 기회가 보장된 경우에 한해 수당 면제 가정")
-    if not pay_due:
+    if settlement_basis == "employed":
         warnings.append("현재 잔여분의 입력 통상시급 기준 평가액입니다. 사용기간 만료·퇴직 전 확정 지급채권으로 보지 않습니다")
+    elif settlement_basis == "end_unconfirmed":
+        warnings.append(f"입력한 종료일({end}) 기준 잔여분입니다. 그날 퇴직했다면 퇴직 시 정산 대상이고, 재직 중이면 "
+                        "사용기간 만료 전이라 확정 지급채권이 아닙니다 — 퇴직 여부와 마지막 재직일을 확인해주세요")
+    if anniversary_boundary:
+        rest = "1년 미만 월별 발생분(최대 11일)만 남습니다" if years == 1 else "직전 발생분만 남습니다"
+        warnings.append(f"종료일 {end}은 연차 발생일(입사 {years}주년) 당일입니다. 그날까지 근로했다면 이번 발생분이 생기지만, "
+                        f"마지막 근무일이 그 전날이면(종료일이 퇴직 효력일) 생기지 않고 {rest}")
     if inp.use_fiscal_year:
         warnings.append("회사 부여일수를 사용했습니다. 퇴직 시 입사일 기준과 회사 기준의 누적 발생·사용·기지급 내역을 대조해야 합니다")
     first_remaining_hours = (first_hours-first_used_hours
@@ -399,6 +449,37 @@ def _calculate(inp, ow, legal):
         breakdown["발생 기준"] = "회사 회계연도 규정의 실제 부여일수"
     if deducted:
         breakdown["과거 규정 공제"] = f"첫해 사용 {deducted:g}일 (2017-05-30 전 입사)"
+    # 첫해 장부를 카드 요약으로 — 1년차 카드(직전이 첫해)이거나 첫해 사실을 준 경우만(L1). 월별 개근 수를 모르면 기본 출근율 1.0으로
+    # 11일을 확정하지 않는다 — 기본값과 '출근율 100%라고 말함'을 구별할 수 없다. 확정 정산분은 기존 '별도 첫해 미사용분'이 싣는다
+    first_facts = any(v is not None for v in (inp.first_year_leave_used, inp.first_year_leave_used_hours,
+                                              inp.first_year_full_attendance_months))
+    first_ledger = ""
+    monthly_cap = sum(1 for row in rows if row["kind"] == "monthly")
+    # 단시간이면 월별 1일분이 시간으로 올림돼(_leave_hours) 1일분 ≠ 1일이다 — 횟수를 일수로 적으면 첫해 장부의 발생 시간보다
+    # 적게 보인다(주 16.5시간·1일 3시간: 11회 × 4시간 = 44시간 = 14.67일, Codex #140)
+    grant_hours = _leave_hours(1, weekly, daily)[0]
+    if years and first_settlement is None and (years == 1 or first_facts) and (monthly_cap or first_days is not None):
+        if first_remaining is not None:
+            first_ledger = breakdown["별도 첫해 장부"]
+        else:
+            cap_hours = monthly_cap * grant_hours
+            accrued_text = (f"발생 {first_days:g}일" if first_days is not None
+                            else f"월별 발생 최대 {monthly_cap}일(각 월 개근 시)" if grant_hours == daily
+                            else f"월별 발생 최대 {cap_hours / daily:g}일({monthly_cap}회 × {grant_hours:g}시간 = "
+                                 f"{cap_hours:g}시간, 각 월 개근 시)")
+            used_text = f"사용 {first_used:g}일" if first_used is not None else "사용 미확인"
+            missing = "사용일수" if first_days is not None else "월별 개근 수"
+            first_ledger = (f"{accrued_text} · {used_text} — {missing} 확인 전 미사용 정산분 확정 보류"
+                            "(현재 기간에서 다시 차감하지 않음)")
+    # 발생 시간은 산정기간의 소정근로시간으로 정해진다 — 그 값을 따로 받지 않으므로 전제를 카드에 적는다(L4).
+    # 발생(산정기간 시간)·사용(현재 시간) 분리는 후속이다(시행령 별표 2 제4호 나목)
+    if reduced:
+        hours_premise = f"발생 시간은 단축 전 소정근로시간(주 {weekly:g}시간·1일 {daily:g}시간) 기준 — 산정기간 동안 같았다는 전제"
+    elif years or inp.use_fiscal_year:
+        hours_premise = (f"산정기간({assessment_start}~{assessment_end}) 소정근로시간이 현재 입력(주 {weekly:g}시간·1일 {daily:g}시간)과 "
+                         "같다는 전제 — 달랐다면 발생 시간이 달라집니다")
+    else:
+        hours_premise = ""
     return AnnualLeaveResult(
         accrued_days=round(accrued_days,2), used_days=round(used,2), remaining_days=round(remaining_hours/daily,2),
         accrued_hours=accrued_hours,used_hours=used_hours,remaining_hours=remaining_hours,day_hours=daily,
@@ -410,5 +491,7 @@ def _calculate(inp, ow, legal):
         first_year_used_days=first_used,first_year_remaining_days=first_remaining,first_year_settlement_days=first_settlement,
         first_year_accrued_hours=first_hours,first_year_used_hours=first_used_hours,
         first_year_remaining_hours=first_remaining_hours,accrual_basis="company" if inp.use_fiscal_year else "statutory",
+        settlement_basis=settlement_basis,anniversary_boundary=anniversary_boundary,first_year_ledger=first_ledger,
+        hours_premise=hours_premise,weekly_hours=weekly,deemed_basis_note=deemed_note,
         breakdown=breakdown,formulas=[f"미사용 연차수당: {ow.hourly_ordinary_wage:,.0f}원 × {remaining_hours:g}시간 = {leave_pay:,.0f}원"],
         warnings=warnings,legal_basis=legal)

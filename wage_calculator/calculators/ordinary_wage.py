@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from ..models import WageInput, WageType, WorkType
 from ..constants import MONTHLY_STANDARD_HOURS, SHIFT_MONTHLY_HOURS, WEEKLY_HOLIDAY_MIN_HOURS
 from ..utils import WEEKS_PER_MONTH, WEEKS_PER_MONTH_LABEL, fmt_hours
-from .shared import AllowanceClassifier, holiday_divisor, normalize_allowances, split_note
+from .shared import AllowanceClassifier, holiday_divisor, normalize_allowances, scheduled_weekly_hours, split_note
 from .shared import weekly_holiday_hours as paid_weekly_holiday_hours
 
 
@@ -248,7 +248,7 @@ def _get_base_hours(inp: WageInput) -> tuple[float, str]:
 
     # 4) 일반: 스케줄 기반 자동 계산
     s = inp.schedule
-    weekly_work_hours = s.daily_work_hours * s.weekly_work_days
+    weekly_work_hours = scheduled_weekly_hours(s.daily_work_hours, s.weekly_work_days)
     if weekly_work_hours >= WEEKLY_HOLIDAY_MIN_HOURS:
         # 주휴수당 계산기와 같은 함수 — 여기만 '÷5'를 따로 쓰던 때 주 6일 × 4.1667h 카드에 기준시간 주휴 5h와 주휴수당
         # 4.1667h가 함께 실렸다(외부 점검 40번 후속)
