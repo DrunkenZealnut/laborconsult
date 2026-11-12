@@ -227,5 +227,35 @@ class CompensationLimitTests(unittest.TestCase):
         self.assertEqual(res.disability_amount, round(res.avg_daily_wage * 297, 0))
 
 
+class DailyWorkerAndDiseaseTests(unittest.TestCase):
+    """D8 일당 × 통상근로계수(3개월 미만일 때만) · D9 직업병 특례 안내."""
+
+    def test_daily_worker_average_wage_uses_the_coefficient(self):
+        res = _accident(wage_type=WageType.DAILY, monthly_wage=None, daily_wage=150_000, is_daily_worker=True,
+                        start_date="2026-01-15", accident_date="2026-03-01", end_date="2026-03-01",
+                        disability_grade=14, disability_pension=False)
+        self.assertEqual(res.avg_daily_wage, 109_500)
+        self.assertTrue(any("통상근로계수 73/100" in f for f in res.formulas), res.formulas)
+        self.assertTrue(any("3개월 이상 계속" in w for w in res.warnings))
+        self.assertIn("산업재해보상보험법 제36조 제5항·시행령 제23조·제24조 (일용근로자 평균임금 — 통상근로계수)", res.legal_basis)
+
+    def test_daily_worker_with_three_months_of_service_keeps_ordinary_average(self):
+        res = _accident(wage_type=WageType.DAILY, monthly_wage=None, daily_wage=150_000, is_daily_worker=True,
+                        start_date="2025-10-01", accident_date="2026-03-01", end_date="2026-03-01",
+                        disability_grade=14, disability_pension=False)
+        self.assertFalse(any("통상근로계수 73/100 =" in f for f in res.formulas))
+        self.assertTrue(any("단서 가목" in w for w in res.warnings), res.warnings)
+
+    def test_daily_worker_without_daily_wage_is_only_told(self):
+        res = _accident(is_daily_worker=True, disability_grade=14, disability_pension=False)
+        self.assertTrue(any("일당을 알면" in w for w in res.warnings), res.warnings)
+
+    def test_occupational_disease_gets_the_special_average_note(self):
+        res = _accident(injury_type="질병", sick_leave_days=30)
+        self.assertTrue(any("제36조 제6항" in w and "시행령 제25조" in w for w in res.warnings), res.warnings)
+        self.assertIn("산업재해보상보험법 제36조 제6항·시행령 제25조 (직업병 평균임금 산정 특례)", res.legal_basis)
+        self.assertFalse(any("제36조 제6항" in w for w in _accident(injury_type="사고", sick_leave_days=30).warnings))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

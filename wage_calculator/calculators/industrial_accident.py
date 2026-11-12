@@ -139,20 +139,48 @@ def calc_industrial_accident(
         )
         legal.append("고용노동부 고시 '뇌혈관 질병 또는 심장 질병의 업무상 질병 인정 여부 결정에 필요한 사항'")
 
+    if injury_type in ("질병", "뇌심혈관"):
+        # 직업병 평균임금 특례(제36조⑥·시행령 제25조) — 진폐는 고시 금액, 그 밖은 비슷한 근로자의 월평균 임금총액. 공단이 적용하고
+        # 계산기는 재현할 수 없어 안내만 한다(calculator-statute-audit D9)
+        warnings.append("직업병(진폐 등)은 공단이 평균임금 산정 특례를 적용할 수 있습니다 — 진폐는 매년 고시하는 금액, 그 밖의 직업병은 "
+                        "성별·직종·업종·규모가 비슷한 근로자의 월평균 임금총액 기준(산재보험법 제36조 제6항, 시행령 제25조). "
+                        "이 카드는 일반 평균임금으로 계산했습니다.")
+        legal.append("산업재해보상보험법 제36조 제6항·시행령 제25조 (직업병 평균임금 산정 특례)")
+
     # ── 1. 평균임금 결정 ──────────────────────────────────────────────────
     # 산재보험의 평균임금은 근로기준법의 평균임금이다(산재보험법 제5조 제2호) — 평균임금 계산기 하나로 구한다(monthly-base-unification).
     # 분모는 3개월 총일수(근로기준법 제2조 제1항 제6호), 평균임금이 통상임금보다 적으면 통상임금(제2조 제2항). 산정 사유 발생일은
     # 사고가 발생한 날이다(근로기준법 시행령 제52조). 예전에는 '월 금액 ÷ 30'과 1일 통상임금 중 큰 쪽이었다
-    avg = calc_average_wage(replace(inp, end_date=inp.accident_date or inp.end_date), ow)
-    if avg.held_reason:
-        return IndustrialAccidentResult(held_reason=avg.held_reason, warnings=avg.warnings)
-    avg_daily = avg.avg_daily_wage
-    if avg.used_basis == "통상임금":
-        formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 평균임금 {avg.avg_daily_3m:,.0f}원 < 1일 통상임금 "
-                        f"{avg.avg_daily_ordinary:,.0f}원 → 통상임금, 근로기준법 제2조 제2항)")
-        legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
+    is_daily = bool(getattr(inp, "is_daily_worker", False))
+    daily_wage = getattr(inp, "daily_wage", None)
+    use_coefficient = is_daily and bool(daily_wage) and not _continued_three_months(inp)
+    if use_coefficient:
+        # 1-1. 일용근로자: 일당 × 통상근로계수(제36조⑤, 시행령 제23조·제24조①1호, 고용노동부고시 제2025-90호 73/100 —
+        #      calculator-statute-audit D8). 3개월 이상 계속 근로면 일용으로 보지 않아 일반 평균임금(제23조①1호 단서 가목)
+        avg_daily = float(daily_wage) * ORDINARY_WORK_COEFFICIENT
+        formulas.append(f"평균임금(일용근로자): 일당 {float(daily_wage):,.0f}원 × 통상근로계수 73/100 = {avg_daily:,.0f}원 "
+                        "(산재보험법 제36조 제5항, 시행령 제23조·제24조, 고용노동부고시 제2025-90호)")
+        warnings.append("근로관계가 3개월 이상 계속되거나 근로 형태가 상용근로자와 비슷하면 일용근로자로 보지 않고 일반 평균임금으로 "
+                        "산정합니다(시행령 제23조 제1항 제1호 단서). 1개월 이상 근로한 일용근로자는 실제 임금·근로일수로 적용 "
+                        "제외를 신청할 수 있습니다(제24조 제2항).")
+        legal.append("산업재해보상보험법 제36조 제5항·시행령 제23조·제24조 (일용근로자 평균임금 — 통상근로계수)")
     else:
-        formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 기준)")
+        avg = calc_average_wage(replace(inp, end_date=inp.accident_date or inp.end_date), ow)
+        if avg.held_reason:
+            return IndustrialAccidentResult(held_reason=avg.held_reason, warnings=avg.warnings)
+        avg_daily = avg.avg_daily_wage
+        if avg.used_basis == "통상임금":
+            formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 평균임금 {avg.avg_daily_3m:,.0f}원 < 1일 통상임금 "
+                            f"{avg.avg_daily_ordinary:,.0f}원 → 통상임금, 근로기준법 제2조 제2항)")
+            legal.append("근로기준법 제2조 제2항 (평균임금이 통상임금보다 적으면 통상임금)")
+        else:
+            formulas.append(f"평균임금: {avg_daily:,.0f}원/일 (3개월 기준)")
+        if is_daily and not daily_wage:
+            warnings.append("일용근로자의 산재 평균임금은 일당 × 통상근로계수(73/100)로 산정합니다(시행령 제24조 제1항 제1호) — "
+                            "일당을 알면 그 기준으로 계산합니다. 이 카드는 일반 평균임금입니다.")
+        elif is_daily:
+            warnings.append("근로관계가 3개월 이상 계속돼 일용근로자 특례(통상근로계수)를 적용하지 않고 일반 평균임금으로 산정했습니다"
+                            "(시행령 제23조 제1항 제1호 단서 가목).")
     if inp.accident_date:
         legal.append("근로기준법 시행령 제52조 (재해보상 시의 평균임금 산정 사유 발생일)")
 
@@ -283,6 +311,15 @@ def calc_industrial_accident(
 
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────────────────
+
+def _continued_three_months(inp: WageInput) -> bool:
+    """입사일과 재해일(없으면 퇴직일)이 있고 그 사이가 3개월 이상이면 True — 시행령 제23조①1호 단서 가목(일용으로 보지 않음)."""
+    end = inp.accident_date or inp.end_date
+    if not inp.start_date or not end:
+        return False
+    from .shared import DateRange
+    return DateRange(inp.start_date, end).months_approx >= 3
+
 
 def _compensation_limits(year: int) -> tuple[float | None, float]:
     """(최고, 최저) 보상기준 금액. 최저는 최저임금액(시급 × 8)과 비교해 큰 쪽(제36조⑦ 후단). 표에 없는 해는 (None, 최저임금액)."""
