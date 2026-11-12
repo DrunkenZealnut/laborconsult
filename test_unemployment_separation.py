@@ -22,7 +22,10 @@ ROOT = Path(__file__).resolve().parent
 FIXTURES = ROOT / "data" / "annex_fixtures"
 XML_FIXTURE = FIXTURES / "ei_rule_annexes_20260918.xml"
 ANNEX_FIXTURES = {"ei_rule_annex2": FIXTURES / "ei_rule_annex2_20260918.txt",
-                  "ei_rule_annex1_2": FIXTURES / "ei_rule_annex1_2_20260918.txt"}
+                  "ei_rule_annex1_2": FIXTURES / "ei_rule_annex1_2_20260918.txt",
+                  # 산재법 별표 1(고령자 휴업급여 계수) — 산재 계산기 앵커(calculator-statute-audit I3). XML fixture는 고용보험법 시행규칙 것이라
+                  # U5의 제목 유일성 검사는 그 법령의 별표에만 돈다
+                  "iaci_annex1": FIXTURES / "iaci_annex1_20260701.txt"}
 norm = lambda t: re.sub(r"\s+", "", t or "")  # noqa: E731
 
 # 설계 §8.1 S+(합성 양성 13) — 측정 하네스 synthetic.json과 같은 문장
@@ -182,7 +185,9 @@ class AnchorFixtureTest(unittest.TestCase):
                 self.fail(f"{path.name} 없음 — fetch_official_rules.py --doc {doc_id} 로 받은 output_공식법령/{doc_id}.md 본문을 "
                           "첫 줄 출처 주석과 함께 복사한다(가운뎃점·공백 원문 그대로)")
             body = path.read_text(encoding="utf-8").split("\n", 1)[1]   # 첫 줄은 출처 주석
-            phrases = [p for d, p in fact.anchors if d == doc_id]
+            # 별표 fixture는 이직사유 블록 앵커와 계산기 근거 앵커(산재법 별표 1 — calculator-statute-audit I3) 둘을 CI에서 대조한다
+            from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
+            phrases = [p for d, p in list(fact.anchors) + list(CALC_BASIS_ANCHORS) if d == doc_id]
             self.assertTrue(phrases, doc_id)
             for phrase in phrases:
                 self.assertIn(norm(phrase), norm(body), f"{doc_id}: {phrase}")   # 공백만 무시 — 가운뎃점(·/ㆍ)은 구분
@@ -227,7 +232,9 @@ class AnnexUnitTest(unittest.TestCase):
         self.assertIsNone(annex_unit(None, "x"))
         # 등록된 제목 둘은 fixture에서 유일하다 — 설계 D2
         import fetch_official_rules as fo
-        for _, _, title_part, _ in fo.ANNEXES:
+        for _, law, title_part, _ in fo.ANNEXES:
+            if law != "고용보험법 시행규칙":
+                continue                                   # fixture XML은 고용보험법 시행규칙 별표 목록이다
             self.assertIsNotNone(annex_unit(root, title_part), title_part)
 
 

@@ -243,7 +243,11 @@ CLI 116사례 전후 diff — 바뀐 사례 ID와 이유. 바뀐 사례가 이�
 
 상한 경과조치 안내(이직 연도 < 기준연도)와 일용근로자 요건 안내는 CLI 사례에 해당 입력이 없어 나타나지 않았다 — `test_calculator_statute_audit.py`가 고정한다.
 
-### PR-2 (Do에서 채움)
+### PR-2 (2026-11-12, `fix/calc-statute-audit-ei` → `fix/calc-statute-audit-iaci`)
+
+CLI 116사례 출력 변화 **0줄**. 산재 사례 #71~#78은 평균임금이 2026년 최고(268,299원)와 최저(82,560원) 사이이고 요양일수가 3일을 넘으며 나이·일용·직업병 입력이 없어 새 규칙에 닿지 않았다(#72 저임금 사례는 최저 보상기준 아래지만 장해·유족급여를 묻지 않아 메시지도 붙지 않는다 — 최저는 그 두 급여에만 쓰이므로 안내도 그때만 낸다). 새 규칙의 금액은 `test_calculator_statute_audit.py`의 SickLeave·CompensationLimit·DailyWorkerAndDisease 11건이 고정한다.
+
+PR-2는 설계 §2와 달리 PR-1 브랜치 위에 쌓았다 — 두 PR이 같은 새 테스트 파일을 만들어 main에서 따로 분기하면 add/add 충돌이 났을 것이다. PR-1 머지 뒤 base를 main으로 재타깃한다(wage-update-followups 스택 절차).
 
 ## Version History
 
