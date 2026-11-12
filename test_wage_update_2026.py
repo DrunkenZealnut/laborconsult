@@ -799,7 +799,7 @@ class CalcBasisAnchorTests(unittest.TestCase):
     def test_anchor_docs_are_registered_for_collection(self):
         import fetch_official_rules as fo
         from wage_calculator.legal_anchors import CALC_BASIS_ANCHORS
-        ids = {a[0] for a in fo.ARTICLES} | {a[0] for a in fo.ADMRULS}
+        ids = {a[0] for a in fo.ARTICLES} | {a[0] for a in fo.ADMRULS} | {a[0] for a in fo.ANNEXES}   # 별표 앵커(iaci_annex1)도 등록 대상
         self.assertTrue(CALC_BASIS_ANCHORS)
         for doc_id, phrase in CALC_BASIS_ANCHORS:
             self.assertIn(doc_id, ids, doc_id)
