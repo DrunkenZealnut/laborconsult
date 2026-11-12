@@ -103,5 +103,32 @@ class UnemploymentWordingTests(unittest.TestCase):
         self.assertFalse(any(w.startswith("구직급여 상한액은 이직일 기준") for w in _unemp(end_date="2026-06-30").warnings))
 
 
+class FlowchartTests(unittest.TestCase):
+    """D11 — 공개 흐름도 두 사본의 본문이 같고, 조기재취업 공식이 미지급일수 × 1/2다."""
+
+    _FLOW = ("public/calculator_flow/unemployment_benefit_calc.html",
+             "wage_calculator/calculator_flow/unemployment_benefit_calc.html")
+
+    @staticmethod
+    def _svg_body(path: Path) -> str:
+        """첫 <svg>부터 끝까지 — head 메타데이터·단독 진입 링크·모바일 스크롤 스크립트·analytics는 공개 사본에만 있다."""
+        import re
+        text = path.read_text(encoding="utf-8")[path.read_text(encoding="utf-8").index("<svg"):]
+        text = re.sub(r"<script>\n// Mobile: wrap SVGs.*?</script>\n", "", text, flags=re.S)
+        return text.replace('<script type="module" src="/analytics.js"></script>\n', "")
+
+    def test_two_copies_share_the_same_svg_body(self):
+        a, b = (self._svg_body(ROOT / p) for p in self._FLOW)
+        self.assertEqual(a, b)
+
+    def test_early_reemployment_formula_is_half_of_unpaid_days(self):
+        body = self._svg_body(ROOT / self._FLOW[0])
+        self.assertNotIn("÷ 2) × 50%", body)
+        self.assertNotIn("2,553,750", body)
+        self.assertIn("미지급(잔여)일수 × 1/2", body)
+        self.assertIn("68,100 × 150일 × 1/2 = 5,107,500원", body)
+        self.assertIn("14일", body)          # 요건 설명 줄
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -283,7 +283,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <div id="tab3" style="display:none">
 <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px">
 <p style="font-size:14px;font-weight:500;margin:0 0 4px;color:var(--color-text-primary)">조기재취업수당 — 빨리 취업하면 보너스</p>
-<p style="font-size:13px;color:var(--color-text-secondary);margin:0">소정급여일수의 절반 이상 남기고 재취업하면 잔여분의 50% 지급</p>
+<p style="font-size:13px;color:var(--color-text-secondary);margin:0">신고일부터 14일이 지난 뒤 소정급여일수를 1/2 이상 남기고 재취업해 12개월 이상 고용되면 미지급일수의 1/2 지급 — 전 사업주 재고용·월 300만원 이상 임금(2026-11-01~) 등은 제외</p>
 </div>
 <svg width="100%" viewBox="0 0 680 500">
 <defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
@@ -320,7 +320,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <g class="c-purple">
 <rect x="80" y="270" width="520" height="76" rx="8" stroke-width="0.5"/>
 <text class="th" x="340" y="292" text-anchor="middle" dominant-baseline="central">조기재취업수당 공식</text>
-<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="326" text-anchor="middle" dominant-baseline="central">= 1일 수급액 × (잔여일수 ÷ 2) × 50%</text>
+<text style="font-size:15px;fill:#3C3489;font-weight:500" x="340" y="326" text-anchor="middle" dominant-baseline="central">= 1일 수급액 × 미지급(잔여)일수 × 1/2</text>
 </g>
 
 <!-- 예시 -->
@@ -329,7 +329,7 @@ svg{display:block;width:100%;max-width:700px;margin:0 auto;}
 <text class="th" x="340" y="398" text-anchor="middle">예시: 1일 68,100원, 소정 210일, 60일 만에 재취업</text>
 <text class="ts" x="340" y="422" text-anchor="middle">잔여 = 210 − 60 = 150일 ≥ 105일(210÷2) → 발생 ✓</text>
 <text class="ts" x="340" y="442" text-anchor="middle">이미 받은 급여: 68,100 × 60일 = 4,086,000원</text>
-<text class="ts" x="340" y="462" text-anchor="middle">조기수당: 68,100 × (150÷2) × 50% = 2,553,750원 (추가로 받음)</text>
+<text class="ts" x="340" y="462" text-anchor="middle">조기수당: 68,100 × 150일 × 1/2 = 5,107,500원 (추가로 받음)</text>
 </svg>
 </div>
 
@@ -496,7 +496,7 @@ function calc(){
     var remain=sDays-reDay;
     var halfDays=Math.floor(sDays/2);
     if(remain>=halfDays&&remain>0){
-      var earlyAmt=Math.round(clamped*(remain/2)*0.5);
+      var earlyAmt=Math.round(clamped*(remain/2));
       earlyEl.textContent=fmt(earlyAmt)+'원';
       earlyEl.style.color='var(--color-text-success)';
       earlyNote.textContent='잔여 '+remain+'일 ≥ '+halfDays+'일 → 발생 ✓';
