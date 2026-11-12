@@ -195,7 +195,7 @@ class SickLeaveTests(unittest.TestCase):
         with mock.patch.object(ia, "MIN_COMPENSATION_DAILY", {2026: 120_000}):
             daily, _, _, formulas, _, _ = self._sick(137_500, 10, age=61)    # 70% = 96,250 > 96,000(최저보상 80%) → 제52조 경로
         self.assertEqual(daily, round(96_000 * 86 / 90))                     # 96,250 × 66/70 = 90,750 < 91,733 → 제3호 하한
-        self.assertTrue(any("제1호 단서 하한" in f for f in formulas), formulas)
+        self.assertTrue(any("× 66/70 = 90,750원" in f and "하한 91,733원" in f for f in formulas), formulas)   # 등식은 감액 전 값(N1)
         self.assertEqual(self._sick(200_000, 10, age=61)[0], round(140_000 * 66 / 70))   # 하한이 걸리지 않는 경우는 그대로
 
     def test_card_passes_age_and_days_through(self):

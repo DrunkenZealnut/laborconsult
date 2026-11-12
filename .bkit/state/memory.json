@@ -791,12 +791,14 @@
       "PR-1 실업급여+문서",
       "PR-2 산재"
     ],
-    "matchRate": 90.4,
+    "matchRate": 98.2,
     "checkAt": "2026-11-12",
     "analysisPath": "docs/03-analysis/calculator-statute-audit.analysis.md",
     "iterationCount": 1,
     "checkSummary": "57항목: 일치 47·부분 9·미완 1(check_law_freshness --anchors — 회선 IP 미등록). Act-1 후보 g(별표1 제1호 단서 하한 테스트·앵커)·i(앵커 2)·j(흐름도 최저 보상기준)",
     "actAt": "2026-11-12",
-    "actSummary": "Act-1: g 별표1 제1호 단서 하한 테스트·앵커·산식 표시, i 앵커 2, j 산재 흐름도 최저 보상기준 문구 + 설계 갱신(b·c·d·f·h·k·a·e)"
+    "actSummary": "Act-1: g 별표1 제1호 단서 하한 테스트·앵커·산식 표시, i 앵커 2, j 산재 흐름도 최저 보상기준 문구 + 설계 갱신(b·c·d·f·h·k·a·e)",
+    "recheckAt": "2026-11-12",
+    "recheckSummary": "Act-1 재대조 57항목 ✅56·⚠️0·❌1(Plan §7-3 freshness 미실행) = 98.2%"
   }
 }
