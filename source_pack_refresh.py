@@ -378,7 +378,7 @@ def audit(spec: dict) -> int:
     for led in ledgers:
         for wid, doc in led["documents"].items():
             have.setdefault(wid, set()).update(i.rsplit("_", 2)[1] for i in doc["ids"])
-    fail = 0
+    fail, verdicts = 0, review_verdicts(spec)
     for law in spec["laws"]:
         xml = (work_dir(spec) / f"{law['work_id']}.xml").read_text(encoding="utf-8")
         units = {article_key(u): u for u in article_units(xml)}
@@ -389,10 +389,14 @@ def audit(spec: dict) -> int:
             body, status = article_body(unit)
             if status != "ok":
                 continue
+            label = review_label(law["law"], section_title(unit))
+            if verdicts.get(label, "").startswith("보류"):
+                print(f"  - {label} (검토 보류)")
+                continue
             key = sha(section_title(unit).encode())[:10]
             ok = key in have.get(law["work_id"], set())
             fail += not ok
-            print(f"  {'✓' if ok else '✗'} {law['law']} 제{art}조")
+            print(f"  {'✓' if ok else '✗'} {label}")
     print("audit: " + ("누락 0" if not fail else f"누락 {fail}"))
     return 1 if fail else 0
 
