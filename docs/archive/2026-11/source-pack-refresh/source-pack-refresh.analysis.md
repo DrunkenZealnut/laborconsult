@@ -2,7 +2,7 @@
 
 > **요약**: 설계 46항목 대조 Match Rate **90.2%**. 핵심 결정(새 배치·supersede·사람 검토 관문)은 설계대로 구현됐다. 남은 것은 실행하지 않은 점검 2건(R5 `sync_legal_rules`, Plan §4-4 검색 회귀)과 설계 자체의 공백(연산 기호 손실 자동 탐지 없음, D3 자기모순, fetch 게이트 복제)이다.
 >
-> **대상**: main `abe84ff`(PR #167 머지) · **설계**: `docs/02-design/features/source-pack-refresh.design.md` · **Plan**: `docs/01-plan/features/source-pack-refresh.plan.md`
+> **대상**: main `abe84ff`(PR #167 머지) · **설계**: `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.design.md` · **Plan**: `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.plan.md`
 > **작성**: 2026-11-13 · **상태**: Check
 
 ## 요약

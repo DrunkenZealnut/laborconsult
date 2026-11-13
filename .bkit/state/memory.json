@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 100,
+  "sessionCount": 103,
   "lastSession": {
-    "startedAt": "2026-11-13T03:03:06.139Z",
+    "startedAt": "2026-11-13T07:13:53.452Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -813,23 +813,31 @@
     "remaining": "source-pack-refresh 후속(freshness --anchors는 11-12 통과 — 118.33.130.107 회선)"
   },
   "source-pack-refresh": {
-    "phase": "completed",
-    "planPath": "docs/01-plan/features/source-pack-refresh.plan.md",
+    "phase": "archived",
+    "planPath": "docs/archive/2026-11/source-pack-refresh/source-pack-refresh.plan.md",
     "startedAt": "2026-11-12",
     "plannedAt": "2026-11-12",
     "baseline": "9838261",
     "parent": "calculator-statute-audit",
     "trigger": "report §4.4 자료팩 누락 26(보류 7·신설 19)+변경 1",
     "decisionsPending": "",
-    "designPath": "docs/02-design/features/source-pack-refresh.design.md",
+    "designPath": "docs/archive/2026-11/source-pack-refresh/source-pack-refresh.design.md",
     "designAt": "2026-11-12",
     "designDecisions": "D1 대상 8조문(보류 7+국민연금법 126; 임금채권보장법 4는 빈 조문, 민사집행규칙 제외) · D2 img 태그만 제거·상자 표 텍스트 채택 · D4 사람 검토 후 적재 · D5 새 배치 qpack_20261112_ · D6 제126조 supersede · D7 source_pack_refresh.py 저장소 · D8 BM25 전체 재빌드 · D10 임베딩·업로드·BM25는 사용자 확인",
     "doAt": "2026-11-12",
     "doProgress": "Do 완료·머지(11-13): PR #167 abe84ff — qpack_20261112_ 11벡터·구 제126조 2벡터 supersede·원장 2종·BM25 107,186(CI Linux 490MB)·테스트 10건. 검토 보류 3조문(? 연산 기호) 후속",
     "matchRate": 93.5,
     "checkAt": "2026-11-13",
-    "analysis": "docs/03-analysis/source-pack-refresh.analysis.md — 설계 90.2%(46항목), Plan 조건 60%. 즉시: eval_retrieval·eval_corpus_mix·sync_legal_rules 미실행, CLAUDE.md BM25 107,177 잔존, --offline 문서만 | 11-13 즉시 항목: eval_retrieval 89.5%·corpus_mix 공공16/12/12·R5 신배치 0건, CLAUDE.md BM25·원장 규칙, docstring → 93.5%, Plan 80%",
+    "analysis": "docs/archive/2026-11/source-pack-refresh/source-pack-refresh.analysis.md — 설계 90.2%(46항목), Plan 조건 60%. 즉시: eval_retrieval·eval_corpus_mix·sync_legal_rules 미실행, CLAUDE.md BM25 107,177 잔존, --offline 문서만 | 11-13 즉시 항목: eval_retrieval 89.5%·corpus_mix 공공16/12/12·R5 신배치 0건, CLAUDE.md BM25·원장 규칙, docstring → 93.5%, Plan 80%",
     "reportAt": "2026-11-13",
-    "reportPath": "docs/04-report/features/source-pack-refresh.report.md"
+    "reportPath": "docs/archive/2026-11/source-pack-refresh/source-pack-refresh.report.md",
+    "archivedAt": "2026-11-13",
+    "archivedTo": "docs/archive/2026-11/source-pack-refresh/"
+  },
+  "source-pack-held-articles": {
+    "phase": "plan",
+    "startedAt": "2026-11-13",
+    "planPath": "docs/01-plan/features/source-pack-held-articles.plan.md",
+    "parent": "source-pack-refresh"
   }
 }

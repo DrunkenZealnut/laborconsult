@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """공식 자료팩 스냅숏 갱신 — 법제처 현행판에서 대상 조문만 다시 받아 **새 배치**로 적재한다.
 
-source-pack-refresh(설계 `docs/02-design/features/source-pack-refresh.design.md`). 2026-10-09 자료팩
+source-pack-refresh(설계 `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.design.md`). 2026-10-09 자료팩
 (`qpack_20261009_`, 원장 `data/vector_ledgers/qpack_20261009.json`)은 저장소 밖 스크립트로 만들어졌고,
 산식·표가 이미지인 조문을 통째로 보류했다(실재하는 조문 7개가 코퍼스에 없었다 — calculator-statute-audit §4.4).
 이 스크립트가 그 절차를 저장소로 옮긴다.
