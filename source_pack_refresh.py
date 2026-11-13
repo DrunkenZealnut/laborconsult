@@ -48,6 +48,8 @@ IMG_TAG = re.compile(r"</?img\b[^>]*>", re.I)
 FLDOWNLOAD = "https://www.law.go.kr/flDownload.do"
 SUSPECT_CHARS = ("?", "\ufffd")
 SUSPECT_OVERRIDE = "의심 문자 확인:"
+CORRECTION_GLYPHS = {"≤": "\\leq", "≥": "\\geq", "<": "<", ">": ">", "=": "=", "+": "+", "×": "\\times", "÷": "\\div"}
+SECTION_MAX = 160      # 메타데이터 section 저장 폭 — 비교 키도 같은 폭으로 자른다
 EMPTY_ARTICLE_MAX = 10   # 제목·항 없이 조문 번호만 있는 자리 조문(임금채권보장법 제3조의2 등 — 5~6자)
 
 
@@ -129,6 +131,9 @@ def apply_corrections(body: str, fixes: list[dict]) -> str:
         diff = [(a, b) for a, b in zip(find, repl) if a != b]
         if len(find) != len(repl) or len(diff) != 1 or diff[0][0] not in SUSPECT_CHARS:
             raise SystemExit(f"[중단] 정정은 의심 문자 한 글자만 바꿀 수 있다: {fx['article']} {find!r} → {repl!r}")
+        glyph = diff[0][1]
+        if glyph not in CORRECTION_GLYPHS or ("latex_token" in fx and fx["latex_token"] != CORRECTION_GLYPHS[glyph]):
+            raise SystemExit(f"[중단] 허용되지 않은 정정 기호이거나 latex_token과 어긋난다: {fx['article']} {glyph!r}")
         n = body.count(find)
         if n != 1:
             raise SystemExit(f"[중단] 정정 문맥이 본문에 {n}회 일치(정확히 1회여야 함): {fx['article']} {find!r}")
@@ -149,7 +154,10 @@ def verify_correction_sources(spec: dict, out: Path, manifest: dict) -> None:
         html_path = out / f"{fx['work_id']}.screen.html"
         if not html_path.exists():
             raise SystemExit(f"[중단] 화면 HTML 없음: {html_path.name} — fetch를 다시 돌릴 것")
-        page = html_path.read_text(encoding="utf-8", errors="replace")
+        raw = html_path.read_bytes()             # 바이트로 대조 — read_text는 CRLF를 LF로 바꿔 해시가 달라진다(실측)
+        if sha(raw) != assets.get(f"screen:{fx['work_id']}"):
+            raise SystemExit(f"[중단] fetch 이후 화면 HTML이 바뀌었다: {html_path.name}")
+        page = raw.decode("utf-8", errors="replace")
         tags = [m.group(0) for m in re.finditer(r"<img\b[^>]*>", page) if re.search(rf"flSeq={seq}(?!\d)", m.group(0))]
         alts = [html.unescape(a) for tag in tags for a in re.findall(r'alt="([^"]*)"', tag)]
         if not alts or not any(fx["latex_token"] in a for a in alts):
@@ -230,7 +238,7 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
     from pinecone_upload_official_rules import split_text
     out = work_dir(spec)
     manifest = json.loads((out / "fetch_manifest.json").read_text(encoding="utf-8"))
-    vectors, rows = [], []
+    vectors, rows, applied = [], [], set()
     if spec.get("corrections"):
         verify_correction_sources(spec, out, manifest)
     for law in spec["laws"]:
@@ -246,12 +254,15 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
             fixes = corrections_for(spec, law["work_id"], art)
             if fixes and status == "ok":
                 body = apply_corrections(body, fixes)
+                applied.update((law["work_id"], art, fx["find"]) for fx in fixes)
+            else:
+                fixes = []
             section = section_title(unit)
             ef = _tag("조문시행일자", unit)
             ef = f"{ef[:4]}-{ef[4:6]}-{ef[6:8]}" if len(ef) == 8 else ""
             if ef and ef > spec["as_of"]:
                 status = "future"
-            row = {"work_id": law["work_id"], "law": law["law"], "article": art, "section": section,
+            row = {"work_id": law["work_id"], "law": law["law"], "article": art, "section": section[:SECTION_MAX],
                    "status": status, "effective": ef, "chunks": 0, "box_table": bool(BOX_CHARS.search(body)),
                    "suspect_glyph": suspect_glyphs(body) if status == "ok" else 0, "corrected": len(fixes)}
             if status == "ok":
@@ -260,7 +271,7 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
                               + (f" | 조문/규칙 시행일: {ef}" if ef else "")
                               + (f"\n{correction_note(fixes)}" if fixes else ""))
                     content = header + "\n\n" + chunk
-                    meta = {"source_type": "regulation", "title": law["law"][:200], "section": section[:160],
+                    meta = {"source_type": "regulation", "title": law["law"][:200], "section": section[:SECTION_MAX],
                             "text": content, "chunk_text": content, "official_url": m["url"], "url": m["url"],
                             "official": True, "issuer": "법제처 국가법령정보센터", "date": ef or spec["as_of"],
                             "effective_date": ef, "retrieved_on": spec["as_of"],
@@ -271,6 +282,10 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
                                     "embed_text": content})
                     row["chunks"] += 1
             rows.append(row)
+    unused = [fx for fx in spec.get("corrections", []) if (fx["work_id"], fx["article"], fx["find"]) not in applied]
+    if unused:
+        raise SystemExit(f"[중단] 적용되지 않은 정정 {len(unused)}건(조문 없음·보류 상태·대상 밖): "
+                         + ", ".join(f"{fx['work_id']} {fx['article']}" for fx in unused))
     assert len({v["id"] for v in vectors}) == len(vectors), "ID 중복"
     with (out / "prepared_vectors.jsonl").open("w", encoding="utf-8") as f:
         for v in vectors:
@@ -315,7 +330,8 @@ def write_review(spec: dict, vectors: list[dict], rows: list[dict]) -> Path:
         if r["status"] != "ok":
             continue
         label = review_label(r["law"], r["section"])
-        body = "\n".join(v["embed_text"].split("\n\n", 1)[1] for v in by_section[(r["work_id"], r["section"])])
+        body = "\n".join(v["embed_text"].split("\n\n", 1)[1]
+                         for v in by_section[(r["work_id"], r["section"][:SECTION_MAX])])
         lines += [f"### {label}", "", "```", body, "```", "", f"판정: {verdicts.get(label, '')}", ""]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -332,11 +348,10 @@ def approved_vectors(spec: dict) -> list[dict]:
     """review의 판정이 `적재`인 조문의 벡터만. 판정이 비면 예외(S8)."""
     vectors = [json.loads(l) for l in (work_dir(spec) / "prepared_vectors.jsonl").read_text(encoding="utf-8").splitlines()]
     verdicts = review_verdicts(spec)
-    rows_path = work_dir(spec) / "prepare_rows.json"
-    suspect = {}
-    if rows_path.exists():
-        suspect = {(r["work_id"], r["section"]): r.get("suspect_glyph", 0)
-                   for r in json.loads(rows_path.read_text(encoding="utf-8")) if r.get("section")}
+    suspect: dict[tuple[str, str], int] = {}       # G1은 적재할 본문 자체에서 센다 — 별도 파일에 기대지 않는다
+    for v in vectors:
+        key = (v["metadata"]["source_pack_id"], v["metadata"]["section"])
+        suspect[key] = suspect.get(key, 0) + suspect_glyphs(v["embed_text"].split("\n\n", 1)[-1])
     keep = []
     for v in vectors:
         meta = v["metadata"]
