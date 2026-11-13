@@ -1,6 +1,6 @@
 # source-pack-refresh — Design
 
-> Plan: `docs/01-plan/features/source-pack-refresh.plan.md` · 작성: 2026-11-12 · 기준: main `9838261`
+> Plan: `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.plan.md` · 작성: 2026-11-12 · 기준: main `9838261`
 > 근거 조사: 법제처 현행판(eflaw) XML을 대상 6법령 받아 대상 12조문의 태그·이미지·상자 표·본문 길이를 셌다(2026-11-12, 회선 118.33.130.107). 받은 XML은 세션 scratchpad `spr/`(저장소 밖, 일회용)에 두었다.
 
 ## 0. 설계 결정 요약

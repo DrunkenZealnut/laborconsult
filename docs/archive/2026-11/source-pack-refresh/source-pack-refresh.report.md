@@ -3,7 +3,7 @@
 > **사이클**: 공식 자료팩(qpack_20261009) 누락·변경 조문 보정 · **상위**: calculator-statute-audit 보고서 §4.4
 > **기간**: 2026-11-12 ~ 2026-11-13 · **최종 Match Rate**: **93.5%** (설계 46항목, Plan 완료 조건 80%)
 > **PR**: #167 `abe84ff`(Do) · #168(Check·문서 정정)
-> **문서**: Plan `docs/01-plan/features/source-pack-refresh.plan.md` · Design `docs/02-design/features/source-pack-refresh.design.md` · Analysis `docs/03-analysis/source-pack-refresh.analysis.md`
+> **문서**: Plan `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.plan.md` · Design `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.design.md` · Analysis `docs/archive/2026-11/source-pack-refresh/source-pack-refresh.analysis.md`
 
 ## Executive Summary
 
