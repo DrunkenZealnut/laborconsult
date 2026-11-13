@@ -23,9 +23,9 @@
     "archivedAt": "2026-03-18T00:00:00Z",
     "archivedTo": "docs/archive/2026-03/chatbot-main-page/"
   },
-  "sessionCount": 98,
+  "sessionCount": 100,
   "lastSession": {
-    "startedAt": "2026-11-09T09:39:35.637Z",
+    "startedAt": "2026-11-13T03:03:06.139Z",
     "platform": "claude",
     "level": "Dynamic"
   },
@@ -762,7 +762,7 @@
     "measurementApproved": "2026-11-09 사용자 '측정 진행' (196답변, run_cap.sh cap1·cap2)",
     "measuredAt": "2026-11-09",
     "measurement": "cap1·cap2(196+3 재실행): G1✅ G2부분(S+ 공공 34·28/≥34, 공공0 0·1✅) G3✅(R 공공0 2·0, 공공 79·75) G4✅ G5✅. 네트워크 단절로 cap2 3문항 재실행·치환. 진단: 창 밖 자연 공공은 상한 후보가 아님(r-ia-grade-finger 9/10 재결)",
-    "matchRate": 85.0,
+    "matchRate": 85,
     "checkedAt": "2026-11-09",
     "analysisPath": "docs/archive/2026-11/ruling-quota-cap/ruling-quota-cap.analysis.md",
     "actIterations": 3,
@@ -813,7 +813,7 @@
     "remaining": "source-pack-refresh 후속(freshness --anchors는 11-12 통과 — 118.33.130.107 회선)"
   },
   "source-pack-refresh": {
-    "phase": "do",
+    "phase": "completed",
     "planPath": "docs/01-plan/features/source-pack-refresh.plan.md",
     "startedAt": "2026-11-12",
     "plannedAt": "2026-11-12",
@@ -825,7 +825,11 @@
     "designAt": "2026-11-12",
     "designDecisions": "D1 대상 8조문(보류 7+국민연금법 126; 임금채권보장법 4는 빈 조문, 민사집행규칙 제외) · D2 img 태그만 제거·상자 표 텍스트 채택 · D4 사람 검토 후 적재 · D5 새 배치 qpack_20261112_ · D6 제126조 supersede · D7 source_pack_refresh.py 저장소 · D8 BM25 전체 재빌드 · D10 임베딩·업로드·BM25는 사용자 확인",
     "doAt": "2026-11-12",
-    "worktree": "../laborconsult-spr (feat/source-pack-refresh)",
-    "doProgress": "적재 완료(11-12): qpack_20261112_ 11벡터 upsert·verify 11/11, 원장 qpack_20261112.json, 구 제126조 2벡터 supersede(구 원장 7,109 verify), audit 누락 0(검토 보류 3 제외), 테스트 10건. BM25 전체 재빌드 진행 중 → gz 커밋·PR 남음"
+    "doProgress": "Do 완료·머지(11-13): PR #167 abe84ff — qpack_20261112_ 11벡터·구 제126조 2벡터 supersede·원장 2종·BM25 107,186(CI Linux 490MB)·테스트 10건. 검토 보류 3조문(? 연산 기호) 후속",
+    "matchRate": 93.5,
+    "checkAt": "2026-11-13",
+    "analysis": "docs/03-analysis/source-pack-refresh.analysis.md — 설계 90.2%(46항목), Plan 조건 60%. 즉시: eval_retrieval·eval_corpus_mix·sync_legal_rules 미실행, CLAUDE.md BM25 107,177 잔존, --offline 문서만 | 11-13 즉시 항목: eval_retrieval 89.5%·corpus_mix 공공16/12/12·R5 신배치 0건, CLAUDE.md BM25·원장 규칙, docstring → 93.5%, Plan 80%",
+    "reportAt": "2026-11-13",
+    "reportPath": "docs/04-report/features/source-pack-refresh.report.md"
   }
 }
