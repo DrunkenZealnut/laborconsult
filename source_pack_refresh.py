@@ -19,6 +19,13 @@ source-pack-refresh(설계 `docs/archive/2026-11/source-pack-refresh/source-pack
 - **사람 검토(review.md 판정 칸)가 비어 있으면 upload가 거절한다**(D4, S8).
 - 업로드·삭제는 `--apply` 없이는 쓰기 0. 업로드 전 새 ID의 선존재가 0이어야 한다(덮어쓰기 금지).
 - 법제처 응답이 `<Response>`면 인증 오류로 멈춘다(exit 2) — 등록 IP에서 실행할 것.
+- **상자 표 줄의 `?`·U+FFFD는 손실 의심 문자(G1 `suspect_glyph`)다**(source-pack-held-articles). 법제처 텍스트 변환이
+  계산식의 `≤`를 `?`로 잃는다(고용보험법 시행령 제60조의2·제104조의8·제104조의15). 남은 의심 문자가 있는 조문의
+  `적재` 판정은 `의심 문자 확인:` 사유가 없으면 upload가 거절한다.
+- **정정은 대상 파일 `corrections`로만 한다** — 문맥 문자열(`find`)이 본문에 정확히 1회, `find`↔`replace`는
+  `?` 한 글자만 다르고, 근거 이미지 sha256과 법제처 화면의 그 이미지 `alt` LaTeX(`latex_token`)가 맞을 때만
+  치환한다(fail-closed). 정정 사실은 청크 머리글 `정정:` 줄과 원장 `documents[].corrections`에 남는다 — 메타데이터
+  키는 늘리지 않는다.
 """
 from __future__ import annotations
 
@@ -38,6 +45,9 @@ NAMESPACE = "laborlaw-v2"
 LAW_SERVICE = "https://www.law.go.kr/DRF/lawService.do"
 BOX_CHARS = re.compile(r"[┌┐└┘│─├┤┬┴┼━┃┏┓┗┛┠┨┯┷]")
 IMG_TAG = re.compile(r"</?img\b[^>]*>", re.I)
+FLDOWNLOAD = "https://www.law.go.kr/flDownload.do"
+SUSPECT_CHARS = ("?", "\ufffd")
+SUSPECT_OVERRIDE = "의심 문자 확인:"
 EMPTY_ARTICLE_MAX = 10   # 제목·항 없이 조문 번호만 있는 자리 조문(임금채권보장법 제3조의2 등 — 5~6자)
 
 
@@ -95,6 +105,57 @@ def article_body(unit: str) -> tuple[str, str]:
     return body, "ok"
 
 
+# ── G1 의심 문자·정정 ─────────────────────────────────────────────────────────────────────
+
+def suspect_glyphs(body: str) -> int:
+    """상자 표 문자가 있는 줄의 `?`·U+FFFD 수(G1). 상자 밖 문장의 `?`는 세지 않는다."""
+    return sum(sum(line.count(c) for c in SUSPECT_CHARS) for line in body.splitlines() if BOX_CHARS.search(line))
+
+
+def article_heading(article: str) -> str:
+    """대상 키 → 조문 표기: `60의2` → `제60조의2`, `126` → `제126조`."""
+    no, _, branch = article.partition("의")
+    return f"제{no}조" + (f"의{branch}" if branch else "")
+
+
+def corrections_for(spec: dict, work_id: str, article: str) -> list[dict]:
+    return [c for c in spec.get("corrections", []) if c["work_id"] == work_id and c["article"] == article]
+
+
+def apply_corrections(body: str, fixes: list[dict]) -> str:
+    """D3 — `find`가 본문에 정확히 1회, `find`→`replace`는 `?` 한 글자만 다를 때만 치환. 위반 시 중단."""
+    for fx in fixes:
+        find, repl = fx["find"], fx["replace"]
+        diff = [(a, b) for a, b in zip(find, repl) if a != b]
+        if len(find) != len(repl) or len(diff) != 1 or diff[0][0] not in SUSPECT_CHARS:
+            raise SystemExit(f"[중단] 정정은 의심 문자 한 글자만 바꿀 수 있다: {fx['article']} {find!r} → {repl!r}")
+        n = body.count(find)
+        if n != 1:
+            raise SystemExit(f"[중단] 정정 문맥이 본문에 {n}회 일치(정확히 1회여야 함): {fx['article']} {find!r}")
+        body = body.replace(find, repl)
+    return body
+
+
+def verify_correction_sources(spec: dict, out: Path, manifest: dict) -> None:
+    """D4 — 근거 이미지 sha256 = 기록값, 화면 HTML의 그 이미지 `alt`에 `latex_token`. 하나라도 어긋나면 중단."""
+    assets = {}
+    for m in manifest.values():
+        assets.update(m.get("assets", {}))
+    for fx in spec.get("corrections", []):
+        seq = fx["image_flseq"]
+        img = out / f"img_{seq}.gif"
+        if not img.exists() or sha(img.read_bytes()) != fx["image_sha256"] or assets.get(seq) != fx["image_sha256"]:
+            raise SystemExit(f"[중단] 정정 근거 이미지가 기록과 다르다: {fx['article']} flSeq={seq}")
+        html_path = out / f"{fx['work_id']}.screen.html"
+        if not html_path.exists():
+            raise SystemExit(f"[중단] 화면 HTML 없음: {html_path.name} — fetch를 다시 돌릴 것")
+        page = html_path.read_text(encoding="utf-8", errors="replace")
+        tags = [m.group(0) for m in re.finditer(r"<img\b[^>]*>", page) if re.search(rf"flSeq={seq}(?!\d)", m.group(0))]
+        alts = [html.unescape(a) for tag in tags for a in re.findall(r'alt="([^"]*)"', tag)]
+        if not alts or not any(fx["latex_token"] in a for a in alts):
+            raise SystemExit(f"[중단] 화면 수식에 {fx['latex_token']} 없음: {fx['article']} flSeq={seq}")
+
+
 # ── 대상·경로 ──────────────────────────────────────────────────────────────────────────────
 
 def load_targets(path: str) -> dict:
@@ -141,6 +202,23 @@ def fetch(spec: dict) -> int:
                                     "url": f"https://www.law.go.kr/법령/{law['law']}/({eff})"}
         print(f"  ✓ {law['law']} 시행 {eff} ({len(r.text):,}자)")
         time.sleep(0.3)
+        fixes = [c for c in spec.get("corrections", []) if c["work_id"] == law["work_id"]]
+        if fixes:
+            assets = {}
+            for fx in fixes:      # 키 불요 경로 — OC를 넘기지 않는다
+                img = requests.get(FLDOWNLOAD, params={"flSeq": fx["image_flseq"]}, timeout=60)
+                img.raise_for_status()
+                (out / f"img_{fx['image_flseq']}.gif").write_bytes(img.content)
+                assets[fx["image_flseq"]] = sha(img.content)
+            screens = sorted({fx["screen_url"] for fx in fixes})
+            assert len(screens) == 1, f"{law['work_id']}: 화면 주소는 법령당 하나"
+            page = requests.get(screens[0], headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.law.go.kr/"},
+                                timeout=120)
+            page.raise_for_status()
+            (out / f"{law['work_id']}.screen.html").write_text(page.text, encoding="utf-8")
+            assets[f"screen:{law['work_id']}"] = sha(page.text.encode())
+            manifest[law["work_id"]]["assets"] = assets
+            print(f"    정정 근거: 이미지 {len(fixes)} · 화면 HTML {len(page.text):,}자")
     (out / "fetch_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return 0
 
@@ -153,6 +231,8 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
     out = work_dir(spec)
     manifest = json.loads((out / "fetch_manifest.json").read_text(encoding="utf-8"))
     vectors, rows = [], []
+    if spec.get("corrections"):
+        verify_correction_sources(spec, out, manifest)
     for law in spec["laws"]:
         xml = (out / f"{law['work_id']}.xml").read_text(encoding="utf-8")
         m = manifest[law["work_id"]]
@@ -163,17 +243,22 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
             if unit is None:
                 rows.append({"work_id": law["work_id"], "article": art, "status": "missing", "chunks": 0}); continue
             body, status = article_body(unit)
+            fixes = corrections_for(spec, law["work_id"], art)
+            if fixes and status == "ok":
+                body = apply_corrections(body, fixes)
             section = section_title(unit)
             ef = _tag("조문시행일자", unit)
             ef = f"{ef[:4]}-{ef[4:6]}-{ef[6:8]}" if len(ef) == 8 else ""
             if ef and ef > spec["as_of"]:
                 status = "future"
             row = {"work_id": law["work_id"], "law": law["law"], "article": art, "section": section,
-                   "status": status, "effective": ef, "chunks": 0, "box_table": bool(BOX_CHARS.search(body))}
+                   "status": status, "effective": ef, "chunks": 0, "box_table": bool(BOX_CHARS.search(body)),
+                   "suspect_glyph": suspect_glyphs(body) if status == "ok" else 0, "corrected": len(fixes)}
             if status == "ok":
                 for k, chunk in enumerate(split_text(body)):
                     header = (f"{law['law']} — {section}\n공식기관: 법제처 국가법령정보센터\n수집 기준일: {spec['as_of']}"
-                              + (f" | 조문/규칙 시행일: {ef}" if ef else ""))
+                              + (f" | 조문/규칙 시행일: {ef}" if ef else "")
+                              + (f"\n{correction_note(fixes)}" if fixes else ""))
                     content = header + "\n\n" + chunk
                     meta = {"source_type": "regulation", "title": law["law"][:200], "section": section[:160],
                             "text": content, "chunk_text": content, "official_url": m["url"], "url": m["url"],
@@ -190,7 +275,15 @@ def prepare(spec: dict) -> tuple[list[dict], list[dict]]:
     with (out / "prepared_vectors.jsonl").open("w", encoding="utf-8") as f:
         for v in vectors:
             f.write(json.dumps(v, ensure_ascii=False) + "\n")
+    (out / "prepare_rows.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return vectors, rows
+
+
+def correction_note(fixes: list[dict]) -> str:
+    """청크 머리글 한 줄(D6) — LLM이 읽는 근거라 정정 사실이 본문과 함께 간다."""
+    pairs = sorted({(a, b) for fx in fixes for a, b in zip(fx["find"], fx["replace"]) if a != b})
+    what = ", ".join(f"'{a}'를 '{b}'로" for a, b in pairs)
+    return f"정정: 법제처 텍스트 계산식의 {what} 바로잡음 — 법제처 조문 이미지·화면 수식 대조"
 
 
 def review_label(law: str, section: str) -> str:
@@ -209,9 +302,11 @@ def write_review(spec: dict, vectors: list[dict], rows: list[dict]) -> Path:
     verdicts = dict(_VERDICT_RE.findall(old))
     lines = [f"# 자료팩 갱신 검토 — {spec['batch']}", "",
              "판정 칸에 `적재` 또는 `보류(사유)`를 적는다. 상자 표가 이미지와 같은 산식·표를 빠짐없이 담는지 법제처 화면과 대조할 것.",
-             "", "| 법령 | 조문 | 상태 | 청크 | 상자 표 |", "|---|---|---|---|---|"]
+             f"상자 표 줄의 `?`·U+FFFD(의심 문자)가 남은 조문을 적재하려면 판정에 `{SUSPECT_OVERRIDE} 근거`를 적는다.",
+             "", "| 법령 | 조문 | 상태 | 청크 | 상자 표 | 의심 문자 | 정정 |", "|---|---|---|---|---|---|---|"]
     for r in rows:
-        lines.append(f"| {r.get('law', r['work_id'])} | {r['article']} | {r['status']} | {r['chunks']} | {'있음' if r.get('box_table') else ''} |")
+        lines.append(f"| {r.get('law', r['work_id'])} | {r['article']} | {r['status']} | {r['chunks']} | "
+                     f"{'있음' if r.get('box_table') else ''} | {r.get('suspect_glyph') or ''} | {r.get('corrected') or ''} |")
     lines.append("")
     by_section = {}
     for v in vectors:
@@ -237,6 +332,11 @@ def approved_vectors(spec: dict) -> list[dict]:
     """review의 판정이 `적재`인 조문의 벡터만. 판정이 비면 예외(S8)."""
     vectors = [json.loads(l) for l in (work_dir(spec) / "prepared_vectors.jsonl").read_text(encoding="utf-8").splitlines()]
     verdicts = review_verdicts(spec)
+    rows_path = work_dir(spec) / "prepare_rows.json"
+    suspect = {}
+    if rows_path.exists():
+        suspect = {(r["work_id"], r["section"]): r.get("suspect_glyph", 0)
+                   for r in json.loads(rows_path.read_text(encoding="utf-8")) if r.get("section")}
     keep = []
     for v in vectors:
         meta = v["metadata"]
@@ -245,6 +345,9 @@ def approved_vectors(spec: dict) -> list[dict]:
         if not verdict:
             raise SystemExit(f"[중단] 검토 판정이 비어 있음: {label} — review 파일을 채울 것")
         if verdict.startswith("적재"):
+            if suspect.get((meta["source_pack_id"], meta["section"]), 0) and SUSPECT_OVERRIDE not in verdict:
+                raise SystemExit(f"[중단] 의심 문자가 남은 조문: {label} — 정정(corrections)하거나 판정에 "
+                                 f"'{SUSPECT_OVERRIDE} 근거'를 적을 것")
             keep.append(v)
     return keep
 
@@ -322,6 +425,12 @@ def build_ledger(spec: dict, vectors: list[dict]) -> dict:
                                     "official_url": manifest[wid]["url"], "source_sha256": manifest[wid]["sha256"],
                                     "ids": []})
         doc["ids"].append(v["id"])
+    loaded = {(v["metadata"]["source_pack_id"], v["metadata"]["section"].split(" ", 1)[0]) for v in vectors}
+    for fx in spec.get("corrections", []):
+        if (fx["work_id"], article_heading(fx["article"])) in loaded:
+            docs[fx["work_id"]].setdefault("corrections", []).append(
+                {k: fx[k] for k in ("article", "find", "replace", "image_flseq", "image_sha256", "screen_url",
+                                    "latex_token", "reviewed_by")})
     return {
         "batch": f"sourcepack_{spec['batch']}", "id_prefix": id_prefix(spec),
         "id_pattern": rf"^{id_prefix(spec)}[0-9a-f]{{16}}_[0-9a-f]{{10}}_\d+$",

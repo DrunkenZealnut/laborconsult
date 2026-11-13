@@ -835,9 +835,14 @@
     "archivedTo": "docs/archive/2026-11/source-pack-refresh/"
   },
   "source-pack-held-articles": {
-    "phase": "plan",
+    "phase": "do",
     "startedAt": "2026-11-13",
     "planPath": "docs/01-plan/features/source-pack-held-articles.plan.md",
-    "parent": "source-pack-refresh"
+    "parent": "source-pack-refresh",
+    "designPath": "docs/02-design/features/source-pack-held-articles.design.md",
+    "designAt": "2026-11-13",
+    "designDecisions": "D2 방식 B(?→≤ 치환+원장 corrections) · D3 문맥 정확 1회 · D4 이미지 sha+화면 LaTeX 자동 대조 · D5 G1 suspect_glyph 관문 · D6 메타 키 불변(머리글 정정 줄)",
+    "doAt": "2026-11-13",
+    "doProgress": "코드(G1·corrections·근거 대조)+테스트 H1~H7(18건, 변이 6/6) · targets_20261113 · fetch/prepare 12벡터 · 판정 적재 · upload dry-run — --apply 사용자 확인 대기"
   }
 }
