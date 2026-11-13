@@ -91,7 +91,9 @@ class ReviewGateTest(unittest.TestCase):
             spec = spr.load_targets(str(targets))
             verdicts = spr.review_verdicts(spec)
             if not verdicts:
-                continue
+                if not list((ROOT / "data" / "source_pack_refresh").glob("review_*.md")):
+                    continue                                                        # 검토 파일이 하나도 없는 환경
+                self.fail(f"{targets.name}: 커밋된 대상 파일에 review_{spec['batch']}.md가 없다")
             checked += 1
             for law in spec["laws"]:
                 for art in law["articles"]:
@@ -155,15 +157,24 @@ class SuspectGlyphTest(unittest.TestCase):
         with self.assertRaises(SystemExit):                                         # 의심 문자가 아닌 글자 치환
             spr.apply_corrections(BOX, [dict(fx, find="180일 ? B", replace="180일 ? C")])
 
+    def test_h2b_correction_glyph_allowlist_and_latex_token(self):
+        fx = {"article": "x", "find": "180일 ? B", "replace": "180일 ≤ B", "latex_token": "\\leq"}
+        self.assertIn("≤", spr.apply_corrections(BOX, [fx]))
+        with self.assertRaises(SystemExit):                                         # 허용 목록 밖 기호
+            spr.apply_corrections(BOX, [dict(fx, replace="180일 가 B")])
+        with self.assertRaises(SystemExit):                                         # latex_token과 기호가 어긋남
+            spr.apply_corrections(BOX, [dict(fx, latex_token="\\geq")])
+
     def _sources(self, tmp: Path, img: bytes, alt: str, recorded: str | None = None):
         (tmp / "img_111.gif").write_bytes(img)
-        (tmp / "w.screen.html").write_text(
-            f'<p><img alt="@@LATEX@@{alt}@@/LATEX@@" src="/LSW/flDownload.do?flSeq=111" /></p>'
-            '<img alt="other \\leq" src="/LSW/flDownload.do?flSeq=1112" />', encoding="utf-8")
+        page = (f'<p><img alt="@@LATEX@@{alt}@@/LATEX@@" src="/LSW/flDownload.do?flSeq=111" /></p>\r\n'
+                '<img alt="other \\leq" src="/LSW/flDownload.do?flSeq=1112" />')      # 실제 화면처럼 CRLF
+        (tmp / "w.screen.html").write_bytes(page.encode())
         digest = hashlib.sha256(img).hexdigest()
         fx = {"work_id": "w", "article": "1", "image_flseq": "111", "image_sha256": recorded or digest,
               "latex_token": "\\leq"}
-        return {"corrections": [fx]}, {"w": {"assets": {"111": digest}}}
+        return {"corrections": [fx]}, {"w": {"assets": {"111": digest,
+                                                      "screen:w": hashlib.sha256(page.encode()).hexdigest()}}}
 
     def test_h3_correction_sources_fail_closed(self):
         import tempfile
@@ -181,6 +192,17 @@ class SuspectGlyphTest(unittest.TestCase):
             spec["corrections"][0]["image_flseq"] = "999"
             with self.assertRaises(SystemExit):                                     # 이미지·태그 없음
                 spr.verify_correction_sources(spec, tmp, man)
+            spec, man = self._sources(tmp, b"GIF89a-1", "1- A \\leq B")
+            (tmp / "img_222.gif").write_bytes(b"GIF89a-2")                           # 이미지는 맞는데 화면에 그 flSeq 태그가 없음
+            fx = spec["corrections"][0]
+            fx.update(image_flseq="222", image_sha256=hashlib.sha256(b"GIF89a-2").hexdigest())
+            man["w"]["assets"]["222"] = fx["image_sha256"]
+            with self.assertRaisesRegex(SystemExit, "화면 수식"):
+                spr.verify_correction_sources(spec, tmp, man)
+            spec, man = self._sources(tmp, b"GIF89a-1", "1- A \\leq B")
+            (tmp / "w.screen.html").write_text("<p>바뀐 화면</p>", encoding="utf-8")  # fetch 이후 화면이 바뀜
+            with self.assertRaisesRegex(SystemExit, "화면 HTML이 바뀌었다"):
+                spr.verify_correction_sources(spec, tmp, man)
 
     def test_h4_committed_corrections_match_fixture_once(self):
         spec = spr.load_targets(str(HELD))
@@ -197,17 +219,17 @@ class SuspectGlyphTest(unittest.TestCase):
             self.assertEqual(fx["latex_token"], "\\leq")
             self.assertRegex(fx["image_sha256"], r"^[0-9a-f]{64}$")
 
-    def _workdir(self, tmp: Path, suspect: int, verdict: str):
+    def _workdir(self, tmp: Path, body: str, verdict: str, section: str = "제60조의2 피보험 단위기간 산정"):
         spec = {"batch": "20990101"}
         out = tmp / "20990101"; out.mkdir(exist_ok=True)
-        meta = {"title": "고용보험법 시행령", "section": "제60조의2 피보험 단위기간 산정", "source_pack_id": "ei-decree"}
-        (out / "prepared_vectors.jsonl").write_text(json.dumps({"id": "v0", "metadata": meta}) + "\n", encoding="utf-8")
-        (out / "prepare_rows.json").write_text(json.dumps([{"work_id": "ei-decree", "section": meta["section"],
-                                                            "suspect_glyph": suspect}]), encoding="utf-8")
+        meta = {"title": "고용보험법 시행령", "section": section[:spr.SECTION_MAX], "source_pack_id": "ei-decree"}
+        vec = {"id": "v0", "metadata": meta, "embed_text": "머리글\n정정: '?'를 '≤'로\n\n" + body}
+        (out / "prepared_vectors.jsonl").write_text(json.dumps(vec, ensure_ascii=False) + "\n", encoding="utf-8")
         (tmp / "review_20990101.md").write_text(f"### 고용보험법 시행령 제60조의2\n\n판정: {verdict}\n", encoding="utf-8")
         return spec
 
     def test_h5_upload_gate_on_remaining_suspects(self):
+        """G1은 적재할 본문에서 직접 센다 — prepare_rows.json이 없어도·섹션이 길어도 관문이 꺼지지 않는다."""
         import tempfile
         from unittest import mock
         with tempfile.TemporaryDirectory() as d:
@@ -215,15 +237,70 @@ class SuspectGlyphTest(unittest.TestCase):
             with mock.patch.object(spr, "work_dir", lambda s: tmp / s["batch"]), \
                  mock.patch.object(spr, "review_verdicts",
                                    lambda s: dict(spr._VERDICT_RE.findall((tmp / f"review_{s['batch']}.md").read_text()))):
-                spec = self._workdir(tmp, 1, "적재")
+                spec = self._workdir(tmp, BOX, "적재")
+                self.assertFalse((tmp / "20990101" / "prepare_rows.json").exists())
                 with self.assertRaises(SystemExit):
                     spr.approved_vectors(spec)
-                spec = self._workdir(tmp, 1, "적재(의심 문자 확인: 원문 문장부호)")
+                spec = self._workdir(tmp, BOX, "적재", section="제60조의2 " + "아주 긴 제목" * 40)
+                with self.assertRaises(SystemExit):                                 # 160자 넘는 섹션
+                    spr.approved_vectors(spec)
+                spec = self._workdir(tmp, BOX, "적재(의심 문자 확인: 원문 문장부호)")
                 self.assertEqual(len(spr.approved_vectors(spec)), 1)
-                spec = self._workdir(tmp, 1, "보류(근거 없음)")
+                spec = self._workdir(tmp, BOX, "보류(근거 없음)")
                 self.assertEqual(spr.approved_vectors(spec), [])
-                spec = self._workdir(tmp, 0, "적재")
+                spec = self._workdir(tmp, BOX.replace("?", "≤"), "적재")              # 머리글의 '?'는 세지 않는다
                 self.assertEqual(len(spr.approved_vectors(spec)), 1)
+
+    def _prepare(self, tmp: Path, spec_extra: dict):
+        """fixture XML로 prepare를 실제로 돌린다(정정 근거 대조는 H3가 맡아 여기서는 건너뛴다)."""
+        from unittest import mock
+        out = tmp / "20990101"; out.mkdir(exist_ok=True)
+        units = "".join((FIX / f"ei_decree_{n}.xml").read_text(encoding="utf-8").replace("<법령>", "").replace("</법령>", "")
+                        for n in ("60_2", "104_8"))
+        xml = "<법령>" + units + "</법령>"
+        (out / "ei-decree.xml").write_text(xml, encoding="utf-8")
+        (out / "fetch_manifest.json").write_text(json.dumps({"ei-decree": {
+            "url": "u", "sha256": hashlib.sha256(xml.encode()).hexdigest()}}), encoding="utf-8")
+        spec = {"batch": "20990101", "as_of": "2099-01-01",
+                "laws": [{"work_id": "ei-decree", "law": "고용보험법 시행령", "articles": ["60의2", "104의8"]}]}
+        spec.update(spec_extra)
+        with mock.patch.object(spr, "work_dir", lambda s: out), \
+             mock.patch.object(spr, "verify_correction_sources", lambda *a: None):
+            return spr.prepare(spec)
+
+    def test_h6_correction_header_only_on_corrected_article(self):
+        import tempfile
+        held = spr.load_targets(str(HELD))
+        with tempfile.TemporaryDirectory() as d:
+            vectors, rows = self._prepare(Path(d), {"corrections": spr.corrections_for(held, "ei-decree", "60의2")})
+        by = {r["article"]: r for r in rows}
+        self.assertEqual((by["60의2"]["corrected"], by["60의2"]["suspect_glyph"]), (1, 0))
+        self.assertEqual((by["104의8"]["corrected"], by["104의8"]["suspect_glyph"]), (0, 1))
+        for v in vectors:
+            has_note = "\n정정: " in v["embed_text"].split("\n\n", 1)[0]
+            self.assertEqual(has_note, v["metadata"]["section"].startswith("제60조의2"), v["id"])
+            if has_note:
+                self.assertIn("'?'를 '≤'로", v["embed_text"])
+
+    def test_h6b_review_handles_long_section_titles(self):
+        import tempfile
+        from unittest import mock
+        long = "제60조의2 " + "아주 긴 제목" * 40
+        meta = {"source_pack_id": "ei-decree", "section": long[:spr.SECTION_MAX]}
+        vec = {"metadata": meta, "embed_text": "머리글\n\n본문"}
+        row = {"work_id": "ei-decree", "law": "고용보험법 시행령", "article": "60의2", "section": long, "status": "ok",
+               "chunks": 1}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(spr, "ROOT", Path(d)):
+            (Path(d) / "data" / "source_pack_refresh").mkdir(parents=True)
+            path = spr.write_review({"batch": "20990101"}, [vec], [row])
+            self.assertIn("### 고용보험법 시행령 제60조의2", path.read_text(encoding="utf-8"))
+
+    def test_h8_unused_correction_aborts(self):
+        import tempfile
+        held = spr.load_targets(str(HELD))
+        with tempfile.TemporaryDirectory() as d:                                    # 104의15는 대상 조문 밖
+            with self.assertRaisesRegex(SystemExit, "적용되지 않은 정정"):
+                self._prepare(Path(d), {"corrections": spr.corrections_for(held, "ei-decree", "104의15")})
 
     def test_h6_correction_note_names_the_glyph(self):
         spec = spr.load_targets(str(HELD))
