@@ -12,7 +12,7 @@ source-pack-refresh(설계 `docs/02-design/features/source-pack-refresh.design.m
     python3 source_pack_refresh.py verify    --targets …
     python3 source_pack_refresh.py ledger    --targets …            # data/vector_ledgers/qpack_<batch>.json
     python3 source_pack_refresh.py supersede --targets … [--apply]  # 구 배치에서 대체된 조문 ID 삭제 + 구 원장 갱신
-    python3 source_pack_refresh.py audit     [--offline]            # 원장 섹션 ↔ 현행판 조문 키(노동 관련 법령)
+    python3 source_pack_refresh.py audit     --targets …            # 저장된 현행판 XML의 대상 조문 키 ↔ 원장(검토 보류 조문 제외)
 
 지킬 것:
 - **이미지 조문은 `<img>`·`</img>` 태그만 걷고 상자 표 텍스트를 쓴다**(D2). 표 텍스트가 없으면 보류. 표 텍스트는 다듬지 않는다(D3).
