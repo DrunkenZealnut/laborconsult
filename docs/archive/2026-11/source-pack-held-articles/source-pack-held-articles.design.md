@@ -1,6 +1,6 @@
 # source-pack-held-articles — Design
 
-> Plan: `docs/01-plan/features/source-pack-held-articles.plan.md`(v0.2, P1 결과 부록 포함)
+> Plan: `docs/archive/2026-11/source-pack-held-articles/source-pack-held-articles.plan.md`(v0.2, P1 결과 부록 포함)
 > 상위 사이클: source-pack-refresh(아카이브 `docs/archive/2026-11/source-pack-refresh/`)
 > 작성일: 2026-11-13 · 상태: Draft
 

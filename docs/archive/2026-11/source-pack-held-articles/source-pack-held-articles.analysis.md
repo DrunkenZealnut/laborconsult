@@ -1,6 +1,6 @@
 # source-pack-held-articles — Check(Gap 분석)
 
-> Design: `docs/02-design/features/source-pack-held-articles.design.md` · Plan: `docs/01-plan/features/source-pack-held-articles.plan.md`
+> Design: `docs/archive/2026-11/source-pack-held-articles/source-pack-held-articles.design.md` · Plan: `docs/archive/2026-11/source-pack-held-articles/source-pack-held-articles.plan.md`
 > 대상 구현: PR #170(머지 `3c75e2e`) · 분석일 2026-11-13 · 분석: gap-detector(독립 대조) + 실행 기록
 
 ## 1. 결과
