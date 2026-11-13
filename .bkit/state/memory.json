@@ -813,7 +813,7 @@
     "remaining": "source-pack-refresh 후속(freshness --anchors는 11-12 통과 — 118.33.130.107 회선)"
   },
   "source-pack-refresh": {
-    "phase": "check",
+    "phase": "completed",
     "planPath": "docs/01-plan/features/source-pack-refresh.plan.md",
     "startedAt": "2026-11-12",
     "plannedAt": "2026-11-12",
@@ -828,6 +828,8 @@
     "doProgress": "Do 완료·머지(11-13): PR #167 abe84ff — qpack_20261112_ 11벡터·구 제126조 2벡터 supersede·원장 2종·BM25 107,186(CI Linux 490MB)·테스트 10건. 검토 보류 3조문(? 연산 기호) 후속",
     "matchRate": 93.5,
     "checkAt": "2026-11-13",
-    "analysis": "docs/03-analysis/source-pack-refresh.analysis.md — 설계 90.2%(46항목), Plan 조건 60%. 즉시: eval_retrieval·eval_corpus_mix·sync_legal_rules 미실행, CLAUDE.md BM25 107,177 잔존, --offline 문서만 | 11-13 즉시 항목: eval_retrieval 89.5%·corpus_mix 공공16/12/12·R5 신배치 0건, CLAUDE.md BM25·원장 규칙, docstring → 93.5%, Plan 80%"
+    "analysis": "docs/03-analysis/source-pack-refresh.analysis.md — 설계 90.2%(46항목), Plan 조건 60%. 즉시: eval_retrieval·eval_corpus_mix·sync_legal_rules 미실행, CLAUDE.md BM25 107,177 잔존, --offline 문서만 | 11-13 즉시 항목: eval_retrieval 89.5%·corpus_mix 공공16/12/12·R5 신배치 0건, CLAUDE.md BM25·원장 규칙, docstring → 93.5%, Plan 80%",
+    "reportAt": "2026-11-13",
+    "reportPath": "docs/04-report/features/source-pack-refresh.report.md"
   }
 }
