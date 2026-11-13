@@ -1,0 +1,52 @@
+{
+ "batch": "20261113",
+ "as_of": "2026-11-13",
+ "prior_ledger": "data/vector_ledgers/qpack_20261112.json",
+ "note": "source-pack-held-articles D1 — source-pack-refresh가 보류한 3조문. 법제처 텍스트 계산식의 '≤'가 '?'로 빠져 있어 corrections로 바로잡는다(근거: 조문 이미지 sha256 + 법제처 화면 이미지 alt LaTeX '\\leq', P1 2026-11-13).",
+ "laws": [
+  {
+   "work_id": "ei-decree",
+   "law": "고용보험법 시행령",
+   "articles": [
+    "60의2",
+    "104의8",
+    "104의15"
+   ]
+  }
+ ],
+ "corrections": [
+  {
+   "work_id": "ei-decree",
+   "article": "60의2",
+   "find": "÷ 180일 ? 예술인",
+   "replace": "÷ 180일 ≤ 예술인",
+   "image_flseq": "129419233",
+   "image_sha256": "432854070afb4fe94fc15c09cf2b534f866597c170eff2648814b3b3b41e4350",
+   "screen_url": "https://www.law.go.kr/LSW/lsInfoR.do?lsiSeq=288717&efYd=20260918&chrClsCd=010202&ancYnChk=0",
+   "latex_token": "\\leq",
+   "reviewed_by": "사람 판독(조문 이미지) 2026-11-13"
+  },
+  {
+   "work_id": "ei-decree",
+   "article": "104의8",
+   "find": "÷ 9개월 ? 근로자",
+   "replace": "÷ 9개월 ≤ 근로자",
+   "image_flseq": "129419251",
+   "image_sha256": "5e329b07f98dee41a2c49096275789d55ac270a307e73b1c99e8c30f8ff6124a",
+   "screen_url": "https://www.law.go.kr/LSW/lsInfoR.do?lsiSeq=288717&efYd=20260918&chrClsCd=010202&ancYnChk=0",
+   "latex_token": "\\leq",
+   "reviewed_by": "사람 판독(조문 이미지) 2026-11-13"
+  },
+  {
+   "work_id": "ei-decree",
+   "article": "104의15",
+   "find": "÷ 12개월 ? 근로자",
+   "replace": "÷ 12개월 ≤ 근로자",
+   "image_flseq": "102803845",
+   "image_sha256": "922bd3fdd884015bb0fafb2ae90913debae1dbf43a749785ba6308a987c5385e",
+   "screen_url": "https://www.law.go.kr/LSW/lsInfoR.do?lsiSeq=288717&efYd=20260918&chrClsCd=010202&ancYnChk=0",
+   "latex_token": "\\leq",
+   "reviewed_by": "사람 판독(조문 이미지) 2026-11-13"
+  }
+ ]
+}

@@ -1,0 +1,75 @@
+{
+ "batch": "sourcepack_20261113",
+ "id_prefix": "qpack_20261113_",
+ "id_pattern": "^qpack_20261113_[0-9a-f]{16}_[0-9a-f]{10}_\\d+$",
+ "index": "laborconsult",
+ "namespace": "laborlaw-v2",
+ "uploaded_on": "2026-11-13",
+ "state": "verified",
+ "vector_count": 12,
+ "document_count": 1,
+ "composition": {
+  "regulation": 12
+ },
+ "metadata_flags": {
+  "official": true,
+  "source_batch": "sourcepack_20261113"
+ },
+ "embedding_tokens": 8686,
+ "supersedes": [],
+ "note": "source_pack_refresh.py로 법제처 현행판에서 대상 조문만 받아 적재했다. 대상·사람 검토는 data/source_pack_refresh/targets_20261113.json·review_20261113.md.",
+ "documents": {
+  "ei-decree": {
+   "title": "고용보험법 시행령",
+   "source_type": "regulation",
+   "official_url": "https://www.law.go.kr/법령/고용보험법 시행령/(20260918)",
+   "source_sha256": "65ec4de599490dff76b148ba1661d99cba9f6ca5881e23ab7effcf21776be2f2",
+   "ids": [
+    "qpack_20261113_a22b05ecede755d2_fee298dd58_0",
+    "qpack_20261113_a22b05ecede755d2_05b654d317_0",
+    "qpack_20261113_a22b05ecede755d2_05b654d317_1",
+    "qpack_20261113_a22b05ecede755d2_05b654d317_2",
+    "qpack_20261113_a22b05ecede755d2_05b654d317_3",
+    "qpack_20261113_a22b05ecede755d2_05b654d317_4",
+    "qpack_20261113_a22b05ecede755d2_05b654d317_5",
+    "qpack_20261113_a22b05ecede755d2_1f3c1820c3_0",
+    "qpack_20261113_a22b05ecede755d2_1f3c1820c3_1",
+    "qpack_20261113_a22b05ecede755d2_1f3c1820c3_2",
+    "qpack_20261113_a22b05ecede755d2_1f3c1820c3_3",
+    "qpack_20261113_a22b05ecede755d2_1f3c1820c3_4"
+   ],
+   "corrections": [
+    {
+     "article": "60의2",
+     "find": "÷ 180일 ? 예술인",
+     "replace": "÷ 180일 ≤ 예술인",
+     "image_flseq": "129419233",
+     "image_sha256": "432854070afb4fe94fc15c09cf2b534f866597c170eff2648814b3b3b41e4350",
+     "screen_url": "https://www.law.go.kr/LSW/lsInfoR.do?lsiSeq=288717&efYd=20260918&chrClsCd=010202&ancYnChk=0",
+     "latex_token": "\\leq",
+     "reviewed_by": "사람 판독(조문 이미지) 2026-11-13"
+    },
+    {
+     "article": "104의8",
+     "find": "÷ 9개월 ? 근로자",
+     "replace": "÷ 9개월 ≤ 근로자",
+     "image_flseq": "129419251",
+     "image_sha256": "5e329b07f98dee41a2c49096275789d55ac270a307e73b1c99e8c30f8ff6124a",
+     "screen_url": "https://www.law.go.kr/LSW/lsInfoR.do?lsiSeq=288717&efYd=20260918&chrClsCd=010202&ancYnChk=0",
+     "latex_token": "\\leq",
+     "reviewed_by": "사람 판독(조문 이미지) 2026-11-13"
+    },
+    {
+     "article": "104의15",
+     "find": "÷ 12개월 ? 근로자",
+     "replace": "÷ 12개월 ≤ 근로자",
+     "image_flseq": "102803845",
+     "image_sha256": "922bd3fdd884015bb0fafb2ae90913debae1dbf43a749785ba6308a987c5385e",
+     "screen_url": "https://www.law.go.kr/LSW/lsInfoR.do?lsiSeq=288717&efYd=20260918&chrClsCd=010202&ancYnChk=0",
+     "latex_token": "\\leq",
+     "reviewed_by": "사람 판독(조문 이미지) 2026-11-13"
+    }
+   ]
+  }
+ }
+}
